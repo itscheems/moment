@@ -19,7 +19,7 @@ import (
 )
 
 const (
-	// defaultSessionFile follows the owner.token convention: a private file
+	// defaultSessionFile follows the account.token convention: a private file
 	// under the ignored local directory, beside the credential this one is the
 	// member-account counterpart of.
 	//
@@ -185,7 +185,7 @@ func runLogin(ctx context.Context, invocation Invocation, input CommandInput) (R
 	text := fmt.Sprintf("Signed in as @%s (%s)\nSession stored in %s\nExpires %s",
 		account.Username, account.Status, sessionFile, credential.ExpiresAt.Format(time.RFC3339))
 	if account.Status == "pending" {
-		text += "\nThis account is waiting for the site owner to approve it before it may post."
+		text += "\nThis account is waiting for the site account to approve it before it may post."
 	}
 	return Result{
 		Data: loginResult{
@@ -432,7 +432,7 @@ func readAPIResponse(request *http.Request) ([]byte, error) {
 		return nil, invalidAPIResponse()
 	}
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
-		return nil, decodeOwnerAPIFailure(response.StatusCode, body)
+		return nil, decodeAPIFailure(response.StatusCode, body)
 	}
 	return body, nil
 }

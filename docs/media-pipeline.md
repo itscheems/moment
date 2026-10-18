@@ -34,6 +34,8 @@ bounded read
   -> atomically publish cache, immutable original, and database row
 ```
 
+The immutable original pool deduplicates globally by content hash. A separate account/media grant records reuse permission. Both a first upload and a deduplicated upload grant the authenticated account access to reuse that object. Posts, comments, article bodies, drafts and profile pictures check the actual account's grants. A public reference permits reading the object and does not permit another account to attach it without uploading it themselves. Temporary video posters are scoped by account and upload ID. Unused uploads and private references use private caching.
+
 External conversion does not run while the exclusive media lease is held.
 Image work, including HEIC conversion, uses a two-worker lane. Video probe and
 FFmpeg work use a separate one-worker lane. Ordinary image decode additionally

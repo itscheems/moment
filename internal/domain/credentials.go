@@ -11,9 +11,8 @@ type CredentialKind string
 const (
 	// CredentialPassword is a secret the person chose.
 	CredentialPassword CredentialKind = "password"
-	// CredentialToken is a secret this instance generated. It is the credential
-	// that has to keep working when the database does not, which is why the
-	// owner's copy lives outside it.
+	// CredentialToken is a generated API secret whose digest belongs to an
+	// account. It is usable only while that account and token remain valid.
 	CredentialToken CredentialKind = "token"
 )
 

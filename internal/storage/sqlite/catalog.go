@@ -13,6 +13,11 @@ type expectedCatalogObject struct {
 }
 
 var requiredCatalogObjects = []expectedCatalogObject{
+	{name: "site_pin_insert_guard", kind: "trigger", table: "site_settings"},
+	{name: "site_pin_update_guard", kind: "trigger", table: "site_settings"},
+	{name: "entries_clear_unavailable_pin", kind: "trigger", table: "entries"},
+	{name: "media_grants", kind: "table", table: "media_grants"},
+	{name: "media_grants_media_idx", kind: "index", table: "media_grants"},
 	{name: "schema_migrations", kind: "table", table: "schema_migrations"},
 	{name: "entries", kind: "table", table: "entries"},
 	{name: "media", kind: "table", table: "media"},
@@ -24,6 +29,9 @@ var requiredCatalogObjects = []expectedCatalogObject{
 	{name: "users", kind: "table", table: "users"},
 	{name: "identities", kind: "table", table: "identities"},
 	{name: "sessions", kind: "table", table: "sessions"},
+	{name: "account_passwords", kind: "table", table: "account_passwords"},
+	{name: "api_tokens", kind: "table", table: "api_tokens"},
+	{name: "api_tokens_user_idx", kind: "index", table: "api_tokens"},
 	{name: "idempotency_keys", kind: "table", table: "idempotency_keys"},
 	{name: "search_index_state", kind: "table", table: "search_index_state"},
 	{name: "entries_timeline_idx", kind: "index", table: "entries"},
@@ -38,9 +46,8 @@ var requiredCatalogObjects = []expectedCatalogObject{
 	{name: "entry_link_card_favicon_idx", kind: "index", table: "entry_link_card"},
 	{name: "comments_entry_idx", kind: "index", table: "comments"},
 	{name: "comments_parent_idx", kind: "index", table: "comments"},
+	{name: "users_role_status_idx", kind: "index", table: "users"},
 	{name: "users_username_unique", kind: "index", table: "users"},
-	// The database, not every write path, is what keeps there being one owner.
-	{name: "users_single_owner", kind: "index", table: "users"},
 	{name: "identities_user_idx", kind: "index", table: "identities"},
 	{name: "sessions_user_idx", kind: "index", table: "sessions"},
 	{name: "idempotency_keys_created_idx", kind: "index", table: "idempotency_keys"},

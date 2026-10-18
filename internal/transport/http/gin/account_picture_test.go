@@ -157,11 +157,8 @@ func TestAccountPictureUploadRefusesWhatIsNotAPicture(t *testing.T) {
 		}
 	})
 
-	// The pool was owner-only until comments began carrying media for everyone.
-	// What still gates it is approval, not rank: an account nobody has looked at
-	// yet cannot write bytes to this instance's disk.
 	t.Run("an approved account may write to the media pool", func(t *testing.T) {
-		request := pictureUpload(t, "/api/v1/owner/media", "portrait.png", testPictureBytes(t), session, csrf)
+		request := pictureUpload(t, "/api/v1/media", "portrait.png", testPictureBytes(t), session, csrf)
 		response := performRequest(fixture.engine, request)
 		if response.Code != http.StatusOK && response.Code != http.StatusCreated {
 			t.Fatalf("approved member could not upload = %d: %s", response.Code, response.Body.String())
@@ -174,25 +171,25 @@ func TestAccountPictureUploadRefusesWhatIsNotAPicture(t *testing.T) {
 // number of people using it.
 func TestExpiredSessionsAreSweptAndLiveOnesAreNot(t *testing.T) {
 	fixture := newCommentHTTPFixture(t, nil)
-	owner, err := fixture.accountService.OwnerAccount(context.Background())
+	primaryAccount, err := fixture.accountService.ProfileAccount(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
 	now := time.Now().UTC()
 
-	live, err := fixture.accountService.StartSession(context.Background(), owner.ID,
+	live, err := fixture.accountService.StartSession(context.Background(), primaryAccount.ID,
 		"11111111111111111111111111111111", "web", now.Add(12*time.Hour).UnixMilli())
 	if err != nil {
 		t.Fatal(err)
 	}
 	// Expired, but inside the grace window that keeps "when did this device
 	// last sign in" answerable for a while after it stopped working.
-	recent, err := fixture.accountService.StartSession(context.Background(), owner.ID,
+	recent, err := fixture.accountService.StartSession(context.Background(), primaryAccount.ID,
 		"22222222222222222222222222222222", "web", now.Add(-time.Hour).UnixMilli())
 	if err != nil {
 		t.Fatal(err)
 	}
-	stale, err := fixture.accountService.StartSession(context.Background(), owner.ID,
+	stale, err := fixture.accountService.StartSession(context.Background(), primaryAccount.ID,
 		"33333333333333333333333333333333", "cli", now.Add(-30*24*time.Hour).UnixMilli())
 	if err != nil {
 		t.Fatal(err)
@@ -206,7 +203,7 @@ func TestExpiredSessionsAreSweptAndLiveOnesAreNot(t *testing.T) {
 		t.Fatalf("swept %d sessions, want only the long-expired one", removed)
 	}
 
-	remaining, err := fixture.accountService.Sessions(context.Background(), owner.ID)
+	remaining, err := fixture.accountService.Sessions(context.Background(), primaryAccount.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -222,11 +219,6 @@ func TestExpiredSessionsAreSweptAndLiveOnesAreNot(t *testing.T) {
 	}
 }
 
-// The comment composer offers a media picker and a place picker to any account
-// holding a session, and the comment group admits approved ones. Leaving the
-// two endpoints behind those pickers at owner-only made every use answer 401 --
-// which the browser reads as an expired session, so a correctly signed-in
-// member was told to sign in again, and would be told so again forever.
 func TestCommentAttachmentsFollowTheCommentGroupsAdmission(t *testing.T) {
 	fixture := newCommentHTTPFixture(t, nil)
 	session, csrf, member := signInMember(t, fixture)
@@ -236,7 +228,7 @@ func TestCommentAttachmentsFollowTheCommentGroupsAdmission(t *testing.T) {
 		request func() *http.Request
 	}{
 		{"media upload", func() *http.Request {
-			return pictureUpload(t, "/api/v1/owner/media", "attach.png", testPictureBytes(t), session, csrf)
+			return pictureUpload(t, "/api/v1/media", "attach.png", testPictureBytes(t), session, csrf)
 		}},
 	}
 	// The place lookup is the same change in the same direction, but this

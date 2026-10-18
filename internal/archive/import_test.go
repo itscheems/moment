@@ -18,6 +18,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/moment/moment/internal/app"
 	"github.com/moment/moment/internal/domain"
 	"github.com/moment/moment/internal/runtimefs"
 	sqlitestore "github.com/moment/moment/internal/storage/sqlite"
@@ -32,11 +33,11 @@ func TestInspectBuildsRestartableCurrentSchemaWithoutTouchingCurrent(t *testing.
 	}
 	now := time.Date(2026, 8, 11, 1, 2, 3, 0, time.UTC)
 	inspector := testInspector(t, fixture.runtime.Root, fixture.database, &now, math.MaxUint64)
-	result, err := inspector.InspectFile(context.Background(), archivePath, 7)
+	result, err := inspector.InspectFile(context.Background(), archivePath, testAuthorization(7))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.FormatVersion != 1 || result.Counts != (ImportCounts{Entries: 1, Comments: 2, Media: 2, Users: 1}) || result.MissingAlt != 1 || result.StagingToken == "" {
+	if result.FormatVersion != 2 || result.Counts != (ImportCounts{Entries: 1, Comments: 2, Media: 2, Users: 1}) || result.MissingAlt != 1 || result.StagingToken == "" {
 		t.Fatalf("inspection = %#v", result)
 	}
 	if !result.Disk.SpaceOK || result.Disk.RequiredAdditionalBytes <= 0 || result.Disk.SafetyMarginBytes < minimumSafetyMarginBytes {
@@ -120,7 +121,7 @@ func TestInspectBuildsRestartableCurrentSchemaWithoutTouchingCurrent(t *testing.
 	}
 
 	restarted := testInspector(t, fixture.runtime.Root, fixture.database, &now, math.MaxUint64)
-	resumed, err := restarted.Resume(context.Background(), result.StagingToken, 7)
+	resumed, err := restarted.Resume(context.Background(), result.StagingToken, testAuthorization(7))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -136,7 +137,7 @@ func TestInspectBuildsRestartableCurrentSchemaWithoutTouchingCurrent(t *testing.
 	for range 2 {
 		go func() {
 			<-start
-			claim, err := restarted.Claim(context.Background(), result.StagingToken, 7)
+			claim, err := restarted.Claim(context.Background(), result.StagingToken, testAuthorization(7))
 			claims <- claimResult{claim: claim, err: err}
 		}()
 	}
@@ -154,7 +155,7 @@ func TestInspectBuildsRestartableCurrentSchemaWithoutTouchingCurrent(t *testing.
 	if claim.GenerationID != result.GenerationID || claim.Generation.Root != filepath.Join(stageRoot, "generation") {
 		t.Fatalf("claim = %#v", claim)
 	}
-	if _, err := restarted.Claim(context.Background(), result.StagingToken, 7); !domain.HasCode(err, domain.CodeImportStagingInvalid) {
+	if _, err := restarted.Claim(context.Background(), result.StagingToken, testAuthorization(7)); !domain.HasCode(err, domain.CodeImportStagingInvalid) {
 		t.Fatalf("replay error = %v", err)
 	}
 }
@@ -164,8 +165,8 @@ func TestUnavailableQuoteRoundTripsThroughPortableArchive(t *testing.T) {
 	fixture := newExportFixture(t, false)
 	if err := fixture.database.WriteTx(context.Background(), func(queries sqlitestore.Queries) error {
 		if _, err := queries.ExecContext(context.Background(), `
-INSERT INTO entries (id, kind, content_md, created_at_ms, updated_at_ms, published_at_ms)
-VALUES (?, 'moment', '引用外层仍然存在', 1, 1, 1)`, quoteID); err != nil {
+INSERT INTO entries (id, kind, content_md, created_at_ms, updated_at_ms, published_at_ms, author_user_id)
+VALUES (?, 'moment', '引用外层仍然存在', 1, 1, 1, '0123456789abcdef0123456789abcdef')`, quoteID); err != nil {
 			return err
 		}
 		_, err := queries.ExecContext(context.Background(), `INSERT INTO entry_quotes (entry_id, quoted_entry_id) VALUES (?, NULL)`, quoteID)
@@ -178,7 +179,7 @@ VALUES (?, 'moment', '引用外层仍然存在', 1, 1, 1)`, quoteID); err != nil
 	result, err := testInspector(t, fixture.runtime.Root, fixture.database, &now, math.MaxUint64).InspectFile(
 		context.Background(),
 		exportFixtureFile(t, fixture),
-		7,
+		testAuthorization(7),
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -216,13 +217,13 @@ func TestPinnedCommentRoundTripsThroughPortableArchive(t *testing.T) {
 	fixture := newExportFixture(t, false)
 	if err := fixture.database.WriteTx(context.Background(), func(queries sqlitestore.Queries) error {
 		if _, err := queries.ExecContext(context.Background(), `
-INSERT INTO entries (id, kind, content_md, created_at_ms, updated_at_ms, published_at_ms)
-VALUES (?, 'moment', '置顶评论所在的动态', 1, 1, 1)`, pinnedEntryID); err != nil {
+INSERT INTO entries (id, kind, content_md, created_at_ms, updated_at_ms, published_at_ms, author_user_id)
+VALUES (?, 'moment', '置顶评论所在的动态', 1, 1, 1, '0123456789abcdef0123456789abcdef')`, pinnedEntryID); err != nil {
 			return err
 		}
 		if _, err := queries.ExecContext(context.Background(), `
-INSERT INTO comments (id, entry_id, parent_id, author_kind, author_name, content_md, created_at_ms)
-VALUES (?, ?, NULL, 'guest', '访客', '置顶评论', 1)`, pinnedCommentID, pinnedEntryID); err != nil {
+INSERT INTO comments (id, entry_id, parent_id, author_name, content_md, created_at_ms)
+VALUES (?, ?, NULL, '访客', '置顶评论', 1)`, pinnedCommentID, pinnedEntryID); err != nil {
 			return err
 		}
 		_, err := queries.ExecContext(context.Background(), `INSERT INTO comment_pins (entry_id, comment_id) VALUES (?, ?)`, pinnedEntryID, pinnedCommentID)
@@ -235,7 +236,7 @@ VALUES (?, ?, NULL, 'guest', '访客', '置顶评论', 1)`, pinnedCommentID, pin
 	result, err := testInspector(t, fixture.runtime.Root, fixture.database, &now, math.MaxUint64).InspectFile(
 		context.Background(),
 		exportFixtureFile(t, fixture),
-		7,
+		testAuthorization(7),
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -297,7 +298,7 @@ func TestCommentAuthorAccountRoundTripsThroughPortableArchive(t *testing.T) {
 	result, err := testInspector(t, fixture.runtime.Root, fixture.database, &now, math.MaxUint64).InspectFile(
 		context.Background(),
 		exportFixtureFile(t, fixture),
-		7,
+		testAuthorization(7),
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -306,9 +307,9 @@ func TestCommentAuthorAccountRoundTripsThroughPortableArchive(t *testing.T) {
 	if len(staged) != 2 {
 		t.Fatalf("staged comments = %#v", staged)
 	}
-	owner := staged[0]
-	if owner.ID != authorAccountCommentID || owner.AuthorUserID == nil || *owner.AuthorUserID != commentAuthorAccount {
-		t.Fatalf("staged owner comment = %#v", owner)
+	primaryAccount := staged[0]
+	if primaryAccount.ID != authorAccountCommentID || primaryAccount.AuthorUserID == nil || *primaryAccount.AuthorUserID != commentAuthorAccount {
+		t.Fatalf("staged owner comment = %#v", primaryAccount)
 	}
 	if staged[1].ID != legacyGuestCommentID || staged[1].AuthorUserID != nil {
 		t.Fatalf("staged guest comment = %#v", staged[1])
@@ -349,7 +350,7 @@ func TestArchiveWithoutCommentAuthorAccountStillImports(t *testing.T) {
 	result, err := testInspector(t, fixture.runtime.Root, fixture.database, &now, math.MaxUint64).InspectFile(
 		context.Background(),
 		name,
-		7,
+		testAuthorization(7),
 	)
 	if err != nil {
 		t.Fatalf("v1 archive without author_user_id did not import: %v", err)
@@ -373,7 +374,7 @@ func TestLegacyGuestCommentWithoutAuthorAccountRoundTrips(t *testing.T) {
 	result, err := testInspector(t, fixture.runtime.Root, fixture.database, &now, math.MaxUint64).InspectFile(
 		context.Background(),
 		exportFixtureFile(t, fixture),
-		7,
+		testAuthorization(7),
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -383,7 +384,7 @@ func TestLegacyGuestCommentWithoutAuthorAccountRoundTrips(t *testing.T) {
 		t.Fatalf("staged comments = %#v", staged)
 	}
 	guest := staged[1]
-	if guest.ID != legacyGuestCommentID || guest.AuthorKind != "guest" || guest.AuthorName != "访客" ||
+	if guest.ID != legacyGuestCommentID || guest.AuthorName != "访客" ||
 		guest.ContentMD != "匿名访客留下的评论" || guest.AuthorUserID != nil {
 		t.Fatalf("round-tripped legacy guest comment = %#v", guest)
 	}
@@ -419,7 +420,7 @@ func TestCommentReplyTargetRoundTripsThroughPortableArchive(t *testing.T) {
 	result, err := testInspector(t, fixture.runtime.Root, fixture.database, &now, math.MaxUint64).InspectFile(
 		context.Background(),
 		exportFixtureFile(t, fixture),
-		7,
+		testAuthorization(7),
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -477,7 +478,7 @@ func TestArchiveWithoutCommentReplyTargetStillImports(t *testing.T) {
 	result, err := testInspector(t, fixture.runtime.Root, fixture.database, &now, math.MaxUint64).InspectFile(
 		context.Background(),
 		name,
-		7,
+		testAuthorization(7),
 	)
 	if err != nil {
 		t.Fatalf("v1 archive without reply_to_comment_id did not import: %v", err)
@@ -501,13 +502,13 @@ func insertReplyTargetFixture(t *testing.T, fixture exportFixture) {
 	t.Helper()
 	if err := fixture.database.WriteTx(context.Background(), func(queries sqlitestore.Queries) error {
 		if _, err := queries.ExecContext(context.Background(), `
-INSERT INTO entries (id, kind, content_md, created_at_ms, updated_at_ms, published_at_ms)
-VALUES (?, 'moment', '一条有对话的动态', 1, 1, 1)`, threadEntryID); err != nil {
+INSERT INTO entries (id, kind, content_md, created_at_ms, updated_at_ms, published_at_ms, author_user_id)
+VALUES (?, 'moment', '一条有对话的动态', 1, 1, 1, '0123456789abcdef0123456789abcdef')`, threadEntryID); err != nil {
 			return err
 		}
 		if _, err := queries.ExecContext(context.Background(), `
-INSERT INTO comments (id, entry_id, parent_id, author_kind, author_name, content_md, created_at_ms)
-VALUES (?, ?, NULL, 'owner', 'Owner', '根评论', 1)`, threadRootID, threadEntryID); err != nil {
+INSERT INTO comments (id, entry_id, parent_id, author_name, content_md, created_at_ms)
+VALUES (?, ?, NULL, 'Owner', '根评论', 1)`, threadRootID, threadEntryID); err != nil {
 			return err
 		}
 		// Written in answering order so the insert guard sees each target, then
@@ -518,8 +519,8 @@ VALUES (?, ?, NULL, 'owner', 'Owner', '根评论', 1)`, threadRootID, threadEntr
 			{replyToLaterID, replyToEarlierID, "回复更晚的同级"},
 		} {
 			if _, err := queries.ExecContext(context.Background(), `
-INSERT INTO comments (id, entry_id, parent_id, author_kind, author_name, reply_to_comment_id, content_md, created_at_ms)
-VALUES (?, ?, ?, 'owner', 'Owner', ?, ?, 5)`, reply.id, threadEntryID, threadRootID, reply.target, reply.body); err != nil {
+INSERT INTO comments (id, entry_id, parent_id, author_name, reply_to_comment_id, content_md, created_at_ms)
+VALUES (?, ?, ?, 'Owner', ?, ?, 5)`, reply.id, threadEntryID, threadRootID, reply.target, reply.body); err != nil {
 				return err
 			}
 		}
@@ -545,26 +546,22 @@ func commentLineOrder(t *testing.T, data []byte) map[string]int {
 	return result
 }
 
-// insertCommentAuthorFixture adds one entry carrying two root comments: one
-// owner comment that references an account and one legacy guest comment that
-// never had an identity to reference. Their IDs order the pair deterministically
-// in canonical thread order.
 func insertCommentAuthorFixture(t *testing.T, fixture exportFixture) {
 	t.Helper()
 	if err := fixture.database.WriteTx(context.Background(), func(queries sqlitestore.Queries) error {
 		if _, err := queries.ExecContext(context.Background(), `
-INSERT INTO entries (id, kind, content_md, created_at_ms, updated_at_ms, published_at_ms)
-VALUES (?, 'moment', '带评论的动态', 1, 1, 1)`, authorAccountEntryID); err != nil {
+INSERT INTO entries (id, kind, content_md, created_at_ms, updated_at_ms, published_at_ms, author_user_id)
+VALUES (?, 'moment', '带评论的动态', 1, 1, 1, '0123456789abcdef0123456789abcdef')`, authorAccountEntryID); err != nil {
 			return err
 		}
 		if _, err := queries.ExecContext(context.Background(), `
-INSERT INTO comments (id, entry_id, parent_id, author_kind, author_name, author_user_id, content_md, created_at_ms)
-VALUES (?, ?, NULL, 'owner', 'Owner', ?, '站长的评论', 1)`, authorAccountCommentID, authorAccountEntryID, commentAuthorAccount); err != nil {
+INSERT INTO comments (id, entry_id, parent_id, author_name, author_user_id, content_md, created_at_ms)
+VALUES (?, ?, NULL, 'Owner', ?, '站长的评论', 1)`, authorAccountCommentID, authorAccountEntryID, commentAuthorAccount); err != nil {
 			return err
 		}
 		_, err := queries.ExecContext(context.Background(), `
-INSERT INTO comments (id, entry_id, parent_id, author_kind, author_name, author_user_id, content_md, created_at_ms)
-VALUES (?, ?, NULL, 'guest', '访客', NULL, '匿名访客留下的评论', 2)`, legacyGuestCommentID, authorAccountEntryID)
+INSERT INTO comments (id, entry_id, parent_id, author_name, author_user_id, content_md, created_at_ms)
+VALUES (?, ?, NULL, '访客', NULL, '匿名访客留下的评论', 2)`, legacyGuestCommentID, authorAccountEntryID)
 		return err
 	}); err != nil {
 		t.Fatal(err)
@@ -658,9 +655,6 @@ func TestInspectAndPlanRejectChecksumValidUnreachableArchiveMedia(t *testing.T) 
 	site["avatar_media_id"] = nil
 	site["cover_media_id"] = nil
 	members["data/site.json"] = append(mustMarshalTest(t, site), '\n')
-	// The owner account carries the same two pictures, so clearing only the
-	// site record would describe two different owners rather than an archive
-	// whose media is genuinely unreferenced.
 	setAccountPictures(t, members, nil, nil)
 	rebuildManifestExpanded(t, members)
 	rebuildChecksums(members)
@@ -677,14 +671,14 @@ func TestInspectAndPlanRejectChecksumValidUnreachableArchiveMedia(t *testing.T) 
 			inspector := testInspector(t, target.runtime.Root, target.database, &now, math.MaxUint64)
 			var inspectErr error
 			if mode == "inspect" {
-				_, inspectErr = inspector.InspectFile(context.Background(), orphanPath, 1)
+				_, inspectErr = inspector.InspectFile(context.Background(), orphanPath, testAuthorization(1))
 			} else {
 				file, err := os.Open(orphanPath)
 				if err != nil {
 					t.Fatal(err)
 				}
 				defer func() { _ = file.Close() }()
-				_, inspectErr = inspector.Plan(context.Background(), file, 1)
+				_, inspectErr = inspector.Plan(context.Background(), file, testAuthorization(1))
 			}
 			if !domain.HasCode(inspectErr, domain.CodeExportInvalid) {
 				t.Fatalf("%s orphan authority error=%v", mode, inspectErr)
@@ -693,25 +687,20 @@ func TestInspectAndPlanRejectChecksumValidUnreachableArchiveMedia(t *testing.T) 
 	}
 }
 
-func TestInspectDiscardsReadyStageFromRevokedOwnerEpoch(t *testing.T) {
+func TestAnotherCredentialCannotDiscardAnUnexpiredStage(t *testing.T) {
 	fixture := newExportFixture(t, false)
-	archivePath := exportFixtureFile(t, fixture)
+	path := exportFixtureFile(t, fixture)
 	now := time.Date(2026, 8, 11, 1, 20, 0, 0, time.UTC)
 	inspector := testInspector(t, fixture.runtime.Root, fixture.database, &now, math.MaxUint64)
-	inspector.random = bytes.NewReader(append(bytes.Repeat([]byte{7}, 40), bytes.Repeat([]byte{8}, 40)...))
-	first, err := inspector.InspectFile(context.Background(), archivePath, 1)
+	first, err := inspector.InspectFile(context.Background(), path, testAuthorization(1))
 	if err != nil {
 		t.Fatal(err)
 	}
-	second, err := inspector.InspectFile(context.Background(), archivePath, 2)
-	if err != nil {
-		t.Fatal(err)
+	if _, err := inspector.InspectFile(context.Background(), path, testAuthorization(2)); !domain.HasCode(err, domain.CodeImportInProgress) {
+		t.Fatalf("another credential discarded staged work: %v", err)
 	}
-	if first.GenerationID == second.GenerationID || second.StagingToken == "" {
-		t.Fatalf("revoked stage was reused: first=%#v second=%#v", first, second)
-	}
-	if _, err := os.Stat(filepath.Join(fixture.runtime.Root, "staging", "import", first.GenerationID)); !errors.Is(err, os.ErrNotExist) {
-		t.Fatalf("revoked staging directory still exists: %v", err)
+	if _, err := inspector.Resume(context.Background(), first.StagingToken, testAuthorization(1)); err != nil {
+		t.Fatalf("initiating credential lost staged work: %v", err)
 	}
 }
 
@@ -736,7 +725,7 @@ func TestInspectOfflineSnapshotLeavesActiveGenerationByteForByteUntouched(t *tes
 	}
 	before := fingerprintGeneration(t, target.Current.Root)
 	now := time.Date(2026, 8, 11, 1, 30, 0, 0, time.UTC)
-	if _, err := testInspector(t, target.Root, nil, &now, math.MaxUint64).InspectFile(context.Background(), archivePath, 1); err != nil {
+	if _, err := testInspector(t, target.Root, nil, &now, math.MaxUint64).InspectFile(context.Background(), archivePath, testAuthorization(1)); err != nil {
 		t.Fatal(err)
 	}
 	after := fingerprintGeneration(t, target.Current.Root)
@@ -765,6 +754,11 @@ func TestInspectOfflineSnapshotIncludesUncleanWALWithoutTouchingActive(t *testin
 	if err != nil {
 		t.Fatal(err)
 	}
+	repo, _ := sqlitestore.NewAccountRepository(targetDatabase, target.Locks)
+	accounts, _ := app.NewAccountService(repo, app.WithAccountIDGenerator(func() (string, error) { return fixtureAccountID, nil }))
+	if _, err := accounts.InitializeSiteAccount(context.Background(), "writer"); err != nil {
+		t.Fatal(err)
+	}
 	if err := targetDatabase.Close(); err != nil {
 		t.Fatal(err)
 	}
@@ -779,7 +773,7 @@ func TestInspectOfflineSnapshotIncludesUncleanWALWithoutTouchingActive(t *testin
 	}
 	before := fingerprintGeneration(t, target.Current.Root)
 	now := time.Date(2026, 8, 11, 1, 31, 0, 0, time.UTC)
-	result, err := testInspector(t, target.Root, nil, &now, math.MaxUint64).InspectFile(context.Background(), archivePath, 1)
+	result, err := testInspector(t, target.Root, nil, &now, math.MaxUint64).InspectFile(context.Background(), archivePath, testAuthorization(1))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -805,7 +799,7 @@ func runUncleanImportWALWriter() {
 		os.Exit(2)
 	}
 	err = database.WriteTx(ctx, func(queries sqlitestore.Queries) error {
-		_, err := queries.ExecContext(ctx, `INSERT INTO entries (id, kind, content_md, created_at_ms, updated_at_ms, published_at_ms) VALUES ('01ARZ3NDEKTSV4RRFFQ69G5FC0', 'moment', 'committed only in WAL', 1, 1, 1)`)
+		_, err := queries.ExecContext(ctx, `INSERT INTO entries (id, kind, content_md, created_at_ms, updated_at_ms, published_at_ms, author_user_id) VALUES ('01ARZ3NDEKTSV4RRFFQ69G5FC0', 'moment', 'committed only in WAL', 1, 1, 1, '0123456789abcdef0123456789abcdef')`)
 		return err
 	})
 	if err != nil {
@@ -856,11 +850,11 @@ func TestInspectRejectsMismatchedExpiredAndCorruptRestartState(t *testing.T) {
 		fixture := newExportFixture(t, true)
 		now := time.Date(2026, 8, 11, 2, 0, 0, 0, time.UTC)
 		inspector := testInspector(t, fixture.runtime.Root, fixture.database, &now, math.MaxUint64)
-		result, err := inspector.InspectFile(context.Background(), exportFixtureFile(t, fixture), 3)
+		result, err := inspector.InspectFile(context.Background(), exportFixtureFile(t, fixture), testAuthorization(3))
 		if err != nil {
 			t.Fatal(err)
 		}
-		if _, err := inspector.Resume(context.Background(), result.StagingToken, 4); !domain.HasCode(err, domain.CodeImportStagingInvalid) {
+		if _, err := inspector.Resume(context.Background(), result.StagingToken, testAuthorization(4)); !domain.HasCode(err, domain.CodeImportStagingInvalid) {
 			t.Fatalf("mismatch error = %v", err)
 		}
 	})
@@ -869,12 +863,12 @@ func TestInspectRejectsMismatchedExpiredAndCorruptRestartState(t *testing.T) {
 		fixture := newExportFixture(t, true)
 		now := time.Date(2026, 8, 11, 2, 0, 0, 0, time.UTC)
 		inspector := testInspector(t, fixture.runtime.Root, fixture.database, &now, math.MaxUint64)
-		result, err := inspector.InspectFile(context.Background(), exportFixtureFile(t, fixture), 3)
+		result, err := inspector.InspectFile(context.Background(), exportFixtureFile(t, fixture), testAuthorization(3))
 		if err != nil {
 			t.Fatal(err)
 		}
 		now = now.Add(defaultInspectionTTL)
-		if _, err := inspector.Resume(context.Background(), result.StagingToken, 3); !domain.HasCode(err, domain.CodeImportStagingExpired) {
+		if _, err := inspector.Resume(context.Background(), result.StagingToken, testAuthorization(3)); !domain.HasCode(err, domain.CodeImportStagingExpired) {
 			t.Fatalf("expiry error = %v", err)
 		}
 	})
@@ -883,7 +877,7 @@ func TestInspectRejectsMismatchedExpiredAndCorruptRestartState(t *testing.T) {
 		fixture := newExportFixture(t, true)
 		now := time.Date(2026, 8, 11, 2, 0, 0, 0, time.UTC)
 		inspector := testInspector(t, fixture.runtime.Root, fixture.database, &now, math.MaxUint64)
-		result, err := inspector.InspectFile(context.Background(), exportFixtureFile(t, fixture), 3)
+		result, err := inspector.InspectFile(context.Background(), exportFixtureFile(t, fixture), testAuthorization(3))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -891,7 +885,7 @@ func TestInspectRejectsMismatchedExpiredAndCorruptRestartState(t *testing.T) {
 		if err := os.WriteFile(metadataPath, []byte("{broken\n"), 0o600); err != nil {
 			t.Fatal(err)
 		}
-		if _, err := inspector.Resume(context.Background(), result.StagingToken, 3); !domain.HasCode(err, domain.CodeImportStagingInvalid) {
+		if _, err := inspector.Resume(context.Background(), result.StagingToken, testAuthorization(3)); !domain.HasCode(err, domain.CodeImportStagingInvalid) {
 			t.Fatalf("corrupt error = %v", err)
 		}
 	})
@@ -963,7 +957,7 @@ func TestInspectRejectsHostileArchivesBeforeReadyToken(t *testing.T) {
 			writeArchive(t, name, members, order)
 			now := time.Date(2026, 8, 11, 3, 0, 0, 0, time.UTC)
 			inspector := testInspector(t, fixture.runtime.Root, fixture.database, &now, math.MaxUint64)
-			if _, err := inspector.InspectFile(context.Background(), name, 1); !domain.HasCode(err, test.code) {
+			if _, err := inspector.InspectFile(context.Background(), name, testAuthorization(1)); !domain.HasCode(err, test.code) {
 				t.Fatalf("error = %v, want %s", err, test.code)
 			}
 			assertNoReadyStaging(t, fixture.runtime.Root)
@@ -978,7 +972,7 @@ func TestInspectRejectsDuplicateSymlinkRatioQuotaDiskAndCancellation(t *testing.
 		name := filepath.Join(t.TempDir(), "duplicate.zip")
 		writeArchiveHeaders(t, name, append(order, "README.txt"), members, nil)
 		now := time.Date(2026, 8, 11, 4, 0, 0, 0, time.UTC)
-		if _, err := testInspector(t, fixture.runtime.Root, fixture.database, &now, math.MaxUint64).InspectFile(context.Background(), name, 1); !domain.HasCode(err, domain.CodeExportInvalid) {
+		if _, err := testInspector(t, fixture.runtime.Root, fixture.database, &now, math.MaxUint64).InspectFile(context.Background(), name, testAuthorization(1)); !domain.HasCode(err, domain.CodeExportInvalid) {
 			t.Fatalf("duplicate error = %v", err)
 		}
 	})
@@ -989,7 +983,7 @@ func TestInspectRejectsDuplicateSymlinkRatioQuotaDiskAndCancellation(t *testing.
 		name := filepath.Join(t.TempDir(), "symlink.zip")
 		writeArchiveHeaders(t, name, order, members, map[string]os.FileMode{"README.txt": os.ModeSymlink | 0o777})
 		now := time.Date(2026, 8, 11, 4, 0, 0, 0, time.UTC)
-		if _, err := testInspector(t, fixture.runtime.Root, fixture.database, &now, math.MaxUint64).InspectFile(context.Background(), name, 1); !domain.HasCode(err, domain.CodeExportInvalid) {
+		if _, err := testInspector(t, fixture.runtime.Root, fixture.database, &now, math.MaxUint64).InspectFile(context.Background(), name, testAuthorization(1)); !domain.HasCode(err, domain.CodeExportInvalid) {
 			t.Fatalf("symlink error = %v", err)
 		}
 	})
@@ -1005,7 +999,7 @@ func TestInspectRejectsDuplicateSymlinkRatioQuotaDiskAndCancellation(t *testing.
 		if err != nil {
 			t.Fatal(err)
 		}
-		if _, err := inspector.InspectFile(context.Background(), name, 1); !domain.HasCode(err, domain.CodeExportInvalid) {
+		if _, err := inspector.InspectFile(context.Background(), name, testAuthorization(1)); !domain.HasCode(err, domain.CodeExportInvalid) {
 			t.Fatalf("ratio error = %v", err)
 		}
 	})
@@ -1023,7 +1017,7 @@ func TestInspectRejectsDuplicateSymlinkRatioQuotaDiskAndCancellation(t *testing.
 		if err != nil {
 			t.Fatal(err)
 		}
-		if _, err := inspector.InspectFile(context.Background(), name, 1); !domain.HasCode(err, domain.CodeExportInvalid) {
+		if _, err := inspector.InspectFile(context.Background(), name, testAuthorization(1)); !domain.HasCode(err, domain.CodeExportInvalid) {
 			t.Fatalf("quota error = %v", err)
 		}
 	})
@@ -1035,7 +1029,7 @@ func TestInspectRejectsDuplicateSymlinkRatioQuotaDiskAndCancellation(t *testing.
 		if err != nil {
 			t.Fatal(err)
 		}
-		if _, err := inspector.InspectFile(context.Background(), exportFixtureFile(t, fixture), 1); !domain.HasCode(err, domain.CodeExportInvalid) {
+		if _, err := inspector.InspectFile(context.Background(), exportFixtureFile(t, fixture), testAuthorization(1)); !domain.HasCode(err, domain.CodeExportInvalid) {
 			t.Fatalf("compressed size error = %v", err)
 		}
 	})
@@ -1047,7 +1041,7 @@ func TestInspectRejectsDuplicateSymlinkRatioQuotaDiskAndCancellation(t *testing.
 		if err != nil {
 			t.Fatal(err)
 		}
-		if _, err := inspector.InspectFile(context.Background(), exportFixtureFile(t, fixture), 1); !domain.HasCode(err, domain.CodeExportInvalid) {
+		if _, err := inspector.InspectFile(context.Background(), exportFixtureFile(t, fixture), testAuthorization(1)); !domain.HasCode(err, domain.CodeExportInvalid) {
 			t.Fatalf("expanded size error = %v", err)
 		}
 	})
@@ -1056,7 +1050,7 @@ func TestInspectRejectsDuplicateSymlinkRatioQuotaDiskAndCancellation(t *testing.
 		fixture := newExportFixture(t, true)
 		now := time.Date(2026, 8, 11, 4, 0, 0, 0, time.UTC)
 		inspector := testInspector(t, fixture.runtime.Root, fixture.database, &now, 0)
-		_, err := inspector.InspectFile(context.Background(), exportFixtureFile(t, fixture), 1)
+		_, err := inspector.InspectFile(context.Background(), exportFixtureFile(t, fixture), testAuthorization(1))
 		if !domain.HasCode(err, domain.CodeImportDiskSpaceInsufficient) {
 			t.Fatalf("disk error = %v", err)
 		}
@@ -1068,7 +1062,7 @@ func TestInspectRejectsDuplicateSymlinkRatioQuotaDiskAndCancellation(t *testing.
 		ctx, cancel := context.WithCancel(context.Background())
 		reader := &cancelAfterReader{reader: bytes.NewReader(exportFixtureBytes(t, fixture)), cancel: cancel}
 		now := time.Date(2026, 8, 11, 4, 0, 0, 0, time.UTC)
-		_, err := testInspector(t, fixture.runtime.Root, fixture.database, &now, math.MaxUint64).Inspect(ctx, reader, 1)
+		_, err := testInspector(t, fixture.runtime.Root, fixture.database, &now, math.MaxUint64).Inspect(ctx, reader, testAuthorization(1))
 		if !errors.Is(err, context.Canceled) {
 			t.Fatalf("cancel error = %v", err)
 		}
@@ -1080,18 +1074,18 @@ func TestImportPlanCleansTemporaryStagingOnSuccessInvalidAndCancellation(t *test
 	fixture := newExportFixture(t, true)
 	now := time.Date(2026, 8, 11, 4, 30, 0, 0, time.UTC)
 	inspector := testInspector(t, fixture.runtime.Root, fixture.database, &now, math.MaxUint64)
-	plan, err := inspector.Plan(context.Background(), bytes.NewReader(exportFixtureBytes(t, fixture)), 1)
+	plan, err := inspector.Plan(context.Background(), bytes.NewReader(exportFixtureBytes(t, fixture)), testAuthorization(1))
 	if err != nil || !plan.DryRun || plan.ArchiveSHA256 == "" {
 		t.Fatalf("plan=%#v err=%v", plan, err)
 	}
 	assertImportStagingEmpty(t, fixture.runtime.Root)
-	if _, err := inspector.Plan(context.Background(), strings.NewReader("not a zip"), 1); !domain.HasCode(err, domain.CodeExportInvalid) {
+	if _, err := inspector.Plan(context.Background(), strings.NewReader("not a zip"), testAuthorization(1)); !domain.HasCode(err, domain.CodeExportInvalid) {
 		t.Fatalf("invalid plan error=%v", err)
 	}
 	assertImportStagingEmpty(t, fixture.runtime.Root)
 	ctx, cancel := context.WithCancel(context.Background())
 	reader := &cancelAfterReader{reader: bytes.NewReader(exportFixtureBytes(t, fixture)), cancel: cancel}
-	if _, err := inspector.Plan(ctx, reader, 1); !errors.Is(err, context.Canceled) {
+	if _, err := inspector.Plan(ctx, reader, testAuthorization(1)); !errors.Is(err, context.Canceled) {
 		t.Fatalf("cancelled plan error=%v", err)
 	}
 	assertImportStagingEmpty(t, fixture.runtime.Root)
@@ -1102,7 +1096,7 @@ func TestResumeRejectsDuplicateFTSAndExtraGenerationPath(t *testing.T) {
 		fixture := newExportFixture(t, true)
 		now := time.Date(2026, 8, 11, 4, 35, 0, 0, time.UTC)
 		inspector := testInspector(t, fixture.runtime.Root, fixture.database, &now, math.MaxUint64)
-		inspection, err := inspector.InspectFile(context.Background(), exportFixtureFile(t, fixture), 1)
+		inspection, err := inspector.InspectFile(context.Background(), exportFixtureFile(t, fixture), testAuthorization(1))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -1110,7 +1104,7 @@ func TestResumeRejectsDuplicateFTSAndExtraGenerationPath(t *testing.T) {
 		if err := mutateStagedDatabase(databasePath, `INSERT INTO entry_fts (entry_id, content_text) SELECT entry_id, content_text FROM entry_fts LIMIT 1`); err != nil {
 			t.Fatal(err)
 		}
-		if _, err := inspector.Resume(context.Background(), inspection.StagingToken, 1); !domain.HasCode(err, domain.CodeImportStagingInvalid) {
+		if _, err := inspector.Resume(context.Background(), inspection.StagingToken, testAuthorization(1)); !domain.HasCode(err, domain.CodeImportStagingInvalid) {
 			t.Fatalf("duplicate FTS resume error=%v", err)
 		}
 	})
@@ -1118,7 +1112,7 @@ func TestResumeRejectsDuplicateFTSAndExtraGenerationPath(t *testing.T) {
 		fixture := newExportFixture(t, true)
 		now := time.Date(2026, 8, 11, 4, 36, 0, 0, time.UTC)
 		inspector := testInspector(t, fixture.runtime.Root, fixture.database, &now, math.MaxUint64)
-		inspection, err := inspector.InspectFile(context.Background(), exportFixtureFile(t, fixture), 1)
+		inspection, err := inspector.InspectFile(context.Background(), exportFixtureFile(t, fixture), testAuthorization(1))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -1129,7 +1123,7 @@ func TestResumeRejectsDuplicateFTSAndExtraGenerationPath(t *testing.T) {
 		if err := os.WriteFile(orphan, []byte("orphan"), 0o600); err != nil {
 			t.Fatal(err)
 		}
-		if _, err := inspector.Resume(context.Background(), inspection.StagingToken, 1); !domain.HasCode(err, domain.CodeImportStagingInvalid) {
+		if _, err := inspector.Resume(context.Background(), inspection.StagingToken, testAuthorization(1)); !domain.HasCode(err, domain.CodeImportStagingInvalid) {
 			t.Fatalf("orphan path resume error=%v", err)
 		}
 	})
@@ -1149,7 +1143,7 @@ func TestLiveInspectorFailsFastBehindCommitCoordinator(t *testing.T) {
 	}
 	defer func() { _ = held.Release() }()
 	started := time.Now()
-	_, err = inspector.Inspect(context.Background(), bytes.NewReader(exportFixtureBytes(t, fixture)), 1)
+	_, err = inspector.Inspect(context.Background(), bytes.NewReader(exportFixtureBytes(t, fixture)), testAuthorization(1))
 	if !domain.HasCode(err, domain.CodeImportInProgress) || time.Since(started) > time.Second {
 		t.Fatalf("waiting live inspect error=%v elapsed=%s", err, time.Since(started))
 	}
@@ -1288,8 +1282,8 @@ func TestLinkCardRoundTripsThroughPortableArchive(t *testing.T) {
 	fixture := newExportFixture(t, true)
 	if err := fixture.database.WriteTx(context.Background(), func(queries sqlitestore.Queries) error {
 		if _, err := queries.ExecContext(context.Background(), `
-INSERT INTO entries (id, kind, content_md, created_at_ms, updated_at_ms, published_at_ms)
-VALUES (?, 'moment', '看看这个视频', 1, 1, 1)`, cardEntryID); err != nil {
+INSERT INTO entries (id, kind, content_md, created_at_ms, updated_at_ms, published_at_ms, author_user_id)
+VALUES (?, 'moment', '看看这个视频', 1, 1, 1, '0123456789abcdef0123456789abcdef')`, cardEntryID); err != nil {
 			return err
 		}
 		_, err := queries.ExecContext(context.Background(), `
@@ -1311,7 +1305,7 @@ INSERT INTO entry_link_card (
 	result, err := testInspector(t, fixture.runtime.Root, fixture.database, &now, math.MaxUint64).InspectFile(
 		context.Background(),
 		exportFixtureFile(t, fixture),
-		7,
+		testAuthorization(7),
 	)
 	if err != nil {
 		t.Fatal(err)

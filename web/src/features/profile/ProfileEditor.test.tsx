@@ -15,7 +15,7 @@ import { SessionProvider } from "../auth/SessionProvider";
 import { ProfileEditor } from "./ProfileEditor";
 import { makeAccountLimits } from "../../test/accountFixtures";
 
-const sessionKey = "moment.owner.session.v1";
+const sessionKey = "moment.auth.session.v2";
 const mediaId = "01ARZ3NDEKTSV4RRFFQ69G5FAY";
 
 function accountSessionEnvelope() {
@@ -30,7 +30,7 @@ function accountSessionEnvelope() {
         bio: "",
         avatar_media_id: null,
         cover_media_id: null,
-        role: "owner",
+        role: "admin",
         profile_url: "/owner",
         status: "active",
         username_chosen: true,
@@ -42,7 +42,7 @@ function accountSessionEnvelope() {
 }
 
 const site: SiteIdentity = {
-  ownerId: "00000000000000000000000000000000",
+  profileUserId: "00000000000000000000000000000000",
   username: "owner",
   displayName: "Moment",
   title: "Moment",
@@ -62,28 +62,6 @@ function json(body: unknown, status = 200): Response {
     status,
     headers: { "Content-Type": "application/json" },
   });
-}
-
-function siteEnvelope(
-  coverMediaId: string | null,
-  avatarMediaId: string | null = mediaId,
-) {
-  return {
-    data: {
-      owner_id: "00000000000000000000000000000000",
-      username: "owner",
-      display_name: "更新后的 Moment",
-      title: "更新后的 Moment",
-      bio: "一段简介",
-      timezone: "Asia/Shanghai",
-      public_base_url: null,
-      avatar_media_id: avatarMediaId,
-      cover_media_id: coverMediaId,
-      pinned_post_id: null,
-      comments_enabled: true,
-    },
-    meta: { request_id: "req_profile" },
-  };
 }
 
 describe("profile editor", () => {
@@ -112,12 +90,10 @@ describe("profile editor", () => {
       "fetch",
       vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
         const url = String(input);
-        // The editor's media controls belong to the site owner, and it is the
-        // account session that says who is holding this one.
         if (url === "/api/v1/account/session") {
           return json(accountSessionEnvelope());
         }
-        if (url === "/api/v1/owner/status") {
+        if (url === "/api/v1/status") {
           return json({
             data: {
               initialized: true,
@@ -128,9 +104,17 @@ describe("profile editor", () => {
             meta: { request_id: "req_status" },
           });
         }
-        if (url === "/api/v1/owner/site") {
+        if (url === "/api/v1/account/profile") {
           bodies.push(JSON.parse(String(init?.body)));
-          return json(siteEnvelope(null, null));
+          return json({
+            data: {
+              ...accountSessionEnvelope().data.account,
+              display_name: "更新后的 Moment",
+              avatar_media_id: null,
+              cover_media_id: null,
+            },
+            meta: { request_id: "profile" },
+          });
         }
         return json({}, 404);
       }),
@@ -139,7 +123,14 @@ describe("profile editor", () => {
     render(
       <FeedbackProvider>
         <SessionProvider>
-          <ProfileEditor onSaved={onSaved} site={site} />
+          <ProfileEditor
+            onSaved={onSaved}
+            account={{
+              ...site,
+              userId: site.profileUserId,
+              profileUrl: `/${site.username}`,
+            }}
+          />
         </SessionProvider>
       </FeedbackProvider>,
     );
@@ -190,7 +181,7 @@ describe("profile editor", () => {
         if (String(input) === "/api/v1/account/session") {
           return json(accountSessionEnvelope());
         }
-        if (String(input) === "/api/v1/owner/status") {
+        if (String(input) === "/api/v1/status") {
           return json({
             data: {
               initialized: true,
@@ -207,7 +198,14 @@ describe("profile editor", () => {
     render(
       <FeedbackProvider>
         <SessionProvider>
-          <ProfileEditor onSaved={vi.fn()} site={site} />
+          <ProfileEditor
+            onSaved={vi.fn()}
+            account={{
+              ...site,
+              userId: site.profileUserId,
+              profileUrl: `/${site.username}`,
+            }}
+          />
         </SessionProvider>
       </FeedbackProvider>,
     );
@@ -368,14 +366,6 @@ function png(name = "face.png"): File {
   return new File(["image bytes"], name, { type: "image/png" });
 }
 
-/**
- * A member editing their own account.
- *
- * The owner's editor writes to the site row and reaches media through the
- * owner routes; neither is available to a member, and the whole point of the
- * account picture endpoints is that they need neither. These cases hold the
- * member half of that union to the shape it actually has to have.
- */
 describe("profile editor for a member", () => {
   beforeEach(() => {
     window.sessionStorage.setItem(

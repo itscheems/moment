@@ -14,7 +14,7 @@ func TestArticlePreviewIsConsistentAcrossDirectAndAPIReadSurfaces(t *testing.T) 
 	fixture := newPostCLIFixture(t)
 	application := momentTestApplication()
 	t.Setenv("MOMENT_TOKEN", fixture.token)
-	direct := []string{"--data-dir", fixture.dataDir}
+	direct := []string{"--data-dir", fixture.dataDir, "--as", "writer"}
 	api := []string{"--url", fixture.server.URL}
 	read := func(mode []string, args ...string) any {
 		t.Helper()

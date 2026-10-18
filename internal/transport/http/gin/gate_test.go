@@ -11,27 +11,33 @@ import (
 	"github.com/moment/moment/internal/app"
 	"github.com/moment/moment/internal/auth"
 	"github.com/moment/moment/internal/doctor"
+	"github.com/moment/moment/internal/domain"
 	"github.com/moment/moment/internal/runtimefs"
 	sqlitestore "github.com/moment/moment/internal/storage/sqlite"
 )
 
 // unreadableAccounts is what a half-applied migration or a corrupted page looks
 // like from above the storage layer: the file opens, and nothing in it answers.
-type unreadableAccounts struct{}
+type unreadableAccounts struct{ failure error }
 
 var errAccountsUnreadable = errors.New("database disk image is malformed")
 
-func (unreadableAccounts) ReadAccounts(context.Context, func(app.AccountStore, app.SessionStore) error) error {
-	return errAccountsUnreadable
+func (store unreadableAccounts) ReadAccounts(context.Context, func(app.AccountStore, app.SessionStore) error) error {
+	return store.failure
 }
 
-func (unreadableAccounts) WriteAccounts(context.Context, func(app.AccountStore, app.SessionStore) error) error {
-	return errAccountsUnreadable
+func (store unreadableAccounts) WriteAccounts(context.Context, func(app.AccountStore, app.SessionStore) error) error {
+	return store.failure
 }
 
 // brokenAccountsFixture serves doctor from a real runtime while every account
 // read fails.
 func brokenAccountsFixture(t *testing.T) (http.Handler, string) {
+	t.Helper()
+	return accountFailureFixture(t, errAccountsUnreadable)
+}
+
+func accountFailureFixture(t *testing.T, failure error) (http.Handler, string) {
 	t.Helper()
 	root := filepath.Join(t.TempDir(), "data")
 	runtimeState, err := runtimefs.Initialize(context.Background(), runtimefs.Config{DataDir: root, Environment: runtimefs.EnvironmentDevelopment})
@@ -42,8 +48,9 @@ func brokenAccountsFixture(t *testing.T) (http.Handler, string) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	testAccounts(t, database, runtimeState)
 	t.Cleanup(func() { _ = database.Close() })
-	credential, err := auth.InitializeOffline(context.Background(), runtimeState, auth.Options{})
+	_, err = auth.InitializeOffline(context.Background(), runtimeState, auth.Options{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -58,60 +65,50 @@ func brokenAccountsFixture(t *testing.T) (http.Handler, string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	accounts, err := app.NewAccountService(unreadableAccounts{})
+	accounts, err := app.NewAccountService(unreadableAccounts{failure: failure})
 	if err != nil {
 		t.Fatal(err)
 	}
 	engine, err := New(Config{
-		Assets:    testAssets(),
-		OwnerAuth: manager,
-		Accounts:  accounts,
-		Doctor:    reporter,
-		Readiness: func(context.Context) error { return nil },
-		RequestID: func() string { return "req_broken" },
+		Assets:        testAssets(),
+		SessionSigner: manager,
+		Accounts:      accounts,
+		Doctor:        reporter,
+		Readiness:     func(context.Context) error { return nil },
+		RequestID:     func() string { return "req_broken" },
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	return engine, credential.Token
+	return engine, issueTestAPIToken(t, testAccounts(t, database, runtimeState))
 }
 
-// The owner token has to keep working when the database is what is broken.
-//
-// That is the reason it lives in secrets.json rather than in a row, and doctor
-// and credential repair are the two things it exists to reach. Looking the
-// owner account up before honouring the token made both unreachable in exactly
-// the state they were built for, and reported the outage as a 500 from a route
-// whose whole job is explaining outages.
-func TestBearerReachesDoctorWhileTheAccountsTableIsUnreadable(t *testing.T) {
+// A valid credential grants nothing when the account database cannot answer.
+func TestBearerRejectsProtectedRoutesWhileTheAccountDatabaseIsUnreadable(t *testing.T) {
 	engine, token := brokenAccountsFixture(t)
 
-	for _, path := range []string{"/api/v1/owner/doctor", "/api/v1/owner/status"} {
+	for _, path := range []string{"/api/v1/diagnostics", "/api/v1/account/security", "/api/v1/account/session"} {
 		request := httptest.NewRequest(http.MethodGet, path, nil)
 		request.Header.Set("Authorization", "Bearer "+token)
 		response := performRequest(engine, request)
-		if response.Code != http.StatusOK {
+		if response.Code != http.StatusServiceUnavailable {
 			t.Fatalf("%s = %d, body = %s", path, response.Code, response.Body.String())
+		}
+		if code := decodeError(t, response.Body).Error.Code; code != "AUTH_UNAVAILABLE" {
+			t.Fatalf("%s = %s, want AUTH_UNAVAILABLE", path, code)
 		}
 	}
 
-	// A token that is not the owner's is still refused, so the degraded path
-	// admits nobody the working one would not.
-	request := httptest.NewRequest(http.MethodGet, "/api/v1/owner/doctor", nil)
+	// Invalid credentials remain an authentication refusal, independently of storage.
+	request := httptest.NewRequest(http.MethodGet, "/api/v1/diagnostics", nil)
 	request.Header.Set("Authorization", "Bearer not-the-owner-token")
 	if response := performRequest(engine, request); response.Code != http.StatusUnauthorized {
 		t.Fatalf("a wrong token = %d, want 401: %s", response.Code, response.Body.String())
 	}
 }
 
-// What the degraded grant does not carry is a name.
-//
-// Every route in the account tiers either edits one account or signs something
-// with it, and neither is expressible without knowing which. The refusal is the
-// point: an admitted caller with no id would otherwise author content signed by
-// nobody.
-func TestBearerWithNoReadableOwnerRowCannotActAsAnAccount(t *testing.T) {
-	engine, token := brokenAccountsFixture(t)
+func TestBearerCannotAuthorizeAMissingAccount(t *testing.T) {
+	engine, token := accountFailureFixture(t, domain.NewError(domain.CodeAccountNotFound, "account does not exist", nil))
 
 	request := httptest.NewRequest(http.MethodGet, "/api/v1/account/session", nil)
 	request.Header.Set("Authorization", "Bearer "+token)

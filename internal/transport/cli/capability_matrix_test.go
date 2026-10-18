@@ -96,7 +96,7 @@ func TestCheckedInCapabilityMatrixMatchesEveryRegisteredLeaf(t *testing.T) {
 		"supported": true, "offline": true, "online_maintenance": true,
 		"deep_or_summary": true, "summary_only": true, "unsupported": true,
 	}
-	validAuth := map[string]bool{"none": true, "local_data_access": true, "owner_token": true, "not_applicable": true}
+	validAuth := map[string]bool{"none": true, "local_data_access": true, "local_account": true, "account_token": true, "not_applicable": true}
 	for _, row := range matrix.Commands {
 		if row.Command <= previous {
 			t.Fatalf("matrix commands are not strictly sorted: %q after %q", row.Command, previous)
@@ -147,7 +147,7 @@ func TestCheckedInCapabilityMatrixMatchesEveryRegisteredLeaf(t *testing.T) {
 		if row.ExpectedExits[1] != ExitInvalidInput || row.ExpectedExits[len(row.ExpectedExits)-1] != ExitInternal {
 			t.Fatalf("%s omits common input/internal exits: %#v", row.Command, row.ExpectedExits)
 		}
-		if (row.Command == "init" || row.Command == "owner init") &&
+		if row.Command == "init" &&
 			!reflect.DeepEqual(row.Direct.Locks, []string{"import:exclusive", "serve:exclusive"}) {
 			t.Fatalf("%s initialization lock order = %#v", row.Command, row.Direct.Locks)
 		}
@@ -183,7 +183,8 @@ func TestEveryMatrixModeExecutesOrRejectsBeforeHandlerAndPrompt(t *testing.T) {
 		application.MustRegisterLeaf(leaf)
 	}
 	positional := map[string][]string{
-		"post get": {"01ARZ3NDEKTSV4RRFFQ69G5FAV"}, "post update": {"01ARZ3NDEKTSV4RRFFQ69G5FAV"},
+		"auth revoke-token": {"0123456789abcdef0123456789abcdef"},
+		"post get":          {"01ARZ3NDEKTSV4RRFFQ69G5FAV"}, "post update": {"01ARZ3NDEKTSV4RRFFQ69G5FAV"},
 		"post delete": {"01ARZ3NDEKTSV4RRFFQ69G5FAV"}, "post pin": {"01ARZ3NDEKTSV4RRFFQ69G5FAV"},
 		"post repost": {"01ARZ3NDEKTSV4RRFFQ69G5FAV"}, "post unrepost": {"01ARZ3NDEKTSV4RRFFQ69G5FAV"},
 		"post unpin": {"01ARZ3NDEKTSV4RRFFQ69G5FAV"}, "comment list": {"01ARZ3NDEKTSV4RRFFQ69G5FAV"},
@@ -199,6 +200,8 @@ func TestEveryMatrixModeExecutesOrRejectsBeforeHandlerAndPrompt(t *testing.T) {
 		"link unfurl":          {"https://example.com/a"},
 		"login":                {"github"},
 		"user approve":         {"applicant"},
+		"user set-role":        {"applicant"},
+		"site set-profile":     {"applicant"},
 		"user suspend":         {"applicant"},
 		"user identities":      {"applicant"},
 		"user delete":          {"applicant"},

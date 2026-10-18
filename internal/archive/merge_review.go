@@ -86,7 +86,6 @@ type MergeReviewEntity struct {
 	ParentID  *string `json:"parent_id,omitempty"`
 	// Kind is the post kind; comments and accounts leave it unset.
 	Kind             *string    `json:"kind,omitempty"`
-	AuthorKind       *string    `json:"author_kind,omitempty"`
 	AuthorName       *string    `json:"author_name,omitempty"`
 	AuthorUserID     *string    `json:"author_user_id,omitempty"`
 	ReplyToCommentID *string    `json:"reply_to_comment_id,omitempty"`
@@ -183,7 +182,7 @@ var mergeReviewFieldKeys = map[MergeEntityKind]map[string]string{
 		"media": "media", "location": "location", "link_cards": "link_cards",
 	},
 	MergeComment: {
-		"entry_id": "entry_id", "parent_id": "parent_id", "author_kind": "author_kind",
+		"entry_id": "entry_id", "parent_id": "parent_id",
 		"author_name": "author_name", "author_user_id": "author_user_id",
 		"reply_to_comment_id": "reply_to_comment_id", "content_md": "content_md",
 		"created_at": "created_at", "media": "media", "location": "location", "pinned": "pinned",
@@ -355,11 +354,11 @@ func reviewEntry(value sqlitestore.ArchiveEntry, source MergeReviewSource, media
 }
 
 func reviewComment(value sqlitestore.ArchiveComment, source MergeReviewSource, mediaByID map[string]sqlitestore.ArchiveMedia) MergeReviewEntity {
-	entryID, authorKind, authorName, pinned := value.EntryID, value.AuthorKind, value.AuthorName, value.Pinned
+	entryID, authorName, pinned := value.EntryID, value.AuthorName, value.Pinned
 	body := value.ContentMD
 	return MergeReviewEntity{
 		ID: value.ID, ContentMD: &body, EntryID: &entryID,
-		ParentID: cloneString(value.ParentID), AuthorKind: &authorKind, AuthorName: &authorName,
+		ParentID: cloneString(value.ParentID), AuthorName: &authorName,
 		AuthorUserID: cloneString(value.AuthorUserID), ReplyToCommentID: cloneString(value.ReplyToCommentID),
 		Pinned: &pinned, Location: reviewLocation(value.Location),
 		CreatedAt: archiveTime(value.CreatedAtMS), Media: reviewUsages(value.Media, source, mediaByID),

@@ -35,7 +35,7 @@ afterEach(() => {
 });
 
 const site: SiteIdentity = {
-  ownerId: "00000000000000000000000000000000",
+  profileUserId: "00000000000000000000000000000000",
   username: "owner",
   displayName: "Moment",
   title: "乔乔的 Moment",
@@ -138,6 +138,13 @@ function makeArticle(
   overrides: Partial<PublicReadArticlePost["article"]> = {},
 ): PublicReadArticlePost {
   return {
+    author: {
+      userId: "00000000000000000000000000000000",
+      username: "owner",
+      displayName: "Moment",
+      avatarMediaId: null,
+      profileUrl: "/owner",
+    },
     id: "01K2ABCDEF0123456789ABCDE0",
     kind: "article",
     contentMd: null,
@@ -416,6 +423,13 @@ describe("the post detail route", () => {
   }
 
   const wirePost = {
+    author: {
+      user_id: "00000000000000000000000000000000",
+      username: "owner",
+      display_name: "Moment",
+      avatar_media_id: null,
+      profile_url: "/owner",
+    },
     id: "01K2ABCDEF0123456789ABCDE0",
     kind: "moment",
     content_md: "今天下了一场雨。",

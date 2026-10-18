@@ -75,44 +75,6 @@ export const RESERVED_HANDLES = new Set([
   "www",
 ]);
 
-/**
- * Link every mention in the prose to the profile it names.
- *
- * This used to be handed a username, because a single-owner instance had
- * exactly one handle worth recognising and everything else was noise. A
- * mention can now name anybody -- the composer's autocomplete searches every
- * approved account -- and an autocompleted name that renders as flat text is
- * a stranger result than no autocomplete at all.
- *
- * So the shape of a handle is the whole test, and knowing who exists is
- * deliberately not this function's business. It could not be: deciding whether
- * a word is a link would mean a lookup per render. A handle belonging to
- * nobody lands on the profile route and renders "no such user" -- the same
- * answer every other site gives, and a better one than withholding a real
- * mention because a lookup had not come back yet.
- *
- * Case is accepted and canonicalised. Handles are lowercase by rule, nobody
- * typing one is thinking about that, and `@Cheems` naming a different person
- * than `@cheems` is not something this instance can express. What was typed
- * stays on screen; only the address it points at is lowered.
- *
- * A mention only becomes a link once the handle is known to name somebody. It
- * is text an author typed, not a reference anything checked: this instance
- * shipped with the handle `owner` and its owner renamed, so every `@owner`
- * written before that named nobody while still reading as a link to a profile
- * page that answers "no such user". An unresolved handle stays the text it was
- * typed as, which is also the right answer for a typo and for an account that
- * has since been removed.
- *
- * The other exception is a handle the site has reserved for itself. `@login`,
- * `@search` and `@assets` name pages and asset directories, and the server
- * refuses to create an account under any of them -- so unlike an unknown handle,
- * which may belong to somebody by tomorrow, a link to one is wrong for good.
- * Following it does not even reach a profile: these are plain anchors, so the
- * reader leaves the page they were reading and lands on the sign-in form or on
- * a directory of bundled assets. Those stay as the text they were typed as, the
- * same answer `@ab` and `@some-slug` already get.
- */
 /** collectHandles reports the handles a body mentions, reserved ones excluded. */
 export function collectHandles(html: string): string[] {
   if (!html.includes("@")) return [];

@@ -81,13 +81,7 @@ type InspectOptions struct {
 	ImportLockWait time.Duration
 }
 
-// ImportCounts are portable record counts safe for Web and CLI preview.
-//
-// Users and Identities are reported for the same reason the other three are:
-// commit replaces the whole authority, so a preview that names only content is
-// telling the owner about part of what they are about to lose. Neither field is
-// omitted when zero -- a preview that silently drops "users" reads as an import
-// that leaves accounts alone, which is the one thing it never does.
+// ImportCounts reports the complete portable entity graph considered for replacement.
 type ImportCounts struct {
 	Entries  int64 `json:"entries"`
 	Comments int64 `json:"comments"`
@@ -175,23 +169,23 @@ type StagingClaim struct {
 	StageRoot     string
 	ArchiveSHA    string
 	ExpiresAt     time.Time
-	SessionEpoch  uint64
+	Authorization Authorization
 	Counts        ImportCounts
 	ExpandedBytes int64
 	MediaBytes    int64
 }
 
 type stagingMetadata struct {
-	TokenHash    string `json:"token_hash"`
-	ExpiresAtMS  int64  `json:"expires_at_ms"`
-	ArchiveSHA   string `json:"archive_sha256"`
-	InstanceID   string `json:"instance_id"`
-	SessionEpoch uint64 `json:"session_epoch"`
-	GenerationID string `json:"generation_id"`
-	State        string `json:"state"`
+	TokenHash     string        `json:"token_hash"`
+	ExpiresAtMS   int64         `json:"expires_at_ms"`
+	ArchiveSHA    string        `json:"archive_sha256"`
+	InstanceID    string        `json:"instance_id"`
+	Authorization Authorization `json:"authorization"`
+	GenerationID  string        `json:"generation_id"`
+	State         string        `json:"state"`
 }
 
-// Inspector validates hostile v1 archives and builds isolated, restartable
+// Inspector validates hostile v2 archives and builds isolated, restartable
 // current-schema staging generations.
 type Inspector struct {
 	dataDir        string
@@ -271,13 +265,13 @@ func NewInspector(options InspectOptions) (*Inspector, error) {
 }
 
 // InspectFile securely opens one regular non-symlink local archive.
-func (inspector *Inspector) InspectFile(ctx context.Context, archivePath string, sessionEpoch uint64) (Inspection, error) {
+func (inspector *Inspector) InspectFile(ctx context.Context, archivePath string, subject Authorization) (Inspection, error) {
 	file, err := openArchiveInput(archivePath)
 	if err != nil {
 		return Inspection{}, err
 	}
 	defer func() { _ = file.Close() }()
-	return inspector.Inspect(ctx, file, sessionEpoch)
+	return inspector.Inspect(ctx, file, subject)
 }
 
 func openArchiveInput(archivePath string) (*os.File, error) {
@@ -306,12 +300,12 @@ func openArchiveInput(archivePath string) (*os.File, error) {
 // Inspect streams one archive into an isolated staging directory, validates it
 // completely, rebuilds current schema and FTS, and finally publishes a ready
 // token hash. Active CURRENT data is never opened for mutation.
-func (inspector *Inspector) Inspect(ctx context.Context, source io.Reader, sessionEpoch uint64) (result Inspection, resultErr error) {
+func (inspector *Inspector) Inspect(ctx context.Context, source io.Reader, subject Authorization) (result Inspection, resultErr error) {
 	if inspector == nil || source == nil {
 		return Inspection{}, errors.New("import inspector and archive input are required")
 	}
-	if sessionEpoch == 0 {
-		return Inspection{}, domain.NewError(domain.CodeUnauthorized, "owner session epoch is required for import inspection", nil)
+	if !subject.Valid() {
+		return Inspection{}, domain.NewError(domain.CodeUnauthorized, "an account and credential are required for import inspection", nil)
 	}
 	if err := ctx.Err(); err != nil {
 		return Inspection{}, err
@@ -325,13 +319,13 @@ func (inspector *Inspector) Inspect(ctx context.Context, source io.Reader, sessi
 		return Inspection{}, fmt.Errorf("acquire import inspection lock: %w", err)
 	}
 	defer func() { resultErr = errors.Join(resultErr, held.Release()) }()
-	return inspector.inspectWithinLocks(ctx, source, sessionEpoch, runtimeState, held, true)
+	return inspector.inspectWithinLocks(ctx, source, subject, runtimeState, held, true)
 }
 
 // Plan validates and rebuilds the archive with the same hostile-input path as
 // Inspect, then durably removes its private staging directory before return.
 // It never cleans or replaces a pre-existing staging operation.
-func (inspector *Inspector) Plan(ctx context.Context, source io.Reader, sessionEpoch uint64) (result ImportPlan, resultErr error) {
+func (inspector *Inspector) Plan(ctx context.Context, source io.Reader, subject Authorization) (result ImportPlan, resultErr error) {
 	if inspector == nil || source == nil {
 		return ImportPlan{}, errors.New("import inspector and archive input are required")
 	}
@@ -344,7 +338,7 @@ func (inspector *Inspector) Plan(ctx context.Context, source io.Reader, sessionE
 		return ImportPlan{}, fmt.Errorf("acquire import plan lock: %w", err)
 	}
 	defer func() { resultErr = errors.Join(resultErr, held.Release()) }()
-	return inspector.planWithinLocks(ctx, source, sessionEpoch, runtimeState, held)
+	return inspector.planWithinLocks(ctx, source, subject, runtimeState, held)
 }
 
 func (inspector *Inspector) acquireImportSet(ctx context.Context, runtimeState *runtimefs.Runtime) (*runtimefs.LeaseSet, error) {
@@ -361,7 +355,7 @@ func (inspector *Inspector) acquireImportSet(ctx context.Context, runtimeState *
 	return held, err
 }
 
-func (inspector *Inspector) planWithinLocks(ctx context.Context, source io.Reader, sessionEpoch uint64, runtimeState *runtimefs.Runtime, held *runtimefs.LeaseSet) (result ImportPlan, resultErr error) {
+func (inspector *Inspector) planWithinLocks(ctx context.Context, source io.Reader, subject Authorization, runtimeState *runtimefs.Runtime, held *runtimefs.LeaseSet) (result ImportPlan, resultErr error) {
 	parent := filepath.Join(runtimeState.Root, "staging", "import")
 	before, err := os.ReadDir(parent)
 	if err != nil {
@@ -408,7 +402,7 @@ func (inspector *Inspector) planWithinLocks(ctx context.Context, source io.Reade
 			}
 		}
 	}()
-	inspection, err := inspector.inspectWithinLocks(ctx, source, sessionEpoch, runtimeState, held, false)
+	inspection, err := inspector.inspectWithinLocks(ctx, source, subject, runtimeState, held, false)
 	if err != nil {
 		return ImportPlan{}, err
 	}
@@ -423,13 +417,13 @@ func importPlanFromInspection(value Inspection) ImportPlan {
 	}
 }
 
-func (inspector *Inspector) inspectWithinLocks(ctx context.Context, source io.Reader, sessionEpoch uint64, runtimeState *runtimefs.Runtime, held *runtimefs.LeaseSet, cleanupExisting bool) (result Inspection, resultErr error) {
+func (inspector *Inspector) inspectWithinLocks(ctx context.Context, source io.Reader, subject Authorization, runtimeState *runtimefs.Runtime, held *runtimefs.LeaseSet, cleanupExisting bool) (result Inspection, resultErr error) {
 	if inspector == nil || source == nil || runtimeState == nil || held == nil ||
 		!held.BelongsTo(runtimeState.Root) || !held.Holds(runtimefs.ImportLock, runtimefs.Exclusive) {
 		return Inspection{}, runtimefs.ErrInsufficientLocks
 	}
-	if sessionEpoch == 0 {
-		return Inspection{}, domain.NewError(domain.CodeUnauthorized, "owner session epoch is required for import inspection", nil)
+	if !subject.Valid() {
+		return Inspection{}, domain.NewError(domain.CodeUnauthorized, "an account and credential are required for import inspection", nil)
 	}
 	if err := ctx.Err(); err != nil {
 		return Inspection{}, err
@@ -443,7 +437,7 @@ func (inspector *Inspector) inspectWithinLocks(ctx context.Context, source io.Re
 	if now.IsZero() {
 		return Inspection{}, errors.New("import inspection clock returned zero time")
 	}
-	if err := inspector.checkActive(runtimeState.Root, now, sessionEpoch, cleanupExisting); err != nil {
+	if err := inspector.checkActive(runtimeState.Root, now, cleanupExisting); err != nil {
 		return Inspection{}, err
 	}
 
@@ -453,7 +447,7 @@ func (inspector *Inspector) inspectWithinLocks(ctx context.Context, source io.Re
 	}
 	metadata := stagingMetadata{
 		ExpiresAtMS: now.Add(inspector.tokenTTL).UnixMilli(), InstanceID: runtimeState.Instance.ID,
-		SessionEpoch: sessionEpoch, GenerationID: generationID, State: stagingFailed,
+		Authorization: subject, GenerationID: generationID, State: stagingFailed,
 	}
 	metadataWritten := false
 	ready := false
@@ -549,8 +543,8 @@ func (inspector *Inspector) inspectWithinLocks(ctx context.Context, source io.Re
 
 // Resume validates an unexpired ready token and every persisted binding after
 // process restart without consuming the token.
-func (inspector *Inspector) Resume(ctx context.Context, token string, sessionEpoch uint64) (Inspection, error) {
-	state, document, stageRoot, lease, err := inspector.loadReady(ctx, token, sessionEpoch)
+func (inspector *Inspector) Resume(ctx context.Context, token string, subject Authorization) (Inspection, error) {
+	state, document, stageRoot, lease, err := inspector.loadReady(ctx, token, subject)
 	if err != nil {
 		return Inspection{}, err
 	}
@@ -568,8 +562,8 @@ func (inspector *Inspector) Resume(ctx context.Context, token string, sessionEpo
 
 // Claim atomically changes one verified ready token to committing. A second
 // claim or any restart attempt against committing/used/failed state is rejected.
-func (inspector *Inspector) Claim(ctx context.Context, token string, sessionEpoch uint64) (StagingClaim, error) {
-	state, document, stageRoot, lease, err := inspector.loadReady(ctx, token, sessionEpoch)
+func (inspector *Inspector) Claim(ctx context.Context, token string, subject Authorization) (StagingClaim, error) {
+	state, document, stageRoot, lease, err := inspector.loadReady(ctx, token, subject)
 	if err != nil {
 		return StagingClaim{}, err
 	}
@@ -583,11 +577,11 @@ func (inspector *Inspector) Claim(ctx context.Context, token string, sessionEpoc
 
 // ClaimWithinLocks consumes a ready token while the caller retains one
 // continuous import.lock ownership for the complete commit state machine.
-func (inspector *Inspector) ClaimWithinLocks(ctx context.Context, runtimeState *runtimefs.Runtime, token string, sessionEpoch uint64, held *runtimefs.LeaseSet) (StagingClaim, error) {
+func (inspector *Inspector) ClaimWithinLocks(ctx context.Context, runtimeState *runtimefs.Runtime, token string, subject Authorization, held *runtimefs.LeaseSet) (StagingClaim, error) {
 	if inspector == nil || runtimeState == nil || held == nil || !held.BelongsTo(runtimeState.Root) || !held.Holds(runtimefs.ImportLock, runtimefs.Exclusive) {
 		return StagingClaim{}, runtimefs.ErrInsufficientLocks
 	}
-	state, document, stageRoot, err := inspector.loadReadyHeld(ctx, runtimeState, token, sessionEpoch)
+	state, document, stageRoot, err := inspector.loadReadyHeld(ctx, runtimeState, token, subject)
 	if err != nil {
 		return StagingClaim{}, err
 	}
@@ -607,7 +601,7 @@ func (inspector *Inspector) newClaim(ctx context.Context, state stagingMetadata,
 		GenerationID: state.GenerationID, ArchivePath: filepath.Join(stageRoot, "archive.zip"),
 		Generation: stagingGeneration(stageRoot, state.GenerationID), MetadataPath: filepath.Join(stageRoot, "staging.json"),
 		StageRoot: stageRoot, ArchiveSHA: state.ArchiveSHA, ExpiresAt: time.UnixMilli(state.ExpiresAtMS).UTC(),
-		SessionEpoch:  state.SessionEpoch,
+		Authorization: state.Authorization,
 		Counts:        portable.counts,
 		ExpandedBytes: document.Limits.ExpandedBytes, MediaBytes: portable.mediaBytes,
 	}, nil
@@ -702,10 +696,10 @@ func (inspector *Inspector) preflight(ctx context.Context, archivePath string) (
 		return manifest{}, importInvalid("archive ZIP central directory is invalid", err)
 	}
 	defer func() { _ = reader.Close() }()
-	// The budget is stated against the largest v1 layout, and the floor
+	// The budget is stated against the largest v2 layout, and the floor
 	// against the smallest, so all of them remain readable.
 	maxMembers := inspector.limits.MaxMedia + int64(len(articlePortableMembers)+len(portableTrailerMembers))
-	if int64(len(reader.File)) > maxMembers || len(reader.File) < len(legacyPortableMembers)+len(portableTrailerMembers) {
+	if int64(len(reader.File)) > maxMembers || len(reader.File) < len(articlePortableMembers)+len(portableTrailerMembers) {
 		return manifest{}, importInvalid("archive ZIP member count exceeds the inspection budget", nil)
 	}
 	seen := make(map[string]struct{}, len(reader.File))
@@ -827,7 +821,7 @@ func summarizePortable(ctx context.Context, archivePath string, document manifes
 	for _, file := range reader.File {
 		files[file.Name] = file
 	}
-	result := portableSummary{counts: portableImportCounts(document, archiveCarriesAccounts(files), archiveCarriesArticles(files))}
+	result := portableSummary{counts: portableImportCounts(document)}
 	_, err = validateJSONLines[entryRecord](ctx, files["data/entries.jsonl"], []string{"id", "kind", "content_md", "created_at", "updated_at", "published_at", "media"}, func(value entryRecord, _ map[string]json.RawMessage) error {
 		if _, err := domainLocation(value.Location); err != nil {
 			return err
@@ -854,7 +848,7 @@ func summarizePortable(ctx context.Context, archivePath string, document manifes
 	if err != nil {
 		return portableSummary{}, err
 	}
-	_, err = validateJSONLines[mediaRecord](ctx, files["data/media.jsonl"], []string{"id", "sha256", "archive_path", "original_name", "mime_type", "byte_size", "width", "height", "created_at"}, func(value mediaRecord, _ map[string]json.RawMessage) error {
+	_, err = validateJSONLines[mediaRecord](ctx, files["data/media.jsonl"], []string{"id", "sha256", "archive_path", "original_name", "mime_type", "byte_size", "width", "height", "created_at", "grants"}, func(value mediaRecord, _ map[string]json.RawMessage) error {
 		if value.ByteSize > math.MaxInt64-result.mediaBytes {
 			return errors.New("portable media byte count overflows")
 		}
@@ -1219,7 +1213,7 @@ func rebuildPortableGeneration(ctx context.Context, parent *runtimefs.Runtime, g
 		files[file.Name] = file
 	}
 
-	_, err = validateJSONLines[mediaRecord](ctx, files["data/media.jsonl"], []string{"id", "sha256", "archive_path", "original_name", "mime_type", "byte_size", "width", "height", "created_at"}, func(value mediaRecord, _ map[string]json.RawMessage) error {
+	_, err = validateJSONLines[mediaRecord](ctx, files["data/media.jsonl"], []string{"id", "sha256", "archive_path", "original_name", "mime_type", "byte_size", "width", "height", "created_at", "grants"}, func(value mediaRecord, _ map[string]json.RawMessage) error {
 		created, err := parsePortableTimestamp(value.CreatedAt)
 		if err != nil {
 			return err
@@ -1232,8 +1226,12 @@ func rebuildPortableGeneration(ctx context.Context, parent *runtimefs.Runtime, g
 		if err != nil {
 			return err
 		}
+		unreferenced, err := portableMediaRetention(value.UnreferencedSince)
+		if err != nil {
+			return err
+		}
 		metadata := sqlitestore.ArchiveMedia{
-			ID: value.ID, SHA256: value.SHA256, StoragePath: storagePath,
+			UnreferencedSinceMS: unreferenced, ID: value.ID, SHA256: value.SHA256, StoragePath: storagePath,
 			OriginalName: value.OriginalName, MIMEType: value.MIMEType, ByteSize: value.ByteSize,
 			Width: value.Width, Height: value.Height, CreatedAtMS: created.UnixMilli(),
 		}
@@ -1253,8 +1251,6 @@ func rebuildPortableGeneration(ctx context.Context, parent *runtimefs.Runtime, g
 		return err
 	}
 
-	// The site record is read before content because it answers who the owner
-	// is, and the owner account has to exist before anything can refer to it.
 	site, err := readPortableSite(ctx, files)
 	if err != nil {
 		return err
@@ -1262,7 +1258,22 @@ func rebuildPortableGeneration(ctx context.Context, parent *runtimefs.Runtime, g
 	if err := validateArchiveSite(archiveSiteOf(site), parent.IsDevelopment()); err != nil {
 		return err
 	}
-	if err := importPortableAccounts(ctx, importer, files, document, site); err != nil {
+	if err := importPortableAccounts(ctx, importer, files); err != nil {
+		return err
+	}
+
+	if _, err := validateJSONLines[mediaRecord](ctx, files["data/media.jsonl"], portableMediaFields, func(value mediaRecord, _ map[string]json.RawMessage) error {
+		grants, err := archiveMediaGrants(value.Grants)
+		if err != nil {
+			return err
+		}
+		for _, grant := range grants {
+			if err := importer.InsertMediaGrant(ctx, value.ID, grant); err != nil {
+				return err
+			}
+		}
+		return nil
+	}); err != nil {
 		return err
 	}
 
@@ -1271,13 +1282,12 @@ func rebuildPortableGeneration(ctx context.Context, parent *runtimefs.Runtime, g
 	// stream finds each article's words exactly when the envelope that needs
 	// them is being written.
 	var bodies *jsonLinesReader[entryArticleRecord]
-	if archiveCarriesArticles(files) {
-		bodies, err = openJSONLines[entryArticleRecord](ctx, files["data/entry_articles.jsonl"], portableEntryArticleFields)
-		if err != nil {
-			return err
-		}
-		defer func() { resultErr = errors.Join(resultErr, bodies.close()) }()
+
+	bodies, err = openJSONLines[entryArticleRecord](ctx, files["data/entry_articles.jsonl"], portableEntryArticleFields)
+	if err != nil {
+		return err
 	}
+	defer func() { resultErr = errors.Join(resultErr, bodies.close()) }()
 
 	_, err = validateJSONLines[entryRecord](ctx, files["data/entries.jsonl"], portableEntryFields, func(value entryRecord, _ map[string]json.RawMessage) error {
 		created, err := parsePortableTimestamp(value.CreatedAt)
@@ -1360,19 +1370,17 @@ func rebuildPortableGeneration(ctx context.Context, parent *runtimefs.Runtime, g
 		}
 	}
 
-	if archiveCarriesArticles(files) {
-		if _, err := validateJSONLines[articleDraftRecord](ctx, files["data/article_drafts.jsonl"], portableArticleDraftFields, func(value articleDraftRecord, _ map[string]json.RawMessage) error {
-			draft, err := archiveArticleDraftOf(value)
-			if err != nil {
-				return err
-			}
-			return importer.InsertArticleDraft(ctx, draft)
-		}); err != nil {
+	if _, err := validateJSONLines[articleDraftRecord](ctx, files["data/article_drafts.jsonl"], portableArticleDraftFields, func(value articleDraftRecord, _ map[string]json.RawMessage) error {
+		draft, err := archiveArticleDraftOf(value)
+		if err != nil {
 			return err
 		}
+		return importer.InsertArticleDraft(ctx, draft)
+	}); err != nil {
+		return err
 	}
 
-	_, err = validateJSONLines[commentRecord](ctx, files["data/comments.jsonl"], []string{"id", "entry_id", "parent_id", "author_kind", "author_name", "content_md", "created_at"}, func(value commentRecord, fields map[string]json.RawMessage) error {
+	_, err = validateJSONLines[commentRecord](ctx, files["data/comments.jsonl"], []string{"id", "entry_id", "parent_id", "author_name", "content_md", "created_at"}, func(value commentRecord, fields map[string]json.RawMessage) error {
 		created, err := parsePortableTimestamp(value.CreatedAt)
 		if err != nil {
 			return err
@@ -1386,8 +1394,7 @@ func rebuildPortableGeneration(ctx context.Context, parent *runtimefs.Runtime, g
 			return err
 		}
 		return importer.InsertComment(ctx, sqlitestore.ArchiveComment{
-			ID: value.ID, EntryID: value.EntryID, ParentID: value.ParentID, AuthorKind: value.AuthorKind,
-			AuthorName: value.AuthorName, AuthorUserID: value.AuthorUserID,
+			ID: value.ID, EntryID: value.EntryID, ParentID: value.ParentID, AuthorName: value.AuthorName, AuthorUserID: value.AuthorUserID,
 			ReplyToCommentID: value.ReplyToCommentID, ContentMD: value.ContentMD,
 			CreatedAtMS: created.UnixMilli(), Media: usages, Location: location, Pinned: value.Pinned,
 		})
@@ -1399,7 +1406,7 @@ func rebuildPortableGeneration(ctx context.Context, parent *runtimefs.Runtime, g
 	if err := importer.SetSite(ctx, archiveSiteOf(site)); err != nil {
 		return err
 	}
-	expected := portableExpectedCounts(document, archiveCarriesAccounts(files), archiveCarriesArticles(files))
+	expected := portableExpectedCounts(document)
 	if err := importer.Commit(ctx, expected); err != nil {
 		return err
 	}
@@ -1451,29 +1458,11 @@ func readPortableSite(ctx context.Context, files map[string]*zip.File) (siteReco
 	return site, nil
 }
 
-// portableExpectedCounts states what a generation rebuilt from this archive
-// must hold.
-//
-// An archive without the accounts members still describes exactly one account:
-// its site record names the owner, and that owner is synthesized on import. An
-// archive that names no owner at all keeps the account the migrations
-// generated. Either way the answer is one, which is why every valid Moment
-// database has an owner and none has two.
-// An archive without the article members carries no article and no draft, so
-// the rebuilt generation must hold none either -- which is also the right
-// answer, not a degraded one: those backups were taken from a site that had no
-// articles to lose.
-func portableExpectedCounts(document manifest, carriesAccounts, carriesArticles bool) sqlitestore.ArchiveCounts {
+func portableExpectedCounts(document manifest) sqlitestore.ArchiveCounts {
 	counts := sqlitestore.ArchiveCounts{
 		Entries: document.Counts.Entries, Comments: document.Counts.Comments, Media: document.Counts.Media,
 		Users: document.Counts.Users, Identities: document.Counts.Identities,
 		Articles: document.Counts.Articles, ArticleDrafts: document.Counts.ArticleDrafts,
-	}
-	if !carriesAccounts {
-		counts.Users, counts.Identities = 1, 0
-	}
-	if !carriesArticles {
-		counts.Articles, counts.ArticleDrafts = 0, 0
 	}
 	return counts
 }
@@ -1481,8 +1470,8 @@ func portableExpectedCounts(document manifest, carriesAccounts, carriesArticles 
 // portableImportCounts is what a preview must say the archive holds. It is
 // derived from portableExpectedCounts so the number shown before the decision
 // and the number the rebuilt generation is held to are the same number.
-func portableImportCounts(document manifest, carriesAccounts, carriesArticles bool) ImportCounts {
-	expected := portableExpectedCounts(document, carriesAccounts, carriesArticles)
+func portableImportCounts(document manifest) ImportCounts {
+	expected := portableExpectedCounts(document)
 	return ImportCounts{
 		Entries: expected.Entries, Comments: expected.Comments, Media: expected.Media,
 		Users: expected.Users, Identities: expected.Identities,
@@ -1490,34 +1479,18 @@ func portableImportCounts(document manifest, carriesAccounts, carriesArticles bo
 	}
 }
 
-// importPortableAccounts writes every account the archive describes.
-//
-// The owner is written first, in its own pass over the member, because the
-// generation it lands in is not accountless: the migrations already created an
-// owner there, holding both the single-owner index and, by default, the handle
-// "owner". Adopting it before any other account is inserted is what keeps an
-// incoming member named "owner" from colliding with a row that is about to
-// stop existing.
-func importPortableAccounts(ctx context.Context, importer *sqlitestore.PortableImporter, files map[string]*zip.File, document manifest, site siteRecord) error {
+func importPortableAccounts(ctx context.Context, importer *sqlitestore.PortableImporter, files map[string]*zip.File) error {
 	if !archiveCarriesAccounts(files) {
-		return importSynthesizedOwner(ctx, importer, document, site)
+		return errors.New("portable archives must contain accounts")
 	}
-	for _, ownerPass := range []bool{true, false} {
-		if _, err := validateJSONLines[userRecord](ctx, files["data/users.jsonl"], portableUserFields, func(value userRecord, _ map[string]json.RawMessage) error {
-			if (domain.UserRole(value.Role) == domain.UserRoleOwner) != ownerPass {
-				return nil
-			}
-			account, err := archiveUserOf(value)
-			if err != nil {
-				return err
-			}
-			if ownerPass {
-				account = admittedOwner(account)
-			}
-			return importer.InsertUser(ctx, account)
-		}); err != nil {
+	if _, err := validateJSONLines[userRecord](ctx, files["data/users.jsonl"], portableUserFields, func(value userRecord, _ map[string]json.RawMessage) error {
+		account, err := archiveUserOf(value)
+		if err != nil {
 			return err
 		}
+		return importer.InsertUser(ctx, account)
+	}); err != nil {
+		return err
 	}
 	_, err := validateJSONLines[identityRecord](ctx, files["data/identities.jsonl"], portableIdentityFields, func(value identityRecord, _ map[string]json.RawMessage) error {
 		identity, err := archiveIdentityOf(value)
@@ -1527,21 +1500,6 @@ func importPortableAccounts(ctx context.Context, importer *sqlitestore.PortableI
 		return importer.InsertIdentity(ctx, identity)
 	})
 	return err
-}
-
-func importSynthesizedOwner(ctx context.Context, importer *sqlitestore.PortableImporter, document manifest, site siteRecord) error {
-	if site.OwnerID == "" {
-		return importer.KeepGeneratedOwner(ctx)
-	}
-	archivedAt, err := parsePortableTimestamp(document.CreatedAt)
-	if err != nil {
-		return err
-	}
-	owner, err := synthesizeOwnerAccount(site, archivedAt)
-	if err != nil {
-		return err
-	}
-	return importer.InsertUser(ctx, owner)
 }
 
 func portableStoragePath(sha, mimeType string) (string, error) {
@@ -1626,7 +1584,7 @@ func (inspector *Inspector) createStage(root string, now time.Time) (string, str
 	return "", "", errors.New("could not allocate a unique import staging generation")
 }
 
-func (inspector *Inspector) checkActive(root string, now time.Time, sessionEpoch uint64, cleanup bool) error {
+func (inspector *Inspector) checkActive(root string, now time.Time, cleanup bool) error {
 	parent := filepath.Join(root, "staging", "import")
 	entries, err := os.ReadDir(parent)
 	if err != nil {
@@ -1663,7 +1621,7 @@ func (inspector *Inspector) checkActive(root string, now time.Time, sessionEpoch
 				}
 			}
 		case stagingReady:
-			if metadata.ExpiresAtMS <= now.UnixMilli() || metadata.SessionEpoch != sessionEpoch {
+			if metadata.ExpiresAtMS <= now.UnixMilli() {
 				if cleanup {
 					if err := removeStagingDirectory(parent, stageRoot); err != nil {
 						return err
@@ -1706,9 +1664,9 @@ func removeStagingDirectory(parent, stageRoot string) error {
 	return runtimefs.SyncDirectory(expectedParent)
 }
 
-func (inspector *Inspector) loadReady(ctx context.Context, token string, sessionEpoch uint64) (_ stagingMetadata, _ manifest, _ string, lease *runtimefs.Lease, resultErr error) {
-	if token == "" || len(token) > 256 || sessionEpoch == 0 {
-		return stagingMetadata{}, manifest{}, "", nil, importStagingInvalid("staging token or owner epoch is invalid", nil)
+func (inspector *Inspector) loadReady(ctx context.Context, token string, subject Authorization) (_ stagingMetadata, _ manifest, _ string, lease *runtimefs.Lease, resultErr error) {
+	if token == "" || len(token) > 256 || !subject.Valid() {
+		return stagingMetadata{}, manifest{}, "", nil, importStagingInvalid("staging token or account binding is invalid", nil)
 	}
 	runtimeState, err := runtimefs.OpenContext(ctx, inspector.dataDir)
 	if err != nil {
@@ -1718,16 +1676,16 @@ func (inspector *Inspector) loadReady(ctx context.Context, token string, session
 	if err != nil {
 		return stagingMetadata{}, manifest{}, "", nil, err
 	}
-	state, document, stageRoot, err := inspector.loadReadyHeld(ctx, runtimeState, token, sessionEpoch)
+	state, document, stageRoot, err := inspector.loadReadyHeld(ctx, runtimeState, token, subject)
 	if err != nil {
 		return stagingMetadata{}, manifest{}, "", nil, errors.Join(err, heldLease.Release())
 	}
 	return state, document, stageRoot, heldLease, nil
 }
 
-func (inspector *Inspector) loadReadyHeld(ctx context.Context, runtimeState *runtimefs.Runtime, token string, sessionEpoch uint64) (stagingMetadata, manifest, string, error) {
-	if token == "" || len(token) > 256 || sessionEpoch == 0 || runtimeState == nil {
-		return stagingMetadata{}, manifest{}, "", importStagingInvalid("staging token or owner epoch is invalid", nil)
+func (inspector *Inspector) loadReadyHeld(ctx context.Context, runtimeState *runtimefs.Runtime, token string, subject Authorization) (stagingMetadata, manifest, string, error) {
+	if token == "" || len(token) > 256 || !subject.Valid() || runtimeState == nil {
+		return stagingMetadata{}, manifest{}, "", importStagingInvalid("staging token or account binding is invalid", nil)
 	}
 	parent := filepath.Join(runtimeState.Root, "staging", "import")
 	entries, err := os.ReadDir(parent)
@@ -1763,8 +1721,8 @@ func (inspector *Inspector) loadReadyHeld(ctx context.Context, runtimeState *run
 	if state.ExpiresAtMS <= now.UnixMilli() {
 		return stagingMetadata{}, manifest{}, "", domain.NewError(domain.CodeImportStagingExpired, "import staging token has expired", map[string]any{"expired_at": time.UnixMilli(state.ExpiresAtMS).UTC()})
 	}
-	if state.InstanceID != runtimeState.Instance.ID || state.SessionEpoch != sessionEpoch || state.GenerationID != filepath.Base(stageRoot) {
-		return stagingMetadata{}, manifest{}, "", importStagingInvalid("import staging binding does not match this instance and owner epoch", nil)
+	if state.InstanceID != runtimeState.Instance.ID || state.Authorization != subject || state.GenerationID != filepath.Base(stageRoot) {
+		return stagingMetadata{}, manifest{}, "", importStagingInvalid("import staging binding does not match this instance and initiating account credential", nil)
 	}
 	expectedHash, err := hex.DecodeString(state.TokenHash)
 	actualHash := sha256.Sum256([]byte(token))
@@ -1809,11 +1767,10 @@ type stagingAuthorityDatabase interface {
 }
 
 func validateStagingAuthority(ctx context.Context, generation runtimefs.Generation, archivePath string, document manifest, database stagingAuthorityDatabase) error {
-	carriesAccounts, carriesArticles, err := archiveFileLayout(archivePath)
-	if err != nil {
+	if err := requireArchiveLayout(archivePath); err != nil {
 		return err
 	}
-	if err := database.ValidatePortableReady(ctx, portableExpectedCounts(document, carriesAccounts, carriesArticles)); err != nil {
+	if err := database.ValidatePortableReady(ctx, portableExpectedCounts(document)); err != nil {
 		return err
 	}
 	snapshot, err := database.BeginArchiveSnapshot(ctx)
@@ -1824,7 +1781,7 @@ func validateStagingAuthority(ctx context.Context, generation runtimefs.Generati
 	if err := snapshot.ValidateIntegrity(ctx); err != nil {
 		return err
 	}
-	if err := validatePortableAuthority(ctx, snapshot, archivePath, document); err != nil {
+	if err := validatePortableAuthority(ctx, snapshot, archivePath); err != nil {
 		return err
 	}
 	return snapshot.Media(ctx, func(value sqlitestore.ArchiveMedia) error {
@@ -1856,7 +1813,7 @@ func validatePortableGenerationTree(ctx context.Context, generation runtimefs.Ge
 	expected := map[string]bool{
 		".": true, "moment.db": false, "media": true, "media/original": true,
 	}
-	_, err = validateJSONLines[mediaRecord](ctx, mediaRecords, []string{"id", "sha256", "archive_path", "original_name", "mime_type", "byte_size", "width", "height", "created_at"}, func(value mediaRecord, _ map[string]json.RawMessage) error {
+	_, err = validateJSONLines[mediaRecord](ctx, mediaRecords, []string{"id", "sha256", "archive_path", "original_name", "mime_type", "byte_size", "width", "height", "created_at", "grants"}, func(value mediaRecord, _ map[string]json.RawMessage) error {
 		storagePath, err := portableStoragePath(value.SHA256, value.MIMEType)
 		if err != nil {
 			return err
@@ -1907,19 +1864,18 @@ func validatePortableGenerationTree(ctx context.Context, generation runtimefs.Ge
 	return nil
 }
 
-// archiveFileLayout reports which of the optional member pairs an archive on
-// disk carries, which is what says how much a rebuilt generation must hold.
-func archiveFileLayout(archivePath string) (accounts, articles bool, err error) {
+func requireArchiveLayout(archivePath string) error {
 	reader, err := zip.OpenReader(archivePath)
 	if err != nil {
-		return false, false, err
+		return err
 	}
 	defer func() { _ = reader.Close() }()
-	files := make(map[string]*zip.File, len(reader.File))
+	seen := make(map[string]struct{}, len(reader.File))
 	for _, file := range reader.File {
-		files[file.Name] = file
+		seen[file.Name] = struct{}{}
 	}
-	return archiveCarriesAccounts(files), archiveCarriesArticles(files), nil
+	_, err = portableLeadingMembers(seen)
+	return err
 }
 
 // validatePortableAuthority proves a rebuilt generation says exactly what the
@@ -1932,7 +1888,7 @@ func archiveFileLayout(archivePath string) (accounts, articles bool, err error) 
 // portable archive" with no field named, and it only appeared once real data
 // used the forgotten field -- which is how a lost pinned flag made every backup
 // containing a pinned comment unrestorable while every test stayed green.
-func validatePortableAuthority(ctx context.Context, snapshot *sqlitestore.ArchiveSnapshot, archivePath string, document manifest) error {
+func validatePortableAuthority(ctx context.Context, snapshot *sqlitestore.ArchiveSnapshot, archivePath string) error {
 	reader, err := zip.OpenReader(archivePath)
 	if err != nil {
 		return err
@@ -1953,7 +1909,7 @@ func validatePortableAuthority(ctx context.Context, snapshot *sqlitestore.Archiv
 	if !reflect.DeepEqual(expectedSite, portableSiteRecord(actualSite)) {
 		return errors.New("staged site settings do not match the portable archive")
 	}
-	if err := validateStagedAccounts(ctx, snapshot, files, document, expectedSite); err != nil {
+	if err := validateStagedAccounts(ctx, snapshot, files); err != nil {
 		return err
 	}
 	if err := validateStagedArticles(ctx, snapshot, files); err != nil {
@@ -1977,7 +1933,7 @@ func validatePortableAuthority(ctx context.Context, snapshot *sqlitestore.Archiv
 		return errors.Join(errors.New("staged entries do not match the portable archive"), entriesErr)
 	}
 	expectedComments := make([]commentRecord, 0)
-	if _, err := validateJSONLines[commentRecord](ctx, files["data/comments.jsonl"], []string{"id", "entry_id", "parent_id", "author_kind", "author_name", "content_md", "created_at"}, func(value commentRecord, fields map[string]json.RawMessage) error {
+	if _, err := validateJSONLines[commentRecord](ctx, files["data/comments.jsonl"], []string{"id", "entry_id", "parent_id", "author_name", "content_md", "created_at"}, func(value commentRecord, fields map[string]json.RawMessage) error {
 		usages, err := portableCommentUsages(value, fields)
 		if err != nil {
 			return err
@@ -1999,7 +1955,7 @@ func validatePortableAuthority(ctx context.Context, snapshot *sqlitestore.Archiv
 		return errors.Join(errors.New("staged comments do not match the portable archive"), commentsErr)
 	}
 	expectedMedia := make([]mediaRecord, 0)
-	if _, err := validateJSONLines[mediaRecord](ctx, files["data/media.jsonl"], []string{"id", "sha256", "archive_path", "original_name", "mime_type", "byte_size", "width", "height", "created_at"}, func(value mediaRecord, _ map[string]json.RawMessage) error {
+	if _, err := validateJSONLines[mediaRecord](ctx, files["data/media.jsonl"], []string{"id", "sha256", "archive_path", "original_name", "mime_type", "byte_size", "width", "height", "created_at", "grants"}, func(value mediaRecord, _ map[string]json.RawMessage) error {
 		expectedMedia = append(expectedMedia, value)
 		return nil
 	}); err != nil {
@@ -2032,20 +1988,20 @@ func validatePortableAuthority(ctx context.Context, snapshot *sqlitestore.Archiv
 func validateStagedArticles(ctx context.Context, snapshot *sqlitestore.ArchiveSnapshot, files map[string]*zip.File) error {
 	expectedArticles := make([]entryArticleRecord, 0)
 	expectedDrafts := make([]articleDraftRecord, 0)
-	if archiveCarriesArticles(files) {
-		if _, err := validateJSONLines[entryArticleRecord](ctx, files["data/entry_articles.jsonl"], portableEntryArticleFields, func(value entryArticleRecord, _ map[string]json.RawMessage) error {
-			expectedArticles = append(expectedArticles, value)
-			return nil
-		}); err != nil {
-			return err
-		}
-		if _, err := validateJSONLines[articleDraftRecord](ctx, files["data/article_drafts.jsonl"], portableArticleDraftFields, func(value articleDraftRecord, _ map[string]json.RawMessage) error {
-			expectedDrafts = append(expectedDrafts, value)
-			return nil
-		}); err != nil {
-			return err
-		}
+
+	if _, err := validateJSONLines[entryArticleRecord](ctx, files["data/entry_articles.jsonl"], portableEntryArticleFields, func(value entryArticleRecord, _ map[string]json.RawMessage) error {
+		expectedArticles = append(expectedArticles, value)
+		return nil
+	}); err != nil {
+		return err
 	}
+	if _, err := validateJSONLines[articleDraftRecord](ctx, files["data/article_drafts.jsonl"], portableArticleDraftFields, func(value articleDraftRecord, _ map[string]json.RawMessage) error {
+		expectedDrafts = append(expectedDrafts, value)
+		return nil
+	}); err != nil {
+		return err
+	}
+
 	sort.Slice(expectedArticles, func(i, j int) bool { return expectedArticles[i].EntryID < expectedArticles[j].EntryID })
 	actualArticles := make([]entryArticleRecord, 0, len(expectedArticles))
 	articlesErr := snapshot.EntryArticles(ctx, func(value sqlitestore.ArchiveEntryArticle) error {
@@ -2077,53 +2033,25 @@ func validateStagedArticles(ctx context.Context, snapshot *sqlitestore.ArchiveSn
 	return nil
 }
 
-// validateStagedAccounts compares the staged accounts against the archive.
-//
-// When the archive predates the accounts members, the expectation is the same
-// account the importer synthesized -- derived from the site record and the
-// archive's own creation instant -- so this still compares two independently
-// produced answers rather than trusting the import.
-func validateStagedAccounts(ctx context.Context, snapshot *sqlitestore.ArchiveSnapshot, files map[string]*zip.File, document manifest, site siteRecord) error {
+func validateStagedAccounts(ctx context.Context, snapshot *sqlitestore.ArchiveSnapshot, files map[string]*zip.File) error {
 	expectedUsers := make([]userRecord, 0)
 	expectedIdentities := make([]identityRecord, 0)
-	switch {
-	case archiveCarriesAccounts(files):
-		if _, err := validateJSONLines[userRecord](ctx, files["data/users.jsonl"], portableUserFields, func(value userRecord, _ map[string]json.RawMessage) error {
-			// The one field the rebuild does not take the archive's word for.
-			// Expecting it back verbatim would fail every import of a backup
-			// naming a suspended owner -- the exact backups this admission
-			// exists to make restorable.
-			if domain.UserRole(value.Role) == domain.UserRoleOwner {
-				value.Status = string(domain.AccountActive)
-			}
-			expectedUsers = append(expectedUsers, value)
-			return nil
-		}); err != nil {
-			return err
-		}
-		if _, err := validateJSONLines[identityRecord](ctx, files["data/identities.jsonl"], portableIdentityFields, func(value identityRecord, _ map[string]json.RawMessage) error {
-			expectedIdentities = append(expectedIdentities, value)
-			return nil
-		}); err != nil {
-			return err
-		}
-	case site.OwnerID != "":
-		archivedAt, err := parsePortableTimestamp(document.CreatedAt)
-		if err != nil {
-			return err
-		}
-		owner, err := synthesizeOwnerAccount(site, archivedAt)
-		if err != nil {
-			return err
-		}
-		expectedUsers = append(expectedUsers, portableUserRecord(owner))
-	default:
-		// The archive names no owner, so the generated account kept the site
-		// and there is nothing in the archive to compare its fields against.
-		// ValidatePortableReady has already proved there is exactly one, and it
-		// owns the site.
-		return nil
+	if !archiveCarriesAccounts(files) {
+		return errors.New("portable archives must contain accounts")
 	}
+	if _, err := validateJSONLines[userRecord](ctx, files["data/users.jsonl"], portableUserFields, func(value userRecord, _ map[string]json.RawMessage) error {
+		expectedUsers = append(expectedUsers, value)
+		return nil
+	}); err != nil {
+		return err
+	}
+	if _, err := validateJSONLines[identityRecord](ctx, files["data/identities.jsonl"], portableIdentityFields, func(value identityRecord, _ map[string]json.RawMessage) error {
+		expectedIdentities = append(expectedIdentities, value)
+		return nil
+	}); err != nil {
+		return err
+	}
+
 	sort.Slice(expectedUsers, func(i, j int) bool { return expectedUsers[i].ID < expectedUsers[j].ID })
 	actualUsers := make([]userRecord, 0, len(expectedUsers))
 	usersErr := snapshot.Users(ctx, func(value sqlitestore.ArchiveUser) error {
@@ -2191,7 +2119,7 @@ func readStagingMetadata(stageRoot string) (stagingMetadata, error) {
 	if err := decoder.Decode(&value); err != nil || decoder.Decode(&struct{}{}) != io.EOF {
 		return stagingMetadata{}, errors.New("staging metadata JSON is invalid")
 	}
-	if value.GenerationID != filepath.Base(stageRoot) || value.InstanceID == "" || value.SessionEpoch == 0 || value.ExpiresAtMS <= 0 ||
+	if value.GenerationID != filepath.Base(stageRoot) || value.InstanceID == "" || !value.Authorization.Valid() || value.ExpiresAtMS <= 0 ||
 		(value.ArchiveSHA != "" && (len(value.ArchiveSHA) != 64 || !isLowerHex(value.ArchiveSHA))) ||
 		(value.TokenHash != "" && (len(value.TokenHash) != 64 || !isLowerHex(value.TokenHash))) {
 		return stagingMetadata{}, errors.New("staging metadata binding is invalid")

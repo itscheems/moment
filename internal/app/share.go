@@ -110,9 +110,6 @@ func (service *ShareMetadataService) Post(ctx context.Context, id domain.ID) (Sh
 	if err != nil {
 		return ShareMetadata{}, err
 	}
-	// Share metadata is written for whoever follows a link -- a crawler, a
-	// chat preview -- so it reads as a visitor even when the owner's own
-	// browser asked for the page. A hidden post shares nothing.
 	post, err := service.posts.Get(ctx, id, PublicViewer())
 	if err != nil {
 		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {

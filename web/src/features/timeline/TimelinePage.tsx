@@ -23,8 +23,8 @@ import {
 import { usePostReplyDialog } from "../comments/usePostReplyDialog";
 import { PostPresentation } from "../posts/PostPresentation";
 import { PublicEmpty, PublicError, TimelineLoading } from "./PublicStates";
-import { listenForOwnerPosts } from "../owner/postEvents";
-import type { OwnerPostEvent } from "../owner/postEvents";
+import { listenForPostChanges } from "../posts/postEvents";
+import type { PostChangeEvent } from "../posts/postEvents";
 import {
   appendUnique,
   invalidCursorProgress,
@@ -105,7 +105,7 @@ export function TimelinePage({
   initialSearch,
   emptyContext = "timeline",
   onSiteChanged,
-  owner = false,
+  canPublish = false,
 }: {
   api: PublicApi;
   site: SiteIdentity;
@@ -117,7 +117,7 @@ export function TimelinePage({
   initialSearch: string;
   emptyContext?: "timeline" | "archive";
   onSiteChanged?: (site: SiteIdentity) => void;
-  owner?: boolean;
+  canPublish?: boolean;
 }) {
   const {
     navigate,
@@ -147,23 +147,23 @@ export function TimelinePage({
   const loadingMoreRef = useRef(false);
   const loadingNewerRef = useRef(false);
   const initialEntryRestored = useRef(false);
-  const ownerEvents = useRef(new Map<string, OwnerPostEvent>());
+  const postChanges = useRef(new Map<string, PostChangeEvent>());
   const visitedCursors = useRef(new Set<string>());
   /** The row the list opened at: the newest on or before the anchor. */
   const anchorKey = useRef<string | null>(null);
   /** The top row and where it was, measured just before a page is prepended. */
   const compensation = useRef<{ key: string; top: number } | null>(null);
 
-  const reconcileOwnerEvents = useCallback((items: PublicPost[]) => {
+  const reconcilePostChanges = useCallback((items: PublicPost[]) => {
     let reconciled = items;
-    for (const event of ownerEvents.current.values()) {
+    for (const event of postChanges.current.values()) {
       reconciled = reconcileTimelineEvent(reconciled, event);
     }
     return reconciled;
   }, []);
 
-  const handleOwnerPostEvent = useCallback((event: OwnerPostEvent) => {
-    ownerEvents.current.set(event.post.id, event);
+  const handlePostChange = useCallback((event: PostChangeEvent) => {
+    postChanges.current.set(event.post.id, event);
     setPosts((current) => {
       if (event.kind === "created") {
         setFreshId(event.post.id);
@@ -174,8 +174,8 @@ export function TimelinePage({
   }, []);
 
   const handleReposted = useCallback(
-    (post: PublicPost) => handleOwnerPostEvent({ kind: "reordered", post }),
-    [handleOwnerPostEvent],
+    (post: PublicPost) => handlePostChange({ kind: "reordered", post }),
+    [handlePostChange],
   );
 
   const loadInitial = useCallback(async () => {
@@ -279,7 +279,7 @@ export function TimelinePage({
         combined = prependUnique(combined, newer, timelineItemKey, "timeline");
       }
 
-      combined = reconcileOwnerEvents(combined);
+      combined = reconcilePostChanges(combined);
       visitedCursors.current = visited;
       anchorKey.current =
         request.anchor && opening.items[0]
@@ -293,7 +293,7 @@ export function TimelinePage({
     } finally {
       if (!controller.signal.aborted) setLoadingInitial(false);
     }
-  }, [api, reconcileOwnerEvents]);
+  }, [api, reconcilePostChanges]);
 
   useEffect(() => {
     void loadInitial();
@@ -304,10 +304,7 @@ export function TimelinePage({
     };
   }, [loadInitial]);
 
-  useEffect(
-    () => listenForOwnerPosts(handleOwnerPostEvent),
-    [handleOwnerPostEvent],
-  );
+  useEffect(() => listenForPostChanges(handlePostChange), [handlePostChange]);
 
   const createdFromTimeline = useCallback((comment: PublicComment) => {
     const increment = (post: PublicPost) =>
@@ -503,7 +500,7 @@ export function TimelinePage({
     );
   }
   if (posts.length === 0 && !nextCursor && !prevCursor) {
-    return <PublicEmpty context={emptyContext} owner={owner} />;
+    return <PublicEmpty context={emptyContext} canPublish={canPublish} />;
   }
 
   return (
@@ -544,7 +541,7 @@ export function TimelinePage({
             eagerVideo={index === 0}
             fresh={post.id === freshId}
             key={timelineItemKey(post)}
-            owner={owner}
+            canPublish={canPublish}
             onReply={(event) => openReply(post, event)}
             onReposted={handleReposted}
             onSiteChanged={onSiteChanged}

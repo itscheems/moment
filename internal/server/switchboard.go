@@ -123,8 +123,8 @@ func (board *Switchboard) ServeHTTP(writer http.ResponseWriter, request *http.Re
 }
 
 func maintenanceBypass(path string) bool {
-	return path == "/healthz" || path == "/api/v1/owner/import/commit" || path == "/api/v1/owner/import/restore" ||
-		path == "/api/v1/owner/import/merge/commit" || path == "/api/v1/owner/import/status"
+	return path == "/healthz" || path == "/api/v1/backups/import/commit" || path == "/api/v1/backups/import/restore" ||
+		path == "/api/v1/backups/import/merge/commit" || path == "/api/v1/backups/import/review/replace" || path == "/api/v1/backups/import/status"
 }
 
 func (board *Switchboard) signalLocked() {

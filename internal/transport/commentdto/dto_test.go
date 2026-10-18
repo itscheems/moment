@@ -23,8 +23,7 @@ func TestCommentMediaReadProjectionCarriesPositiveDimensions(t *testing.T) {
 	}
 	wire := FromComment(app.Comment{
 		Comment: domain.Comment{
-			ID: commentID, EntryID: postID, AuthorKind: domain.CommentAuthorGuest,
-			AuthorName: "Guest", ContentMD: "image comment", CreatedAt: time.Date(2026, time.August, 10, 12, 0, 0, 0, time.UTC),
+			ID: commentID, EntryID: postID, AuthorName: "Guest", ContentMD: "image comment", CreatedAt: time.Date(2026, time.August, 10, 12, 0, 0, 0, time.UTC),
 		},
 		Author:      app.CommentAuthor{DisplayName: "Guest"},
 		ContentHTML: "<p>image comment</p>\n",
@@ -42,8 +41,6 @@ func TestCommentMediaReadProjectionCarriesPositiveDimensions(t *testing.T) {
 	}
 }
 
-// A legacy guest row has a name and nothing else; an owner row has the full
-// reference set. Anything between the two would render a link to nowhere.
 func TestCommentAuthorRejectsPartiallyResolvedIdentity(t *testing.T) {
 	username := "cheems"
 	userID := "0123456789abcdef0123456789abcdef"
@@ -71,7 +68,7 @@ func TestCommentAuthorRejectsPartiallyResolvedIdentity(t *testing.T) {
 func testComment(t *testing.T, id, postID, parentID string, createdAt time.Time) Comment {
 	t.Helper()
 	comment := Comment{
-		ID: id, PostID: postID, AuthorKind: string(domain.CommentAuthorGuest), AuthorName: "Guest",
+		ID: id, PostID: postID, AuthorName: "Guest",
 		Author: Author{DisplayName: "Guest"}, ContentMD: "body", ContentHTML: "<p>body</p>\n",
 		CreatedAt: createdAt, Media: []MediaUsage{},
 	}

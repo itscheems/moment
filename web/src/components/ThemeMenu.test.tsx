@@ -15,7 +15,7 @@ import { ThemeProvider } from "../theme/ThemeProvider";
 import { ThemeMenu } from "./ThemeMenu";
 
 const site: SiteIdentity = {
-  ownerId: "00000000000000000000000000000000",
+  profileUserId: "00000000000000000000000000000000",
   username: "owner",
   displayName: "Moment",
   title: "Cheems Notes",

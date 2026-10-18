@@ -560,16 +560,16 @@ func TestPruneExactWindowAndFailureOrdering(t *testing.T) {
 func TestPruneSerializesLateAvatarReferenceAndNeverDeletesReachableOriginal(t *testing.T) {
 	store, runtimeState, database := newTestStore(t, Limits{})
 	now := time.Date(2026, 8, 12, 12, 0, 0, 0, time.UTC)
-	value, _, err := store.Ingest(context.Background(), "avatar.png", bytes.NewReader(encodeTransparentPNG(t, 20, 20)))
+	value, _, err := store.Ingest(app.WithContentActor(context.Background(), domain.User{ID: "0123456789abcdef0123456789abcdef", Role: domain.UserRoleAdmin, Status: domain.AccountActive}), "avatar.png", bytes.NewReader(encodeTransparentPNG(t, 20, 20)))
 	if err != nil {
 		t.Fatal(err)
 	}
 	setMediaClock(t, database, value.ID, now.Add(-24*time.Hour))
-	repository, err := sqlite.NewSiteRepository(database, runtimeState.Locks)
+	repository, err := sqlite.NewAccountRepository(database, runtimeState.Locks)
 	if err != nil {
 		t.Fatal(err)
 	}
-	site, err := app.NewSiteService(repository, app.SiteOptions{AllowDevelopmentLocalHTTP: true, Clock: func() time.Time { return now }})
+	site, err := app.NewAccountService(repository, app.WithAccountClock(func() time.Time { return now }))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -589,7 +589,7 @@ func TestPruneSerializesLateAvatarReferenceAndNeverDeletesReachableOriginal(t *t
 	avatar := value.ID.String()
 	updated := make(chan error, 1)
 	go func() {
-		_, err := site.Update(context.Background(), app.SiteUpdate{AvatarMediaID: &app.NullableString{Value: &avatar}})
+		_, err := site.UpdateProfile(context.Background(), "0123456789abcdef0123456789abcdef", app.ProfileUpdate{AvatarMediaID: &app.NullableString{Value: &avatar}})
 		updated <- err
 	}()
 	select {
@@ -606,15 +606,15 @@ func TestPruneSerializesLateAvatarReferenceAndNeverDeletesReachableOriginal(t *t
 	}
 
 	store2, runtimeState2, database2 := newTestStore(t, Limits{})
-	reachable, _, err := store2.Ingest(context.Background(), "reachable.png", bytes.NewReader(encodeTransparentPNG(t, 21, 21)))
+	reachable, _, err := store2.Ingest(app.WithContentActor(context.Background(), domain.User{ID: "0123456789abcdef0123456789abcdef", Role: domain.UserRoleAdmin, Status: domain.AccountActive}), "reachable.png", bytes.NewReader(encodeTransparentPNG(t, 21, 21)))
 	if err != nil {
 		t.Fatal(err)
 	}
 	setMediaClock(t, database2, reachable.ID, now.Add(-48*time.Hour+time.Second))
-	repository2, _ := sqlite.NewSiteRepository(database2, runtimeState2.Locks)
-	site2, _ := app.NewSiteService(repository2, app.SiteOptions{AllowDevelopmentLocalHTTP: true, Clock: func() time.Time { return now }})
+	repository2, _ := sqlite.NewAccountRepository(database2, runtimeState2.Locks)
+	site2, _ := app.NewAccountService(repository2, app.WithAccountClock(func() time.Time { return now }))
 	reachableID := reachable.ID.String()
-	if _, err := site2.Update(context.Background(), app.SiteUpdate{AvatarMediaID: &app.NullableString{Value: &reachableID}}); err != nil {
+	if _, err := site2.UpdateProfile(context.Background(), "0123456789abcdef0123456789abcdef", app.ProfileUpdate{AvatarMediaID: &app.NullableString{Value: &reachableID}}); err != nil {
 		t.Fatal(err)
 	}
 	result, err := store2.Prune(context.Background(), now, false)
@@ -1384,6 +1384,17 @@ func newTestStoreWithOptions(t *testing.T, options Options) (*Store, *runtimefs.
 	}
 	database, err := sqlite.Open(context.Background(), runtimeState, sqlite.Options{})
 	if err != nil {
+		t.Fatal(err)
+	}
+	repo, err := sqlite.NewAccountRepository(database, runtimeState.Locks)
+	if err != nil {
+		t.Fatal(err)
+	}
+	accounts, err := app.NewAccountService(repo, app.WithAccountIDGenerator(func() (string, error) { return "0123456789abcdef0123456789abcdef", nil }))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := accounts.InitializeSiteAccount(context.Background(), "writer"); err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = database.Close() })

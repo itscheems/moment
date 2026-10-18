@@ -1,3 +1,8 @@
+import { locationsApi } from "../../api/locations";
+
+import { mediaApi } from "../../api/media";
+import { commentsApi } from "../../api/comments";
+import { type LocationInput } from "../../api/client";
 import {
   type FormEvent,
   type RefObject,
@@ -16,7 +21,7 @@ import {
   type MentionSuggestion,
   type SiteIdentity,
 } from "../../api/public";
-import type { OwnerLocation } from "../../api/owner";
+
 import { InternalLink } from "../../app/navigation";
 import { SiteAvatar } from "../../components/SiteIdentity";
 import { MediaComposer } from "../media/MediaComposer";
@@ -34,9 +39,12 @@ import {
   type ComposerMediaItem,
 } from "../media/mediaState";
 import { useSession } from "../auth/SessionProvider";
-import { LocationPicker, SelectedLocationChip } from "../owner/LocationPicker";
-import { MentionSuggestions } from "../owner/MentionSuggestions";
-import { activeMention, type ActiveMention } from "../owner/mentions";
+import {
+  LocationPicker,
+  SelectedLocationChip,
+} from "../compose/LocationPicker";
+import { MentionSuggestions } from "../compose/MentionSuggestions";
+import { activeMention, type ActiveMention } from "../compose/mentions";
 import styles from "./Comments.module.css";
 
 const MAX_COMMENT = 2_000;
@@ -171,7 +179,7 @@ function messageFor(error: unknown, replying: boolean): string {
     // while a composer is already open. Retrying will not help, so this is one
     // of the few failures that does not offer it.
     case "ACCOUNT_NOT_APPROVED":
-      return "你的账户正在等待站长批准，暂时还不能留言。文字已保留。";
+      return "你的账户正在等待管理员批准，暂时还不能留言。文字已保留。";
     case "COMMENT_REJECTED":
       return "这次回复没有通过防滥用检查，文字仍保留。";
     case "IDEMPOTENCY_KEY_REUSED":
@@ -183,22 +191,6 @@ function messageFor(error: unknown, replying: boolean): string {
   }
 }
 
-/**
- * Whether this browser may still submit a comment.
- *
- * `expired` and a leftover `session` both count as yes: the composer has to
- * stay mounted in those states so `Reauthenticate` can hand the draft back to
- * the same textarea instead of dropping what the writer already typed. Every
- * other state gets `SignInToReply`.
- *
- * An account still waiting on the owner is the one signed-in state that
- * answers no. The server refuses its comments, and finding that out after
- * typing one is the worst possible moment to learn it.
- *
- * Note that `SessionState`'s `"guest"` means "no owner session in this browser".
- * It is a session state and it survives the retirement of guest commenting —
- * it has nothing to do with `PublicComment.authorKind === "guest"`.
- */
 export function useCanComment(): boolean {
   return useReplyBlock() === null;
 }
@@ -213,11 +205,11 @@ export type ReplyBlock = "signed-out" | "pending";
  * be handed a login link.
  */
 export function useReplyBlock(): ReplyBlock | null {
-  const owner = useSession();
-  if (owner.account?.status === "pending") return "pending";
-  return owner.state === "signed-in" ||
-    owner.state === "expired" ||
-    owner.session !== null
+  const auth = useSession();
+  if (auth.account?.status === "pending") return "pending";
+  return auth.state === "signed-in" ||
+    auth.state === "expired" ||
+    auth.session !== null
     ? null
     : "signed-out";
 }
@@ -237,8 +229,8 @@ export function SignInToReply() {
   if (block === "pending") {
     return (
       <div className={styles.signInNotice} role="status">
-        <strong>正在等待站长批准</strong>
-        <span>你的账户正在等待站长批准，批准后就能留言。</span>
+        <strong>正在等待管理员批准</strong>
+        <span>你的账户正在等待管理员批准，批准后就能留言。</span>
       </div>
     );
   }
@@ -271,7 +263,7 @@ export function Reauthenticate({
     setPending(true);
     setError(null);
     try {
-      await login(token);
+      await login(token, "token");
       setToken("");
       onReady();
     } catch {
@@ -285,10 +277,10 @@ export function Reauthenticate({
   return (
     <form className={styles.reauth} onSubmit={(event) => void submit(event)}>
       <div>
-        <strong>重新确认所有者身份</strong>
+        <strong>重新登录</strong>
         <span>回复文字不会离开当前页面。</span>
       </div>
-      <label htmlFor={inputId}>所有者令牌</label>
+      <label htmlFor={inputId}>API 令牌</label>
       <input
         autoCapitalize="none"
         autoComplete="off"
@@ -315,7 +307,6 @@ export function Reauthenticate({
 export function CommentForm({
   active = true,
   api,
-  site,
   postId,
   parentId,
   replyTargetId,
@@ -351,7 +342,7 @@ export function CommentForm({
   textareaRef?: RefObject<HTMLTextAreaElement | null>;
   topLevelTargetUsername?: string;
 }) {
-  const owner = useSession();
+  const auth = useSession();
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [authExpired, setAuthExpired] = useState(false);
@@ -359,7 +350,7 @@ export function CommentForm({
     parentId !== null || initialExpanded,
   );
   const [mediaItems, setMediaItems] = useState<ComposerMediaItem[]>([]);
-  const [commentLocation, setCommentLocation] = useState<OwnerLocation | null>(
+  const [commentLocation, setCommentLocation] = useState<LocationInput | null>(
     null,
   );
   const [mention, setMention] = useState<ActiveMention | null>(null);
@@ -389,7 +380,7 @@ export function CommentForm({
   const inlineTopLevel =
     parentId === null && topLevelTargetUsername !== undefined;
   const displayReauth =
-    authExpired || (owner.state === "expired" && !owner.session);
+    authExpired || (auth.state === "expired" && !auth.session);
   const displayedError =
     error ??
     (displayReauth
@@ -459,8 +450,8 @@ export function CommentForm({
           ),
         );
       };
-      const uploaded = await owner.api.uploadMedia(
-        owner.session!.csrfToken,
+      const uploaded = await mediaApi.uploadMedia(
+        auth.session!.csrfToken,
         current.file,
         progress,
         controller.signal,
@@ -514,11 +505,11 @@ export function CommentForm({
   };
 
   useEffect(() => {
-    if (!authExpired || !owner.session) return;
+    if (!authExpired || !auth.session) return;
     setAuthExpired(false);
     setError(null);
     window.requestAnimationFrame(() => textareaRef.current?.focus());
-  }, [authExpired, owner.session]);
+  }, [authExpired, auth.session]);
 
   useEffect(() => {
     if (!mention) {
@@ -569,7 +560,7 @@ export function CommentForm({
     ) {
       return;
     }
-    if (!owner.session) {
+    if (!auth.session) {
       setAuthExpired(true);
       setError("当前写入会话已失效。文字已保留，刷新身份后可以重试。");
       return;
@@ -602,8 +593,8 @@ export function CommentForm({
       for (const item of [...mediaItemsRef.current]) {
         if (!item.mediaId) await uploadOne(item.key);
       }
-      const result = await owner.api.createComment(
-        owner.session!.csrfToken,
+      const result = await commentsApi.createComment(
+        auth.session!.csrfToken,
         postId,
         content,
         parentId,
@@ -620,7 +611,7 @@ export function CommentForm({
       setCommentLocation(null);
       setActivated(parentId !== null || initialExpanded);
     } catch (nextError) {
-      if (owner.expireIfInvalidSession(nextError)) {
+      if (auth.expireIfInvalidSession(nextError)) {
         setAuthExpired(true);
         setError("当前写入会话已失效。文字已保留，刷新身份后可以重试。");
       } else {
@@ -653,7 +644,15 @@ export function CommentForm({
         ref={layoutContentRef}
       >
         <span aria-hidden="true" className={styles.composerAvatar}>
-          <SiteAvatar site={site} />
+          <SiteAvatar
+            site={
+              auth.account ?? {
+                displayName: "",
+                avatarMediaId: null,
+                coverMediaId: null,
+              }
+            }
+          />
         </span>
         <form
           aria-label={
@@ -671,7 +670,6 @@ export function CommentForm({
                   : "写下回复"}
               </h3>
             </div>
-            <span className={styles.srOnly}>所有者</span>
           </header>
           {parentId && replyTargetAuthor ? (
             <p className={styles.replyTarget}>
@@ -841,7 +839,7 @@ export function CommentForm({
                           pending ||
                           !validContent ||
                           !commentsEnabled ||
-                          !owner.session ||
+                          !auth.session ||
                           mediaError !== null
                         }
                         type="submit"
@@ -860,8 +858,8 @@ export function CommentForm({
                 subject="回复"
                 toolbarAction={
                   <LocationPicker
-                    api={owner.api}
-                    disabled={pending || !commentsEnabled || !owner.session}
+                    api={locationsApi}
+                    disabled={pending || !commentsEnabled || !auth.session}
                     onChange={(nextLocation) => {
                       setCommentLocation(nextLocation);
                       setActivated(true);
@@ -956,7 +954,7 @@ export function CommentForm({
         </form>
         {displayReauth ? (
           <Reauthenticate
-            inputId={`${formId}-owner-token`}
+            inputId={`${formId}-api-token`}
             onReady={() => {
               setAuthExpired(false);
               setError(null);

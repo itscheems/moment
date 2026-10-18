@@ -15,7 +15,7 @@ import {
   type PublicPost,
   type SiteIdentity,
 } from "../../api/public";
-import { ownsSite, useSession } from "../auth/SessionProvider";
+import { isAdministrator, useSession } from "../auth/SessionProvider";
 import { CommentForm, SignInToReply, useReplyBlock } from "./CommentComposer";
 import { CommentItem } from "./CommentItem";
 import { PostReplyDialog } from "./PostReplyDialog";
@@ -126,12 +126,10 @@ export function CommentThread({
   onReplyDialogOpenChange?: (open: boolean) => void;
   replyDialogTriggerRef?: RefObject<HTMLButtonElement | null>;
 }) {
-  const owner = useSession();
-  // Pinning and deleting a comment are the site owner's, and the server agrees;
-  // a signed-in member gets the reply action and nothing beyond it.
-  const ownerModerator =
-    (owner.state === "signed-in" || owner.state === "expired") &&
-    ownsSite(owner.account);
+  const auth = useSession();
+  const canModerate =
+    (auth.state === "signed-in" || auth.state === "expired") &&
+    isAdministrator(auth.account);
   const [items, setItems] = useState<PublicComment[] | null>(null);
   const [pinnedCommentId, setPinnedCommentId] = useState<string | null>(null);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
@@ -455,7 +453,7 @@ export function CommentThread({
               postId={postId}
               setContent={setTopContent}
               site={site}
-              topLevelTargetUsername={site.username}
+              topLevelTargetUsername={post?.author?.username ?? ""}
             />
           ) : (
             <SignInToReply />
@@ -466,6 +464,7 @@ export function CommentThread({
               {displayedItems.map((comment) => (
                 <Fragment key={comment.id}>
                   <CommentItem
+                    postAuthorUserId={post?.author?.userId ?? null}
                     active={active}
                     comment={comment}
                     focusTarget={headingRef}
@@ -498,7 +497,11 @@ export function CommentThread({
                           ?.focus(),
                       );
                     }}
-                    owner={ownerModerator}
+                    canModerate={canModerate}
+                    canDelete={
+                      auth.account?.status === "active" &&
+                      auth.account.userId === comment.author.userId
+                    }
                     pinned={comment.id === pinnedCommentId}
                     // A null root means there is nothing to reply to, which is
                     // a different thing from not being allowed to. Being

@@ -16,29 +16,6 @@ import {
   ARTICLE_SCHEMA_VERSION,
 } from "./schema";
 
-/**
- * The two directions an article body travels between the editor and the wire.
- *
- * They are not the identity function in either direction, and the differences
- * are the whole reason this file exists:
- *
- *  - ProseMirror writes every declared attribute, default value and all, so an
- *    untitled picture arrives as `{"media_id":"…","alt":null}` and the server
- *    refuses it: `alt` is allowed to be absent, not to be null.
- *  - The server writes an attribute only when it carries information -- a list
- *    starting at one and a cell spanning one column are both left out -- so
- *    echoing back what it sent has to produce the same bytes, or every reopened
- *    draft would look changed the moment it loaded.
- *  - A node that must hold something can be empty in an editor and cannot be
- *    empty on the wire. A heading with nothing under it is a line the owner is
- *    still typing, not an article that fails to save.
- *
- * Whatever comes out is put through `parseArticleDocument`, the same grammar
- * the reading side applies to a body arriving from the server. A document that
- * would be refused is refused here, where the owner can be told, rather than
- * at the far end of a save they thought had worked.
- */
-
 /** Mirrors articleNodeSpecs' `needsChild` (internal/domain/article_doc.go). */
 const NEEDS_CHILD: ReadonlySet<string> = new Set<ArticleNodeType>([
   "heading",
@@ -244,22 +221,12 @@ function wireNode(value: unknown): Record<string, unknown> | null {
 
   const content = wireNodes(value.content);
   if (content.length === 0) {
-    // A heading or a cell with nothing in it is a place the owner is still
-    // typing. Saving it would fail the whole document; dropping it saves the
-    // rest, and the empty line comes back the moment they type into it.
     return NEEDS_CHILD.has(type) ? null : node;
   }
   node.content = content;
   return node;
 }
 
-/**
- * The editor's document as the server stores it.
- *
- * Throws a PublicApiError when what came out still breaks the grammar, which
- * is a bug in this file rather than something the owner did -- but it is
- * thrown where a save can report it instead of being discovered as a 400.
- */
 export function toArticleDocument(value: unknown): ArticleDocument {
   const content = isRecord(value) ? wireNodes(value.content) : [];
   return parseArticleDocument({

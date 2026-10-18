@@ -16,9 +16,7 @@ type DeleteResult struct {
 	CleanupFailures int    `json:"cleanup_failures"`
 }
 
-// Delete removes a selected unreferenced object, serialized with ingestion,
-// reference mutations and prune. The global pool has no per-uploader ownership;
-// callers must authorize the site owner, never an arbitrary active member.
+// Delete removes one unreferenced object through the caller's authorized maintenance path.
 func (store *Store) Delete(ctx context.Context, id domain.ID, dryRun bool) (DeleteResult, error) {
 	if _, err := domain.ParseID(id.String()); err != nil {
 		return DeleteResult{}, err

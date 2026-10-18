@@ -334,7 +334,7 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		}
 		return fmt.Errorf("insert account: %w", err)
 	}
-	return nil
+	return store.grantProfileMedia(ctx, user)
 }
 
 func (store accountStore) LinkIdentity(ctx context.Context, identity domain.Identity) error {
@@ -425,7 +425,7 @@ WHERE id = ?`,
 	if changed != 1 {
 		return domain.NewError(domain.CodeAccountNotFound, "no such account", nil)
 	}
-	return nil
+	return store.grantProfileMedia(ctx, user)
 }
 
 func (store accountStore) SetStatus(ctx context.Context, userID string, status domain.AccountStatus, atMS int64) error {
@@ -462,15 +462,6 @@ func (store accountStore) DeleteAccount(ctx context.Context, userID string) erro
 	return nil
 }
 
-// SearchAccounts finds admitted accounts a composer may offer as a mention.
-//
-// Only active ones. A pending account is an application, and listing
-// applications to every visitor with a composer would turn an autocomplete into
-// a way to read the review queue.
-//
-// The owner sorts first because on a site with one author they are almost
-// always the intended mention, and after that by handle so the order is stable
-// rather than whatever the table happens to return.
 func (store accountStore) SearchAccounts(ctx context.Context, query string, limit int) ([]domain.User, error) {
 	pattern := "%" + escapeAccountSearch(query) + "%"
 	prefix := escapeAccountSearch(query) + "%"
@@ -481,7 +472,7 @@ WHERE status = 'active'
   AND (? = ''
        OR username LIKE ? ESCAPE '\'
        OR lower(display_name) LIKE ? ESCAPE '\')
-ORDER BY CASE WHEN role = 'owner' THEN 0 ELSE 1 END, username
+ORDER BY CASE WHEN role = 'admin' THEN 0 ELSE 1 END, username
 LIMIT ?`, query, prefix, pattern, limit)
 	if err != nil {
 		return nil, fmt.Errorf("search accounts: %w", err)
@@ -529,16 +520,16 @@ func (store accountStore) ListAccounts(ctx context.Context) ([]domain.User, erro
 	return users, nil
 }
 
-func (store accountStore) OwnerUserID(ctx context.Context) (string, error) {
-	var ownerID string
-	err := store.queries.QueryRowContext(ctx, `SELECT owner_id FROM site_settings WHERE id = 1`).Scan(&ownerID)
+func (store accountStore) ProfileUserID(ctx context.Context) (string, error) {
+	var primaryAccountID string
+	err := store.queries.QueryRowContext(ctx, `SELECT profile_user_id FROM site_settings WHERE id = 1`).Scan(&primaryAccountID)
 	if errors.Is(err, sql.ErrNoRows) {
 		return "", domain.NewError(domain.CodeDataIntegrityFailed, "site settings singleton is missing", nil)
 	}
 	if err != nil {
-		return "", fmt.Errorf("read owner account id: %w", err)
+		return "", fmt.Errorf("read display account id: %w", err)
 	}
-	return ownerID, nil
+	return primaryAccountID, nil
 }
 
 func (store accountStore) RegistrationMode(ctx context.Context) (domain.RegistrationMode, error) {

@@ -20,7 +20,7 @@ def read(path):
 def cli(*args, body=None):
     result = subprocess.run(
         [str(PLAYGROUND / "moment"), *args, "--url", ORIGIN,
-         "--token-file", str(PLAYGROUND / "owner.token"), "--json", "--no-input"],
+         "--token-file", str(PLAYGROUND / "account.token"), "--json", "--no-input"],
         input=None if body is None else json.dumps(body, ensure_ascii=False),
         text=True, capture_output=True,
     )

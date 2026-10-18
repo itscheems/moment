@@ -170,7 +170,7 @@ func TestBodyLimitsRejectKnownAndStreamingOverflows(t *testing.T) {
 				Success(ctx, http.StatusOK, map[string]int{"bytes": len(body)}, nil)
 			}
 			engine.POST("/api/v1/read", readHandler)
-			engine.POST("/api/v1/owner/import/inspect", readHandler)
+			engine.POST("/api/v1/backups/import/inspect", readHandler)
 		},
 	})
 	if err != nil {
@@ -211,7 +211,7 @@ func TestBodyLimitsRejectKnownAndStreamingOverflows(t *testing.T) {
 		}
 	}
 
-	routeAwareArchive := httptest.NewRequest(http.MethodPost, "/api/v1/owner/import/inspect", strings.NewReader("1234567890"))
+	routeAwareArchive := httptest.NewRequest(http.MethodPost, "/api/v1/backups/import/inspect", strings.NewReader("1234567890"))
 	routeAwareArchive.Header.Set("Content-Type", "application/octet-stream")
 	routeAwareResponse := performRequest(engine, routeAwareArchive)
 	if routeAwareResponse.Code != http.StatusOK {

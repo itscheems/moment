@@ -1,6 +1,7 @@
 package ginhttp
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"slices"
@@ -23,21 +24,25 @@ import (
 // behaviour is the thing under test. Here the store is a map, which keeps a
 // route test from failing for reasons that have nothing to do with the route.
 type memoryAccounts struct {
-	mu         sync.Mutex
-	users      map[string]domain.User
-	identities map[string]domain.Identity
-	sessions   map[string]domain.SessionRecord
-	ownerID    string
-	mode       domain.RegistrationMode
+	mu               sync.Mutex
+	users            map[string]domain.User
+	identities       map[string]domain.Identity
+	sessions         map[string]domain.SessionRecord
+	passwords        map[string][]byte
+	tokens           map[string]domain.APIToken
+	primaryAccountID string
+	mode             domain.RegistrationMode
 }
 
-func newMemoryAccounts(owner domain.User) *memoryAccounts {
+func newMemoryAccounts(primaryAccount domain.User) *memoryAccounts {
 	return &memoryAccounts{
-		users:      map[string]domain.User{owner.ID: owner},
-		identities: map[string]domain.Identity{},
-		sessions:   map[string]domain.SessionRecord{},
-		ownerID:    owner.ID,
-		mode:       domain.RegistrationApproval,
+		users:            map[string]domain.User{primaryAccount.ID: primaryAccount},
+		identities:       map[string]domain.Identity{},
+		sessions:         map[string]domain.SessionRecord{},
+		passwords:        map[string][]byte{},
+		tokens:           map[string]domain.APIToken{},
+		primaryAccountID: primaryAccount.ID,
+		mode:             domain.RegistrationApproval,
 	}
 }
 
@@ -205,9 +210,6 @@ func (store *memoryAccounts) ListAccounts(_ context.Context) ([]domain.User, err
 	for _, user := range store.users {
 		users = append(users, user)
 	}
-	// (created_at_ms, id), which is what the SQL orders by. Account ids are
-	// random hex rather than time-ordered, so sorting by id alone put the
-	// owner's review list in an order the real store never produces.
 	sort.Slice(users, func(left, right int) bool {
 		if users[left].CreatedAtMS != users[right].CreatedAtMS {
 			return users[left].CreatedAtMS < users[right].CreatedAtMS
@@ -242,8 +244,8 @@ func (store *memoryAccounts) SearchAccounts(_ context.Context, query string, lim
 		found = append(found, user)
 	}
 	sort.Slice(found, func(left, right int) bool {
-		if found[left].IsOwner() != found[right].IsOwner() {
-			return found[left].IsOwner()
+		if found[left].IsAdmin() != found[right].IsAdmin() {
+			return found[left].IsAdmin()
 		}
 		return found[left].Username < found[right].Username
 	})
@@ -253,8 +255,8 @@ func (store *memoryAccounts) SearchAccounts(_ context.Context, query string, lim
 	return found, nil
 }
 
-func (store *memoryAccounts) OwnerUserID(_ context.Context) (string, error) {
-	return store.ownerID, nil
+func (store *memoryAccounts) ProfileUserID(_ context.Context) (string, error) {
+	return store.primaryAccountID, nil
 }
 
 func (store *memoryAccounts) RegistrationMode(_ context.Context) (domain.RegistrationMode, error) {
@@ -322,10 +324,6 @@ func (store *memoryAccounts) PurgeExpiredSessions(_ context.Context, beforeMS in
 	return purged, nil
 }
 
-// A fake is only worth having while it is wrong in no way a route test could
-// notice. These two disagreements were both reachable: the owner's review
-// screen is rendered in list order, and every account created through a
-// provider goes through the handle allocator.
 func TestMemoryAccountsAgreesWithSQLiteOnOrderAndUniqueness(t *testing.T) {
 	ctx := context.Background()
 	runtimeState, err := runtimefs.Initialize(ctx, runtimefs.Config{DataDir: t.TempDir(), Environment: runtimefs.EnvironmentDevelopment})
@@ -363,12 +361,19 @@ func TestMemoryAccountsAgreesWithSQLiteOnOrderAndUniqueness(t *testing.T) {
 		return service
 	}
 
-	stored := build(repository)
-	owner, err := stored.OwnerAccount(ctx)
+	bootstrap, err := app.NewAccountService(repository, app.WithAccountClock(func() time.Time { return time.UnixMilli(1) }))
 	if err != nil {
 		t.Fatal(err)
 	}
-	store := newMemoryAccounts(owner)
+	if _, err := bootstrap.InitializeSiteAccount(ctx, "writer"); err != nil {
+		t.Fatal(err)
+	}
+	stored := build(repository)
+	primaryAccount, err := stored.ProfileAccount(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	store := newMemoryAccounts(primaryAccount)
 	remembered := build(store)
 
 	for _, seed := range []struct {
@@ -405,7 +410,7 @@ func TestMemoryAccountsAgreesWithSQLiteOnOrderAndUniqueness(t *testing.T) {
 	if !slices.Equal(fromSQLite, fromMemory) {
 		t.Fatalf("list order: sqlite = %v, memory = %v", fromSQLite, fromMemory)
 	}
-	if len(fromSQLite) != 3 || fromSQLite[0] != owner.Username {
+	if len(fromSQLite) != 3 || fromSQLite[0] != primaryAccount.Username {
 		t.Fatalf("list = %v, want the oldest account first", fromSQLite)
 	}
 
@@ -449,7 +454,7 @@ func TestMemoryAccountsAgreesWithSQLiteOnOrderAndUniqueness(t *testing.T) {
 		return transactions.WriteAccounts(ctx, func(accounts app.AccountStore, _ app.SessionStore) error {
 			return accounts.CreateAccountWithIdentity(ctx,
 				domain.User{
-					ID: "0123456789abcdef0123456789abcdef", Username: owner.Username, DisplayName: "Impostor",
+					ID: "0123456789abcdef0123456789abcdef", Username: primaryAccount.Username, DisplayName: "Impostor",
 					Role: domain.UserRoleMember, Status: domain.AccountPending, CreatedAtMS: 3000, UpdatedAtMS: 3000,
 				},
 				domain.Identity{
@@ -467,13 +472,13 @@ func TestMemoryAccountsAgreesWithSQLiteOnOrderAndUniqueness(t *testing.T) {
 	}
 }
 
-// testOwnerAccount is the account every transport fixture signs in as.
-func testOwnerAccount() domain.User {
+// testProfileAccount is the account every transport fixture signs in as.
+func testProfileAccount() domain.User {
 	return domain.User{
 		ID:          "0123456789abcdef0123456789abcdef",
 		Username:    "owner",
 		DisplayName: "Owner",
-		Role:        domain.UserRoleOwner,
+		Role:        domain.UserRoleAdmin,
 		Status:      domain.AccountActive,
 		CreatedAtMS: 1,
 		UpdatedAtMS: 1,
@@ -492,6 +497,19 @@ func testAccounts(t *testing.T, database *sqlitestore.Database, runtimeState *ru
 	if err != nil {
 		t.Fatal(err)
 	}
+	users, err := service.List(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(users) == 0 {
+		bootstrap, err := app.NewAccountService(repository, app.WithAccountIDGenerator(func() (string, error) { return "0123456789abcdef0123456789abcdef", nil }))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := bootstrap.InitializeSiteAccount(context.Background(), "writer"); err != nil {
+			t.Fatal(err)
+		}
+	}
 	return service
 }
 
@@ -505,4 +523,70 @@ func testAccountsForRuntime(t *testing.T, runtimeState *runtimefs.Runtime) *app.
 	}
 	t.Cleanup(func() { _ = database.Close() })
 	return testAccounts(t, database, runtimeState)
+}
+
+func (store *memoryAccounts) PasswordHash(_ context.Context, userID string) ([]byte, bool, error) {
+	hash, ok := store.passwords[userID]
+	return bytes.Clone(hash), ok, nil
+}
+func (store *memoryAccounts) PutPasswordHash(_ context.Context, userID string, hash []byte, _ int64) error {
+	store.passwords[userID] = bytes.Clone(hash)
+	return nil
+}
+func (store *memoryAccounts) InsertAPIToken(_ context.Context, token domain.APIToken) error {
+	store.tokens[token.ID] = token
+	return nil
+}
+func (store *memoryAccounts) APITokenByHash(_ context.Context, hash []byte) (domain.APIToken, bool, error) {
+	for _, t := range store.tokens {
+		if bytes.Equal(t.Hash, hash) {
+			return t, true, nil
+		}
+	}
+	return domain.APIToken{}, false, nil
+}
+func (store *memoryAccounts) APITokenByID(_ context.Context, id string) (domain.APIToken, bool, error) {
+	token, ok := store.tokens[id]
+	return token, ok, nil
+}
+func (store *memoryAccounts) ListAPITokens(_ context.Context, userID string) ([]domain.APIToken, error) {
+	tokens := []domain.APIToken{}
+	for _, t := range store.tokens {
+		if t.UserID == userID {
+			tokens = append(tokens, t)
+		}
+	}
+	sort.Slice(tokens, func(i, j int) bool { return tokens[i].ID < tokens[j].ID })
+	return tokens, nil
+}
+func (store *memoryAccounts) RevokeAPIToken(_ context.Context, id string, at int64) error {
+	token, ok := store.tokens[id]
+	if ok {
+		token.RevokedAtMS = &at
+		store.tokens[id] = token
+	}
+	return nil
+}
+func (store *memoryAccounts) RevokeUserAPITokens(ctx context.Context, userID string, at int64) error {
+	for _, t := range store.tokens {
+		if t.UserID == userID {
+			if err := store.RevokeAPIToken(ctx, t.ID, at); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+func fixtureContentContext(t *testing.T, accounts *app.AccountService) context.Context {
+	t.Helper()
+	user, err := accounts.ProfileAccount(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	return app.WithContentActor(context.Background(), user)
+}
+
+func (store *memoryAccounts) MediaAvailableForAccount(ctx context.Context, _ string, id domain.ID) (bool, error) {
+	return store.MediaExists(ctx, id)
 }

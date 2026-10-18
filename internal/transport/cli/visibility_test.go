@@ -5,24 +5,21 @@ import (
 	"testing"
 )
 
-// Direct mode is the owner by construction; API mode is the owner when its
-// token is configured. Either way the CLI writes and reads the audience it
-// was asked for, and a visitor's read of the same server sees none of it.
 func TestPostVisibilityFlagDirectAPIParityAndVisitorReads(t *testing.T) {
 	fixture := newPostCLIFixture(t)
 	application := momentTestApplication()
 	t.Setenv("MOMENT_TOKEN", fixture.token)
 
-	created := commandData(t, execute(application, "", "post", "create", "--data-dir", fixture.dataDir, "--content", "just me", "--visibility", "only_me", "--json"))
+	created := commandData(t, execute(application, "", "post", "create", "--data-dir", fixture.dataDir, "--as", "writer", "--content", "just me", "--visibility", "only_me", "--json"))
 	id := created["id"].(string)
 	if created["visibility"] != "only_me" {
 		t.Fatalf("direct create = %#v", created)
 	}
-	public := commandData(t, execute(application, "", "post", "create", "--data-dir", fixture.dataDir, "--content", "for all", "--json"))
+	public := commandData(t, execute(application, "", "post", "create", "--data-dir", fixture.dataDir, "--as", "writer", "--content", "for all", "--json"))
 	if public["visibility"] != "everyone" {
 		t.Fatalf("default create = %#v", public)
 	}
-	invalid := execute(application, "", "post", "create", "--data-dir", fixture.dataDir, "--content", "x", "--visibility", "friends", "--json")
+	invalid := execute(application, "", "post", "create", "--data-dir", fixture.dataDir, "--as", "writer", "--content", "x", "--visibility", "friends", "--json")
 	if invalid.exit != ExitInvalidInput || decodeOneDocument(t, invalid.stdout)["error"].(map[string]any)["code"] != "INVALID_ARGUMENT" {
 		t.Fatalf("invalid visibility = %#v", invalid)
 	}
@@ -51,11 +48,11 @@ func TestPostVisibilityFlagDirectAPIParityAndVisitorReads(t *testing.T) {
 	if revealed["visibility"] != "everyone" || revealed["edited_at"] != nil {
 		t.Fatalf("API reveal = %#v", revealed)
 	}
-	directGet := commandData(t, execute(application, "", "post", "get", id, "--data-dir", fixture.dataDir, "--json"))
+	directGet := commandData(t, execute(application, "", "post", "get", id, "--data-dir", fixture.dataDir, "--as", "writer", "--json"))
 	if !reflect.DeepEqual(revealed, directGet) {
 		t.Fatalf("API reveal = %#v, direct get = %#v", revealed, directGet)
 	}
-	empty := execute(application, "", "post", "update", id, "--data-dir", fixture.dataDir, "--json")
+	empty := execute(application, "", "post", "update", id, "--data-dir", fixture.dataDir, "--as", "writer", "--json")
 	if empty.exit != ExitInvalidInput {
 		t.Fatalf("empty update = %#v", empty)
 	}

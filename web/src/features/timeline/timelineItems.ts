@@ -1,5 +1,5 @@
 import type { PublicPost } from "../../api/public";
-import type { OwnerPostEvent } from "../owner/postEvents";
+import type { PostChangeEvent } from "../posts/postEvents";
 
 export function timelineItemKey(post: PublicPost): string {
   return `${post.id}:${post.timelineItemKind}`;
@@ -43,7 +43,7 @@ function asTimelineItem(
 // the repost projection is inserted or removed at the activity position.
 export function reconcileTimelineEvent(
   current: PublicPost[],
-  event: OwnerPostEvent,
+  event: PostChangeEvent,
 ): PublicPost[] {
   const matching = current.filter((post) => post.id === event.post.id);
   const others = current.filter((post) => post.id !== event.post.id);

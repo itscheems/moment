@@ -38,22 +38,24 @@ func TestServeBinaryStructuredLogsAndGracefulSignal(t *testing.T) {
 		}
 		binary = absoluteBinary
 	}
-	initCommand := exec.Command(binary, "owner", "init", "--data-dir", dataDir, "--json")
+	initCommand := exec.Command(binary, "init", "--username", "writer", "--data-dir", dataDir, "--json")
 	initOutput, err := initCommand.Output()
 	if err != nil {
-		t.Fatalf("owner init: %v", err)
+		t.Fatalf("account init: %v", err)
 	}
 	var initialized struct {
 		Data struct {
-			Token        string `json:"token"`
-			SessionEpoch uint64 `json:"session_epoch"`
+			Token      string `json:"token"`
+			Credential struct {
+				ID string `json:"id"`
+			} `json:"credential"`
 		} `json:"data"`
 	}
 	if err := json.Unmarshal(initOutput, &initialized); err != nil {
-		t.Fatalf("decode owner init: %v; output=%s", err, initOutput)
+		t.Fatalf("decode account init: %v; output=%s", err, initOutput)
 	}
-	if initialized.Data.Token == "" || initialized.Data.SessionEpoch != 1 {
-		t.Fatalf("owner init result = %#v", initialized.Data)
+	if initialized.Data.Token == "" || initialized.Data.Credential.ID == "" {
+		t.Fatalf("account init result = %#v", initialized.Data)
 	}
 	originalToken := initialized.Data.Token
 	instance, err := runtimefs.Open(dataDir)
@@ -153,7 +155,7 @@ func TestServeBinaryStructuredLogsAndGracefulSignal(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	directCreate := exec.Command(binary, "post", "create", "--data-dir", dataDir, "--content", "binary parity", "--idempotency-key", "binary-post-001", "--json")
+	directCreate := exec.Command(binary, "post", "create", "--as", "writer", "--data-dir", dataDir, "--content", "binary parity", "--idempotency-key", "binary-post-001", "--json")
 	directCreateOutput, err := directCreate.Output()
 	if err != nil {
 		t.Fatalf("direct post create: %v output=%s", err, directCreateOutput)
@@ -204,20 +206,20 @@ func TestServeBinaryStructuredLogsAndGracefulSignal(t *testing.T) {
 		t.Fatalf("API/direct update parity: decode=%v API=%#v direct=%#v", err, updatedPost.Data, directUpdated.Data)
 	}
 
-	directRotate := exec.Command(binary, "owner", "rotate-token", "--data-dir", dataDir, "--json")
+	directRotate := exec.Command(binary, "auth", "create-token", "--username", "writer", "--data-dir", dataDir, "--json")
 	directOutput, directErr := directRotate.Output()
 	var directExit *exec.ExitError
 	if !errors.As(directErr, &directExit) || directExit.ExitCode() != 4 || !strings.Contains(string(directOutput), `"code":"INSTANCE_IN_USE"`) {
 		t.Fatalf("direct rotation while serving err=%v output=%s", directErr, directOutput)
 	}
 
-	apiStatus := exec.Command(binary, "--url", "http://"+address, "owner", "status", "--json")
+	apiStatus := exec.Command(binary, "--url", "http://"+address, "auth", "status", "--json")
 	apiStatus.Env = append(os.Environ(), "MOMENT_TOKEN="+originalToken)
 	statusOutput, err := apiStatus.Output()
-	if err != nil || !strings.Contains(string(statusOutput), `"session_epoch":1`) {
+	if err != nil || !strings.Contains(string(statusOutput), `"password_enabled":false`) {
 		t.Fatalf("API status err=%v output=%s", err, statusOutput)
 	}
-	apiRotate := exec.Command(binary, "--url", "http://"+address, "owner", "rotate-token", "--json")
+	apiRotate := exec.Command(binary, "--url", "http://"+address, "auth", "create-token", "--json")
 	apiRotate.Env = append(os.Environ(), "MOMENT_TOKEN="+originalToken)
 	rotationOutput, err := apiRotate.Output()
 	if err != nil {
@@ -225,17 +227,24 @@ func TestServeBinaryStructuredLogsAndGracefulSignal(t *testing.T) {
 	}
 	var rotated struct {
 		Data struct {
-			Token        string `json:"token"`
-			SessionEpoch uint64 `json:"session_epoch"`
+			Token      string `json:"token"`
+			Credential struct {
+				ID string `json:"id"`
+			} `json:"credential"`
 		} `json:"data"`
 	}
 	if err := json.Unmarshal(rotationOutput, &rotated); err != nil {
 		t.Fatalf("decode API rotation: %v; output=%s", err, rotationOutput)
 	}
-	if rotated.Data.Token == "" || rotated.Data.Token == originalToken || rotated.Data.SessionEpoch != 2 {
+	if rotated.Data.Token == "" || rotated.Data.Token == originalToken || rotated.Data.Credential.ID == "" {
 		t.Fatalf("API rotation result = %#v", rotated.Data)
 	}
-	request, err := http.NewRequest(http.MethodGet, "http://"+address+"/api/v1/owner/status", nil)
+	revoke := exec.Command(binary, "--url", "http://"+address, "auth", "revoke-token", initialized.Data.Credential.ID, "--yes", "--json")
+	revoke.Env = append(os.Environ(), "MOMENT_TOKEN="+rotated.Data.Token)
+	if output, err := revoke.Output(); err != nil {
+		t.Fatalf("revoke original credential: %v %s", err, output)
+	}
+	request, err := http.NewRequest(http.MethodGet, "http://"+address+"/api/v1/account/security", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -248,7 +257,7 @@ func TestServeBinaryStructuredLogsAndGracefulSignal(t *testing.T) {
 	if oldResponse.StatusCode != http.StatusUnauthorized {
 		t.Fatalf("old token status = %d", oldResponse.StatusCode)
 	}
-	request, err = http.NewRequest(http.MethodGet, "http://"+address+"/api/v1/owner/status", nil)
+	request, err = http.NewRequest(http.MethodGet, "http://"+address+"/api/v1/account/security", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -293,7 +302,7 @@ func TestServeBinaryStructuredLogsAndGracefulSignal(t *testing.T) {
 		}
 	}
 	if strings.Contains(stderr.String(), originalToken) || strings.Contains(stderr.String(), rotated.Data.Token) {
-		t.Fatalf("server logs leaked owner token: %s", stderr.String())
+		t.Fatalf("server logs leaked account token: %s", stderr.String())
 	}
 
 	lockContext, cancelLock := context.WithTimeout(context.Background(), time.Second)
@@ -307,7 +316,7 @@ func TestServeBinaryStructuredLogsAndGracefulSignal(t *testing.T) {
 	}
 }
 
-func TestInitAliasAndBrokenPipeBinaryContracts(t *testing.T) {
+func TestExplicitInitializationAndBrokenPipeBinaryContracts(t *testing.T) {
 	binary := os.Getenv("MOMENT_SMOKE_BINARY")
 	if binary == "" {
 		binary = filepath.Join(t.TempDir(), "moment")
@@ -337,18 +346,18 @@ func TestInitAliasAndBrokenPipeBinaryContracts(t *testing.T) {
 	}
 
 	aliasDir := filepath.Join(t.TempDir(), "alias")
-	alias, _, err := runJSON("init", "--data-dir", aliasDir, "--json")
+	alias, _, err := runJSON("init", "--username", "writer", "--data-dir", aliasDir, "--json")
 	if err != nil || alias["ok"] != true {
 		t.Fatalf("init alias err=%v document=%#v", err, alias)
 	}
 	credential := alias["data"].(map[string]any)
-	if credential["initialized"] != true || credential["session_epoch"] != float64(1) || credential["token"] == "" {
+	if credential["credential"] == nil || credential["token"] == "" {
 		t.Fatalf("init credential = %#v", credential)
 	}
-	duplicate, _, err := runJSON("owner", "init", "--data-dir", aliasDir, "--json")
+	duplicate, _, err := runJSON("init", "--username", "writer", "--data-dir", aliasDir, "--json")
 	var duplicateExit *exec.ExitError
 	if !errors.As(err, &duplicateExit) || duplicateExit.ExitCode() != 4 ||
-		duplicate["error"].(map[string]any)["code"] != "OWNER_ALREADY_INITIALIZED" {
+		duplicate["error"].(map[string]any)["code"] != "SIGNING_ALREADY_INITIALIZED" {
 		t.Fatalf("duplicate err=%v document=%#v", err, duplicate)
 	}
 	unsupported, _, err := runJSON("--url", "http://127.0.0.1:1", "init", "--json")
@@ -380,7 +389,7 @@ func TestInitAliasAndBrokenPipeBinaryContracts(t *testing.T) {
 		if !errors.As(runErr, &exitError) || exitError.ExitCode() != wantExit {
 			t.Fatalf("broken pipe %v err=%v stderr=%q", args, runErr, stderr.String())
 		}
-		if strings.Contains(stderr.String(), "owner-token") || strings.Contains(stderr.String(), credential["token"].(string)) {
+		if strings.Contains(stderr.String(), "account-token") || strings.Contains(stderr.String(), credential["token"].(string)) {
 			t.Fatalf("broken pipe %v leaked sensitive text: %q", args, stderr.String())
 		}
 	}

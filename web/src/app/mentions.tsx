@@ -7,25 +7,15 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { PublicApi, type Account, type SiteIdentity } from "../api/public";
+import {
+  PublicApi,
+  type PublicAccount,
+  type SiteIdentity,
+} from "../api/public";
 
-type MentionIdentity = Account | SiteIdentity;
+type MentionIdentity = PublicAccount | SiteIdentity;
 const NO_IDENTITIES: readonly MentionIdentity[] = [];
 
-/**
- * Which handles written into content actually name somebody here.
- *
- * A mention is text an author typed, not a reference the server checked. This
- * instance shipped with the handle `owner` and its owner renamed, so every
- * `@owner` written before that names nobody -- and linking it sent the reader
- * to a profile page that answers "no such user". The rule is that a mention is
- * a link only once it resolves, which also covers a typo and an account that
- * has since been removed.
- *
- * Resolution lives here rather than in the component that renders the markup:
- * a presentational component should not be opening requests, and the answers
- * are worth sharing across every post and comment on the page.
- */
 interface MentionResolver {
   /** Whether this handle is known to name an account. */
   resolves: (handle: string) => boolean;
@@ -51,11 +41,11 @@ export function MentionProvider({
   identities = NO_IDENTITIES,
 }: {
   children: ReactNode;
-  /** Handles the app already knows, such as the site owner's. */
+
   known?: readonly string[];
   identities?: readonly MentionIdentity[];
 }) {
-  const [resolved, setResolved] = useState<ReadonlyMap<string, Account>>(
+  const [resolved, setResolved] = useState<ReadonlyMap<string, PublicAccount>>(
     new Map(),
   );
   // Asked-about handles, kept in a ref because they must not cause a render:

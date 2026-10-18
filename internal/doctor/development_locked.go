@@ -283,11 +283,11 @@ func scanRootedOrphans(ctx context.Context, generationRoot *os.Root, expected ma
 func (service *Service) inspectLockedSecrets(builder *reportBuilder, root *os.Root) {
 	info, err := root.Lstat("secrets.json")
 	if errors.Is(err, os.ErrNotExist) {
-		builder.set(failed(CheckSecretPermissions, "owner secrets are not initialized", "run 'moment owner init' while the server is stopped", map[string]any{"exists": false, "permissions_valid": false}, failureIntegrity))
+		builder.set(failed(CheckSecretPermissions, "session signing material is not initialized", "initialize the instance while the server is stopped", map[string]any{"exists": false, "permissions_valid": false}, failureIntegrity))
 	} else if err != nil || !info.Mode().IsRegular() || info.Mode()&os.ModeSymlink != 0 || !privateMode(info, false) {
-		builder.set(failed(CheckSecretPermissions, "owner secrets are missing or unsafe", "restore a regular private secrets.json without exposing its contents", map[string]any{"exists": err == nil, "permissions_valid": false}, failureIO))
+		builder.set(failed(CheckSecretPermissions, "session signing material is missing or unsafe", "restore a regular private secrets.json without exposing its contents", map[string]any{"exists": err == nil, "permissions_valid": false}, failureIO))
 	} else {
-		builder.set(pass(CheckSecretPermissions, "owner secrets exist with private permissions", "no action is required", map[string]any{"exists": true, "permissions_valid": true, "platform": runtime.GOOS}))
+		builder.set(pass(CheckSecretPermissions, "session signing material exists with private permissions", "no action is required", map[string]any{"exists": true, "permissions_valid": true, "platform": runtime.GOOS}))
 	}
 }
 

@@ -83,13 +83,13 @@ function SearchMessage({
 
 export function SearchPage({
   api,
-  owner,
+  canPublish,
   search,
   site,
   onSiteChanged,
 }: {
   api: PublicApi;
-  owner: boolean;
+  canPublish: boolean;
   search: string;
   site: SiteIdentity;
   onSiteChanged?: (site: SiteIdentity) => void;
@@ -567,7 +567,7 @@ export function SearchPage({
                   onReply={(event) => openReply(hit.post, event)}
                   onSiteChanged={onSiteChanged}
                   key={hit.post.id}
-                  owner={owner}
+                  canPublish={canPublish}
                   post={hit.post}
                   site={site}
                 />

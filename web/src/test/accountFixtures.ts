@@ -25,3 +25,21 @@ export function makeAccountLimits(
     ...overrides,
   };
 }
+
+export function makeSiteIdentity(): import("../api/public").SiteIdentity {
+  return {
+    profileUserId: "1".repeat(32),
+    username: "writer",
+    displayName: "Writer",
+    title: "Moment",
+    bio: "",
+    timezone: "UTC",
+    publicBaseUrl: null,
+    avatarMediaId: null,
+    coverMediaId: null,
+    pinnedPostId: null,
+    commentsEnabled: true,
+    instanceId: "a".repeat(32),
+    instanceInitializedAt: null,
+  };
+}

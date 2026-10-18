@@ -18,7 +18,9 @@ import (
 	"time"
 
 	gin "github.com/gin-gonic/gin"
+	"github.com/moment/moment/internal/app"
 	"github.com/moment/moment/internal/auth"
+	"github.com/moment/moment/internal/domain"
 	"github.com/moment/moment/internal/media"
 	"github.com/moment/moment/internal/runtimefs"
 	sqlitestore "github.com/moment/moment/internal/storage/sqlite"
@@ -27,8 +29,17 @@ import (
 func TestMediaDeliveryHeadersConditionalsAndExplicitGIFOriginal(t *testing.T) {
 	engine, store, _, runtimeState := newMediaHTTPFixture(t)
 	original := testGIF(t)
-	value, preview, err := store.Ingest(context.Background(), "animated.gif", bytes.NewReader(original))
+	value, preview, err := store.Ingest(fixtureContentContext(t, testAccountsForRuntime(t, runtimeState)), "animated.gif", bytes.NewReader(original))
 	if err != nil {
+		t.Fatal(err)
+	}
+	accounts := testAccountsForRuntime(t, runtimeState)
+	profile, err := accounts.ProfileAccount(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	avatar := value.ID.String()
+	if _, err := accounts.UpdateProfile(context.Background(), profile.ID, app.ProfileUpdate{AvatarMediaID: &app.NullableString{Value: &avatar}}); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.Remove(preview.Path); err != nil {
@@ -82,7 +93,7 @@ func TestMediaDeliveryHeadersConditionalsAndExplicitGIFOriginal(t *testing.T) {
 	}
 }
 
-func TestOwnerMediaUploadRequiresAuthenticationAndReturnsManagedURLs(t *testing.T) {
+func TestAccountMediaUploadRequiresAuthenticationAndReturnsManagedURLs(t *testing.T) {
 	engine, _, token, _ := newMediaHTTPFixture(t)
 	contents := testGIF(t)
 	request := mediaUploadRequest(t, contents)
@@ -102,23 +113,24 @@ func TestOwnerMediaUploadRequiresAuthenticationAndReturnsManagedURLs(t *testing.
 	}
 }
 
-func TestOwnerCanReadEarlyVideoPosterWithoutCachingIt(t *testing.T) {
+func TestUploaderCanReadEarlyVideoPosterWithoutCachingIt(t *testing.T) {
 	engine, _, _, _ := newMediaHTTPFixture(t)
 	posters := newUploadPosterCache()
 	const uploadID = "upload-0123456789abcdef"
 	poster := []byte{0xff, 0xd8, 0xff, 0xd9}
-	posters.put(uploadID, poster)
+	posters.put("0123456789abcdef0123456789abcdef", uploadID, poster)
 
 	router := gin.New()
 	router.GET("/poster/:uploadID", getUploadPoster(posters))
 	request := httptest.NewRequest(http.MethodGet, "/poster/"+uploadID, nil)
+	request = request.WithContext(app.WithContentActor(request.Context(), domain.User{ID: "0123456789abcdef0123456789abcdef", Role: domain.UserRoleMember, Status: domain.AccountActive}))
 	response := performRequest(router, request)
 	if response.Code != http.StatusOK || response.Header().Get("Content-Type") != "image/jpeg" ||
 		response.Header().Get("Cache-Control") != "no-store" || !bytes.Equal(response.Body.Bytes(), poster) {
 		t.Fatalf("early poster response = %d headers=%v equal=%v", response.Code, response.Header(), bytes.Equal(response.Body.Bytes(), poster))
 	}
 
-	missing := performRequest(engine, httptest.NewRequest(http.MethodGet, "/api/v1/owner/media-uploads/another-0123456789/poster", nil))
+	missing := performRequest(engine, httptest.NewRequest(http.MethodGet, "/api/v1/media/uploads/another-0123456789/poster", nil))
 	if missing.Code != http.StatusUnauthorized {
 		t.Fatalf("unauthenticated early poster = %d", missing.Code)
 	}
@@ -134,12 +146,13 @@ func newMediaHTTPFixture(t *testing.T) (http.Handler, *media.Store, string, *run
 	if err != nil {
 		t.Fatal(err)
 	}
+	testAccounts(t, database, runtimeState)
 	t.Cleanup(func() { _ = database.Close() })
 	store, err := media.NewStore(runtimeState, database, media.Options{Clock: func() time.Time { return time.UnixMilli(1_800_000_000_000) }, Entropy: bytes.NewReader(bytes.Repeat([]byte{0x31}, 128))})
 	if err != nil {
 		t.Fatal(err)
 	}
-	credential, err := auth.InitializeOffline(context.Background(), runtimeState, auth.Options{})
+	_, err = auth.InitializeOffline(context.Background(), runtimeState, auth.Options{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -150,11 +163,11 @@ func newMediaHTTPFixture(t *testing.T) (http.Handler, *media.Store, string, *run
 	if err := manager.Load(); err != nil {
 		t.Fatal(err)
 	}
-	engine, err := New(Config{Assets: testAssets(), OwnerAuth: manager, Accounts: testAccounts(t, database, runtimeState), Media: store, Readiness: func(context.Context) error { return nil }, RequestID: func() string { return "req_media" }})
+	engine, err := New(Config{Assets: testAssets(), SessionSigner: manager, Accounts: testAccounts(t, database, runtimeState), Media: store, Readiness: func(context.Context) error { return nil }, RequestID: func() string { return "req_media" }})
 	if err != nil {
 		t.Fatal(err)
 	}
-	return engine, store, credential.Token, runtimeState
+	return engine, store, issueTestAPIToken(t, testAccounts(t, database, runtimeState)), runtimeState
 }
 
 func mediaUploadRequest(t *testing.T, contents []byte) *http.Request {
@@ -171,7 +184,7 @@ func mediaUploadRequest(t *testing.T, contents []byte) *http.Request {
 	if err := writer.Close(); err != nil {
 		t.Fatal(err)
 	}
-	request := httptest.NewRequest(http.MethodPost, "/api/v1/owner/media", &body)
+	request := httptest.NewRequest(http.MethodPost, "/api/v1/media", &body)
 	request.Header.Set("Content-Type", writer.FormDataContentType())
 	return request
 }
@@ -196,3 +209,55 @@ func testGIF(t *testing.T) []byte {
 }
 
 func stringInt(value int) string { return strconv.Itoa(value) }
+
+func TestUploadPostersAreIsolatedByAccountEvenWhenUploadIDsCollide(t *testing.T) {
+	const uploadID = "shared-upload-0123456789"
+	first := domain.User{ID: "0123456789abcdef0123456789abcdef", Role: domain.UserRoleMember, Status: domain.AccountActive}
+	second := domain.User{ID: "fedcba9876543210fedcba9876543210", Role: domain.UserRoleAdmin, Status: domain.AccountActive}
+	cache := newUploadPosterCache()
+	cache.put(first.ID, uploadID, []byte("first poster"))
+	cache.put(second.ID, uploadID, []byte("second poster"))
+	router := gin.New()
+	router.GET("/poster/:uploadID", getUploadPoster(cache))
+	for _, user := range []domain.User{first, second} {
+		request := httptest.NewRequest(http.MethodGet, "/poster/"+uploadID, nil)
+		request = request.WithContext(app.WithContentActor(request.Context(), user))
+		response := performRequest(router, request)
+		expected := "first poster"
+		if user.ID == second.ID {
+			expected = "second poster"
+		}
+		if response.Code != http.StatusOK || response.Body.String() != expected {
+			t.Fatalf("cross-account poster=%d %q", response.Code, response.Body.String())
+		}
+	}
+	cache.remove(first.ID, uploadID)
+	if _, ok := cache.get(first.ID, uploadID); ok {
+		t.Fatal("removed poster remained visible")
+	}
+	if value, ok := cache.get(second.ID, uploadID); !ok || string(value) != "second poster" {
+		t.Fatal("one account removed another account's poster")
+	}
+	anonymous := performRequest(router, httptest.NewRequest(http.MethodGet, "/poster/"+uploadID, nil))
+	if anonymous.Code != http.StatusUnauthorized {
+		t.Fatal("anonymous caller read a private upload poster")
+	}
+}
+
+func TestUnreferencedUploadIsPrivateToItsUploaderAndNeverPubliclyCached(t *testing.T) {
+	engine, store, token, state := newMediaHTTPFixture(t)
+	ctx := fixtureContentContext(t, testAccountsForRuntime(t, state))
+	object, _, err := store.Ingest(ctx, "private-upload.gif", bytes.NewReader(testGIF(t)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	route := "/api/v1/media/" + object.ID.String()
+	anonymous := performRequest(engine, httptest.NewRequest(http.MethodGet, route, nil))
+	if anonymous.Code != http.StatusNotFound {
+		t.Fatalf("unreferenced upload exposed=%d", anonymous.Code)
+	}
+	own := performRequest(engine, headerRequest(http.MethodGet, route, token, nil))
+	if own.Code != http.StatusOK || !strings.HasPrefix(own.Header().Get("Cache-Control"), "private,") || strings.Contains(own.Header().Get("Cache-Control"), "immutable") {
+		t.Fatalf("private upload cache=%d %q", own.Code, own.Header().Get("Cache-Control"))
+	}
+}

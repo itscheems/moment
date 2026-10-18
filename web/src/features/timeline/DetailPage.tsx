@@ -35,14 +35,14 @@ export function DetailPage({
   api,
   id,
   site,
-  owner = false,
+  canPublish = false,
   onSiteChanged,
   focusReading = false,
 }: {
   api: PublicApi;
   id: string;
   site: SiteIdentity;
-  owner?: boolean;
+  canPublish?: boolean;
   onSiteChanged?: (site: SiteIdentity) => void;
   focusReading?: boolean;
 }) {
@@ -127,7 +127,7 @@ export function DetailPage({
           onReply={openReply}
           onReposted={setPost}
           onSiteChanged={onSiteChanged}
-          owner={owner}
+          canPublish={canPublish}
           post={post}
           site={site}
         />
@@ -138,7 +138,7 @@ export function DetailPage({
           onReply={openReply}
           onReposted={setPost}
           onSiteChanged={onSiteChanged}
-          owner={owner}
+          canPublish={canPublish}
           post={post}
           site={site}
         />

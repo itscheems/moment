@@ -1,7 +1,6 @@
 package sqlite
 
 import (
-	"context"
 	"testing"
 	"time"
 
@@ -29,7 +28,7 @@ func makeDraftRecord(t *testing.T, db *Database, id, title, content string, at t
 	if err != nil {
 		t.Fatal(err)
 	}
-	return app.ArticleDraftRecord{ID: parsed, Draft: draft, CreatedAt: at, UpdatedAt: at}
+	return app.ArticleDraftRecord{AuthorUserID: testAccountID, ID: parsed, Draft: draft, CreatedAt: at, UpdatedAt: at}
 }
 
 func withPostStore(t *testing.T, db *Database, write bool, operation func(store postStore) error) error {
@@ -38,7 +37,7 @@ func withPostStore(t *testing.T, db *Database, write bool, operation func(store 
 	if write {
 		run = db.WriteTx
 	}
-	return run(context.Background(), func(queries Queries) error {
+	return run(testAccountContext(), func(queries Queries) error {
 		return operation(newPostStore(queries))
 	})
 }
@@ -52,7 +51,7 @@ func TestArticleDraftKeepsAnUnfinishedArticleOutsideTheTimeline(t *testing.T) {
 	record := makeDraftRecord(t, db, draftOneID, "", "", at)
 
 	if err := withPostStore(t, db, true, func(store postStore) error {
-		return store.InsertArticleDraft(context.Background(), record)
+		return store.InsertArticleDraft(testAccountContext(), record)
 	}); err != nil {
 		t.Fatalf("insert: %v", err)
 	}
@@ -61,7 +60,7 @@ func TestArticleDraftKeepsAnUnfinishedArticleOutsideTheTimeline(t *testing.T) {
 	var found bool
 	if err := withPostStore(t, db, false, func(store postStore) error {
 		var err error
-		read, found, err = store.ArticleDraftByID(context.Background(), record.ID)
+		read, found, err = store.ArticleDraftByID(testAccountContext(), record.ID)
 		return err
 	}); err != nil || !found {
 		t.Fatalf("read back: found=%v err=%v", found, err)
@@ -72,8 +71,8 @@ func TestArticleDraftKeepsAnUnfinishedArticleOutsideTheTimeline(t *testing.T) {
 
 	// And it is not an entry, so nothing that reads the timeline can see it.
 	var entries int
-	if err := db.ReadTx(context.Background(), func(queries Queries) error {
-		return queries.QueryRowContext(context.Background(), `SELECT count(*) FROM entries`).Scan(&entries)
+	if err := db.ReadTx(testAccountContext(), func(queries Queries) error {
+		return queries.QueryRowContext(testAccountContext(), `SELECT count(*) FROM entries`).Scan(&entries)
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -88,7 +87,7 @@ func TestArticleDraftRefusesAStaleOverwrite(t *testing.T) {
 	first := domain.TimeFromMillis(1_000)
 	record := makeDraftRecord(t, db, draftOneID, "初稿", `{"type":"paragraph","content":[{"type":"text","text":"第一版"}]}`, first)
 	if err := withPostStore(t, db, true, func(store postStore) error {
-		return store.InsertArticleDraft(context.Background(), record)
+		return store.InsertArticleDraft(testAccountContext(), record)
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -98,7 +97,7 @@ func TestArticleDraftRefusesAStaleOverwrite(t *testing.T) {
 	var applied bool
 	if err := withPostStore(t, db, true, func(store postStore) error {
 		var err error
-		applied, err = store.UpdateArticleDraft(context.Background(), winner, first)
+		applied, err = store.UpdateArticleDraft(testAccountContext(), winner, first)
 		return err
 	}); err != nil || !applied {
 		t.Fatalf("a current write must land: applied=%v err=%v", applied, err)
@@ -108,7 +107,7 @@ func TestArticleDraftRefusesAStaleOverwrite(t *testing.T) {
 	loser := makeDraftRecord(t, db, draftOneID, "另一个页签", `{"type":"paragraph","content":[{"type":"text","text":"不该覆盖"}]}`, domain.TimeFromMillis(3_000))
 	if err := withPostStore(t, db, true, func(store postStore) error {
 		var err error
-		applied, err = store.UpdateArticleDraft(context.Background(), loser, first)
+		applied, err = store.UpdateArticleDraft(testAccountContext(), loser, first)
 		return err
 	}); err != nil {
 		t.Fatal(err)
@@ -120,7 +119,7 @@ func TestArticleDraftRefusesAStaleOverwrite(t *testing.T) {
 	var read app.ArticleDraftRecord
 	if err := withPostStore(t, db, false, func(store postStore) error {
 		var err error
-		read, _, err = store.ArticleDraftByID(context.Background(), record.ID)
+		read, _, err = store.ArticleDraftByID(testAccountContext(), record.ID)
 		return err
 	}); err != nil {
 		t.Fatal(err)
@@ -137,7 +136,7 @@ func TestArticleDraftMediaFollowsItsDraft(t *testing.T) {
 	record := makeDraftRecord(t, db, draftOneID, "带图草稿",
 		`{"type":"image","attrs":{"media_id":"`+mediaID+`","alt":"草稿配图"}}`, domain.TimeFromMillis(1_000))
 	if err := withPostStore(t, db, true, func(store postStore) error {
-		return store.InsertArticleDraft(context.Background(), record)
+		return store.InsertArticleDraft(testAccountContext(), record)
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -145,8 +144,8 @@ func TestArticleDraftMediaFollowsItsDraft(t *testing.T) {
 	count := func() int {
 		t.Helper()
 		var rows int
-		if err := db.ReadTx(context.Background(), func(queries Queries) error {
-			return queries.QueryRowContext(context.Background(),
+		if err := db.ReadTx(testAccountContext(), func(queries Queries) error {
+			return queries.QueryRowContext(testAccountContext(),
 				`SELECT count(*) FROM article_draft_media WHERE draft_id = ?`, draftOneID).Scan(&rows)
 		}); err != nil {
 			t.Fatal(err)
@@ -160,7 +159,7 @@ func TestArticleDraftMediaFollowsItsDraft(t *testing.T) {
 	var deleted bool
 	if err := withPostStore(t, db, true, func(store postStore) error {
 		var err error
-		deleted, err = store.DeleteArticleDraft(context.Background(), record.ID)
+		deleted, err = store.DeleteArticleDraft(testAccountContext(), record.ID)
 		return err
 	}); err != nil || !deleted {
 		t.Fatalf("delete: %v %v", deleted, err)
@@ -176,10 +175,10 @@ func TestArticleDraftListsNewestFirstAndCounts(t *testing.T) {
 	older := makeDraftRecord(t, db, draftOneID, "旧的", "", domain.TimeFromMillis(1_000))
 	newer := makeDraftRecord(t, db, draftTwoID, "新的", "", domain.TimeFromMillis(2_000))
 	if err := withPostStore(t, db, true, func(store postStore) error {
-		if err := store.InsertArticleDraft(context.Background(), older); err != nil {
+		if err := store.InsertArticleDraft(testAccountContext(), older); err != nil {
 			return err
 		}
-		return store.InsertArticleDraft(context.Background(), newer)
+		return store.InsertArticleDraft(testAccountContext(), newer)
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -188,10 +187,10 @@ func TestArticleDraftListsNewestFirstAndCounts(t *testing.T) {
 	var total int
 	if err := withPostStore(t, db, false, func(store postStore) error {
 		var err error
-		if listed, err = store.ListArticleDrafts(context.Background(), 0); err != nil {
+		if listed, err = store.ListArticleDrafts(testAccountContext(), 0); err != nil {
 			return err
 		}
-		total, err = store.CountArticleDrafts(context.Background())
+		total, err = store.CountArticleDrafts(testAccountContext())
 		return err
 	}); err != nil {
 		t.Fatal(err)
@@ -218,12 +217,12 @@ func TestArticleDraftWorkingCopyIsUniquePerPublishedArticle(t *testing.T) {
 	second.PublishedEntryID = &entryID
 
 	if err := withPostStore(t, db, true, func(store postStore) error {
-		return store.InsertArticleDraft(context.Background(), first)
+		return store.InsertArticleDraft(testAccountContext(), first)
 	}); err != nil {
 		t.Fatal(err)
 	}
 	if err := withPostStore(t, db, true, func(store postStore) error {
-		return store.InsertArticleDraft(context.Background(), second)
+		return store.InsertArticleDraft(testAccountContext(), second)
 	}); err == nil {
 		t.Fatal("one published article may have at most one working copy")
 	}
@@ -232,18 +231,16 @@ func TestArticleDraftWorkingCopyIsUniquePerPublishedArticle(t *testing.T) {
 	var read app.ArticleDraftRecord
 	if err := withPostStore(t, db, false, func(store postStore) error {
 		var err error
-		read, found, err = store.ArticleDraftForEntry(context.Background(), entryID)
+		read, found, err = store.ArticleDraftForEntry(testAccountContext(), entryID)
 		return err
 	}); err != nil || !found || read.ID != first.ID {
 		t.Fatalf("working copy lookup = %+v found=%v err=%v", read, found, err)
 	}
 
-	// Deleting the article leaves the draft behind rather than taking the
-	// owner's unsaved words with it.
 	mustWrite(t, db, `DELETE FROM entries WHERE id = ?`, articleEntryID)
 	if err := withPostStore(t, db, false, func(store postStore) error {
 		var err error
-		read, found, err = store.ArticleDraftByID(context.Background(), first.ID)
+		read, found, err = store.ArticleDraftByID(testAccountContext(), first.ID)
 		return err
 	}); err != nil || !found {
 		t.Fatalf("the draft must survive its article: found=%v err=%v", found, err)
@@ -288,5 +285,5 @@ func TestArticleDraftCannotPublishWhenItSaysNothing(t *testing.T) {
 // assertion depends on.
 func recordFor(id domain.ID, draft domain.ArticleDraft) app.ArticleDraftRecord {
 	at := domain.TimeFromMillis(1_000)
-	return app.ArticleDraftRecord{ID: id, Draft: draft, CreatedAt: at, UpdatedAt: at}
+	return app.ArticleDraftRecord{AuthorUserID: testAccountID, ID: id, Draft: draft, CreatedAt: at, UpdatedAt: at}
 }

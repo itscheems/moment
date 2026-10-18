@@ -53,10 +53,7 @@ const (
 	LinkKindVideo LinkCardKind = "video"
 )
 
-// LinkCard is the immutable snapshot attached to an entry when an owner
-// publishes a recognized URL. Rendering a stored card never requires a network
-// request: the thumbnail is a managed media reference and every text field was
-// captured at publish time.
+// LinkCard is an immutable URL preview snapshot attached to content.
 type LinkCard struct {
 	Position         int
 	SourceURL        string
@@ -85,9 +82,7 @@ type LinkCard struct {
 	LikeCount    *int64
 }
 
-// Validate enforces the canonical link card contract. It runs on the write
-// path even when the payload came from Moment's own unfurl service, because a
-// client may submit any card body an owner session can reach.
+// Validate checks preview fields and managed-media references.
 func (card LinkCard) Validate() error {
 	if card.Position < 0 || card.Position >= MaxLinkCardsPerEntry {
 		return NewError(CodeInvalidArgument, "link card position is out of range", map[string]any{"field": "position", "limit": MaxLinkCardsPerEntry})

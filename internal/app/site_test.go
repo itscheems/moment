@@ -94,59 +94,29 @@ func newTestSiteService(t *testing.T, transactions *memorySiteTransactions, deve
 }
 
 func TestSiteDefaultsAndPartialNullableUpdates(t *testing.T) {
-	initial := SiteSettings{Title: "Moment", Timezone: "Asia/Shanghai", CommentsEnabled: true}
-	transactions := &memorySiteTransactions{settings: &initial, media: map[string]bool{testAvatarID: true, testCoverID: true}}
+	avatar, cover := testAvatarID, testCoverID
+	initial := SiteSettings{ProfileUserID: "0123456789abcdef0123456789abcdef", Username: "writer", DisplayName: "Writer", Title: "Moment", Bio: "account biography", Timezone: "UTC", CommentsEnabled: true, AvatarMediaID: &avatar, CoverMediaID: &cover}
+	transactions := &memorySiteTransactions{settings: &initial, media: map[string]bool{avatar: true, cover: true}}
 	service := newTestSiteService(t, transactions, true)
-
-	defaults, err := service.Get(context.Background())
+	title, url, comments := "Site title", "HTTP://LOCALHOST:80/journal/", false
+	updated, err := service.Update(context.Background(), SiteUpdate{Title: &title, PublicBaseURL: &NullableString{Value: &url}, CommentsEnabled: &comments})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if defaults.Title != "Moment" || defaults.Timezone != "Asia/Shanghai" || !defaults.CommentsEnabled || defaults.PublicBaseURL != nil || defaults.AvatarMediaID != nil {
-		t.Fatalf("defaults = %#v", defaults)
+	if updated.Title != title || updated.PublicBaseURL == nil || *updated.PublicBaseURL != "http://localhost/journal" || updated.CommentsEnabled {
+		t.Fatalf("updated=%+v", updated)
 	}
-
-	title := "Jojo's moments"
-	publicURL := "HTTP://LOCALHOST:80/journal/"
-	avatar := testAvatarID
-	cover := testCoverID
-	comments := false
-	updated, err := service.Update(context.Background(), SiteUpdate{
-		Title:           &title,
-		PublicBaseURL:   &NullableString{Value: &publicURL},
-		AvatarMediaID:   &NullableString{Value: &avatar},
-		CoverMediaID:    &NullableString{Value: &cover},
-		CommentsEnabled: &comments,
-	})
-	if err != nil {
-		t.Fatal(err)
+	if updated.Username != initial.Username || updated.DisplayName != initial.DisplayName || updated.Bio != initial.Bio || !reflect.DeepEqual(updated.AvatarMediaID, initial.AvatarMediaID) || !reflect.DeepEqual(updated.CoverMediaID, initial.CoverMediaID) {
+		t.Fatal("site update changed the selected account")
 	}
-	if updated.Title != title || updated.PublicBaseURL == nil || *updated.PublicBaseURL != "http://localhost/journal" ||
-		updated.AvatarMediaID == nil || *updated.AvatarMediaID != avatar || updated.CoverMediaID == nil || *updated.CoverMediaID != cover || updated.CommentsEnabled {
-		t.Fatalf("updated = %#v", updated)
-	}
-
-	cleared, err := service.Update(context.Background(), SiteUpdate{
-		PublicBaseURL: &NullableString{Value: nil},
-		AvatarMediaID: &NullableString{Value: nil},
-		CoverMediaID:  &NullableString{Value: nil},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if cleared.PublicBaseURL != nil || cleared.AvatarMediaID != nil || cleared.CoverMediaID != nil || cleared.Title != title || cleared.CommentsEnabled {
-		t.Fatalf("cleared = %#v", cleared)
-	}
-	wildcardLocalhost := "http://journal.localhost"
-	if _, err := service.Update(context.Background(), SiteUpdate{
-		PublicBaseURL: &NullableString{Value: &wildcardLocalhost},
-	}); !domain.HasCode(err, domain.CodeInvalidArgument) {
-		t.Fatalf("non-exact localhost HTTP error = %v", err)
+	cleared, err := service.Update(context.Background(), SiteUpdate{PublicBaseURL: &NullableString{}})
+	if err != nil || cleared.PublicBaseURL != nil || cleared.Title != title || cleared.AvatarMediaID == nil || cleared.CoverMediaID == nil {
+		t.Fatalf("URL clear touched account pictures=%+v,%v", cleared, err)
 	}
 }
 
 func TestSiteUpdateValidationAndAtomicRollback(t *testing.T) {
-	initial := SiteSettings{Title: "Before", Bio: "kept", Timezone: "UTC", CommentsEnabled: true}
+	initial := SiteSettings{ProfileUserID: "0123456789abcdef0123456789abcdef", Username: "writer", DisplayName: "Moment", Title: "Before", Bio: "kept", Timezone: "UTC", CommentsEnabled: true}
 	transactions := &memorySiteTransactions{settings: &initial, media: map[string]bool{}}
 	service := newTestSiteService(t, transactions, false)
 
@@ -185,9 +155,6 @@ func TestSiteUpdateValidationAndAtomicRollback(t *testing.T) {
 		"long title": {
 			Title: ptr(strings.Repeat("界", 121)),
 		},
-		"long bio": {
-			Bio: ptr(strings.Repeat("界", 501)),
-		},
 	} {
 		t.Run(name, func(t *testing.T) {
 			if _, err := service.Update(context.Background(), update); !domain.HasCode(err, domain.CodeInvalidArgument) {
@@ -200,25 +167,6 @@ func TestSiteUpdateValidationAndAtomicRollback(t *testing.T) {
 	}
 
 	changedTitle := "Must roll back"
-	missingAvatar := "01ARZ3NDEKTSV4RRFFQ69G5FAZ"
-	if _, err := service.Update(context.Background(), SiteUpdate{
-		Title:         &changedTitle,
-		AvatarMediaID: &NullableString{Value: &missingAvatar},
-	}); !domain.HasCode(err, domain.CodeMediaNotFound) {
-		t.Fatalf("missing avatar error = %v", err)
-	}
-	if !reflect.DeepEqual(*transactions.settings, initial) {
-		t.Fatalf("missing avatar partially committed: %#v", transactions.settings)
-	}
-	if _, err := service.Update(context.Background(), SiteUpdate{
-		Title:        &changedTitle,
-		CoverMediaID: &NullableString{Value: &missingAvatar},
-	}); !domain.HasCode(err, domain.CodeMediaNotFound) {
-		t.Fatalf("missing cover error = %v", err)
-	}
-	if !reflect.DeepEqual(*transactions.settings, initial) {
-		t.Fatalf("missing cover partially committed: %#v", transactions.settings)
-	}
 
 	transactions.failPut = true
 	if _, err := service.Update(context.Background(), SiteUpdate{Title: &changedTitle}); !domain.HasCode(err, domain.CodeInternal) {
@@ -259,7 +207,7 @@ func TestHostTimezoneDetectionUsesIANAInputsAndFallsBack(t *testing.T) {
 }
 
 func TestSiteAcceptsSingleSegmentIANALinks(t *testing.T) {
-	initial := SiteSettings{Title: "Moment", Timezone: "UTC", CommentsEnabled: true}
+	initial := SiteSettings{ProfileUserID: "0123456789abcdef0123456789abcdef", Username: "writer", DisplayName: "Moment", Title: "Moment", Timezone: "UTC", CommentsEnabled: true}
 	transactions := &memorySiteTransactions{settings: &initial, media: map[string]bool{}}
 	service := newTestSiteService(t, transactions, false)
 	for _, timezone := range []string{"GMT", "CET", "Singapore", "Turkey", "Zulu"} {
@@ -270,11 +218,11 @@ func TestSiteAcceptsSingleSegmentIANALinks(t *testing.T) {
 }
 
 func TestSiteConcurrentPartialUpdatesMergeInsideSerializedWrite(t *testing.T) {
-	initial := SiteSettings{Title: "Before", Timezone: "UTC", CommentsEnabled: true}
+	initial := SiteSettings{ProfileUserID: "0123456789abcdef0123456789abcdef", Username: "writer", DisplayName: "Moment", Title: "Before", Timezone: "UTC", CommentsEnabled: true}
 	transactions := &memorySiteTransactions{settings: &initial, media: map[string]bool{}}
 	service := newTestSiteService(t, transactions, false)
 	title := "After"
-	bio := "A durable personal record"
+	timezone := "Europe/Paris"
 
 	var wait sync.WaitGroup
 	wait.Add(2)
@@ -286,7 +234,7 @@ func TestSiteConcurrentPartialUpdatesMergeInsideSerializedWrite(t *testing.T) {
 	}()
 	go func() {
 		defer wait.Done()
-		_, err := service.Update(context.Background(), SiteUpdate{Bio: &bio})
+		_, err := service.Update(context.Background(), SiteUpdate{Timezone: &timezone})
 		errors <- err
 	}()
 	wait.Wait()
@@ -300,13 +248,13 @@ func TestSiteConcurrentPartialUpdatesMergeInsideSerializedWrite(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if settings.Title != title || settings.Bio != bio {
+	if settings.Title != title || settings.Timezone != timezone {
 		t.Fatalf("lost partial update: %#v", settings)
 	}
 }
 
 func TestSitePinReplaceAndUnpinAreAtomicAndIdempotent(t *testing.T) {
-	initial := SiteSettings{Title: "Moment", Timezone: "UTC", CommentsEnabled: true}
+	initial := SiteSettings{ProfileUserID: "0123456789abcdef0123456789abcdef", Username: "writer", DisplayName: "Moment", Title: "Moment", Timezone: "UTC", CommentsEnabled: true}
 	transactions := &memorySiteTransactions{
 		settings: &initial,
 		media:    map[string]bool{},
@@ -314,30 +262,30 @@ func TestSitePinReplaceAndUnpinAreAtomicAndIdempotent(t *testing.T) {
 	}
 	service := newTestSiteService(t, transactions, false)
 
-	first, err := service.Pin(context.Background(), domain.ID(testPinnedPostID))
+	first, err := service.Pin(WithContentActor(context.Background(), domain.User{ID: "0123456789abcdef0123456789abcdef", Role: domain.UserRoleAdmin, Status: domain.AccountActive}), domain.ID(testPinnedPostID))
 	if err != nil || first.PinnedPostID == nil || *first.PinnedPostID != testPinnedPostID {
 		t.Fatalf("first pin = %#v, err=%v", first, err)
 	}
-	replayed, err := service.Pin(context.Background(), domain.ID(testPinnedPostID))
+	replayed, err := service.Pin(WithContentActor(context.Background(), domain.User{ID: "0123456789abcdef0123456789abcdef", Role: domain.UserRoleAdmin, Status: domain.AccountActive}), domain.ID(testPinnedPostID))
 	if err != nil || !reflect.DeepEqual(first, replayed) {
 		t.Fatalf("idempotent pin = %#v, err=%v", replayed, err)
 	}
-	replaced, err := service.Pin(context.Background(), domain.ID(testReplacementPostID))
+	replaced, err := service.Pin(WithContentActor(context.Background(), domain.User{ID: "0123456789abcdef0123456789abcdef", Role: domain.UserRoleAdmin, Status: domain.AccountActive}), domain.ID(testReplacementPostID))
 	if err != nil || replaced.PinnedPostID == nil || *replaced.PinnedPostID != testReplacementPostID {
 		t.Fatalf("replacement pin = %#v, err=%v", replaced, err)
 	}
-	if _, err := service.Pin(context.Background(), domain.ID("01ARZ3NDEKTSV4RRFFQ69G5FAX")); !domain.HasCode(err, domain.CodePostNotFound) {
+	if _, err := service.Pin(WithContentActor(context.Background(), domain.User{ID: "0123456789abcdef0123456789abcdef", Role: domain.UserRoleAdmin, Status: domain.AccountActive}), domain.ID("01ARZ3NDEKTSV4RRFFQ69G5FAX")); !domain.HasCode(err, domain.CodePostNotFound) {
 		t.Fatalf("missing pin error = %v", err)
 	}
-	stored, err := service.Get(context.Background())
+	stored, err := service.Get(WithContentActor(context.Background(), domain.User{ID: "0123456789abcdef0123456789abcdef", Role: domain.UserRoleAdmin, Status: domain.AccountActive}))
 	if err != nil || stored.PinnedPostID == nil || *stored.PinnedPostID != testReplacementPostID {
 		t.Fatalf("failed pin changed state = %#v, err=%v", stored, err)
 	}
-	cleared, err := service.Unpin(context.Background())
+	cleared, err := service.Unpin(WithContentActor(context.Background(), domain.User{ID: "0123456789abcdef0123456789abcdef", Role: domain.UserRoleAdmin, Status: domain.AccountActive}))
 	if err != nil || cleared.PinnedPostID != nil {
 		t.Fatalf("unpin = %#v, err=%v", cleared, err)
 	}
-	repeated, err := service.Unpin(context.Background())
+	repeated, err := service.Unpin(WithContentActor(context.Background(), domain.User{ID: "0123456789abcdef0123456789abcdef", Role: domain.UserRoleAdmin, Status: domain.AccountActive}))
 	if err != nil || repeated.PinnedPostID != nil {
 		t.Fatalf("idempotent unpin = %#v, err=%v", repeated, err)
 	}
@@ -353,97 +301,8 @@ func cloneSettingsPointer(settings *SiteSettings) *SiteSettings {
 
 func ptr(value string) *string { return &value }
 
-// The owner's handle is one column with one gate, whichever form reaches it.
-//
-// This path validated the shape and stopped there, so a name the account route
-// answers USERNAME_RESERVED for saved here without complaint -- and a handle
-// like "search" or "profile" is matched by the route table before the profile
-// route ever sees it, leaving the owner's own page permanently unreachable and
-// every profile_url the server emits pointing at the wrong screen.
-func TestSiteHandleWritesPassTheGateTheAccountRouteUses(t *testing.T) {
-	initial := SiteSettings{Title: "Moment", Timezone: "UTC", CommentsEnabled: true}
-	transactions := &memorySiteTransactions{settings: &initial, media: map[string]bool{}}
-	service := newTestSiteService(t, transactions, false)
-
-	for _, handle := range []string{"search", "api", "login", "assets", "archive", "profile"} {
-		t.Run(handle, func(t *testing.T) {
-			if _, err := service.Update(context.Background(), SiteUpdate{Username: &handle}); !domain.HasCode(err, domain.CodeUsernameReserved) {
-				t.Fatalf("reserved handle %q error = %v", handle, err)
-			}
-			if !reflect.DeepEqual(*transactions.settings, initial) {
-				t.Fatalf("reserved handle changed settings: %#v", transactions.settings)
-			}
-		})
-	}
-
-	for name, handle := range map[string]string{
-		"too short":          "ab",
-		"leading digit":      "1cheems",
-		"leading underscore": "_cheems",
-		"illegal character":  "che-ems",
-	} {
-		t.Run(name, func(t *testing.T) {
-			if _, err := service.Update(context.Background(), SiteUpdate{Username: &handle}); !domain.HasCode(err, domain.CodeInvalidArgument) {
-				t.Fatalf("malformed handle %q error = %v", handle, err)
-			}
-		})
-	}
-
-	accepted := "  ITSCheems  "
-	saved, err := service.Update(context.Background(), SiteUpdate{Username: &accepted})
-	if err != nil || saved.Username != "itscheems" {
-		t.Fatalf("accepted handle = %q, err = %v", saved.Username, err)
-	}
-}
-
-// Profile text reaches users.display_name and users.bio from here too, so it
-// meets the normalizers the account route meets.
-//
-// Emptiness and a rune count were the whole of it before, which let a display
-// name carrying a newline into the column that CommentService stamps onto every
-// comment the owner writes -- an account that saves fine and can never comment.
-func TestSiteProfileTextIsNormalizedNotJustMeasured(t *testing.T) {
-	initial := SiteSettings{Title: "Moment", Timezone: "UTC", CommentsEnabled: true}
-	transactions := &memorySiteTransactions{settings: &initial, media: map[string]bool{}}
-	service := newTestSiteService(t, transactions, false)
-
-	for name, update := range map[string]SiteUpdate{
-		"display name with a newline": {DisplayName: ptr("Che\nems")},
-		"display name with a tab":     {DisplayName: ptr("Che\tems")},
-		"display name of only space":  {DisplayName: ptr("   ")},
-		"bio with a zero byte":        {Bio: ptr("\x00")},
-		"bio with a carriage return":  {Bio: ptr("first\rsecond")},
-	} {
-		t.Run(name, func(t *testing.T) {
-			if _, err := service.Update(context.Background(), update); !domain.HasCode(err, domain.CodeInvalidArgument) {
-				t.Fatalf("error = %v", err)
-			}
-			if !reflect.DeepEqual(*transactions.settings, initial) {
-				t.Fatalf("rejected text changed settings: %#v", transactions.settings)
-			}
-		})
-	}
-
-	// What the normalizers keep, they keep: surrounding whitespace goes, and a
-	// bio holds the line breaks somebody typed into the textarea.
-	saved, err := service.Update(context.Background(), SiteUpdate{
-		DisplayName: ptr("  Cheems  "),
-		Bio:         ptr("  first\nsecond  "),
-	})
-	if err != nil || saved.DisplayName != "Cheems" || saved.Bio != "first\nsecond" {
-		t.Fatalf("normalized = %#v, err = %v", saved, err)
-	}
-}
-
-// registration_mode was a field nothing could write.
-//
-// SiteUpdate declared it and Empty counted it, so a caller that set it ran the
-// whole write transaction; applySiteUpdate then dropped it and the handler
-// answered 200 having changed nothing. Every instance stayed on the migration
-// default forever, with no way to close registration short of editing the
-// database.
 func TestSiteRegistrationModeIsWrittenAndValidated(t *testing.T) {
-	initial := SiteSettings{Title: "Moment", Timezone: "UTC", CommentsEnabled: true, RegistrationMode: domain.RegistrationApproval}
+	initial := SiteSettings{ProfileUserID: "0123456789abcdef0123456789abcdef", Username: "writer", DisplayName: "Moment", Title: "Moment", Timezone: "UTC", CommentsEnabled: true, RegistrationMode: domain.RegistrationApproval}
 	transactions := &memorySiteTransactions{settings: &initial, media: map[string]bool{}}
 	service := newTestSiteService(t, transactions, false)
 

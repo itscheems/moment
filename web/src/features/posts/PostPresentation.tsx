@@ -1,3 +1,4 @@
+import { AccountIdentityPreview } from "../../components/AccountIdentityPreview";
 import { postAuthorSite } from "../../components/SiteIdentity";
 import { Popover } from "@base-ui/react/popover";
 import { type MouseEvent, type MouseEventHandler } from "react";
@@ -20,11 +21,10 @@ import {
   ActionTooltip,
   ExactTimeTooltip,
   ShareMenu,
-  SiteIdentityPreview,
 } from "../../components/TimelineInteractions";
 import { formatMomentDate } from "./dates";
-import { OwnerPostActions } from "../owner/OwnerPostActions";
-import { OwnerRepostAction } from "../owner/OwnerRepostAction";
+import { PostActions } from "./PostActions";
+import { RepostAction } from "./RepostAction";
 import {
   ArticleCard,
   QuotedArticle,
@@ -123,7 +123,7 @@ export function PostPresentation({
   site,
   detail = false,
   now,
-  owner = false,
+  canPublish = false,
   fresh = false,
   onDeleted,
   onReposted,
@@ -139,7 +139,7 @@ export function PostPresentation({
   site: SiteIdentity;
   detail?: boolean;
   now?: Date;
-  owner?: boolean;
+  canPublish?: boolean;
   fresh?: boolean;
   onDeleted?: (post: PublicPost) => void;
   onReposted?: (post: PublicPost) => void;
@@ -177,8 +177,8 @@ export function PostPresentation({
   };
 
   const avatar = (
-    <SiteIdentityPreview
-      site={site}
+    <AccountIdentityPreview
+      author={post.author ?? { userId: null, username: null }}
       children={
         <InternalLink
           aria-label={`查看 ${title} 的个人资料`}
@@ -207,8 +207,8 @@ export function PostPresentation({
   const byline = (
     <header className={`${styles.byline} ${detail ? styles.detailByline : ""}`}>
       <div className={styles.bylineIdentity}>
-        <SiteIdentityPreview
-          site={site}
+        <AccountIdentityPreview
+          author={post.author ?? { userId: null, username: null }}
           children={
             <InternalLink
               className={styles.nameLink}
@@ -240,10 +240,6 @@ export function PostPresentation({
               }
             />
             {hidden ? (
-              // Only the owner ever receives a hidden post, so this is the
-              // owner being told which of their posts nobody else can see.
-              // It sits with the time, in the metadata, never inside the
-              // identity block, which the detail layout stacks vertically.
               <ActionTooltip label="仅自己可见">
                 <span
                   aria-label="仅自己可见"
@@ -257,8 +253,8 @@ export function PostPresentation({
           </>
         ) : null}
       </div>
-      {owner ? (
-        <OwnerPostActions
+      {canPublish ? (
+        <PostActions
           onDeleted={onDeleted}
           onSiteChanged={onSiteChanged}
           post={post}
@@ -333,9 +329,9 @@ export function PostPresentation({
       tabIndex={0}
     >
       <header className={styles.quoteByline}>
-        <SiteAvatar site={site} />
-        <strong>{site.displayName}</strong>
-        <span>@{site.username}</span>
+        <SiteAvatar site={postAuthorSite(quoted, site)} />
+        <strong>{postAuthorSite(quoted, site).displayName}</strong>
+        <span>@{postAuthorSite(quoted, site).username}</span>
         <span>·</span>
         <time dateTime={quoted.publishedAt}>
           {formatMomentDate(quoted.publishedAt, site.timezone, now).relative}
@@ -419,8 +415,8 @@ export function PostPresentation({
                 ) : null}
               </button>
             </ActionTooltip>
-            {owner ? (
-              <OwnerRepostAction onChanged={onReposted} post={post} />
+            {canPublish ? (
+              <RepostAction onChanged={onReposted} post={post} />
             ) : null}
             {share("start")}
           </div>
@@ -519,8 +515,8 @@ export function PostPresentation({
               </InternalLink>
             )}
           </ActionTooltip>
-          {owner ? (
-            <OwnerRepostAction onChanged={onReposted} post={post} />
+          {canPublish ? (
+            <RepostAction onChanged={onReposted} post={post} />
           ) : null}
           {share("end")}
         </div>

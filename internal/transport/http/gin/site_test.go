@@ -1,325 +1,171 @@
 package ginhttp
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"image"
+	"image/png"
 	"net/http"
-	"sync"
 	"testing"
-	"time"
-
-	"github.com/moment/moment/internal/app"
-	"github.com/moment/moment/internal/auth"
-	"github.com/moment/moment/internal/domain"
-	"github.com/moment/moment/internal/runtimefs"
 )
 
-const httpAvatarID = "01ARZ3NDEKTSV4RRFFQ69G5FAY"
-
-type httpSiteTransactions struct {
-	mu       sync.Mutex
-	settings app.SiteSettings
-	media    map[string]bool
-	entries  map[string]bool
-	// updateErr stands in for a constraint the database enforces and this
-	// fixture cannot. The store below is a map; users_username_unique is not.
-	updateErr error
+func siteRequest(fixture postHTTPFixture, body string) *http.Request {
+	request := jsonRequest(http.MethodPatch, "/api/v1/site", body)
+	request.Header.Set("Authorization", "Bearer "+fixture.token)
+	return request
 }
 
-func (transactions *httpSiteTransactions) Read(ctx context.Context, operation func(app.SiteStore) error) error {
-	transactions.mu.Lock()
-	defer transactions.mu.Unlock()
-	if err := ctx.Err(); err != nil {
-		return err
-	}
-	return operation(&httpSiteStore{settings: &transactions.settings, media: transactions.media, entries: transactions.entries})
-}
-
-func (transactions *httpSiteTransactions) Write(ctx context.Context, operation func(app.SiteStore) error) error {
-	transactions.mu.Lock()
-	defer transactions.mu.Unlock()
-	if err := ctx.Err(); err != nil {
-		return err
-	}
-	cloned := transactions.settings
-	store := &httpSiteStore{settings: &cloned, media: transactions.media, entries: transactions.entries, updateErr: transactions.updateErr}
-	if err := operation(store); err != nil {
-		return err
-	}
-	transactions.settings = cloned
-	return nil
-}
-
-type httpSiteStore struct {
-	settings  *app.SiteSettings
-	media     map[string]bool
-	entries   map[string]bool
-	updateErr error
-}
-
-func (store *httpSiteStore) SiteSettings(context.Context) (app.SiteSettings, error) {
-	return *store.settings, nil
-}
-
-func (store *httpSiteStore) MediaExists(_ context.Context, id domain.ID) (bool, error) {
-	return store.media[id.String()], nil
-}
-
-func (store *httpSiteStore) EntryExists(_ context.Context, id domain.ID) (bool, error) {
-	return store.entries[id.String()], nil
-}
-
-func (store *httpSiteStore) UpdateSiteSettings(_ context.Context, settings app.SiteSettings) error {
-	if store.updateErr != nil {
-		return store.updateErr
-	}
-	*store.settings = settings
-	return nil
-}
-
-func (store *httpSiteStore) ReconcileMediaReferences(context.Context, []domain.ID, time.Time) error {
-	return nil
-}
-
-func newSiteHTTPFixture(t *testing.T) (ownerTestFixture, *httpSiteTransactions) {
-	t.Helper()
-	runtimeState, err := runtimefs.Initialize(context.Background(), runtimefs.Config{DataDir: t.TempDir(), Environment: runtimefs.EnvironmentDevelopment})
-	if err != nil {
-		t.Fatal(err)
-	}
-	now := time.Now().UTC().Truncate(time.Millisecond)
-	credential, err := auth.InitializeOffline(context.Background(), runtimeState, auth.Options{Now: func() time.Time { return now }})
-	if err != nil {
-		t.Fatal(err)
-	}
-	manager, err := auth.NewManager(runtimeState.Root, auth.Options{Now: func() time.Time { return now }})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := manager.Load(); err != nil {
-		t.Fatal(err)
-	}
-	transactions := &httpSiteTransactions{
-		settings: app.SiteSettings{Title: "Moment", Timezone: "UTC", CommentsEnabled: true, RegistrationMode: domain.RegistrationApproval},
-		media:    map[string]bool{httpAvatarID: true},
-	}
-	service, err := app.NewSiteService(transactions, app.SiteOptions{AllowDevelopmentLocalHTTP: true})
-	if err != nil {
-		t.Fatal(err)
-	}
-	engine, err := New(Config{
-		Assets:                testAssets(),
-		OwnerAuth:             manager,
-		Accounts:              testAccountsForRuntime(t, runtimeState),
-		SiteSettings:          service,
-		InstanceID:            runtimeState.Instance.ID,
-		InstanceInitializedAt: runtimeState.Instance.InitializedAt,
-		Readiness:             service.Ready,
-		RequestID:             func() string { return "req_site" },
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	return ownerTestFixture{
-		manager: manager, token: credential.Token, engine: engine, now: &now,
-		instanceID: runtimeState.Instance.ID, instanceInitializedAt: runtimeState.Instance.InitializedAt.UTC().Format(time.RFC3339Nano),
-	}, transactions
-}
-
-func TestSitePublicReadAndOwnerPatchTriState(t *testing.T) {
-	fixture, transactions := newSiteHTTPFixture(t)
-	publicRequest := ownerRequest(http.MethodGet, "/api/v1/site", "")
-	publicRequest.Host = "private.internal:8443"
-	publicRequest.Header.Set("X-Forwarded-Host", "attacker.example")
-	public := performRequest(fixture.engine, publicRequest)
+func TestSitePublicReadAndConfigurationTriState(t *testing.T) {
+	fixture := newPostHTTPFixture(t, 0)
+	public := performRequest(fixture.engine, jsonRequest(http.MethodGet, "/api/v1/site", ""))
 	if public.Code != http.StatusOK {
-		t.Fatalf("public status = %d, body = %s", public.Code, public.Body.String())
+		t.Fatalf("public site=%d %s", public.Code, public.Body.String())
 	}
-	var publicEnvelope struct {
-		Data map[string]any `json:"data"`
+	encoded := append([]byte{}, public.Body.Bytes()...)
+	initial := decodeDataMap(t, public)
+	if initial["title"] != "Moment" || initial["username"] != "writer" || initial["public_base_url"] != nil {
+		t.Fatalf("public data=%+v", initial)
+	}
+	var envelope struct {
 		Meta map[string]any `json:"meta"`
 	}
-	if err := json.NewDecoder(public.Body).Decode(&publicEnvelope); err != nil {
-		t.Fatalf("decode public site: %v", err)
+	if err := json.Unmarshal(encoded, &envelope); err != nil {
+		t.Fatal(err)
 	}
-	data := publicEnvelope.Data
-	if data["title"] != "Moment" || data["timezone"] != "UTC" || data["sha256"] != nil || data["storage_path"] != nil {
-		t.Fatalf("public data = %#v", data)
+	if envelope.Meta["instance_id"] != fixture.instanceID || envelope.Meta["instance_initialized_at"] != fixture.instanceInitializedAt {
+		t.Fatalf("instance identity=%+v", envelope.Meta)
 	}
-	if publicEnvelope.Meta["instance_id"] != fixture.instanceID || publicEnvelope.Meta["instance_initialized_at"] != fixture.instanceInitializedAt || publicEnvelope.Meta["request_id"] != "req_site" {
-		t.Fatalf("public meta = %#v", publicEnvelope.Meta)
+	unauthorized := performRequest(fixture.engine, jsonRequest(http.MethodPatch, "/api/v1/site", `{"title":"blocked"}`))
+	if unauthorized.Code != http.StatusUnauthorized {
+		t.Fatalf("anonymous configuration=%d", unauthorized.Code)
 	}
+	response := performRequest(fixture.engine, siteRequest(fixture, `{"title":"Personal Moment","timezone":"Europe/Paris","public_base_url":"http://localhost:80/journal/","comments_enabled":false}`))
+	if response.Code != http.StatusOK {
+		t.Fatalf("configuration=%d %s", response.Code, response.Body.String())
+	}
+	data := decodeDataMap(t, response)
+	if data["title"] != "Personal Moment" || data["timezone"] != "Europe/Paris" || data["public_base_url"] != "http://localhost/journal" || data["comments_enabled"] != false || data["username"] != "writer" {
+		t.Fatalf("configuration=%+v", data)
+	}
+	cleared := performRequest(fixture.engine, siteRequest(fixture, `{"public_base_url":null}`))
+	if cleared.Code != http.StatusOK || decodeDataMap(t, cleared)["public_base_url"] != nil {
+		t.Fatalf("URL clear=%d %s", cleared.Code, cleared.Body.String())
+	}
+}
 
-	unauthorized := performRequest(fixture.engine, ownerRequest(http.MethodPatch, "/api/v1/owner/site", `{"title":"blocked"}`))
-	if unauthorized.Code != http.StatusUnauthorized || decodeError(t, unauthorized.Body).Error.Code != "UNAUTHORIZED" {
-		t.Fatalf("unauthorized status = %d", unauthorized.Code)
+func TestSitePatchRejectsPersonalFieldsWithoutChangingAccounts(t *testing.T) {
+	fixture := newPostHTTPFixture(t, 0)
+	before, err := fixture.accounts.ProfileAccount(context.Background())
+	if err != nil {
+		t.Fatal(err)
 	}
-
-	requestBody := `{"title":"Personal Moment","bio":"personal log","timezone":"Asia/Shanghai","public_base_url":"http://localhost:80/journal/","avatar_media_id":"` + httpAvatarID + `","cover_media_id":"` + httpAvatarID + `","comments_enabled":false}`
-	request := ownerRequest(http.MethodPatch, "/api/v1/owner/site", requestBody)
-	request.Header.Set("Authorization", "Bearer "+fixture.token)
-	updated := performRequest(fixture.engine, request)
-	if updated.Code != http.StatusOK {
-		t.Fatalf("updated status = %d, body = %s", updated.Code, updated.Body.String())
+	for _, body := range []string{`{"username":"another"}`, `{"display_name":"Another person"}`, `{"bio":"another biography"}`, `{"avatar_media_id":null}`, `{"cover_media_id":null}`} {
+		response := performRequest(fixture.engine, siteRequest(fixture, body))
+		if response.Code != http.StatusBadRequest || decodeError(t, response.Body).Error.Code != "INVALID_ARGUMENT" {
+			t.Fatalf("personal field through site=%d %s", response.Code, response.Body.String())
+		}
 	}
-	data = decodeDataMap(t, updated)
-	if data["title"] != "Personal Moment" || data["comments_enabled"] != false || data["public_base_url"] != "http://localhost/journal" || data["avatar_media_id"] != httpAvatarID || data["cover_media_id"] != httpAvatarID {
-		t.Fatalf("updated data = %#v", data)
-	}
-
-	clearRequest := ownerRequest(http.MethodPatch, "/api/v1/owner/site", `{"public_base_url":null,"avatar_media_id":null,"cover_media_id":null}`)
-	clearRequest.Header.Set("Authorization", "Bearer "+fixture.token)
-	cleared := performRequest(fixture.engine, clearRequest)
-	if cleared.Code != http.StatusOK {
-		t.Fatalf("clear status = %d, body = %s", cleared.Code, cleared.Body.String())
-	}
-	data = decodeDataMap(t, cleared)
-	if data["public_base_url"] != nil || data["avatar_media_id"] != nil || data["cover_media_id"] != nil || data["bio"] != "personal log" || data["comments_enabled"] != false {
-		t.Fatalf("cleared data = %#v", data)
-	}
-	if transactions.settings.PublicBaseURL != nil || transactions.settings.AvatarMediaID != nil || transactions.settings.CoverMediaID != nil {
-		t.Fatalf("clear did not persist: %#v", transactions.settings)
+	after, err := fixture.accounts.Account(context.Background(), before.ID)
+	if err != nil || after.Username != before.Username || after.DisplayName != before.DisplayName || after.Bio != before.Bio || after.UpdatedAtMS != before.UpdatedAtMS {
+		t.Fatal("site configuration overwrote the selected account")
 	}
 }
 
 func TestSitePatchStrictJSONCSRFAndCancellation(t *testing.T) {
-	fixture, transactions := newSiteHTTPFixture(t)
-	for name, body := range map[string]string{
-		"empty":            `{}`,
-		"unknown":          `{"title":"changed","extra":true}`,
-		"multiple":         `{"title":"changed"} {"bio":"extra"}`,
-		"null nonnullable": `{"comments_enabled":null}`,
-	} {
-		t.Run(name, func(t *testing.T) {
-			request := ownerRequest(http.MethodPatch, "/api/v1/owner/site", body)
-			request.Header.Set("Authorization", "Bearer "+fixture.token)
-			response := performRequest(fixture.engine, request)
-			if response.Code != http.StatusBadRequest || decodeError(t, response.Body).Error.Code != "INVALID_ARGUMENT" {
-				t.Fatalf("status = %d, body = %s", response.Code, response.Body.String())
-			}
-			if transactions.settings.Title != "Moment" {
-				t.Fatalf("strict JSON partially changed settings: %#v", transactions.settings)
-			}
-		})
+	fixture := newPostHTTPFixture(t, 0)
+	for _, body := range []string{`{}`, `{"title":"changed","extra":true}`, `{"title":"changed"} {}`, `{"comments_enabled":null}`, `{"timezone":"UTC+08:00"}`} {
+		response := performRequest(fixture.engine, siteRequest(fixture, body))
+		if response.Code != http.StatusBadRequest || decodeError(t, response.Body).Error.Code != "INVALID_ARGUMENT" {
+			t.Fatalf("strict update=%d %s", response.Code, response.Body.String())
+		}
 	}
-
-	cookie, session := exchangeOwnerSession(t, fixture, fixture.token)
-	missingCSRF := ownerRequest(http.MethodPatch, "/api/v1/owner/site", `{"bio":"blocked"}`)
-	missingCSRF.AddCookie(cookie)
-	if response := performRequest(fixture.engine, missingCSRF); response.Code != http.StatusForbidden || decodeError(t, response.Body).Error.Code != "CSRF_INVALID" {
-		t.Fatalf("missing CSRF status = %d, body = %s", response.Code, response.Body.String())
+	cookie, session := exchangeAccountSession(t, fixture.authenticationTestFixture, fixture.token)
+	request := jsonRequest(http.MethodPatch, "/api/v1/site", `{"title":"session title"}`)
+	request.AddCookie(cookie)
+	missing := performRequest(fixture.engine, request)
+	if missing.Code != http.StatusForbidden || decodeError(t, missing.Body).Error.Code != "CSRF_INVALID" {
+		t.Fatalf("missing CSRF=%d %s", missing.Code, missing.Body.String())
 	}
-	withCSRF := ownerRequest(http.MethodPatch, "/api/v1/owner/site", `{"bio":"from session"}`)
-	withCSRF.AddCookie(cookie)
-	withCSRF.Header.Set(CSRFHeaderName, session["csrf_token"].(string))
-	if response := performRequest(fixture.engine, withCSRF); response.Code != http.StatusOK {
-		t.Fatalf("session update status = %d, body = %s", response.Code, response.Body.String())
+	request = jsonRequest(http.MethodPatch, "/api/v1/site", `{"title":"session title"}`)
+	request.AddCookie(cookie)
+	request.Header.Set(CSRFHeaderName, session["csrf_token"].(string))
+	if response := performRequest(fixture.engine, request); response.Code != http.StatusOK {
+		t.Fatalf("session update=%d %s", response.Code, response.Body.String())
 	}
-
-	cancelledContext, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	cancelled := ownerRequest(http.MethodPatch, "/api/v1/owner/site", `{"title":"cancelled"}`).WithContext(cancelledContext)
-	cancelled.Header.Set("Authorization", "Bearer "+fixture.token)
-	response := performRequest(fixture.engine, cancelled)
-	if response.Code != http.StatusRequestTimeout || decodeError(t, response.Body).Error.Code != "CANCELLED" {
-		t.Fatalf("cancelled status = %d, body = %s", response.Code, response.Body.String())
+	cancelled := performRequest(fixture.engine, siteRequest(fixture, `{"title":"cancelled"}`).WithContext(ctx))
+	if cancelled.Code != http.StatusRequestTimeout || decodeError(t, cancelled.Body).Error.Code != "CANCELLED" {
+		t.Fatalf("cancellation=%d %s", cancelled.Code, cancelled.Body.String())
 	}
-	if transactions.settings.Title != "Moment" {
-		t.Fatalf("cancelled update persisted: %#v", transactions.settings)
+	settings, err := fixture.site.Get(context.Background())
+	if err != nil || settings.Title != "session title" {
+		t.Fatal("invalid or cancelled update persisted")
 	}
 }
 
-func TestSiteRoutesRequireAuthWhenConfigured(t *testing.T) {
-	transactions := &httpSiteTransactions{settings: app.SiteSettings{Title: "Moment", Timezone: "UTC", CommentsEnabled: true}}
-	service, err := app.NewSiteService(transactions, app.SiteOptions{})
+func TestOwnProfileChangesAndPictureClearAreIndependentFromSiteConfiguration(t *testing.T) {
+	fixture := newPostHTTPFixture(t, 0)
+	var contents bytes.Buffer
+	if err := png.Encode(&contents, image.NewRGBA(image.Rect(0, 0, 2, 2))); err != nil {
+		t.Fatal(err)
+	}
+	stored, _, err := fixture.media.Ingest(fixture.ctx, "avatar.png", &contents)
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = New(Config{Assets: testAssets(), SiteSettings: service})
-	if err == nil {
-		t.Fatal("site routes without owner authentication were accepted")
+	update := jsonRequest(http.MethodPatch, "/api/v1/account/profile", `{"display_name":"Actual writer","avatar_media_id":"`+stored.ID.String()+`"}`)
+	update.Header.Set("Authorization", "Bearer "+fixture.token)
+	response := performRequest(fixture.engine, update)
+	if response.Code != http.StatusOK {
+		t.Fatalf("own profile=%d %s", response.Code, response.Body.String())
+	}
+	if site, err := fixture.site.Get(context.Background()); err != nil || site.DisplayName != "Actual writer" || site.AvatarMediaID == nil || site.Title != "Moment" {
+		t.Fatalf("profile projection=%+v,%v", site, err)
+	}
+	clearRequest := jsonRequest(http.MethodPatch, "/api/v1/account/profile", `{"avatar_media_id":null}`)
+	clearRequest.Header.Set("Authorization", "Bearer "+fixture.token)
+	response = performRequest(fixture.engine, clearRequest)
+	if response.Code != http.StatusOK || decodeDataMap(t, response)["avatar_media_id"] != nil {
+		t.Fatalf("explicit picture clear=%d %s", response.Code, response.Body.String())
 	}
 }
 
 func TestSitePublicJSONContainsOnlyStableDTOFields(t *testing.T) {
-	fixture, _ := newSiteHTTPFixture(t)
-	response := performRequest(fixture.engine, ownerRequest(http.MethodGet, "/api/v1/site", ""))
-	var envelope struct {
-		Data map[string]json.RawMessage `json:"data"`
+	fixture := newPostHTTPFixture(t, 0)
+	response := performRequest(fixture.engine, jsonRequest(http.MethodGet, "/api/v1/site", ""))
+	data := decodeDataMap(t, response)
+	if len(data) != 11 {
+		t.Fatalf("site wire fields=%+v", data)
 	}
-	if err := json.NewDecoder(response.Body).Decode(&envelope); err != nil {
-		t.Fatal(err)
-	}
-	if len(envelope.Data) != 11 {
-		t.Fatalf("public DTO fields = %v", envelope.Data)
-	}
-}
-
-// One handle column, one answer, whichever form the owner reached it from.
-//
-// The account route refuses a reserved handle with USERNAME_RESERVED and a
-// handle somebody else holds with 409 USERNAME_TAKEN. This route validated the
-// shape only and reported the constraint failure as INTERNAL, so the settings
-// form showed "operation failed" for a refusal it already has words for.
-func TestOwnerSitePatchAnswersHandleRefusalsLikeTheAccountRoute(t *testing.T) {
-	fixture, transactions := newSiteHTTPFixture(t)
-
-	reserved := ownerRequest(http.MethodPatch, "/api/v1/owner/site", `{"username":"search"}`)
-	reserved.Header.Set("Authorization", "Bearer "+fixture.token)
-	response := performRequest(fixture.engine, reserved)
-	if response.Code != http.StatusBadRequest || decodeError(t, response.Body).Error.Code != "USERNAME_RESERVED" {
-		t.Fatalf("reserved status = %d, body = %s", response.Code, response.Body.String())
-	}
-	if transactions.settings.Username != "" {
-		t.Fatalf("reserved handle persisted: %#v", transactions.settings)
-	}
-
-	transactions.updateErr = domain.NewError(domain.CodeUsernameTaken, "that username is taken", map[string]any{"field": "username"})
-	taken := ownerRequest(http.MethodPatch, "/api/v1/owner/site", `{"username":"meihua"}`)
-	taken.Header.Set("Authorization", "Bearer "+fixture.token)
-	response = performRequest(fixture.engine, taken)
-	if response.Code != http.StatusConflict || decodeError(t, response.Body).Error.Code != "USERNAME_TAKEN" {
-		t.Fatalf("taken status = %d, body = %s", response.Code, response.Body.String())
+	for _, name := range []string{"registration_mode", "role", "status", "password_hash", "token_hash"} {
+		if _, ok := data[name]; ok {
+			t.Fatalf("private field %s leaked", name)
+		}
 	}
 }
 
-// The owner can close registration without editing the database.
-//
-// The field existed on SiteUpdate and on the row, and nothing in between could
-// carry a value from one to the other: the request struct had no member for it
-// and DisallowUnknownFields turned the attempt into a 400. It stays out of the
-// public projection, which is what TestSitePublicJSONContainsOnlyStableDTOFields
-// holds the line on.
-func TestOwnerSitePatchWritesRegistrationModeWithoutPublishingIt(t *testing.T) {
-	fixture, transactions := newSiteHTTPFixture(t)
-
+func TestSiteRegistrationModeIsWritableWithoutPublishingIt(t *testing.T) {
+	fixture := newPostHTTPFixture(t, 0)
 	for _, mode := range []string{"open", "closed", "approval"} {
-		request := ownerRequest(http.MethodPatch, "/api/v1/owner/site", `{"registration_mode":"`+mode+`"}`)
-		request.Header.Set("Authorization", "Bearer "+fixture.token)
-		response := performRequest(fixture.engine, request)
+		response := performRequest(fixture.engine, siteRequest(fixture, `{"registration_mode":"`+mode+`"}`))
 		if response.Code != http.StatusOK {
-			t.Fatalf("mode %q status = %d, body = %s", mode, response.Code, response.Body.String())
+			t.Fatalf("registration=%d %s", response.Code, response.Body.String())
 		}
-		if string(transactions.settings.RegistrationMode) != mode {
-			t.Fatalf("stored registration mode = %q, want %q", transactions.settings.RegistrationMode, mode)
+		settings, err := fixture.site.Get(context.Background())
+		if err != nil || string(settings.RegistrationMode) != mode {
+			t.Fatal("registration policy was not persisted")
 		}
-		if _, published := decodeDataMap(t, response)["registration_mode"]; published {
-			t.Fatalf("owner response published registration_mode: %s", response.Body.String())
+		if decodeDataMap(t, response)["registration_mode"] != nil {
+			t.Fatal("private registration policy leaked into public DTO")
 		}
 	}
+}
 
-	rejected := ownerRequest(http.MethodPatch, "/api/v1/owner/site", `{"registration_mode":"everyone"}`)
-	rejected.Header.Set("Authorization", "Bearer "+fixture.token)
-	response := performRequest(fixture.engine, rejected)
-	if response.Code != http.StatusBadRequest || decodeError(t, response.Body).Error.Code != "INVALID_ARGUMENT" {
-		t.Fatalf("invalid mode status = %d, body = %s", response.Code, response.Body.String())
-	}
-	if transactions.settings.RegistrationMode != "approval" {
-		t.Fatalf("invalid mode changed the row: %#v", transactions.settings)
-	}
-
-	public := performRequest(fixture.engine, ownerRequest(http.MethodGet, "/api/v1/site", ""))
-	if _, published := decodeDataMap(t, public)["registration_mode"]; published {
-		t.Fatalf("public site published registration_mode: %s", public.Body.String())
+func TestSiteRoutesRequireAuthenticationDependencies(t *testing.T) {
+	fixture := newPostHTTPFixture(t, 0)
+	if _, err := New(Config{Assets: testAssets(), SiteSettings: fixture.site}); err == nil {
+		t.Fatal("site mutations were mounted without authentication")
 	}
 }

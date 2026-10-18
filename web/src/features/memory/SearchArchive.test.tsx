@@ -21,7 +21,7 @@ function json(body: unknown, status = 200): Response {
 
 const site = {
   data: {
-    owner_id: "00000000000000000000000000000000",
+    profile_user_id: "00000000000000000000000000000000",
     username: "owner",
     display_name: "乔乔",
     title: "乔乔的 Moment",
@@ -71,7 +71,7 @@ function install(
   const fetcher = vi.fn(async (input: RequestInfo | URL) => {
     const url = String(input);
     if (url === "/api/v1/site") return json(site);
-    if (url === "/api/v1/owner/status") {
+    if (url === "/api/v1/status") {
       if (signedIn) {
         return json({
           data: {
@@ -182,7 +182,7 @@ describe("search and archive memory layer", () => {
     // Replying needs an account, so the composer only appears for a signed-in
     // browser; without this the dialog would offer sign-in instead.
     window.sessionStorage.setItem(
-      "moment.owner.session.v1",
+      "moment.auth.session.v2",
       JSON.stringify({
         csrf_token: "csrf-reply",
         expires_at: "2999-08-11T01:00:00.000Z",

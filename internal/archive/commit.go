@@ -15,7 +15,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/moment/moment/internal/auth"
 	"github.com/moment/moment/internal/domain"
 	"github.com/moment/moment/internal/runtimefs"
 	sqlitestore "github.com/moment/moment/internal/storage/sqlite"
@@ -86,7 +85,6 @@ type CommitResult struct {
 // work before it returns.
 type CommitHost interface {
 	BeginMaintenance(context.Context) error
-	CurrentSessionEpoch() (uint64, error)
 	ActiveDatabase() *sqlitestore.Database
 	CloseActive() error
 	Activate(context.Context, *runtimefs.Runtime) error
@@ -152,7 +150,7 @@ func NewCommitter(options CommitOptions) (*Committer, error) {
 
 // PlanFileOffline runs the complete import rebuild under Import→Serve and
 // removes its private staging generation before returning the safe preview.
-func (committer *Committer) PlanFileOffline(ctx context.Context, archivePath string, sessionEpoch uint64) (result ImportPlan, resultErr error) {
+func (committer *Committer) PlanFileOffline(ctx context.Context, archivePath string, subject Authorization) (result ImportPlan, resultErr error) {
 	if committer == nil {
 		return ImportPlan{}, errors.New("import committer is required")
 	}
@@ -166,7 +164,7 @@ func (committer *Committer) PlanFileOffline(ctx context.Context, archivePath str
 		return ImportPlan{}, err
 	}
 	defer func() { resultErr = errors.Join(resultErr, file.Close()) }()
-	return committer.inspector.planWithinLocks(ctx, file, sessionEpoch, runtimeState, held)
+	return committer.inspector.planWithinLocks(ctx, file, subject, runtimeState, held)
 }
 
 func (committer *Committer) acquireOfflineInspection(ctx context.Context) (*runtimefs.Runtime, *runtimefs.LeaseSet, error) {
@@ -197,9 +195,9 @@ func (committer *Committer) acquireOfflineInspection(ctx context.Context) (*runt
 // CommitFileOffline performs path inspection and token consumption under one
 // continuous Import→Serve ownership, so no server can start between archive
 // materialization and CURRENT replacement.
-func (committer *Committer) CommitFileOffline(ctx context.Context, archivePath string, binding InputBinding, sessionEpoch uint64) (result CommitResult, resultErr error) {
-	if committer == nil || sessionEpoch == 0 || binding.FileInfo == nil || binding.Size < 0 || !validExpectedArchiveSHA(binding.SHA256) {
-		return CommitResult{}, domain.NewError(domain.CodeInvalidArgument, "import commit requires an archive and owner epoch", nil)
+func (committer *Committer) CommitFileOffline(ctx context.Context, archivePath string, binding InputBinding, subject Authorization) (result CommitResult, resultErr error) {
+	if committer == nil || !subject.Valid() || binding.FileInfo == nil || binding.Size < 0 || !validExpectedArchiveSHA(binding.SHA256) {
+		return CommitResult{}, domain.NewError(domain.CodeInvalidArgument, "import commit requires an archive and current account credential", nil)
 	}
 	runtimeState, held, err := committer.acquireOfflineInspection(ctx)
 	if err != nil {
@@ -215,14 +213,14 @@ func (committer *Committer) CommitFileOffline(ctx context.Context, archivePath s
 	if err != nil || !os.SameFile(binding.FileInfo, opened) || binding.Size != opened.Size() {
 		return CommitResult{}, errors.Join(domain.NewError(domain.CodeExportChecksumMismatch, "archive identity changed after the confirmed import preview", nil), err)
 	}
-	inspection, err := committer.inspector.inspectWithinLocks(ctx, file, sessionEpoch, runtimeState, held, true)
+	inspection, err := committer.inspector.inspectWithinLocks(ctx, file, subject, runtimeState, held, true)
 	if err != nil {
 		return CommitResult{}, err
 	}
 	if err := verifyExpectedArchiveSHA(inspection.ArchiveSHA256, binding.SHA256); err != nil {
 		return CommitResult{}, errors.Join(err, committer.inspector.discardReadyWithinLocks(runtimeState, inspection.GenerationID, held))
 	}
-	result, err = committer.commitWithinLocks(ctx, runtimeState, held, inspection.StagingToken, sessionEpoch, nil, nil)
+	result, err = committer.commitWithinLocks(ctx, runtimeState, held, inspection.StagingToken, subject, nil, nil)
 	if err != nil {
 		err = errors.Join(err, committer.inspector.discardReadyWithinLocks(runtimeState, inspection.GenerationID, held))
 	}
@@ -232,9 +230,9 @@ func (committer *Committer) CommitFileOffline(ctx context.Context, archivePath s
 // CommitArchive is the live-server single-request archive restore path. The
 // server already owns serve.lock, while this method keeps import.lock from the
 // first uploaded byte through the terminal commit state.
-func (committer *Committer) CommitArchive(ctx context.Context, source io.Reader, expectedArchiveSHA string, sessionEpoch uint64, host CommitHost) (result CommitResult, resultErr error) {
-	if committer == nil || source == nil || host == nil || sessionEpoch == 0 || !validExpectedArchiveSHA(expectedArchiveSHA) {
-		return CommitResult{}, domain.NewError(domain.CodeInvalidArgument, "online import requires an archive, host, and owner epoch", nil)
+func (committer *Committer) CommitArchive(ctx context.Context, source io.Reader, expectedArchiveSHA string, subject Authorization, host CommitHost) (result CommitResult, resultErr error) {
+	if committer == nil || source == nil || host == nil || !subject.Valid() || !validExpectedArchiveSHA(expectedArchiveSHA) {
+		return CommitResult{}, domain.NewError(domain.CodeInvalidArgument, "online import requires an archive, host, and current account credential", nil)
 	}
 	runtimeState, err := runtimefs.OpenForCoordination(committer.dataDir)
 	if err != nil {
@@ -250,14 +248,14 @@ func (committer *Committer) CommitArchive(ctx context.Context, source io.Reader,
 		return CommitResult{}, err
 	}
 	defer func() { resultErr = errors.Join(resultErr, held.Release()) }()
-	inspection, err := committer.inspector.inspectWithinLocks(ctx, source, sessionEpoch, runtimeState, held, true)
+	inspection, err := committer.inspector.inspectWithinLocks(ctx, source, subject, runtimeState, held, true)
 	if err != nil {
 		return CommitResult{}, err
 	}
 	if err := verifyExpectedArchiveSHA(inspection.ArchiveSHA256, expectedArchiveSHA); err != nil {
 		return CommitResult{}, errors.Join(err, committer.inspector.discardReadyWithinLocks(runtimeState, inspection.GenerationID, held))
 	}
-	result, err = committer.commitWithinLocks(ctx, runtimeState, held, inspection.StagingToken, sessionEpoch, host, nil)
+	result, err = committer.commitWithinLocks(ctx, runtimeState, held, inspection.StagingToken, subject, host, nil)
 	if err != nil {
 		err = errors.Join(err, committer.inspector.discardReadyWithinLocks(runtimeState, inspection.GenerationID, held))
 	}
@@ -280,9 +278,9 @@ func verifyExpectedArchiveSHA(actual, expected string) error {
 
 // Commit claims and consumes exactly one staged token. API callers supply a
 // host; direct callers pass nil and therefore also acquire serve.lock.
-func (committer *Committer) Commit(ctx context.Context, token string, sessionEpoch uint64, host CommitHost) (result CommitResult, resultErr error) {
-	if committer == nil || sessionEpoch == 0 {
-		return CommitResult{}, domain.NewError(domain.CodeInvalidArgument, "import commit requires a staging token and owner epoch", nil)
+func (committer *Committer) Commit(ctx context.Context, token string, subject Authorization, host CommitHost) (result CommitResult, resultErr error) {
+	if committer == nil || !subject.Valid() {
+		return CommitResult{}, domain.NewError(domain.CodeInvalidArgument, "import commit requires a staging token and current account credential", nil)
 	}
 	if host == nil {
 		runtimeState, held, err := committer.acquireOfflineInspection(ctx)
@@ -290,7 +288,7 @@ func (committer *Committer) Commit(ctx context.Context, token string, sessionEpo
 			return CommitResult{}, err
 		}
 		defer func() { resultErr = errors.Join(resultErr, held.Release()) }()
-		return committer.commitWithinLocks(ctx, runtimeState, held, token, sessionEpoch, nil, nil)
+		return committer.commitWithinLocks(ctx, runtimeState, held, token, subject, nil, nil)
 	}
 	runtimeState, err := runtimefs.OpenForCoordination(committer.dataDir)
 	if err != nil {
@@ -301,10 +299,10 @@ func (committer *Committer) Commit(ctx context.Context, token string, sessionEpo
 		return CommitResult{}, err
 	}
 	defer func() { resultErr = errors.Join(resultErr, held.Release()) }()
-	return committer.commitWithinLocks(ctx, runtimeState, held, token, sessionEpoch, host, nil)
+	return committer.commitWithinLocks(ctx, runtimeState, held, token, subject, host, nil)
 }
 
-func (committer *Committer) commitWithinLocks(ctx context.Context, runtimeState *runtimefs.Runtime, held *runtimefs.LeaseSet, token string, sessionEpoch uint64, host CommitHost, prepare commitPrepare) (result CommitResult, resultErr error) {
+func (committer *Committer) commitWithinLocks(ctx context.Context, runtimeState *runtimefs.Runtime, held *runtimefs.LeaseSet, token string, subject Authorization, host CommitHost, prepare commitPrepare) (result CommitResult, resultErr error) {
 	if runtimeState == nil || held == nil || !held.BelongsTo(runtimeState.Root) || !held.Holds(runtimefs.ImportLock, runtimefs.Exclusive) ||
 		(host == nil && !held.Holds(runtimefs.ServeLock, runtimefs.Exclusive)) {
 		return CommitResult{}, runtimefs.ErrInsufficientLocks
@@ -313,7 +311,7 @@ func (committer *Committer) commitWithinLocks(ctx context.Context, runtimeState 
 		return CommitResult{}, err
 	}
 	current := runtimeState.Current
-	claim, err := committer.inspector.ClaimWithinLocks(ctx, runtimeState, token, sessionEpoch, held)
+	claim, err := committer.inspector.ClaimWithinLocks(ctx, runtimeState, token, subject, held)
 	if err != nil {
 		return CommitResult{}, err
 	}
@@ -367,20 +365,8 @@ func (committer *Committer) commitWithinLocks(ctx context.Context, runtimeState 
 	); err != nil {
 		return CommitResult{}, err
 	}
-	// Claim occurred before waits; reject expiration or owner rotation again
-	// before backup or active-data closure.
-	currentEpoch := uint64(0)
-	if host != nil {
-		currentEpoch, err = host.CurrentSessionEpoch()
-	} else {
-		var ownerStatus auth.Status
-		ownerStatus, err = auth.ReadStatus(runtimeState.Root)
-		currentEpoch = ownerStatus.SessionEpoch
-	}
-	if err != nil || currentEpoch != sessionEpoch {
-		return CommitResult{}, errors.Join(domain.NewError(domain.CodeUnauthorized, "owner authority changed while import commit waited", nil), err)
-	}
-	if err := committer.revalidateClaim(ctx, runtimeState, claim, currentEpoch); err != nil {
+	// Claim occurred before waits; check expiration again before touching active data.
+	if err := committer.revalidateClaim(ctx, runtimeState, claim, subject); err != nil {
 		return CommitResult{}, err
 	}
 
@@ -403,6 +389,9 @@ func (committer *Committer) commitWithinLocks(ctx context.Context, runtimeState 
 			resultErr = errors.Join(resultErr, activeDatabase.Close())
 		}
 	}()
+	if err := committer.validateAuthorization(ctx, runtimeState, activeDatabase, subject, host == nil); err != nil {
+		return CommitResult{}, err
+	}
 	if err := committer.checkFinalDisk(ctx, runtimeState, activeDatabase); err != nil {
 		return CommitResult{}, err
 	}
@@ -663,12 +652,12 @@ func (committer *Committer) nextStatusTime(status CommitStatus) time.Time {
 	return now
 }
 
-func (committer *Committer) revalidateClaim(ctx context.Context, runtimeState *runtimefs.Runtime, claim StagingClaim, sessionEpoch uint64) error {
-	if sessionEpoch != claim.SessionEpoch || !committer.now().Before(claim.ExpiresAt) {
-		return domain.NewError(domain.CodeImportStagingExpired, "import staging token expired or owner authority changed while waiting", nil)
+func (committer *Committer) revalidateClaim(ctx context.Context, runtimeState *runtimefs.Runtime, claim StagingClaim, subject Authorization) error {
+	if subject != claim.Authorization || !committer.now().Before(claim.ExpiresAt) {
+		return domain.NewError(domain.CodeImportStagingExpired, "import staging token expired or account credential changed while waiting", nil)
 	}
 	state, err := readStagingMetadata(claim.StageRoot)
-	if err != nil || state.State != stagingCommitting || state.GenerationID != claim.GenerationID || state.SessionEpoch != sessionEpoch || state.ArchiveSHA != claim.ArchiveSHA {
+	if err != nil || state.State != stagingCommitting || state.GenerationID != claim.GenerationID || state.Authorization != subject || state.ArchiveSHA != claim.ArchiveSHA {
 		return importStagingInvalid("claimed staging metadata changed", err)
 	}
 	hash, err := fileSHA256(ctx, claim.ArchivePath, committer.inspector.limits.MaxArchiveBytes)

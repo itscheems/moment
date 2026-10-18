@@ -19,9 +19,9 @@ import (
 func TestDoctorCLIDirectHealthyFailureAndHelp(t *testing.T) {
 	application := momentTestApplication()
 	dataDir := t.TempDir()
-	initialized := execute(application, "", "owner", "init", "--data-dir", dataDir, "--json")
+	initialized := execute(application, "", "init", "--username", "writer", "--data-dir", dataDir, "--json")
 	if initialized.exit != ExitSuccess {
-		t.Fatalf("owner init = %#v", initialized)
+		t.Fatalf("account init = %#v", initialized)
 	}
 	var credential struct {
 		Data struct {
@@ -70,7 +70,7 @@ func TestDoctorCLIDirectHealthyFailureAndHelp(t *testing.T) {
 func TestDoctorCLIAPIDeepUnsupportedAndStrictReport(t *testing.T) {
 	application := momentTestApplication()
 	dataDir := t.TempDir()
-	if output := execute(application, "", "owner", "init", "--data-dir", dataDir, "--json"); output.exit != ExitSuccess {
+	if output := execute(application, "", "init", "--username", "writer", "--data-dir", dataDir, "--json"); output.exit != ExitSuccess {
 		t.Fatal(output)
 	}
 	service, err := doctor.New(doctor.Options{DataDir: dataDir})
@@ -84,7 +84,7 @@ func TestDoctorCLIAPIDeepUnsupportedAndStrictReport(t *testing.T) {
 	t.Setenv("MOMENT_TOKEN", "CANARY_OWNER_TOKEN")
 
 	validServer := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
-		if request.URL.Path != "/api/v1/owner/doctor" || request.Header.Get("Authorization") != "Bearer CANARY_OWNER_TOKEN" {
+		if request.URL.Path != "/api/v1/diagnostics" || request.Header.Get("Authorization") != "Bearer CANARY_OWNER_TOKEN" {
 			t.Errorf("request = %s auth=%q", request.URL.Path, request.Header.Get("Authorization"))
 		}
 		writer.Header().Set("Content-Type", "application/json; charset=UTF-8")
@@ -221,7 +221,7 @@ func TestDoctorCLIExitMatrixPreservesPartialReports(t *testing.T) {
 	}
 
 	dataDir := t.TempDir()
-	if output := execute(application, "", "owner", "init", "--data-dir", dataDir, "--json"); output.exit != ExitSuccess {
+	if output := execute(application, "", "init", "--username", "writer", "--data-dir", dataDir, "--json"); output.exit != ExitSuccess {
 		t.Fatal(output)
 	}
 	locker, err := runtimefs.OpenExistingLocker(dataDir)

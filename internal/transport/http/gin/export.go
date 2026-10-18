@@ -18,13 +18,11 @@ type ArchiveExporter interface {
 	Export(context.Context, io.Writer) (archive.Summary, error)
 }
 
-// RegisterExportRoutes exposes the owner-authenticated, bodyless v1 download.
-// GET is safe for cookie auth under the existing owner contract; bearer auth
-// is accepted by the same middleware.
+// RegisterExportRoutes installs the authenticated full-site backup download.
 func RegisterExportRoutes(engine *gin.Engine, exporter ArchiveExporter, gate *Gate) {
-	owner := engine.Group("/api/v1/owner")
-	owner.Use(gate.RequireOwner())
-	owner.GET("/export", streamExport(exporter))
+	backups := engine.Group("/api/v1/backups")
+	backups.Use(gate.RequireAdmin())
+	backups.GET("/export", streamExport(exporter))
 	if personal, ok := exporter.(interface {
 		ExportAccount(context.Context, io.Writer, string) (archive.Summary, error)
 	}); ok {

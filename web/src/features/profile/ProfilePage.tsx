@@ -1,7 +1,7 @@
 import { Menu } from "@base-ui/react/menu";
 import { Tabs } from "@base-ui/react/tabs";
 import { motion, useReducedMotion, type HTMLMotionProps } from "motion/react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import {
   PublicApi,
@@ -9,6 +9,7 @@ import {
   type PublicComment,
   type PublicPost,
   type SiteIdentity,
+  type Account,
 } from "../../api/public";
 import { useNavigation } from "../../app/navigation";
 import { profileFeedPath, profileFromPath } from "../../app/routes";
@@ -29,12 +30,12 @@ import {
   ShareMenu,
 } from "../../components/TimelineInteractions";
 import { usePostReplyDialog } from "../comments/usePostReplyDialog";
-import { ownsSite, useSession } from "../auth/SessionProvider";
+import { useSession } from "../auth/SessionProvider";
 import {
-  listenForOwnerPosts,
+  listenForPostChanges,
   listenForPublishedPosts,
-  type OwnerPostEvent,
-} from "../owner/postEvents";
+  type PostChangeEvent,
+} from "../posts/postEvents";
 import { PostPresentation } from "../posts/PostPresentation";
 import { formatMomentDate } from "../posts/dates";
 import {
@@ -93,11 +94,10 @@ export function ProfilePage({
   site: SiteIdentity;
   onSiteSaved: (site: SiteIdentity) => void;
 }) {
-  const owner = useSession();
-  const { account: viewerAccount, applyAccount } = owner;
-  // This is the site owner's own page, so the editor and the per-post actions
-  // belong to them alone. A signed-in member reads it like anyone else.
-  const ownerView = owner.state === "signed-in" && ownsSite(owner.account);
+  const auth = useSession();
+  const { account: viewerAccount, applyAccount } = auth;
+  const canPublish =
+    auth.state === "signed-in" && auth.account?.status === "active";
   const navigation = useNavigation();
   const filter = profileFromPath(navigation.pathname)?.filter ?? "all";
   const [tabState, setTabState] = useState<{
@@ -122,9 +122,13 @@ export function ProfilePage({
     });
   }
   const { leftFilter, direction, slide } = tabState;
+  const authorApi = useMemo(
+    () => api.forAuthor(site.profileUserId),
+    [api, site.profileUserId],
+  );
   const { store, feeds, initialSearch } = useProfileTimeline(
-    api,
-    `${site.instanceId ?? site.ownerId}:${ownerView}`,
+    authorApi,
+    `${site.instanceId}:${site.profileUserId}:${auth.account?.userId ?? "guest"}`,
     filter,
   );
   const [pinnedPost, setPinnedPost] = useState<PublicPost | null>(null);
@@ -173,22 +177,16 @@ export function ProfilePage({
     site,
   });
 
-  /**
-   * Adopt what the server just saved, and follow the handle if it moved.
-   *
-   * The owner's handle is the address of this page, so renaming from here left
-   * the browser standing at a path that had just stopped belonging to anybody:
-   * the site knew the new name, the URL still held the old one, and the app
-   * answered by rendering somebody else's profile that no longer exists. The
-   * account this editor is editing is also the viewer's own, so its copy in the
-   * owner context is restamped too -- the left rail links to it, and the
-   * /profile redirect resolves through it.
-   *
-   * MemberProfilePage.adopt is the same move for a member editing their own
-   * page. Both belong on the page that owns the address, not in the dialog.
-   */
   const adoptSite = useCallback(
-    (saved: SiteIdentity) => {
+    (savedAccount: Account) => {
+      const saved = {
+        ...site,
+        username: savedAccount.username,
+        displayName: savedAccount.displayName,
+        bio: savedAccount.bio,
+        avatarMediaId: savedAccount.avatarMediaId,
+        coverMediaId: savedAccount.coverMediaId,
+      };
       onSiteSaved(saved);
       if (viewerAccount) {
         applyAccount({
@@ -219,8 +217,8 @@ export function ProfilePage({
     [applyAccount, navigation, onSiteSaved, site, viewerAccount],
   );
 
-  const handleOwnerPostEvent = useCallback(
-    (event: OwnerPostEvent) => {
+  const handlePostChange = useCallback(
+    (event: PostChangeEvent) => {
       store.apply(event);
       if (event.kind === "created") store.invalidate();
       setPinnedPost((current) =>
@@ -235,8 +233,8 @@ export function ProfilePage({
   );
 
   const handleReposted = useCallback(
-    (post: PublicPost) => handleOwnerPostEvent({ kind: "reordered", post }),
-    [handleOwnerPostEvent],
+    (post: PublicPost) => handlePostChange({ kind: "reordered", post }),
+    [handlePostChange],
   );
 
   useEffect(() => {
@@ -253,10 +251,7 @@ export function ProfilePage({
     } else setPinnedPost(null);
     return () => controller.abort();
   }, [api, site.pinnedPostId]);
-  useEffect(
-    () => listenForOwnerPosts(handleOwnerPostEvent),
-    [handleOwnerPostEvent],
-  );
+  useEffect(() => listenForPostChanges(handlePostChange), [handlePostChange]);
   useEffect(() => listenForPublishedPosts(() => store.invalidate()), [store]);
   const activeFeed = feeds[filter];
   useEffect(() => {
@@ -326,7 +321,7 @@ export function ProfilePage({
                 onReply={(event) => openReply(pinned, event)}
                 onReposted={handleReposted}
                 onSiteChanged={onSiteSaved}
-                owner={ownerView}
+                canPublish={canPublish}
                 pinned
                 post={pinned}
                 site={site}
@@ -344,14 +339,14 @@ export function ProfilePage({
                   onReply={(event) => openReply(post, event)}
                   onReposted={handleReposted}
                   onSiteChanged={onSiteSaved}
-                  owner={ownerView}
+                  canPublish={canPublish}
                   post={post}
                   site={site}
                   timelineDensity
                 />
               ))}
             {feed.items.length === 0 && !pinned ? (
-              <PublicEmpty context="profile" owner={ownerView} />
+              <PublicEmpty context="profile" canPublish={canPublish} />
             ) : null}
             {feed.moreError ? (
               <div className={styles.moreError} role="alert">
@@ -429,10 +424,11 @@ export function ProfilePage({
               </button>
             }
           />
-          {ownsSite(owner.account) &&
-          (owner.state === "signed-in" || owner.state === "expired") ? (
+          {viewerAccount &&
+          viewerAccount.userId === site.profileUserId &&
+          (auth.state === "signed-in" || auth.state === "expired") ? (
             <div className={styles.profileEditorSlot}>
-              <ProfileEditor onSaved={adoptSite} site={site} />
+              <ProfileEditor onSaved={adoptSite} account={viewerAccount} />
             </div>
           ) : null}
         </div>

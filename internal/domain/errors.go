@@ -41,6 +41,10 @@ const (
 	CodeIdentityAlreadyLinked       Code = "IDENTITY_ALREADY_LINKED"
 	CodeIdentityNotLinked           Code = "IDENTITY_NOT_LINKED"
 	CodeLastCredential              Code = "LAST_CREDENTIAL"
+	CodeAPITokenNotFound            Code = "API_TOKEN_NOT_FOUND"
+	CodeLastAdministrator           Code = "LAST_ADMINISTRATOR"
+	CodeAccountInUse                Code = "ACCOUNT_IN_USE"
+	CodeInstanceAlreadyInitialized  Code = "INSTANCE_ALREADY_INITIALIZED"
 	// CodeCredentialUnavailable means the account exists and does not sign in
 	// the way the caller offered. Its details carry the kinds that would work,
 	// so a client can say what to do instead rather than guessing that a
@@ -65,7 +69,6 @@ const (
 	CodeImportDiskSpaceInsufficient Code = "IMPORT_DISK_SPACE_INSUFFICIENT"
 	CodeImportStagingInvalid        Code = "IMPORT_STAGING_INVALID"
 	CodeImportStagingExpired        Code = "IMPORT_STAGING_EXPIRED"
-	CodeImportOwnerMismatch         Code = "IMPORT_OWNER_MISMATCH"
 	CodeImportMergePlanStale        Code = "IMPORT_MERGE_PLAN_STALE"
 	// CodeImportMergeUnsupported means the merge comparison does not know how
 	// to reconcile something this site or this archive holds. It is a refusal

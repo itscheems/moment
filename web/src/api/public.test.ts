@@ -49,7 +49,7 @@ const rootComment = {
   post_id: post.id,
   parent_id: null,
   depth: 0,
-  author_kind: "guest",
+
   author_name: "访客",
   author: guestAuthor,
   reply_to: null,
@@ -65,7 +65,7 @@ const replyComment = {
   id: "01K2ABCDEF0123456789ABCDE2",
   parent_id: rootComment.id,
   depth: 1,
-  author_kind: "owner",
+
   author_name: "Owner",
   author: ownerAuthor,
   content_md: "一级回复",
@@ -369,7 +369,7 @@ describe("public API client", () => {
       if (url === "/api/v1/site") {
         return json({
           data: {
-            owner_id: "00000000000000000000000000000000",
+            profile_user_id: "00000000000000000000000000000000",
             username: "owner",
             display_name: "乔乔",
             title: "乔乔的 Moment",
@@ -663,7 +663,7 @@ describe("public API client", () => {
       vi.fn(async () =>
         json({
           data: {
-            owner_id: "00000000000000000000000000000000",
+            profile_user_id: "00000000000000000000000000000000",
             username: "owner",
             display_name: "Moment",
             title: "Moment",
@@ -690,7 +690,7 @@ describe("public API client", () => {
       vi.fn(async () =>
         json({
           data: {
-            owner_id: "00000000000000000000000000000000",
+            profile_user_id: "00000000000000000000000000000000",
             username: "owner",
             display_name: "Moment",
             title: "Moment",
@@ -877,8 +877,6 @@ describe("public API client", () => {
       ) as typeof fetch,
     );
 
-    // rootComment is author_kind "guest": nothing writes that any more, but an
-    // archive taken before accounts were required will still deliver it.
     await expect(api.comments(post.id)).resolves.toMatchObject({
       pinnedCommentId: rootComment.id,
       items: [
@@ -886,14 +884,13 @@ describe("public API client", () => {
           id: rootComment.id,
           depth: 0,
           parentId: null,
-          authorKind: "guest",
+
           authorName: "访客",
         },
         {
           id: replyComment.id,
           depth: 1,
           parentId: rootComment.id,
-          authorKind: "owner",
         },
       ],
     });
@@ -919,7 +916,7 @@ describe("public API client", () => {
   it("accepts a location-only owner comment with the post location projection", async () => {
     const located = {
       ...rootComment,
-      author_kind: "owner",
+
       author_name: "Owner",
       content_md: "",
       content_html: "",
@@ -965,7 +962,7 @@ describe("public API client", () => {
             items: [
               {
                 ...rootComment,
-                author_kind: "owner",
+
                 author_name: longName,
                 author: { ...ownerAuthor, display_name: longName },
               },
@@ -991,7 +988,7 @@ describe("public API client", () => {
             items: [
               {
                 ...rootComment,
-                author_kind: "owner",
+
                 author_name: "长".repeat(81),
               },
             ],
@@ -1016,7 +1013,7 @@ describe("public API client", () => {
             items: [
               {
                 ...rootComment,
-                author_kind: "owner",
+
                 author_name: "Owner",
                 content_md: " ",
                 content_html: "",

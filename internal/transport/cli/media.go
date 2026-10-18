@@ -30,7 +30,7 @@ import (
 func registerMedia(application *Application) {
 	application.MustRegisterLeaf(LeafSpec{
 		Path: []string{"media", "delete"}, ArgsUsage: "<media-id>", Short: "Delete one unreferenced media object",
-		Long:    "Delete one selected object only when no post, comment, account or link card references it. API mode requires the owner.",
+		Long:    "Delete one selected object only when no post, comment, account or link card references it. API mode requires the account.",
 		Inputs:  "Canonical media ID; --dry-run previews eligibility, --yes confirms deletion.",
 		Output:  "media_id, dry_run, deleted and cleanup_failures.",
 		Errors:  "MEDIA_NOT_FOUND for absent media; MEDIA_IN_USE for referenced media; authentication errors in API mode.",
@@ -45,7 +45,7 @@ func registerMedia(application *Application) {
 		Inputs:  "One readable local image up to 30 MiB or video up to 300 MiB; video duration is limited to five minutes. API mode authenticates through MOMENT_TOKEN or --token-file.",
 		Output:  "Managed media metadata, preview metadata, and explicit original/preview URLs.",
 		Errors:  "Invalid media uses stable MEDIA_* codes; missing HEIC/video processors return MEDIA_PROCESSOR_UNAVAILABLE; filesystem failures use exit code 6; cancellation uses exit code 9.",
-		Example: "moment media add ./fixtures/cat.jpg --data-dir ./moment-data --json",
+		Example: "moment --as writer media add ./fixtures/cat.jpg --data-dir ./moment-data --json",
 		Args:    exactArgs(1), Capability: CapabilityBoth, Run: runMediaAdd,
 	})
 	application.MustRegisterLeaf(LeafSpec{
@@ -120,6 +120,9 @@ func runMediaAdd(ctx context.Context, invocation Invocation, input CommandInput)
 	var meta map[string]any
 	switch invocation.Mode() {
 	case ModeDirect:
+		if _, err := directContentActor(ctx); err != nil {
+			return Result{}, err
+		}
 		direct, err := openDirectMedia(ctx, invocation)
 		if err != nil {
 			return Result{}, mediaCLIError(err)
@@ -279,7 +282,7 @@ func openDirectMedia(ctx context.Context, invocation Invocation) (*directMediaRu
 	}
 	runtimeState, maintenance, err := runtimefs.OpenForWriteContext(ctx, target.DataDirectory())
 	if err != nil {
-		return nil, ownerRuntimeError(err)
+		return nil, runtimeError(err)
 	}
 	database, err := sqlitestore.Open(ctx, runtimeState, sqlitestore.Options{})
 	if err != nil {
@@ -322,7 +325,7 @@ func mediaAPIUpload(ctx context.Context, invocation Invocation, filename string,
 	if err := writer.Close(); err != nil {
 		return nil, err
 	}
-	endpoint, err := url.JoinPath(target.BaseURL().String(), "/api/v1/owner/media")
+	endpoint, err := url.JoinPath(target.BaseURL().String(), "/api/v1/media")
 	if err != nil {
 		return nil, err
 	}
@@ -349,7 +352,7 @@ func mediaAPIUpload(ctx context.Context, invocation Invocation, filename string,
 		return nil, invalidAPIResponse()
 	}
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
-		return nil, decodeOwnerAPIFailure(response.StatusCode, responseBody)
+		return nil, decodeAPIFailure(response.StatusCode, responseBody)
 	}
 	if response.StatusCode != http.StatusCreated {
 		return nil, invalidAPIResponse()
@@ -441,6 +444,13 @@ func mediaAPIDownload(ctx context.Context, invocation Invocation, id domain.ID) 
 	if err != nil {
 		return media.Asset{}, err
 	}
+	token, err := apiToken(target, false)
+	if err != nil {
+		return media.Asset{}, err
+	}
+	if token != "" {
+		request.Header.Set("Authorization", "Bearer "+token)
+	}
 	response, err := http.DefaultClient.Do(request)
 	if err != nil {
 		return media.Asset{}, err
@@ -460,7 +470,7 @@ func mediaAPIDownload(ctx context.Context, invocation Invocation, id domain.ID) 
 		if !validAPIJSONContentType(response.Header.Get("Content-Type")) {
 			return media.Asset{}, invalidAPIResponse()
 		}
-		return media.Asset{}, decodeOwnerAPIFailure(response.StatusCode, body)
+		return media.Asset{}, decodeAPIFailure(response.StatusCode, body)
 	}
 	mimeType := response.Header.Get("Content-Type")
 	if !controlledMediaType(mimeType) {
@@ -577,7 +587,7 @@ func runMediaDelete(ctx context.Context, invocation Invocation, input CommandInp
 		defer func() { _ = direct.Close() }()
 		result, err = direct.store.Delete(ctx, id, invocation.Safety().DryRun)
 	} else {
-		route := "/api/v1/owner/media/" + id.String()
+		route := "/api/v1/media/" + id.String()
 		if invocation.Safety().DryRun {
 			route += "?dry_run=true"
 		}

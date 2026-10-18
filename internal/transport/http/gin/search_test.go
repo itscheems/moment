@@ -1,7 +1,6 @@
 package ginhttp
 
 import (
-	"context"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -14,10 +13,10 @@ import (
 func TestSearchHTTPStrictQueriesAggregatesAndCursor(t *testing.T) {
 	fixture := newPostHTTPFixture(t, 0)
 	*fixture.now = time.Date(2026, time.January, 1, 0, 30, 0, 0, time.UTC)
-	if _, err := fixture.posts.Create(context.Background(), app.CreatePostInput{ContentMD: "旧城雨 first"}); err != nil {
+	if _, err := fixture.posts.Create(fixture.ctx, app.CreatePostInput{ContentMD: "旧城雨 first"}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := fixture.posts.Create(context.Background(), app.CreatePostInput{ContentMD: "旧城雨 second"}); err != nil {
+	if _, err := fixture.posts.Create(fixture.ctx, app.CreatePostInput{ContentMD: "旧城雨 second"}); err != nil {
 		t.Fatal(err)
 	}
 

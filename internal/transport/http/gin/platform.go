@@ -53,7 +53,7 @@ type BodyLimits struct {
 type Config struct {
 	Assets                fs.FS
 	Readiness             ReadinessFunc
-	OwnerAuth             *auth.Manager
+	SessionSigner         *auth.Manager
 	Accounts              *app.AccountService
 	OAuthProviders        *oauth.Registry
 	SiteSettings          *app.SiteService
@@ -149,16 +149,12 @@ func New(config Config) (*gin.Engine, error) {
 		}
 		Success(ctx, http.StatusOK, map[string]string{"status": "ready"}, nil)
 	})
-	// Every owner-scoped group is admitted by one gate, so authorisation has
-	// exactly one implementation. A route group cannot be registered without
-	// it, which is what makes "this route forgot to check" unrepresentable
-	// rather than merely unlikely.
 	var gate *Gate
-	if config.OwnerAuth != nil {
+	if config.SessionSigner != nil {
 		if config.Accounts == nil {
-			return nil, errors.New("owner authentication requires the account service")
+			return nil, errors.New("account authentication requires the account service")
 		}
-		gate = NewGate(config.OwnerAuth, config.Accounts)
+		gate = NewGate(config.SessionSigner, config.Accounts)
 		// A deployment with no provider credentials still registers the routes;
 		// the provider list comes back empty and the sign-in page draws no
 		// buttons. Registering conditionally would make a misconfiguration look
@@ -168,12 +164,13 @@ func New(config Config) (*gin.Engine, error) {
 			Cookies:  CookieOptions{Secure: config.SecureCookies},
 			Log:      surfaceLog,
 		}
-		RegisterOwnerRoutes(engine, gate, CookieOptions{Secure: config.SecureCookies})
+		RegisterAuthenticationRoutes(engine, gate, CookieOptions{Secure: config.SecureCookies})
 		// The account group carries the provider configuration because adding a
 		// way to sign in to your own account is something you do to your own
 		// account, and belongs beside listing and removing them rather than
 		// beside signing in.
 		RegisterAccountRoutes(engine, gate, config.Media, CookieOptions{Secure: config.SecureCookies}, oauthConfig)
+		RegisterMentionRoutes(engine, gate)
 		RegisterOAuthRoutes(engine, gate, oauthConfig)
 		// Device sign-in registers unconditionally beside the browser flow, for
 		// the same reason: a provider that cannot do it answers 404 on its own
@@ -181,40 +178,39 @@ func New(config Config) (*gin.Engine, error) {
 		RegisterDeviceRoutes(engine, gate, oauthConfig)
 	}
 	if config.SiteSettings != nil {
-		if config.OwnerAuth == nil {
-			return nil, errors.New("site settings routes require owner authentication")
+		if config.SessionSigner == nil {
+			return nil, errors.New("site settings routes require account authentication")
 		}
 		RegisterSiteRoutes(engine, config.SiteSettings, gate, config.InstanceID, config.InstanceInitializedAt)
-		RegisterMentionRoutes(engine, gate)
 	}
 	if config.Media != nil {
-		if config.OwnerAuth == nil {
-			return nil, errors.New("media routes require owner authentication")
+		if config.SessionSigner == nil {
+			return nil, errors.New("media routes require account authentication")
 		}
 		RegisterMediaRoutes(engine, config.Media, gate)
 	}
 	if config.Posts != nil {
-		if config.OwnerAuth == nil || config.SiteSettings == nil {
-			return nil, errors.New("post routes require owner authentication and site settings")
+		if config.SessionSigner == nil || config.SiteSettings == nil {
+			return nil, errors.New("post routes require account authentication and site settings")
 		}
 		RegisterPostRoutes(engine, config.Posts, config.SiteSettings, gate)
 		RegisterArticleRoutes(engine, config.Posts, gate)
 	}
 	if config.Locations != nil {
-		if config.OwnerAuth == nil {
-			return nil, errors.New("location routes require owner authentication")
+		if config.SessionSigner == nil {
+			return nil, errors.New("location routes require account authentication")
 		}
 		RegisterLocationRoutes(engine, config.Locations, gate)
 	}
 	if config.Links != nil {
-		if config.OwnerAuth == nil {
-			return nil, errors.New("link preview routes require owner authentication")
+		if config.SessionSigner == nil {
+			return nil, errors.New("link preview routes require account authentication")
 		}
 		RegisterLinkRoutes(engine, config.Links, gate)
 	}
 	if config.Comments != nil {
-		if config.OwnerAuth == nil {
-			return nil, errors.New("comment routes require owner authentication")
+		if config.SessionSigner == nil {
+			return nil, errors.New("comment routes require account authentication")
 		}
 		RegisterCommentRoutes(engine, config.Comments, gate)
 	}
@@ -222,26 +218,26 @@ func New(config Config) (*gin.Engine, error) {
 		RegisterSearchRoutes(engine, config.Search, gate)
 	}
 	if config.Archive != nil {
-		if config.OwnerAuth == nil {
-			return nil, errors.New("archive export route requires owner authentication")
+		if config.SessionSigner == nil {
+			return nil, errors.New("archive export route requires account authentication")
 		}
 		RegisterExportRoutes(engine, config.Archive, gate)
 	}
 	if config.ImportInspector != nil {
-		if config.OwnerAuth == nil {
-			return nil, errors.New("import inspection route requires owner authentication")
+		if config.SessionSigner == nil {
+			return nil, errors.New("import inspection route requires account authentication")
 		}
 		RegisterImportInspectRoutes(engine, config.ImportInspector, gate)
 	}
 	if config.ImportCommitter != nil {
-		if config.OwnerAuth == nil {
-			return nil, errors.New("import commit routes require owner authentication")
+		if config.SessionSigner == nil {
+			return nil, errors.New("import commit routes require account authentication")
 		}
 		RegisterImportCommitRoutes(engine, config.ImportCommitter, gate)
 	}
 	if config.Doctor != nil {
-		if config.OwnerAuth == nil {
-			return nil, errors.New("doctor route requires owner authentication")
+		if config.SessionSigner == nil {
+			return nil, errors.New("doctor route requires account authentication")
 		}
 		RegisterDoctorRoutes(engine, config.Doctor, gate)
 	}

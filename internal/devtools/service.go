@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/moment/moment/internal/app"
 	"github.com/moment/moment/internal/auth"
 	"github.com/moment/moment/internal/doctor"
 	"github.com/moment/moment/internal/domain"
@@ -63,7 +64,7 @@ type Result struct {
 	ExpectedDoctorCheckID  string `json:"expected_doctor_check_id,omitempty"`
 	DoctorHealthy          bool   `json:"doctor_healthy"`
 	ArchiveRoundTripPassed bool   `json:"archive_round_trip_passed,omitempty"`
-	OwnerToken             string `json:"owner_token,omitempty"`
+	APIToken               string `json:"api_token,omitempty"`
 	// Showcase lists what the site-showcase scenario built, under keys that
 	// do not change between builds; every other scenario leaves it absent.
 	Showcase *ShowcaseManifest `json:"showcase,omitempty"`
@@ -182,11 +183,11 @@ func Execute(ctx context.Context, request Request) (result Result, resultErr err
 	if err := target.Verify(); err != nil {
 		return Result{}, err
 	}
-	ownerStatus, err := auth.ReadStatusWithinRoot(authority)
+	signerStatus, err := auth.ReadStatusWithinRoot(authority)
 	if err != nil {
 		return Result{}, err
 	}
-	needsOwner := !ownerStatus.Initialized
+	needsSigner := !signerStatus.Initialized
 	generation, err := runtimeState.CreateDevelopmentGeneration(ctx, authority, held)
 	if err != nil {
 		return Result{}, err
@@ -298,7 +299,7 @@ func Execute(ctx context.Context, request Request) (result Result, resultErr err
 		if err != nil {
 			return err
 		}
-		if _, err = validateDoctorHandoff(report, recipe.ExpectedDoctorCheckID, needsOwner); err != nil {
+		if _, err = validateDoctorHandoff(report, recipe.ExpectedDoctorCheckID, needsSigner); err != nil {
 			return err
 		}
 		if recipe.ArchiveRoundTrip {
@@ -312,17 +313,19 @@ func Execute(ctx context.Context, request Request) (result Result, resultErr err
 		return Result{}, rollbackIfPublished(runtimeState, authority, held, targetGenerationAuthority(target), generation.ID, postSwitchErr)
 	}
 	healthy := recipe.ExpectedDoctorCheckID == ""
-	ownerToken := ""
-	if needsOwner {
-		credential, err := auth.InitializeDevelopmentWithinLocks(context.WithoutCancel(ctx), runtimeState, developmentAuthority, held)
-		if err != nil {
+	apiToken, err := issueDevelopmentAccountToken(context.WithoutCancel(ctx), runtimeState, developmentAuthority, held)
+	if err != nil {
+		return Result{}, rollbackIfPublished(runtimeState, authority, held, targetGenerationAuthority(target), generation.ID, err)
+	}
+	if needsSigner {
+		if _, err := auth.InitializeDevelopmentWithinLocks(context.WithoutCancel(ctx), runtimeState, developmentAuthority, held); err != nil {
 			return Result{}, rollbackIfPublished(runtimeState, authority, held, targetGenerationAuthority(target), generation.ID, err)
 		}
-		ownerToken = credential.Token
 	}
+
 	return Result{
 		Plan: plan, Applied: true, ExpectedDoctorCheckID: recipe.ExpectedDoctorCheckID,
-		DoctorHealthy: healthy, ArchiveRoundTripPassed: recipe.ArchiveRoundTrip, OwnerToken: ownerToken,
+		DoctorHealthy: healthy, ArchiveRoundTripPassed: recipe.ArchiveRoundTrip, APIToken: apiToken,
 		Showcase: showcase,
 	}, nil
 }
@@ -373,13 +376,13 @@ func rollbackIfPublished(runtimeState *runtimefs.Runtime, authority *os.Root, he
 	return operationErr
 }
 
-func validateDoctorHandoff(report doctor.Report, expected string, allowMissingOwner bool) (bool, error) {
+func validateDoctorHandoff(report doctor.Report, expected string, allowMissingSigner bool) (bool, error) {
 	failures := make([]doctor.Check, 0, report.Counts.Fail)
 	for _, check := range report.Checks {
 		if check.Status != doctor.StatusFail {
 			continue
 		}
-		if allowMissingOwner && check.ID == doctor.CheckSecretPermissions {
+		if allowMissingSigner && check.ID == doctor.CheckSecretPermissions {
 			continue
 		}
 		failures = append(failures, check)
@@ -428,4 +431,28 @@ func runHook(hooks *operationHooks, selectHook func(*operationHooks) func() erro
 		return nil
 	}
 	return hook()
+}
+
+// issueDevelopmentAccountToken creates a normal credential in the newly seeded
+// generation. Resetting the generation never preserves a previous API token.
+func issueDevelopmentAccountToken(ctx context.Context, runtimeState *runtimefs.Runtime, authority *runtimefs.DevelopmentAuthority, held *runtimefs.LeaseSet) (value string, resultErr error) {
+	database, err := sqlitestore.OpenDevelopmentPinned(ctx, runtimeState, held, authority, sqlitestore.Options{})
+	if err != nil {
+		return "", err
+	}
+	defer func() { resultErr = errors.Join(resultErr, database.Close()) }()
+	repository, err := sqlitestore.NewDevelopmentAccountRepository(database, runtimeState.Root, held)
+	if err != nil {
+		return "", err
+	}
+	accounts, err := app.NewAccountService(repository)
+	if err != nil {
+		return "", err
+	}
+	account, err := accounts.ProfileAccount(ctx)
+	if err != nil {
+		return "", err
+	}
+	issued, err := accounts.CreateAPIToken(ctx, account.ID, "development")
+	return issued.Value, err
 }

@@ -143,7 +143,7 @@ func (store commentStore) CommentsEnabled(ctx context.Context) (bool, error) {
 
 // commentColumns is shared by every comment read so a column added to the
 // table cannot reach one query and miss another.
-const commentColumns = `comments.id, comments.entry_id, comments.parent_id, comments.author_kind, comments.author_name,
+const commentColumns = `comments.id, comments.entry_id, comments.parent_id, comments.author_name,
        comments.author_user_id, comments.reply_to_comment_id, comments.content_md, comments.created_at_ms,
        location.name, location.display_name, location.country_code,
        location.country, location.region, location.city, location.district,
@@ -329,7 +329,7 @@ func (store commentStore) CommentsByID(ctx context.Context, ids []domain.ID) (ma
 		arguments[index] = id.String()
 	}
 	rows, err := store.queries.QueryContext(ctx, `
-SELECT comments.id, comments.entry_id, comments.parent_id, comments.author_kind, comments.author_name,
+SELECT comments.id, comments.entry_id, comments.parent_id, comments.author_name,
        comments.author_user_id, comments.reply_to_comment_id, comments.content_md, comments.created_at_ms,
        location.name, location.display_name, location.country_code,
        location.country, location.region, location.city, location.district,
@@ -353,15 +353,6 @@ WHERE comments.id IN (`+strings.Join(placeholders, ", ")+`)`, arguments...)
 		return nil, fmt.Errorf("iterate comments by id: %w", err)
 	}
 	return records, nil
-}
-
-// SiteOwnerID reads the account that authors every owner comment.
-func (store commentStore) SiteOwnerID(ctx context.Context) (string, error) {
-	var ownerID string
-	if err := store.queries.QueryRowContext(ctx, `SELECT owner_id FROM site_settings WHERE id = 1`).Scan(&ownerID); err != nil {
-		return "", fmt.Errorf("read site owner: %w", err)
-	}
-	return ownerID, nil
 }
 
 // CommentAuthorIdentities resolves account IDs to the profile a comment reader
@@ -415,7 +406,7 @@ WHERE id IN (`+strings.Join(placeholders, ", ")+`)`, arguments...)
 
 func (store commentStore) CommentByID(ctx context.Context, id domain.ID) (domain.Comment, bool, error) {
 	record, err := scanComment(store.queries.QueryRowContext(ctx, `
-SELECT id, entry_id, parent_id, author_kind, author_name, author_user_id, reply_to_comment_id, content_md, created_at_ms
+SELECT id, entry_id, parent_id, author_name, author_user_id, reply_to_comment_id, content_md, created_at_ms
      , location.name, location.display_name, location.country_code,
        location.country, location.region, location.city, location.district,
        location.category, location.provider, location.provider_place_id,
@@ -434,7 +425,7 @@ WHERE comments.id = ?`, id.String()))
 
 func (store commentStore) ListComments(ctx context.Context, entryID domain.ID) ([]domain.Comment, error) {
 	rows, err := store.queries.QueryContext(ctx, `
-SELECT child.id, child.entry_id, child.parent_id, child.author_kind, child.author_name, child.author_user_id, child.reply_to_comment_id, child.content_md, child.created_at_ms,
+SELECT child.id, child.entry_id, child.parent_id, child.author_name, child.author_user_id, child.reply_to_comment_id, child.content_md, child.created_at_ms,
        location.name, location.display_name, location.country_code,
        location.country, location.region, location.city, location.district,
        location.category, location.provider, location.provider_place_id,
@@ -602,7 +593,7 @@ func (store commentStore) ReplaceCommentMediaUsages(ctx context.Context, comment
 	var aggregateBytes int64
 	for _, usage := range usages {
 		var byteSize int64
-		if err := store.queries.QueryRowContext(ctx, `SELECT byte_size FROM media WHERE id = ?`, usage.MediaID.String()).Scan(&byteSize); err != nil {
+		if err := store.queries.QueryRowContext(ctx, `SELECT media.byte_size FROM media JOIN media_grants AS access ON access.media_id=media.id WHERE media.id=? AND access.user_id=?`, usage.MediaID.String(), contentMediaActorID(ctx)).Scan(&byteSize); err != nil {
 			if errors.Is(err, sql.ErrNoRows) {
 				return domain.NewError(domain.CodeMediaNotFound, fmt.Sprintf("media %s does not exist", usage.MediaID), map[string]any{"media_id": usage.MediaID.String()})
 			}
@@ -661,8 +652,8 @@ ORDER BY usage.media_id`, commentID.String(), commentID.String())
 
 func (store commentStore) InsertComment(ctx context.Context, comment domain.Comment) error {
 	_, err := store.queries.ExecContext(ctx, `
-INSERT INTO comments (id, entry_id, parent_id, author_kind, author_name, author_user_id, reply_to_comment_id, content_md, created_at_ms)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`, comment.ID.String(), comment.EntryID.String(), nullableCommentID(comment.ParentID), string(comment.AuthorKind), comment.AuthorName, nullableString(comment.AuthorUserID), nullableCommentID(comment.ReplyToCommentID), comment.ContentMD, domain.TimeToMillis(comment.CreatedAt))
+INSERT INTO comments (id, entry_id, parent_id, author_name, author_user_id, reply_to_comment_id, content_md, created_at_ms)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?)`, comment.ID.String(), comment.EntryID.String(), nullableCommentID(comment.ParentID), comment.AuthorName, nullableString(comment.AuthorUserID), nullableCommentID(comment.ReplyToCommentID), comment.ContentMD, domain.TimeToMillis(comment.CreatedAt))
 	if err != nil {
 		if strings.Contains(err.Error(), "comment parent must be a root in the same entry") {
 			return domain.NewError(domain.CodeCommentDepthExceeded, "replies must target a top-level comment on the same post", nil)
@@ -718,12 +709,6 @@ func (store commentStore) CountCommentReplies(ctx context.Context, id domain.ID)
 	return count, nil
 }
 
-// CountCommentRepliesByOthers counts the replies under a comment that some
-// other account wrote.
-//
-// A reply with no account behind it counts as somebody else's: a legacy guest
-// row and an owner row written before author_user_id existed are both somebody
-// whose words the caller did not write.
 func (store commentStore) CountCommentRepliesByOthers(ctx context.Context, id domain.ID, authorUserID string) (int, error) {
 	var count int
 	if err := store.queries.QueryRowContext(ctx, `
@@ -795,14 +780,14 @@ VALUES (?, ?, ?, ?, ?)`, record.Scope, record.Key, record.RequestHash, record.Re
 type commentScanner interface{ Scan(...any) error }
 
 func scanComment(scanner commentScanner) (domain.Comment, error) {
-	var idValue, entryValue, authorKind, authorName, content string
+	var idValue, entryValue, authorName, content string
 	var parent, authorUserID, replyTarget sql.NullString
 	var createdAt int64
 	var locationName, locationDisplayName, countryCode, country, region, city, district, category, provider, providerPlaceID sql.NullString
 	var latitude, longitude sql.NullInt64
 	var coordinateSystem sql.NullString
 	if err := scanner.Scan(
-		&idValue, &entryValue, &parent, &authorKind, &authorName, &authorUserID, &replyTarget, &content, &createdAt,
+		&idValue, &entryValue, &parent, &authorName, &authorUserID, &replyTarget, &content, &createdAt,
 		&locationName, &locationDisplayName, &countryCode, &country, &region, &city,
 		&district, &category, &provider, &providerPlaceID, &latitude, &longitude,
 		&coordinateSystem,
@@ -855,7 +840,7 @@ func scanComment(scanner commentScanner) (domain.Comment, error) {
 		}
 		replyTo = &parsed
 	}
-	record := domain.Comment{ID: id, EntryID: entryID, ParentID: parentID, AuthorKind: domain.CommentAuthorKind(authorKind), AuthorName: authorName, AuthorUserID: authorUser, ReplyToCommentID: replyTo, ContentMD: content, Location: location, CreatedAt: domain.TimeFromMillis(createdAt)}
+	record := domain.Comment{ID: id, EntryID: entryID, ParentID: parentID, AuthorName: authorName, AuthorUserID: authorUser, ReplyToCommentID: replyTo, ContentMD: content, Location: location, CreatedAt: domain.TimeFromMillis(createdAt)}
 	if err := record.Validate(); err != nil {
 		return domain.Comment{}, domain.NewError(domain.CodeDataIntegrityFailed, "stored comment violates the comment contract", map[string]any{"comment_id": id.String()})
 	}

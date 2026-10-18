@@ -32,7 +32,7 @@ func TestCapabilitiesAndSelectedMediaDeletionHTTP(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	route := "/api/v1/owner/media/" + value.ID.String()
+	route := "/api/v1/media/" + value.ID.String()
 	if got := performRequest(engine, httptest.NewRequest(http.MethodDelete, route, nil)); got.Code != 401 {
 		t.Fatalf("unauth delete: %d", got.Code)
 	}
@@ -97,7 +97,7 @@ func TestPreparedExportLengthFailureAndCleanup(t *testing.T) {
 
 func TestSelectedMediaDeletionRejectsActiveMember(t *testing.T) {
 	fixture := newCommentHTTPFixture(t, nil)
-	id := uploadOwnerMedia(t, fixture)
+	id := uploadAccountMedia(t, fixture)
 	session, csrf, member := signInMember(t, fixture)
 	if _, err := fixture.accountService.SetStatus(context.Background(), member.ID, domain.AccountActive); err != nil {
 		t.Fatal(err)
@@ -108,28 +108,28 @@ func TestSelectedMediaDeletionRejectsActiveMember(t *testing.T) {
 		t.Fatalf("member credential is not active: %d", got.Code)
 	}
 	for _, query := range []string{"", "?dry_run=true"} {
-		request := httptest.NewRequest(http.MethodDelete, "/api/v1/owner/media/"+id+query, nil)
+		request := httptest.NewRequest(http.MethodDelete, "/api/v1/media/"+id+query, nil)
 		request.AddCookie(session)
 		request.Header.Set(CSRFHeaderName, csrf)
 		response := performRequest(fixture.engine, request)
-		// Existing owner gates report UNAUTHORIZED for an authenticated non-owner.
-		if response.Code != http.StatusUnauthorized {
+		// An authenticated member receives a permission refusal.
+		if response.Code != http.StatusForbidden {
 			t.Fatalf("member delete: %d %s", response.Code, response.Body.String())
 		}
 	}
-	if response := performRequest(fixture.engine, httptest.NewRequest(http.MethodGet, "/api/v1/media/"+id, nil)); response.Code != http.StatusOK {
+	if response := performRequest(fixture.engine, headerRequest(http.MethodGet, "/api/v1/media/"+id, fixture.token, nil)); response.Code != http.StatusOK {
 		t.Fatalf("member removed media: %d", response.Code)
 	}
 }
 
-func TestAccountExportHTTPUsesAuthenticatedIdentityAndKeepsOwnerBoundary(t *testing.T) {
+func TestAccountExportHTTPUsesAuthenticatedIdentityAndKeepsAuthorBoundary(t *testing.T) {
 	fixture := newCommentHTTPFixture(t, nil)
 	session, _, member := signInMember(t, fixture)
 	exporter, err := archive.NewExporter(archive.Options{DataDir: fixture.runtime.Root, AppVersion: "test"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	engine, err := New(Config{Assets: testAssets(), OwnerAuth: fixture.manager, Accounts: fixture.accountService, Archive: exporter})
+	engine, err := New(Config{Assets: testAssets(), SessionSigner: fixture.manager, Accounts: fixture.accountService, Archive: exporter})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -141,7 +141,7 @@ func TestAccountExportHTTPUsesAuthenticatedIdentityAndKeepsOwnerBoundary(t *test
 	}
 	// Members, including pending accounts, may export themselves but cannot
 	// select another account or access the full site backup.
-	for _, path := range []string{"/api/v1/account/export?account_id=someone", "/api/v1/owner/export"} {
+	for _, path := range []string{"/api/v1/account/export?account_id=someone", "/api/v1/backups/export"} {
 		request := httptest.NewRequest(http.MethodGet, path, nil)
 		request.AddCookie(session)
 		got := performRequest(engine, request)

@@ -17,10 +17,7 @@ import (
 	sqlitestore "github.com/moment/moment/internal/storage/sqlite"
 )
 
-// ShowcaseScenarioName is the one catalog scenario dated from the clock
-// rather than from the seed: a site an owner has kept for seven years, with
-// every reader-facing state on it at least once, so a screen can be checked
-// against real data without composing it by hand first.
+// ShowcaseScenarioName selects the full disposable reader and account scenario.
 const ShowcaseScenarioName = "site-showcase"
 
 // ShowcaseCase is one thing the showcase built and where to find it. Keys are
@@ -38,10 +35,10 @@ type ShowcaseCase struct {
 // first: every hidden post, quote, card, member, and calendar edge is listed
 // under a key that does not change between builds.
 type ShowcaseManifest struct {
-	AnchoredAt string         `json:"anchored_at"`
-	Timezone   string         `json:"timezone"`
-	Owner      string         `json:"owner"`
-	Cases      []ShowcaseCase `json:"cases"`
+	AnchoredAt      string         `json:"anchored_at"`
+	Timezone        string         `json:"timezone"`
+	ProfileUsername string         `json:"profile_username"`
+	Cases           []ShowcaseCase `json:"cases"`
 }
 
 // showcaseWhen dates one post. Recent posts are offsets from the anchor so
@@ -124,6 +121,7 @@ type showcaseLink struct {
 }
 
 type showcasePost struct {
+	author     string
 	key        string
 	when       showcaseWhen
 	note       string
@@ -143,8 +141,8 @@ type showcasePost struct {
 }
 
 const (
-	showcaseOwnerUsername    = "xiaoman"
-	showcaseOwnerDisplayName = "小满"
+	showcaseProfileUsername    = "xiaoman"
+	showcaseProfileDisplayName = "小满"
 )
 
 func root(author string, after time.Duration, content string) showcaseComment {
@@ -204,12 +202,13 @@ func showcasePosts() []showcasePost {
 	count := func(value int64) *int64 { return &value }
 
 	return []showcasePost{
+		{key: "member.author", author: "aming", when: ago(18 * time.Minute), note: "普通成员发布；作者回复有作者标识，管理员回复没有角色徽标", content: "账号相同，角色不同，也都能记录自己的生活。", comments: []showcaseComment{root("aming", time.Minute, "我是这条帖子的作者。"), root("profile", 2*time.Minute, "来回复一条，管理权限不会改变帖子作者。")}},
 		{key: "recent.text", when: ago(3 * time.Minute), note: "几分钟前的纯文字", content: "刚把发布按钮对齐到 X 的尺寸：36px 高、左右 16px、15/20 加粗，一像素都不差。"},
 		{key: "recent.mention", when: ago(38 * time.Minute), note: "提及一位成员", content: "谢谢 @aming 昨天帮忙看那个焦点问题——Safari 里按钮真的不拿焦点，不是我眼花。"},
 		{key: "recent.image-one", when: ago(2 * time.Hour), note: "单图（横幅）+ 三条评论含回复", content: "傍晚的苏州河，风把云吹成了一条。", images: []showcaseImage{landscape(200, 1)},
 			comments: []showcaseComment{
 				root("aming", 25*time.Minute, "这个颜色太好了，是原片吗？"),
-				answer("owner", 40*time.Minute, 0, 0, "原片，只裁了一下。"),
+				answer("profile", 40*time.Minute, 0, 0, "原片，只裁了一下。"),
 				root("lena", 90*time.Minute, "Love the gradient here."),
 			}},
 		{key: "recent.image-four", when: ago(5 * time.Hour), note: "四图网格，四种比例", content: "周末拍的四张，比例各不一样。", images: []showcaseImage{landscape(20, 1), portrait(60, 2), square(110, 3), panorama(150, 4)}},
@@ -218,10 +217,10 @@ func showcasePosts() []showcasePost {
 				root("xiaobei", 2*time.Hour, showcaseLongComment),
 				{author: "aming", after: 3 * time.Hour, content: "配一张我这边的截图。", root: -1, replyTo: -1, images: []showcaseImage{landscape(300, 1)}},
 				{author: "lena", after: 5 * time.Hour, content: "Reading this from a café, exactly the place for it.", root: -1, replyTo: -1, location: berlin},
-				reply("owner", 6*time.Hour, 0, "写太长了，下次拆开发。"),
+				reply("profile", 6*time.Hour, 0, "写太长了，下次拆开发。"),
 			}},
 		{key: "recent.hidden", when: ago(27 * time.Hour), note: "仅自己可见（带锁标；访客看不到）", visibility: domain.VisibilityOnlyMe, content: "这条只有我自己看得到：下周三体检，记得空腹，带上去年的报告。",
-			comments: []showcaseComment{root("owner", 30*time.Minute, "备忘：报告在书房第二格抽屉。")}},
+			comments: []showcaseComment{root("profile", 30*time.Minute, "备忘：报告在书房第二格抽屉。")}},
 		{key: "recent.quote-public", when: ago(2 * 24 * time.Hour), note: "引用一条公开的图文帖", content: "翻到年初这组，现在看还是喜欢。", quotes: "year.photo-set"},
 		{key: "recent.link-article", when: ago(3 * 24 * time.Hour), note: "链接卡片：文章，有缩略图与站点图标", content: "把 composer 的焦点问题写成了一篇笔记。",
 			link: &showcaseLink{thumbnail: &articleThumb, favicon: &articleIcon, card: domain.LinkCard{
@@ -232,7 +231,7 @@ func showcasePosts() []showcasePost {
 			}},
 			comments: []showcaseComment{
 				root("aming", time.Hour, "已读，那个 preventDefault 的结论我也踩过。"),
-				root("owner", 2*time.Hour, "有个地方写漏了：Firefox 会因此丢 :active，回头补。"),
+				root("profile", 2*time.Hour, "有个地方写漏了：Firefox 会因此丢 :active，回头补。"),
 			}},
 		{key: "recent.link-video", when: ago(4 * 24 * time.Hour), note: "链接卡片：YouTube 视频（时长、播放量）", content: "这段讲字体渲染的视频值得看两遍。",
 			link: &showcaseLink{thumbnail: &youtubeThumb, card: domain.LinkCard{
@@ -318,7 +317,7 @@ func showcasePosts() []showcasePost {
 // roots than one page holds and, under the first root, more replies than one
 // reply page holds, with answers that name who they answer.
 func showcaseManyComments() []showcaseComment {
-	authors := []string{"aming", "lena", "xiaobei", "owner"}
+	authors := []string{"aming", "lena", "xiaobei", "profile"}
 	comments := make([]showcaseComment, 0, 38)
 	keyboards := []string{
 		"HHKB，用了六年了。", "Keychron K3，便宜好用。", "笔记本自带的，习惯了。", "NuPhy Air75，出差带着。", "MX Keys，图个安静。",
@@ -385,7 +384,7 @@ const showcaseLongMarkdown = `# 把 composer 的三个小问题一次讲清楚
 
 **结论**：焦点是唯一的信号，指针只是噪音。`
 
-const showcaseCodeMarkdown = "两段代码，看看高亮和横向滚动。\n\n```go\nfunc (viewer Viewer) CanRead(visibility domain.Visibility) bool {\n\tswitch visibility {\n\tcase domain.VisibilityEveryone:\n\t\treturn true\n\tcase domain.VisibilityOnlyMe:\n\t\treturn viewer.owner\n\tdefault:\n\t\treturn false\n\t}\n}\n```\n\n```js\nconst expanded =\n  focusWithin || audienceOpen || content.trim().length > 0;\nsection.addEventListener(\"mousedown\", (event) => {\n  if (!isTypedInto(event.target)) event.preventDefault(); // keep the caret where it is\n});\n```\n\n行内代码：`grid-template-rows: 0fr` 到 `1fr` 是可以过渡的。"
+const showcaseCodeMarkdown = "两段代码，看看高亮和横向滚动。\n\n```go\nfunc (viewer Viewer) CanReadEntry(entry domain.Entry) bool {\n\tif entry.PublicationState == \"unpublished\" {\n\t\treturn false\n\t}\n\tif entry.Visibility == domain.VisibilityEveryone {\n\t\treturn true\n\t}\n\treturn entry.Visibility == domain.VisibilityOnlyMe && viewer.userID != \"\" && viewer.userID == entry.AuthorUserID\n}\n```\n\n```js\nconst expanded =\n  focusWithin || audienceOpen || content.trim().length > 0;\nsection.addEventListener(\"mousedown\", (event) => {\n  if (!isTypedInto(event.target)) event.preventDefault(); // keep the caret where it is\n});\n```\n\n行内代码：`grid-template-rows: 0fr` 到 `1fr` 是可以过渡的。"
 
 const showcaseLongComment = "认真读完了。有几点补充：\n\n第一，preventDefault 在 mousedown 上的副作用是拖选文字也一起没了，所以你把提示和链接排除掉是对的，但引用卡片里的文字就选不了了，这一点可以接受。\n\n第二，外框追内容那段，我之前在评论区的折叠上也遇到过一模一样的现象，当时的解法更笨——直接把外框的过渡关了，结果加图的时候就跳。你这个「折叠期间打标记」的思路更好。\n\n第三，切窗口收起的问题在 Chrome 和 Safari 上表现一致吗？我记得 Safari 在切回来的时候不一定会把焦点还给 textarea，如果不还的话 activeElement 还是它但没有 focus 事件，这时候 UI 是展开的、光标却不在里面。\n\n以上，感谢分享。"
 
@@ -395,19 +394,19 @@ func (builder *fixtureBuilder) buildShowcase(ctx context.Context) (Counts, error
 	}
 	anchor := builder.anchor
 	zone := builder.zone
-	manifest := &ShowcaseManifest{AnchoredAt: anchor.Format(time.RFC3339), Timezone: zone.String(), Owner: showcaseOwnerUsername}
+	manifest := &ShowcaseManifest{AnchoredAt: anchor.Format(time.RFC3339), Timezone: zone.String(), ProfileUsername: showcaseProfileUsername}
 	actual := Counts{}
 	pictureIndex := 0
 	var zeroID domain.ID
-	ingest := func(spec showcaseImage) (domain.ID, error) {
-		if err := builder.verify(ctx); err != nil {
+	ingest := func(ingestContext context.Context, spec showcaseImage) (domain.ID, error) {
+		if err := builder.verify(ingestContext); err != nil {
 			return zeroID, err
 		}
 		contents, err := showcasePNG(spec, builder.seed, pictureIndex)
 		if err != nil {
 			return zeroID, err
 		}
-		value, _, err := builder.media.Ingest(ctx, spec.fileName(pictureIndex), bytes.NewReader(contents))
+		value, _, err := builder.media.Ingest(ingestContext, spec.fileName(pictureIndex), bytes.NewReader(contents))
 		if err != nil {
 			return zeroID, fmt.Errorf("ingest %s: %w", spec.fileName(pictureIndex), err)
 		}
@@ -417,10 +416,10 @@ func (builder *fixtureBuilder) buildShowcase(ctx context.Context) (Counts, error
 		builder.emit("media", actual.Media, builder.recipe.Counts.Media)
 		return value.ID, nil
 	}
-	usagesFor := func(images []showcaseImage, alt func(int) *string) ([]domain.EntryMediaUsage, error) {
+	usagesFor := func(actorCtx context.Context, images []showcaseImage, alt func(int) *string) ([]domain.EntryMediaUsage, error) {
 		usages := make([]domain.EntryMediaUsage, 0, len(images))
 		for index, spec := range images {
-			id, err := ingest(spec)
+			id, err := ingest(actorCtx, spec)
 			if err != nil {
 				return nil, err
 			}
@@ -437,15 +436,15 @@ func (builder *fixtureBuilder) buildShowcase(ctx context.Context) (Counts, error
 
 	// The site first: identity, pictures, policy.
 	avatar := portrait(210, 0)
-	avatar.Name = "avatar-owner.png"
+	avatar.Name = "avatar-profile.png"
 	cover := panorama(195, 0)
-	cover.Name = "cover-owner.png"
+	cover.Name = "cover-profile.png"
 	builder.clock.now = anchor.AddDate(-7, 0, 0)
-	avatarID, err := ingest(avatar)
+	avatarID, err := ingest(ctx, avatar)
 	if err != nil {
 		return Counts{}, err
 	}
-	coverID, err := ingest(cover)
+	coverID, err := ingest(ctx, cover)
 	if err != nil {
 		return Counts{}, err
 	}
@@ -453,21 +452,25 @@ func (builder *fixtureBuilder) buildShowcase(ctx context.Context) (Counts, error
 	commentsEnabled := true
 	registration := string(domain.RegistrationOpen)
 	avatarValue, coverValue := avatarID.String(), coverID.String()
-	if _, err := builder.site.Update(ctx, app.SiteUpdate{
-		Username: text(showcaseOwnerUsername), DisplayName: text(showcaseOwnerDisplayName), Title: text("小满的 Moment"),
-		Bio: text("在上海写代码、拍照、记录。偶尔去别的城市待几天。\nhttps://xiaoman.example"), Timezone: &timezone, CommentsEnabled: &commentsEnabled,
-		RegistrationMode: &registration, AvatarMediaID: &app.NullableString{Value: &avatarValue}, CoverMediaID: &app.NullableString{Value: &coverValue},
+	if _, err := builder.accounts.UpdateProfile(ctx, builder.actor.ID, app.ProfileUpdate{
+		Username: text(showcaseProfileUsername), DisplayName: text(showcaseProfileDisplayName),
+		Bio: text("在上海写代码、拍照、记录。偶尔去别的城市待几天。\nhttps://xiaoman.example"), AvatarMediaID: &app.NullableString{Value: &avatarValue}, CoverMediaID: &app.NullableString{Value: &coverValue},
 	}); err != nil {
 		return Counts{}, err
 	}
+	if _, err := builder.site.Update(ctx, app.SiteUpdate{Title: text("小满的 Moment"), Timezone: &timezone, CommentsEnabled: &commentsEnabled, RegistrationMode: &registration}); err != nil {
+		return Counts{}, err
+	}
+
 	settings, err := builder.site.Get(ctx)
 	if err != nil {
 		return Counts{}, err
 	}
-	authors := map[string]domain.User{"owner": {
-		ID: settings.OwnerID, Username: settings.Username, DisplayName: settings.DisplayName,
-		Role: domain.UserRoleOwner, Status: domain.AccountActive,
-	}}
+	profileAccount, err := builder.accounts.Account(ctx, settings.ProfileUserID)
+	if err != nil {
+		return Counts{}, err
+	}
+	authors := map[string]domain.User{"profile": profileAccount}
 
 	// Members join in the order they joined. Registration is open while the
 	// active ones arrive and switches to approval before the one still
@@ -502,7 +505,7 @@ func (builder *fixtureBuilder) buildShowcase(ctx context.Context) (Counts, error
 			profile.Bio = text(member.bio)
 		}
 		if member.avatar != nil {
-			id, err := ingest(*member.avatar)
+			id, err := ingest(app.WithContentActor(ctx, outcome.User), *member.avatar)
 			if err != nil {
 				return Counts{}, err
 			}
@@ -547,8 +550,17 @@ func (builder *fixtureBuilder) buildShowcase(ctx context.Context) (Counts, error
 		if err := builder.verify(ctx); err != nil {
 			return Counts{}, err
 		}
+		alias := post.author
+		if alias == "" {
+			alias = "profile"
+		}
+		writer, found := authors[alias]
+		if !found || !writer.CanWritePublicContent() {
+			return Counts{}, fmt.Errorf("showcase author %s is unavailable", alias)
+		}
+		postCtx := app.WithContentActor(ctx, writer)
 		at := post.when.at(anchor, zone)
-		usages, err := usagesFor(post.images, post.alt)
+		usages, err := usagesFor(postCtx, post.images, post.alt)
 		if err != nil {
 			return Counts{}, err
 		}
@@ -561,14 +573,14 @@ func (builder *fixtureBuilder) buildShowcase(ctx context.Context) (Counts, error
 			card.Position = 0
 			card.CapturedAt = domain.TimeToMillis(at)
 			if post.link.thumbnail != nil {
-				id, err := ingest(*post.link.thumbnail)
+				id, err := ingest(postCtx, *post.link.thumbnail)
 				if err != nil {
 					return Counts{}, err
 				}
 				card.ThumbnailMediaID = id.String()
 			}
 			if post.link.favicon != nil {
-				id, err := ingest(*post.link.favicon)
+				id, err := ingest(postCtx, *post.link.favicon)
 				if err != nil {
 					return Counts{}, err
 				}
@@ -584,7 +596,7 @@ func (builder *fixtureBuilder) buildShowcase(ctx context.Context) (Counts, error
 			input.QuotedPostID = &target
 		}
 		builder.clock.now = at
-		created, err := builder.posts.Create(ctx, input)
+		created, err := builder.posts.Create(postCtx, input)
 		if err != nil {
 			return Counts{}, fmt.Errorf("create %s: %w", post.key, err)
 		}
@@ -603,7 +615,7 @@ func (builder *fixtureBuilder) buildShowcase(ctx context.Context) (Counts, error
 			editAt := at.Add(post.editAfter)
 			deferred = append(deferred, later{at: editAt, run: func() error {
 				builder.clock.now = editAt
-				_, err := builder.posts.Update(ctx, app.UpdatePostInput{ID: id, ContentMD: post.edit})
+				_, err := builder.posts.Update(postCtx, app.UpdatePostInput{ID: id, ContentMD: post.edit})
 				return err
 			}})
 		}
@@ -611,7 +623,7 @@ func (builder *fixtureBuilder) buildShowcase(ctx context.Context) (Counts, error
 			repostAt := post.repostedAt.at(anchor, zone)
 			deferred = append(deferred, later{at: repostAt, run: func() error {
 				builder.clock.now = repostAt
-				_, err := builder.posts.SetReposted(ctx, id, true)
+				_, err := builder.posts.SetReposted(postCtx, id, true)
 				return err
 			}})
 		}
@@ -623,7 +635,7 @@ func (builder *fixtureBuilder) buildShowcase(ctx context.Context) (Counts, error
 			caseIndex := len(manifest.Cases) - 1
 			deferred = append(deferred, later{at: anchor.Add(-time.Hour), run: func() error {
 				builder.clock.now = anchor.Add(-time.Hour)
-				if _, err := builder.posts.Delete(ctx, id); err != nil {
+				if _, err := builder.posts.Delete(postCtx, id); err != nil {
 					return err
 				}
 				actual.Entries--
@@ -661,7 +673,7 @@ func (builder *fixtureBuilder) buildShowcase(ctx context.Context) (Counts, error
 	return actual, nil
 }
 
-func (builder *fixtureBuilder) createShowcaseComments(ctx context.Context, entryID domain.ID, postedAt time.Time, comments []showcaseComment, authors map[string]domain.User, ingest func(showcaseImage) (domain.ID, error), actual *Counts) (int64, error) {
+func (builder *fixtureBuilder) createShowcaseComments(ctx context.Context, entryID domain.ID, postedAt time.Time, comments []showcaseComment, authors map[string]domain.User, ingest func(context.Context, showcaseImage) (domain.ID, error), actual *Counts) (int64, error) {
 	created := make([]domain.ID, 0, len(comments))
 	var written int64
 	for index, comment := range comments {
@@ -695,7 +707,7 @@ func (builder *fixtureBuilder) createShowcaseComments(ctx context.Context, entry
 			}
 		}
 		for position, spec := range comment.images {
-			id, err := ingest(spec)
+			id, err := ingest(app.WithContentActor(ctx, author), spec)
 			if err != nil {
 				return written, err
 			}
@@ -792,7 +804,7 @@ func newShowcaseBuilderWithinLocks(target *Target, runtimeState *runtimefs.Runti
 	if err != nil {
 		return nil, err
 	}
-	site, err := app.NewSiteService(siteRepository, app.SiteOptions{AllowDevelopmentLocalHTTP: true, Clock: clock.Now})
+	site, err := app.NewSiteService(siteRepository, app.SiteOptions{AllowDevelopmentLocalHTTP: true})
 	if err != nil {
 		return nil, err
 	}
@@ -809,11 +821,15 @@ func newShowcaseBuilderWithinLocks(target *Target, runtimeState *runtimefs.Runti
 	if err != nil {
 		return nil, err
 	}
+	actor, err := accounts.ProfileAccount(context.Background())
+	if err != nil {
+		return nil, err
+	}
 	return &fixtureBuilder{
 		target: target, runtime: runtimeState, database: database, recipe: recipe,
 		seed: seed, base: anchor, posts: posts, comments: comments, site: site,
 		media: mediaStore, staged: staged, progress: progress,
-		accounts: accounts, clock: clock, anchor: anchor, zone: zone,
+		accounts: accounts, clock: clock, anchor: anchor, zone: zone, actor: actor,
 	}, nil
 }
 

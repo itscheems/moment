@@ -12,59 +12,34 @@ import (
 	"github.com/moment/moment/internal/runtimefs"
 )
 
-func TestSiteSettingsMigrationServiceAndAtomicAvatarValidation(t *testing.T) {
-	ctx := context.Background()
-	database, runtimeState := openTestDatabase(t, Options{})
-	repository, err := NewSiteRepository(database, runtimeState.Locks)
+func TestSiteConfigurationDoesNotWriteTheSelectedAccount(t *testing.T) {
+	ctx := testAccountContext()
+	db, state := openTestDatabase(t, Options{})
+	repo, _ := NewSiteRepository(db, state.Locks)
+	site, _ := app.NewSiteService(repo, app.SiteOptions{})
+	title := "Site configuration"
+	before, err := site.Get(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
-	service, err := app.NewSiteService(repository, app.SiteOptions{AllowDevelopmentLocalHTTP: true})
-	if err != nil {
+	updated, err := site.Update(ctx, app.SiteUpdate{Title: &title})
+	if err != nil || updated.Title != title || updated.Username != before.Username || updated.DisplayName != before.DisplayName || updated.Bio != before.Bio {
+		t.Fatalf("site update=%+v,%v", updated, err)
+	}
+	if err := repo.Write(ctx, func(store app.SiteStore) error {
+		settings, err := store.SiteSettings(ctx)
+		if err != nil {
+			return err
+		}
+		settings.Username = "unrelated"
+		settings.DisplayName = "Changed person"
+		return store.UpdateSiteSettings(ctx, settings)
+	}); err != nil {
 		t.Fatal(err)
 	}
-
-	settings, err := service.Get(ctx)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if settings.Title != "Moment" || settings.Bio != "" || settings.Timezone == "" || !settings.CommentsEnabled || settings.PublicBaseURL != nil || settings.AvatarMediaID != nil {
-		t.Fatalf("fresh settings = %#v", settings)
-	}
-	if err := service.Ready(ctx); err != nil {
-		t.Fatalf("site readiness: %v", err)
-	}
-
-	insertManagedMedia(t, database, mediaOne)
-	title := "Portable identity"
-	avatar := mediaOne
-	comments := false
-	updated, err := service.Update(ctx, app.SiteUpdate{
-		Title:           &title,
-		AvatarMediaID:   &app.NullableString{Value: &avatar},
-		CommentsEnabled: &comments,
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if updated.AvatarMediaID == nil || *updated.AvatarMediaID != mediaOne || updated.CommentsEnabled {
-		t.Fatalf("updated = %#v", updated)
-	}
-
-	rollbackTitle := "must not persist"
-	missing := mediaTwo
-	if _, err := service.Update(ctx, app.SiteUpdate{
-		Title:         &rollbackTitle,
-		AvatarMediaID: &app.NullableString{Value: &missing},
-	}); !domain.HasCode(err, domain.CodeMediaNotFound) {
-		t.Fatalf("missing media error = %v", err)
-	}
-	after, err := service.Get(ctx)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if after.Title != title || after.AvatarMediaID == nil || *after.AvatarMediaID != mediaOne {
-		t.Fatalf("failed update partially persisted: %#v", after)
+	after, err := site.Get(ctx)
+	if err != nil || after.Username != before.Username || after.DisplayName != before.DisplayName {
+		t.Fatalf("site persistence changed an account=%+v,%v", after, err)
 	}
 }
 
@@ -79,12 +54,12 @@ func TestSiteSettingsReadFailsClosedAndUpdateHonorsMaintenanceLock(t *testing.T)
 		t.Fatal(err)
 	}
 
-	lease, err := runtimeState.Locks.Acquire(context.Background(), runtimefs.MaintenanceLock, runtimefs.Exclusive)
+	lease, err := runtimeState.Locks.Acquire(testAccountContext(), runtimefs.MaintenanceLock, runtimefs.Exclusive)
 	if err != nil {
 		t.Fatal(err)
 	}
 	title := "blocked"
-	ctx, cancel := context.WithTimeout(context.Background(), 25*time.Millisecond)
+	ctx, cancel := context.WithTimeout(testAccountContext(), 25*time.Millisecond)
 	defer cancel()
 	_, updateErr := service.Update(ctx, app.SiteUpdate{Title: &title})
 	if !errors.Is(updateErr, context.DeadlineExceeded) {
@@ -95,14 +70,14 @@ func TestSiteSettingsReadFailsClosedAndUpdateHonorsMaintenanceLock(t *testing.T)
 	}
 
 	mustWrite(t, database, `DELETE FROM site_settings WHERE id = 1`)
-	if _, err := service.Get(context.Background()); !domain.HasCode(err, domain.CodeDataIntegrityFailed) {
+	if _, err := service.Get(testAccountContext()); !domain.HasCode(err, domain.CodeDataIntegrityFailed) {
 		t.Fatalf("missing singleton error = %v", err)
 	}
 }
 
 func TestSiteSettingsPreheldMaintenanceDoesNotReacquireBehindWriter(t *testing.T) {
 	database, runtimeState := openTestDatabase(t, Options{})
-	guardedRuntime, maintenance, err := runtimefs.OpenForWriteContext(context.Background(), runtimeState.Root)
+	guardedRuntime, maintenance, err := runtimefs.OpenForWriteContext(testAccountContext(), runtimeState.Root)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -117,7 +92,7 @@ func TestSiteSettingsPreheldMaintenanceDoesNotReacquireBehindWriter(t *testing.T
 
 	waiterStarted := make(chan struct{})
 	writerAcquired := make(chan *runtimefs.Lease, 1)
-	writerContext, cancelWriter := context.WithTimeout(context.Background(), time.Second)
+	writerContext, cancelWriter := context.WithTimeout(testAccountContext(), time.Second)
 	defer cancelWriter()
 	go func() {
 		close(waiterStarted)
@@ -135,7 +110,7 @@ func TestSiteSettingsPreheldMaintenanceDoesNotReacquireBehindWriter(t *testing.T
 	}
 
 	title := "No nested lock"
-	updateContext, cancelUpdate := context.WithTimeout(context.Background(), 250*time.Millisecond)
+	updateContext, cancelUpdate := context.WithTimeout(testAccountContext(), 250*time.Millisecond)
 	defer cancelUpdate()
 	if _, err := service.Update(updateContext, app.SiteUpdate{Title: &title}); err != nil {
 		t.Fatalf("preheld update waited behind later writer: %v", err)
@@ -151,31 +126,13 @@ func TestSiteSettingsPreheldMaintenanceDoesNotReacquireBehindWriter(t *testing.T
 	case <-time.After(time.Second):
 		t.Fatal("exclusive writer did not acquire after shared release")
 	}
-	if _, err := service.Update(context.Background(), app.SiteUpdate{Title: &title}); !domain.HasCode(err, domain.CodeInternal) {
+	if _, err := service.Update(testAccountContext(), app.SiteUpdate{Title: &title}); !domain.HasCode(err, domain.CodeInternal) {
 		t.Fatalf("released maintenance lease allowed a write: %v", err)
 	}
 }
 
-func insertManagedMedia(t *testing.T, database *Database, id string) {
-	t.Helper()
-	sha := strings.Repeat("a", 64)
-	path := "media/original/aa/" + sha + ".jpg"
-	mustWrite(t, database, `
-INSERT INTO media (
-    id, sha256, storage_path, original_name, mime_type,
-    byte_size, width, height, created_at_ms, unreferenced_since_ms
-)
-VALUES (?, ?, ?, 'avatar.jpg', 'image/jpeg', 10, 32, 32, 1, 1)`, id, sha, path)
-}
-
-// The owner renaming onto a member's handle is a conflict, not a server fault.
-//
-// users_username_unique guards this column for every writer, and the account
-// route reports its refusal as USERNAME_TAKEN. The owner's route wrapped the
-// same constraint failure as an opaque error, so the settings form was told
-// "operation failed" for a refusal it already carries the words for.
-func TestOwnerRenameOntoAMemberHandleIsReportedAsAConflict(t *testing.T) {
-	ctx := context.Background()
+func TestAccountRenameOntoAnotherHandleIsReportedAsAConflict(t *testing.T) {
+	ctx := testAccountContext()
 	database, runtimeState := openTestDatabase(t, Options{})
 
 	accountRepository, err := NewAccountRepository(database, runtimeState.Locks)
@@ -205,15 +162,18 @@ func TestOwnerRenameOntoAMemberHandleIsReportedAsAConflict(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := site.Update(ctx, app.SiteUpdate{Username: &taken}); !domain.HasCode(err, domain.CodeUsernameTaken) {
+	if _, err := accounts.UpdateProfile(ctx, testAccountID, app.ProfileUpdate{Username: &taken}); !domain.HasCode(err, domain.CodeUsernameTaken) {
 		t.Fatalf("rename onto a held handle = %v", err)
 	}
 
 	// The refused write left both rows alone, and a free handle still lands.
 	free := "itscheems"
-	saved, err := site.Update(ctx, app.SiteUpdate{Username: &free})
+	saved, err := accounts.UpdateProfile(ctx, testAccountID, app.ProfileUpdate{Username: &free})
 	if err != nil || saved.Username != free {
 		t.Fatalf("free handle = %#v, err = %v", saved, err)
+	}
+	if projected, err := site.Get(ctx); err != nil || projected.Username != free {
+		t.Fatalf("site did not project the selected account: %+v,%v", projected, err)
 	}
 	held, err := accounts.Account(ctx, member.User.ID)
 	if err != nil || held.Username != taken {
@@ -221,9 +181,8 @@ func TestOwnerRenameOntoAMemberHandleIsReportedAsAConflict(t *testing.T) {
 	}
 }
 
-// registration_mode is site policy the owner sets, and the row has to keep it.
 func TestSiteRegistrationModeRoundTripsThroughTheRow(t *testing.T) {
-	ctx := context.Background()
+	ctx := testAccountContext()
 	database, runtimeState := openTestDatabase(t, Options{})
 	repository, err := NewSiteRepository(database, runtimeState.Locks)
 	if err != nil {
@@ -234,7 +193,6 @@ func TestSiteRegistrationModeRoundTripsThroughTheRow(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// The migration default is the owner's deliberate choice, not a placeholder.
 	fresh, err := service.Get(ctx)
 	if err != nil {
 		t.Fatal(err)
@@ -266,5 +224,100 @@ func TestSiteRegistrationModeRoundTripsThroughTheRow(t *testing.T) {
 	}
 	if after.RegistrationMode != domain.RegistrationClosed || after.Title != title {
 		t.Fatalf("after unrelated write = %#v", after)
+	}
+}
+
+func TestAccountProfileTextValidationAndNormalizationRemainAtomic(t *testing.T) {
+	_, accounts := newAccountFixture(t)
+	ctx := testAccountContext()
+	before, err := accounts.Account(ctx, testAccountID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ptr := func(v string) *string { return &v }
+	for name, update := range map[string]app.ProfileUpdate{
+		"newline name":        {DisplayName: ptr("Che\nems")},
+		"tab name":            {DisplayName: ptr("Che\tems")},
+		"empty name":          {DisplayName: ptr("   ")},
+		"zero byte bio":       {Bio: ptr("\x00")},
+		"carriage return bio": {Bio: ptr("first\rsecond")},
+		"long bio":            {Bio: ptr(strings.Repeat("界", 501))},
+	} {
+		t.Run(name, func(t *testing.T) {
+			if _, err := accounts.UpdateProfile(ctx, before.ID, update); !domain.HasCode(err, domain.CodeInvalidArgument) {
+				t.Fatalf("invalid profile=%v", err)
+			}
+			after, err := accounts.Account(ctx, before.ID)
+			if err != nil || after.Username != before.Username || after.DisplayName != before.DisplayName || after.Bio != before.Bio {
+				t.Fatal("invalid profile update partially persisted")
+			}
+		})
+	}
+	saved, err := accounts.UpdateProfile(ctx, before.ID, app.ProfileUpdate{DisplayName: ptr("  Cheems  "), Bio: ptr(" first\nsecond ")})
+	if err != nil || saved.DisplayName != "Cheems" || saved.Bio != "first\nsecond" {
+		t.Fatalf("normalization=%+v,%v", saved, err)
+	}
+	for _, handle := range []string{"search", "api", "login", "assets", "archive", "profile"} {
+		if _, err := accounts.UpdateProfile(ctx, before.ID, app.ProfileUpdate{Username: &handle}); !domain.HasCode(err, domain.CodeUsernameReserved) {
+			t.Fatalf("reserved handle %q=%v", handle, err)
+		}
+	}
+}
+
+func TestPinningOnlyAcceptsPublicContentAndClearsWhenItBecomesPrivate(t *testing.T) {
+	ctx := testAccountContext()
+	db, state := openTestDatabase(t, Options{})
+	postRepo, _ := NewPostRepository(db, state.Locks)
+	posts, _ := app.NewPostService(postRepo)
+	siteRepo, _ := NewSiteRepository(db, state.Locks)
+	site, _ := app.NewSiteService(siteRepo, app.SiteOptions{})
+	hidden, err := posts.Create(ctx, app.CreatePostInput{ContentMD: "private", Visibility: domain.VisibilityOnlyMe})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := site.Pin(ctx, hidden.Post.Entry.ID); !domain.HasCode(err, domain.CodePostNotFound) {
+		t.Fatalf("private site pin=%v", err)
+	}
+	public, err := posts.Create(ctx, app.CreatePostInput{ContentMD: "public"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := site.Pin(ctx, public.Post.Entry.ID); err != nil {
+		t.Fatal(err)
+	}
+	private := domain.VisibilityOnlyMe
+	if _, err := posts.Update(ctx, app.UpdatePostInput{ID: public.Post.Entry.ID, PreserveContent: true, Visibility: &private}); err != nil {
+		t.Fatal(err)
+	}
+	settings, err := site.Get(ctx)
+	if err != nil || settings.PinnedPostID != nil {
+		t.Fatalf("private post remained pinned=%+v,%v", settings, err)
+	}
+}
+
+func TestWithdrawingAnArticleClearsItsSitePin(t *testing.T) {
+	ctx := testAccountContext()
+	db, state := openTestDatabase(t, Options{})
+	postRepo, _ := NewPostRepository(db, state.Locks)
+	posts, _ := app.NewPostService(postRepo, app.WithPostClock(func() time.Time { return time.UnixMilli(1000) }))
+	repo, _ := NewSiteRepository(db, state.Locks)
+	site, _ := app.NewSiteService(repo, app.SiteOptions{})
+	draft, err := posts.SaveArticleDraft(ctx, app.SaveArticleDraftInput{Title: "published article", BodyJSON: draftBodyJSON("article body")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	article, err := posts.PublishArticleDraft(ctx, app.PublishArticleDraftInput{DraftID: draft.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := site.Pin(ctx, article.Entry.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := posts.WithdrawArticle(ctx, article.Entry.ID); err != nil {
+		t.Fatal(err)
+	}
+	settings, err := site.Get(ctx)
+	if err != nil || settings.PinnedPostID != nil {
+		t.Fatalf("withdrawn article remained pinned=%+v,%v", settings, err)
 	}
 }

@@ -36,13 +36,7 @@ type ArticleRebuildResult struct {
 	Unparsable int  `json:"unparsable"`
 }
 
-// RebuildArticleDerivations re-derives the excerpt and the picture projection
-// of every article from its body.
-//
-// It repairs copies and nothing else. The timeline row is not touched, so an
-// article does not acquire an "edited" mark for a change its author did not
-// make -- which is the reason this exists rather than telling an owner to open
-// each affected article and publish it again.
+// RebuildArticleDerivations repairs derived article values without replacing authoritative documents.
 func (service *PostService) RebuildArticleDerivations(ctx context.Context, dryRun bool) (ArticleRebuildResult, error) {
 	if err := contextError(ctx); err != nil {
 		return ArticleRebuildResult{}, err

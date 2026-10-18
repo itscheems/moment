@@ -179,11 +179,6 @@ function offsetMinutes(timezone: string, now: Date): number | null {
   }
 }
 
-/**
- * One line saying whose calendar this is, or null when the reader's clock and
- * the site's agree right now. Most readers of a one-person site are its owner,
- * and a line that always says the same thing is noise they learn not to see.
- */
 export function timezoneNote(
   timezone: string,
   now = new Date(),

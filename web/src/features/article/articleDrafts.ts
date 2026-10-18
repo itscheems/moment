@@ -9,16 +9,6 @@ import {
   type PublicPost,
 } from "../../api/public";
 
-/**
- * The owner's article drafts, as the server keeps them.
- *
- * Deliberately outside `editor/`: a draft is a row on this instance, not a
- * thing the editor invented, and the routing layer has to be able to ask for
- * one without pulling a rich-text editor into the entry chunk. Nothing in this
- * file knows what a Tiptap document is.
- *
- * Mirrors internal/transport/http/gin/articles.go and postdto.ArticleDraft.
- */
 export interface ArticleDraft {
   excerpt?: string;
   authorUserId?: string;
@@ -387,14 +377,6 @@ export function isDraftMissingError(error: unknown): boolean {
   return errorCode(error) === ARTICLE_DRAFT_NOT_FOUND;
 }
 
-/**
- * What the owner is told when a save fails.
- *
- * The server's own message is English prose meant for a log, so each code this
- * surface can actually meet gets an answer that says what to do next. A code
- * with no entry falls back to the generic line rather than to the raw message:
- * an owner reading "post storage operation failed" learns nothing.
- */
 export function articleDraftErrorMessage(error: unknown): string {
   switch (errorCode(error)) {
     case ARTICLE_DRAFT_STALE:

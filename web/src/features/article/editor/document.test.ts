@@ -138,8 +138,6 @@ describe("serialising the editor's document", () => {
         { type: "paragraph", content: [{ type: "text", text: "在写" }] },
       ],
     });
-    // The empty heading goes; the empty paragraph stays, because the server
-    // allows one and the owner is probably standing in it.
     expect(wire.content.map((node) => node.type)).toEqual([
       "paragraph",
       "paragraph",

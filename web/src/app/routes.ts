@@ -6,10 +6,10 @@ export type RouteId =
   | "archive"
   | "profile"
   | "login"
-  | "owner-compose"
+  | "compose"
   | "article-workspace"
-  | "owner-edit"
-  | "owner-settings"
+  | "edit"
+  | "settings"
   | "not-found";
 
 export interface AppRoute {
@@ -17,18 +17,12 @@ export interface AppRoute {
   title: string;
   eyebrow: string;
   href: string;
-  ownerOnly?: boolean;
+  activeAccountOnly?: boolean;
 }
 
-// Composing is not an owner-only corner of the site, it is what the site is
-// for, so it answers at the top level. "compose" is a reserved handle
-// (internal/domain/user.go), so this cannot shadow a profile.
 export const COMPOSE_PATH = "/compose";
 export const COMPOSE_MEDIA_PATH = "/compose/post/media";
 export const COMPOSE_DRAFTS_PATH = "/compose/drafts";
-// Writing an article is composing, so it lives under the same top-level
-// address rather than under /owner: what a page is for decides where it sits,
-// and who may open it is the server's answer and not the URL's.
 export const ARTICLE_COMPOSE_PATH = "/compose/articles";
 
 /** Where one draft is edited. The id is the server's, so it is escaped. */
@@ -127,22 +121,7 @@ export function articleDraftIdFromPath(pathname: string): string | null {
 }
 
 export function isComposeDraftsPath(pathname: string): boolean {
-  return (
-    matchesPath(pathname, COMPOSE_DRAFTS_PATH) ||
-    matchesPath(pathname, "/owner/compose/drafts")
-  );
-}
-
-/**
- * Where a link or a history entry written before composing moved out from
- * under /owner should go. Entries already in somebody's history keep working
- * rather than turning into a not-found page.
- */
-export function movedComposePath(pathname: string): string | null {
-  if (matchesPath(pathname, "/owner/compose")) return COMPOSE_PATH;
-  if (matchesPath(pathname, "/owner/compose/drafts"))
-    return COMPOSE_DRAFTS_PATH;
-  return null;
+  return matchesPath(pathname, COMPOSE_DRAFTS_PATH);
 }
 
 const routes: Array<AppRoute & { match: (pathname: string) => boolean }> = [
@@ -181,11 +160,6 @@ const routes: Array<AppRoute & { match: (pathname: string) => boolean }> = [
     href: "/archive",
     match: (pathname) => pathname === "/archive" || pathname === "/archive/",
   },
-  // Signing in is not an owner action. Which account the credential belongs to
-  // decides what that account may do, and that decision is the server's; a page
-  // that called itself the owner's told everybody else they were in the wrong
-  // place before it knew who they were. "login" is a reserved handle
-  // (internal/domain/user.go), so this cannot shadow a profile.
   {
     id: "login",
     title: "登录",
@@ -203,37 +177,28 @@ const routes: Array<AppRoute & { match: (pathname: string) => boolean }> = [
     match: isArticleComposePath,
   },
   {
-    id: "owner-compose",
+    id: "compose",
     title: "发布 Moment",
     eyebrow: "",
     href: COMPOSE_PATH,
-    ownerOnly: true,
-    // The drafts list is a face of the same surface, so it shares the route
-    // and carries its own address: reloading it comes back to the list
-    // rather than to a composer with the list shut. The old /owner paths
-    // still match, so an entry in somebody's history renders while the
-    // redirect corrects the address.
-    match: (pathname) =>
-      isComposePath(pathname) || movedComposePath(pathname) !== null,
+    activeAccountOnly: true,
+    match: (pathname) => isComposePath(pathname),
   },
   {
-    id: "owner-edit",
+    id: "edit",
     title: "编辑 Moment",
     eyebrow: "",
     href: "/",
-    ownerOnly: true,
-    match: (pathname) => /^\/owner\/m\/[^/]+\/edit\/?$/.test(pathname),
+    activeAccountOnly: true,
+    match: (pathname) => /^\/m\/[^/]+\/edit\/?$/.test(pathname),
   },
-  // Not owner-only, despite the path. Login methods and active sessions belong
-  // to whoever is signed in, and this is the page that holds them; the sections
-  // that act on the site rather than on the account hide themselves instead.
   {
-    id: "owner-settings",
+    id: "settings",
     title: "设置",
     eyebrow: "",
-    href: "/owner/settings",
+    href: "/settings/account",
     match: (pathname) =>
-      pathname === "/owner/settings" || pathname === "/owner/settings/",
+      /^\/settings\/(account|site|members|backups)\/?$/.test(pathname),
   },
   // Handles live at the site root now (`/username`, not `/@username`), so this
   // pattern would swallow every other single-segment page. `resolveRoute` takes
@@ -266,7 +231,7 @@ export function resolveRoute(pathname: string): AppRoute {
       route.id === "article-focus"
         ? `/m/${encodeURIComponent(articleFocusIdFromPath(pathname) ?? "")}`
         : route.href,
-    ownerOnly: route.ownerOnly,
+    activeAccountOnly: route.activeAccountOnly,
   };
 }
 
@@ -295,12 +260,4 @@ export function articleWorkspaceFromPath(pathname: string): {
     id: articleDraftIdFromPath(pathname),
     focus: pathname.replace(/\/$/, "").endsWith("/focus"),
   };
-}
-export function movedArticleComposePath(pathname: string): string | null {
-  if (matchesPath(pathname, "/compose/article")) return ARTICLE_COMPOSE_PATH;
-  if (/^\/compose\/article\/[^/]+\/?$/.test(pathname)) {
-    const id = articleDraftIdFromPath(pathname);
-    return id ? articleDraftPath(id) : ARTICLE_COMPOSE_PATH;
-  }
-  return null;
 }

@@ -94,14 +94,14 @@ func seedArticleFixture(t *testing.T, fixture exportFixture) articleFixture {
 			query string
 			args  []any
 		}{
-			{`INSERT INTO entries (id, kind, content_md, created_at_ms, updated_at_ms, published_at_ms, content_text)
-VALUES (?, 'article', NULL, ?, ?, ?, ?)`, []any{articleEntryID, moment, moment, moment, domain.ArticleSearchText(articleTitle, document)}},
+			{`INSERT INTO entries (id, kind, content_md, created_at_ms, updated_at_ms, published_at_ms, content_text, author_user_id)
+VALUES (?, 'article', NULL, ?, ?, ?, ?, '0123456789abcdef0123456789abcdef')`, []any{articleEntryID, moment, moment, moment, domain.ArticleSearchText(articleTitle, document)}},
 			{`INSERT INTO entry_article (entry_id, title, body_json, body_schema_version, cover_media_id, excerpt)
 VALUES (?, ?, ?, 1, ?, ?)`, []any{articleEntryID, articleTitle, string(body), articleCoverID, domain.ArticleExcerpt(document)}},
 			{`INSERT INTO entry_media (entry_id, media_id, position, alt_text) VALUES (?, ?, 0, '街景')`, []any{articleEntryID, articleInlineID}},
 			{`INSERT INTO article_drafts (
     id, title, body_json, body_schema_version, cover_media_id, published_entry_id, created_at_ms, updated_at_ms
-) VALUES (?, ?, ?, 1, ?, ?, ?, ?)`, []any{articleDraftID, draftTitle, string(draftBody), draftCoverID, articleEntryID, moment, moment}},
+, author_user_id) VALUES (?, ?, ?, 1, ?, ?, ?, ?, '0123456789abcdef0123456789abcdef')`, []any{articleDraftID, draftTitle, string(draftBody), draftCoverID, articleEntryID, moment, moment}},
 			{`INSERT INTO article_draft_media (draft_id, media_id, position, alt_text) VALUES (?, ?, 0, NULL)`, []any{articleDraftID, draftPictureID}},
 		}
 		for _, statement := range statements {
@@ -155,7 +155,7 @@ func stageArchive(t *testing.T, fixture exportFixture, archivePath string) *sqli
 	t.Helper()
 	ctx := context.Background()
 	now := time.Now()
-	inspection, err := testInspector(t, fixture.runtime.Root, fixture.database, &now, math.MaxUint64).InspectFile(ctx, archivePath, 7)
+	inspection, err := testInspector(t, fixture.runtime.Root, fixture.database, &now, math.MaxUint64).InspectFile(ctx, archivePath, testAuthorization(7))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -212,7 +212,7 @@ func TestExportPacksEveryPictureOnlyAnArticleOrADraftPointsAt(t *testing.T) {
 // Raising the format version would make the backup a person took just before
 // upgrading unreadable by the binary they upgraded to, which is the one moment
 // a backup exists for. Articles are additive members, not a new version.
-func TestArticlesDidNotRaiseTheFormatVersion(t *testing.T) {
+func TestCompleteArticleGraphUsesFormatVersionTwo(t *testing.T) {
 	fixture := newExportFixture(t, true)
 	seedArticleFixture(t, fixture)
 	members, _ := readArchive(t, exportFixtureBytes(t, fixture))
@@ -220,7 +220,7 @@ func TestArticlesDidNotRaiseTheFormatVersion(t *testing.T) {
 	if err := json.Unmarshal(members["manifest.json"], &document); err != nil {
 		t.Fatal(err)
 	}
-	if document.FormatVersion != 1 || FormatVersion != 1 || FormatHeaderValue != "moment-export-v1" {
+	if document.FormatVersion != 2 || FormatVersion != 2 || FormatHeaderValue != "moment-export-v2" {
 		t.Fatalf("an archive carrying an article declared %#v", document)
 	}
 	if document.Counts.Articles != 1 || document.Counts.ArticleDrafts != 1 {
@@ -236,37 +236,17 @@ func TestArticlesDidNotRaiseTheFormatVersion(t *testing.T) {
 // A backup taken before articles existed carries no article member, and that
 // is not a loss: the site it was taken from had none. Restoring it must produce
 // a generation with no article and no draft rather than refuse.
-func TestAnArchiveWithoutTheArticleMembersRestoresNoArticles(t *testing.T) {
-	// A site that predates articles has none to carry, which is why an
-	// exporter of that vintage wrote neither member: the fixture is the same
-	// one, with the two members and their counts taken away.
+func TestArchiveWithoutArticleMembersIsRejected(t *testing.T) {
 	fixture := newExportFixture(t, true)
 	members, order := readArchive(t, exportFixtureBytes(t, fixture))
 	order = stripArticleMembers(t, members, order)
-	for _, name := range order {
-		if strings.Contains(name, "article") {
-			t.Fatalf("stripping left %s behind", name)
-		}
-	}
-	name := filepath.Join(t.TempDir(), "pre-articles-backup.zip")
+	name := filepath.Join(t.TempDir(), "incomplete.zip")
 	writeArchive(t, name, members, order)
-	if err := ValidateFile(name); err != nil {
-		t.Fatalf("a v1 archive without the article members was rejected: %v", err)
-	}
-
-	target := newExportFixture(t, false)
-	snapshot := stagedSnapshot(t, stageArchive(t, target, name))
-	// Nothing else about the restore changes: the rest of the site arrives as
-	// it always did, and the answer to "how many articles" is none.
-	if counts := snapshot.Counts(); counts.Articles != 0 || counts.ArticleDrafts != 0 ||
-		counts.Entries != 1 || counts.Comments != 2 || counts.Media != 2 {
-		t.Fatalf("restored counts = %#v", counts)
+	if err := ValidateFile(name); !domain.HasCode(err, domain.CodeExportInvalid) {
+		t.Fatalf("incomplete graph=%v", err)
 	}
 }
 
-// An envelope whose body was left behind restores as a post with nothing in it,
-// which is the one failure a backup exists to prevent. The reverse -- a body no
-// entry claims -- is a record that belongs to no post at all.
 func TestAnArticleAndItsBodyTravelTogetherOrTheArchiveIsRefused(t *testing.T) {
 	t.Run("entry without a body", func(t *testing.T) {
 		fixture := newExportFixture(t, true)
@@ -431,18 +411,18 @@ func TestADraftWhoseProjectedPicturesDisagreeWithItsBodyIsRefused(t *testing.T) 
 // of their own writing. Handing them article envelopes with no words in them,
 // and no drafts at all, would make it a copy of the parts they care least
 // about.
-func TestAPersonalExportOfTheOwnerCarriesTheirArticlesAndDrafts(t *testing.T) {
+func TestPersonalExportCarriesTheAuthorsArticlesAndDrafts(t *testing.T) {
 	fixture := newExportFixture(t, true)
 	seeded := seedArticleFixture(t, fixture)
 	ctx := context.Background()
-	var ownerID string
+	var primaryAccountID string
 	if err := fixture.database.ReadTx(ctx, func(queries sqlitestore.Queries) error {
-		return queries.QueryRowContext(ctx, `SELECT owner_id FROM site_settings WHERE id = 1`).Scan(&ownerID)
+		return queries.QueryRowContext(ctx, `SELECT profile_user_id FROM site_settings WHERE id = 1`).Scan(&primaryAccountID)
 	}); err != nil {
 		t.Fatal(err)
 	}
 	var output bytes.Buffer
-	if _, err := fixture.exporter.ExportAccount(ctx, &output, ownerID); err != nil {
+	if _, err := fixture.exporter.ExportAccount(ctx, &output, primaryAccountID); err != nil {
 		t.Fatal(err)
 	}
 	members, _ := readArchive(t, output.Bytes())

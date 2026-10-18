@@ -20,37 +20,17 @@ func ContentActor(ctx context.Context) (domain.User, bool) {
 	return user, ok
 }
 
-// ContentAuthorStore resolves the original local author for trusted direct
-// calls and batches public identity projections for reads.
+// ContentAuthorStore batches real account identity projections for reads.
 type ContentAuthorStore interface {
-	PrimaryAuthorID(context.Context) (string, error)
 	AuthorIdentities(context.Context, []string) (map[string]CommentAuthorIdentity, error)
 }
 
-func contentActorID(ctx context.Context, store any) (string, error) {
-	if user, present := ContentActor(ctx); present {
-		if domain.ValidateUserID(user.ID) != nil || !user.CanWritePublicContent() {
-			return "", domain.NewError(domain.CodeUnauthorized, "an active account identity is required", nil)
-		}
-		return user.ID, nil
+func contentActorID(ctx context.Context, _ any) (string, error) {
+	user, present := ContentActor(ctx)
+	if !present || domain.ValidateUserID(user.ID) != nil || !user.CanWritePublicContent() {
+		return "", domain.NewError(domain.CodeUnauthorized, "an active account identity is required", nil)
 	}
-	// Direct application calls retain their original account, not whichever
-	// account happens to have an administrator role later.
-	if authors, ok := store.(ContentAuthorStore); ok {
-		return authors.PrimaryAuthorID(ctx)
-	}
-	return "", nil
-}
-
-func resolvedViewer(ctx context.Context, store any, viewer Viewer) (Viewer, error) {
-	if viewer.owner && viewer.userID == "" {
-		if authors, ok := store.(ContentAuthorStore); ok {
-			id, err := authors.PrimaryAuthorID(ctx)
-			viewer.userID = id
-			return viewer, err
-		}
-	}
-	return viewer, nil
+	return user.ID, nil
 }
 
 func requireContentAuthor(ctx context.Context, store any, authorID string) error {
@@ -59,9 +39,26 @@ func requireContentAuthor(ctx context.Context, store any, authorID string) error
 		return err
 	}
 	if id != authorID {
-		return domain.NewError(domain.CodeUnauthorized, "only the article author may manage it", nil)
+		return domain.NewError(domain.CodeUnauthorized, "only the content author may manage it", nil)
 	}
 	return nil
+}
+
+// requireContentRemoval separates an author's control from public moderation.
+// Administrative authority never grants access to another author's private work.
+func requireContentRemoval(ctx context.Context, store any, entry domain.Entry) error {
+	id, err := contentActorID(ctx, store)
+	if err != nil {
+		return err
+	}
+	if id == entry.AuthorUserID {
+		return nil
+	}
+	if user, present := ContentActor(ctx); present && user.IsAdmin() &&
+		entry.Visibility == domain.VisibilityEveryone && entry.PublicationState != "unpublished" {
+		return nil
+	}
+	return domain.NewError(domain.CodeUnauthorized, "only the author or a public content moderator may remove this post", nil)
 }
 
 func readContentAuthors(ctx context.Context, store any, entries []domain.Entry) (map[string]CommentAuthorIdentity, error) {
@@ -99,4 +96,12 @@ func attachContentAuthor(ctx context.Context, store any, post *Post) error {
 // collection queries to the verified actor, including trusted direct calls.
 func ResolveContentActorID(ctx context.Context, store ContentAuthorStore) (string, error) {
 	return contentActorID(ctx, store)
+}
+
+func requireAdministrator(ctx context.Context) error {
+	user, present := ContentActor(ctx)
+	if !present || domain.ValidateUserID(user.ID) != nil || !user.CanWritePublicContent() || !user.IsAdmin() {
+		return domain.NewError(domain.CodeUnauthorized, "administrator access is required", nil)
+	}
+	return nil
 }

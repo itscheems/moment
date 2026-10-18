@@ -56,7 +56,7 @@ vi.mock("../ArticlePage", () => ({
   ),
 }));
 const site: SiteIdentity = {
-  ownerId: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+  profileUserId: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
   username: "admin",
   displayName: "Admin",
   title: "Moment",

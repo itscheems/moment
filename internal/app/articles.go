@@ -333,7 +333,7 @@ func (service *PostService) ArticleDraft(ctx context.Context, id domain.ID) (Art
 	return record, nil
 }
 
-// DiscardArticleDraft throws away unfinished work at the owner's word.
+// DiscardArticleDraft removes a draft belonging to the authenticated author.
 func (service *PostService) DiscardArticleDraft(ctx context.Context, id domain.ID) error {
 	now := domain.NormalizeTime(service.clock())
 	err := service.transactions.Write(ctx, func(store PostStore) error {

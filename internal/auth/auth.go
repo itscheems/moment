@@ -1,5 +1,5 @@
-// Package auth owns Moment's single-owner bearer credential and revocable
-// stateless browser sessions.
+// Package auth signs browser sessions and temporary provider state.
+// Password and API token verification belongs to the account service.
 package auth
 
 import (
@@ -7,13 +7,11 @@ import (
 	"crypto/hmac"
 	"crypto/rand"
 	"crypto/sha256"
-	"crypto/subtle"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
-	"math"
 	"os"
 	"path/filepath"
 	"strings"
@@ -21,40 +19,35 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/moment/moment/internal/domain"
 	"github.com/moment/moment/internal/runtimefs"
-	"golang.org/x/crypto/bcrypt"
 )
 
 const (
-	secretsFilename      = "secrets.json"
-	legacySecretsVersion = 1
-	secretsVersion       = 2
-	tokenBytes           = 32
-	signingKeyBytes      = 32
-	csrfTokenBytes       = 32
-	maxSecretsBytes      = 16 << 10
-	maxSessionBytes      = 4 << 10
-	defaultSessionTTL    = 12 * time.Hour
-	offlineLockTimeout   = 150 * time.Millisecond
-	minPasswordBytes     = 8
-	maxPasswordBytes     = 72
+	secretsFilename    = "secrets.json"
+	secretsVersion     = 3
+	signingKeyBytes    = 32
+	csrfTokenBytes     = 32
+	maxSecretsBytes    = 16 << 10
+	maxSessionBytes    = 4 << 10
+	maxSignedBytes     = (maxSessionBytes*8+5)/6 + 1 + (sha256.Size*8+5)/6
+	defaultSessionTTL  = 12 * time.Hour
+	offlineLockTimeout = 150 * time.Millisecond
 )
 
 var (
-	// ErrNotInitialized reports that owner credentials do not exist yet.
-	ErrNotInitialized = errors.New("owner credentials are not initialized")
-	// ErrAlreadyInitialized prevents accidentally replacing an existing owner.
-	ErrAlreadyInitialized = errors.New("owner credentials are already initialized")
-	// ErrUnauthorized reports an invalid bearer token or browser session.
-	ErrUnauthorized = errors.New("owner authentication failed")
+	// ErrNotInitialized reports that session signing material does not exist yet.
+	ErrNotInitialized = errors.New("session signing material is not initialized")
+	// ErrAlreadyInitialized prevents accidentally replacing an existing signing key.
+	ErrAlreadyInitialized = errors.New("session signing material is already initialized")
+	// ErrUnauthorized reports an invalid session or signed provider state.
+	ErrUnauthorized = errors.New("session verification failed")
 	// ErrInvalidSecrets reports malformed or unsupported persisted auth state.
-	ErrInvalidSecrets = errors.New("owner secrets are invalid")
+	ErrInvalidSecrets = errors.New("session signing material is invalid")
 	// ErrSecretPermissions reports a secret file that is not private.
-	ErrSecretPermissions = errors.New("owner secrets permissions are not private")
+	ErrSecretPermissions = errors.New("session signing material permissions are not private")
 	// ErrInstanceInUse reports that an offline mutation cannot own serve.lock.
 	ErrInstanceInUse = errors.New("moment server is using this instance")
-	// ErrInvalidPassword reports a password outside the bounded human-login contract.
-	ErrInvalidPassword = errors.New("owner password is invalid")
 )
 
 // Options provides deterministic test seams. Zero values select cryptographic
@@ -65,23 +58,11 @@ type Options struct {
 	SessionTTL time.Duration
 }
 
-// Status is deliberately safe for owner status responses and diagnostics.
+// Status contains only signing initialization metadata.
 type Status struct {
-	Initialized     bool       `json:"initialized"`
-	PasswordEnabled bool       `json:"password_enabled"`
-	SessionEpoch    uint64     `json:"session_epoch"`
-	InitializedAt   *time.Time `json:"initialized_at,omitempty"`
-	RotatedAt       *time.Time `json:"rotated_at,omitempty"`
-}
-
-// Credential is returned only by initialization and rotation. Token is never
-// retained by Manager or persisted by the store.
-type Credential struct {
-	Token         string     `json:"token"`
 	Initialized   bool       `json:"initialized"`
 	SessionEpoch  uint64     `json:"session_epoch"`
-	InitializedAt time.Time  `json:"initialized_at"`
-	RotatedAt     *time.Time `json:"rotated_at,omitempty"`
+	InitializedAt *time.Time `json:"initialized_at,omitempty"`
 }
 
 // Session is the verified, non-secret identity carried by a signed cookie.
@@ -95,16 +76,15 @@ type Session struct {
 	CSRFToken string
 }
 
-// Grant is an opaque proof that a bearer token or browser session was valid
-// against one immutable authority snapshot. Callers cannot manufacture a
-// usable grant; mutations must revalidate it while holding the authority lock.
+// Grant proves a signature against a signing snapshot. It grants no account
+// authority; the account and session must also resolve in the database.
 type Grant struct {
 	authority *snapshot
 }
 
 // SessionEpochAuthorized returns the epoch carried by a still-current grant.
-// It lets long-lived owner operations bind persisted work to the exact
-// authority admitted by middleware without exposing secret material.
+// It lets long-lived operations identify the signing revision, while account
+// authorization is always resolved from the database.
 func (manager *Manager) SessionEpochAuthorized(grant Grant) (uint64, error) {
 	current := manager.current.Load()
 	if current == nil || grant.authority == nil || grant.authority != current {
@@ -115,33 +95,18 @@ func (manager *Manager) SessionEpochAuthorized(grant Grant) (uint64, error) {
 
 type diskSecrets struct {
 	Version           int    `json:"version"`
-	TokenHash         string `json:"token_hash"`
 	SessionSigningKey string `json:"session_signing_key"`
 	SessionEpoch      uint64 `json:"session_epoch"`
 	InitializedAtMS   int64  `json:"initialized_at_ms"`
-	RotatedAtMS       *int64 `json:"rotated_at_ms,omitempty"`
-	PasswordHash      string `json:"password_hash,omitempty"`
 }
 
 type snapshot struct {
-	tokenHash       [sha256.Size]byte
 	signingKey      [signingKeyBytes]byte
 	sessionEpoch    uint64
 	initializedAtMS int64
-	rotatedAtMS     *int64
-	passwordHash    []byte
 }
 
-// sessionPayload is the authenticated body of a browser session cookie.
-//
-// UserID and SessionID are what turned this from a yes/no answer into a name.
-// Until accounts existed the only question was "is this the owner", so the
-// payload carried no subject at all; every consumer downstream asked the same
-// single question and got the same single answer.
-//
-// SessionID is the half that makes revocation expressible. The signature alone
-// proves the cookie was issued here, which is not the same as it still being
-// meant to work: the id is what a revoked row is found by.
+// sessionPayload identifies the account and database session being presented.
 type sessionPayload struct {
 	UserID      string `json:"user_id"`
 	SessionID   string `json:"session_id"`
@@ -153,7 +118,7 @@ type sessionPayload struct {
 // Subject names the account a session belongs to.
 //
 // It is supplied by the caller rather than resolved here on purpose. This
-// package knows about credentials and signatures and deliberately owns no
+// package knows about signatures and deliberately owns no account credential
 // storage; the transport layer, which already reaches the database on every
 // request, is where an account can be looked up.
 type Subject struct {
@@ -161,14 +126,14 @@ type Subject struct {
 	SessionID string
 }
 
-// Valid reports whether a subject is complete enough to sign.
+// Valid requires a complete account and session subject before anything is signed.
 func (subject Subject) Valid() bool {
-	return len(subject.UserID) == 32 && len(subject.SessionID) == 32
+	return domain.ValidateUserID(subject.UserID) == nil && domain.ValidateUserID(subject.SessionID) == nil
 }
 
 // Manager serves one in-memory auth snapshot. Load is intentionally separate
 // from construction so the production server can acquire serve.lock before it
-// reads secrets.json, eliminating the offline-rotation startup race.
+// reads the instance signing material.
 type Manager struct {
 	root       string
 	random     io.Reader
@@ -240,11 +205,11 @@ func (manager *Manager) Status() (Status, error) {
 
 // InitializeOffline creates the first credential while exclusively owning the
 // server lock. A persistent but unlocked serve.lock file does not block it.
-func InitializeOffline(ctx context.Context, runtimeState *runtimefs.Runtime, options Options) (Credential, error) {
+func InitializeOffline(ctx context.Context, runtimeState *runtimefs.Runtime, options Options) (Status, error) {
 	if runtimeState == nil || runtimeState.Locks == nil {
-		return Credential{}, errors.New("resolved runtime is required")
+		return Status{}, errors.New("resolved runtime is required")
 	}
-	var initialized Credential
+	var initialized Status
 	err := WithOfflineInitializationLocks(ctx, runtimeState, func(held *runtimefs.LeaseSet) error {
 		var initializeErr error
 		initialized, initializeErr = InitializeOfflineWithinLocks(ctx, runtimeState, held, options)
@@ -254,8 +219,7 @@ func InitializeOffline(ctx context.Context, runtimeState *runtimefs.Runtime, opt
 }
 
 // WithOfflineInitializationLocks continuously owns Import -> Serve while an
-// instance-wide owner bootstrap operation resolves CURRENT and performs its
-// database and credential mutations.
+// instance bootstrap operation performs its database and signing mutations.
 func WithOfflineInitializationLocks(ctx context.Context, runtimeState *runtimefs.Runtime, operation func(*runtimefs.LeaseSet) error) (err error) {
 	if runtimeState == nil || runtimeState.Locks == nil || operation == nil {
 		return errors.New("resolved runtime and initialization operation are required")
@@ -276,90 +240,90 @@ func WithOfflineInitializationLocks(ctx context.Context, runtimeState *runtimefs
 		if errors.Is(acquireErr, context.DeadlineExceeded) {
 			return ErrInstanceInUse
 		}
-		return fmt.Errorf("acquire offline owner initialization locks: %w", acquireErr)
+		return fmt.Errorf("acquire offline signing initialization locks: %w", acquireErr)
 	}
 	defer func() { err = errors.Join(err, held.Release()) }()
 	return operation(held)
 }
 
-// InitializeOfflineWithinLocks publishes the first owner credential while the
+// InitializeOfflineWithinLocks publishes the first session signing key while the
 // caller continuously owns this runtime's Import -> Serve initialization set.
-func InitializeOfflineWithinLocks(ctx context.Context, runtimeState *runtimefs.Runtime, held *runtimefs.LeaseSet, options Options) (Credential, error) {
+func InitializeOfflineWithinLocks(ctx context.Context, runtimeState *runtimefs.Runtime, held *runtimefs.LeaseSet, options Options) (Status, error) {
 	if err := ctx.Err(); err != nil {
-		return Credential{}, err
+		return Status{}, err
 	}
 	if runtimeState == nil || held == nil || !held.BelongsTo(runtimeState.Root) ||
 		!held.Holds(runtimefs.ImportLock, runtimefs.Exclusive) ||
 		!held.Holds(runtimefs.ServeLock, runtimefs.Exclusive) {
-		return Credential{}, runtimefs.ErrInsufficientLocks
+		return Status{}, runtimefs.ErrInsufficientLocks
 	}
 
 	if _, err := readSnapshot(runtimeState.Root); err == nil {
-		return Credential{}, ErrAlreadyInitialized
+		return Status{}, ErrAlreadyInitialized
 	} else if !errors.Is(err, ErrNotInitialized) {
-		return Credential{}, err
+		return Status{}, err
 	}
 	manager, err := NewManager(runtimeState.Root, options)
 	if err != nil {
-		return Credential{}, err
+		return Status{}, err
 	}
-	token, loaded, err := manager.newSnapshot(nil)
+	loaded, err := manager.newSnapshot()
 	if err != nil {
-		return Credential{}, err
+		return Status{}, err
 	}
 	if err := ctx.Err(); err != nil {
-		return Credential{}, err
+		return Status{}, err
 	}
 	if err := writeSnapshot(runtimeState.Root, loaded); err != nil {
-		return Credential{}, err
+		return Status{}, err
 	}
-	return credential(token, loaded), nil
+	return loaded.status(), nil
 }
 
 // InitializeDevelopmentWithinLocks creates the first cryptographically random
-// owner credential for a marked development instance while the complete
+// session signing key for a marked development instance while the complete
 // destructive lock set is continuously held. Existing credentials are never
 // rotated; callers must inspect status first and return the token exactly once.
-func InitializeDevelopmentWithinLocks(ctx context.Context, runtimeState *runtimefs.Runtime, authority *runtimefs.DevelopmentAuthority, held *runtimefs.LeaseSet) (Credential, error) {
+func InitializeDevelopmentWithinLocks(ctx context.Context, runtimeState *runtimefs.Runtime, authority *runtimefs.DevelopmentAuthority, held *runtimefs.LeaseSet) (Status, error) {
 	if err := ctx.Err(); err != nil {
-		return Credential{}, err
+		return Status{}, err
 	}
 	if authority == nil || authority.Validate(runtimeState, held) != nil {
-		return Credential{}, runtimefs.ErrInsufficientLocks
+		return Status{}, runtimefs.ErrInsufficientLocks
 	}
 	root := authority.RootAuthority()
 	if status, err := ReadStatusWithinRoot(root); err != nil {
-		return Credential{}, err
+		return Status{}, err
 	} else if status.Initialized {
-		return Credential{}, ErrAlreadyInitialized
+		return Status{}, ErrAlreadyInitialized
 	}
 	manager, err := NewManager(runtimeState.Root, Options{})
 	if err != nil {
-		return Credential{}, err
+		return Status{}, err
 	}
-	token, loaded, err := manager.newSnapshot(nil)
+	loaded, err := manager.newSnapshot()
 	if err != nil {
-		return Credential{}, err
+		return Status{}, err
 	}
 	if err := ctx.Err(); err != nil {
-		return Credential{}, err
+		return Status{}, err
 	}
 	if err := writeSnapshotWithinRoot(root, loaded); err != nil {
 		rollbackErr := rollbackDevelopmentSnapshot(root)
-		return Credential{}, errors.Join(err, rollbackErr)
+		return Status{}, errors.Join(err, rollbackErr)
 	}
 	status, statusErr := ReadStatusWithinRoot(root)
 	if statusErr != nil || !status.Initialized || status.SessionEpoch != loaded.sessionEpoch {
 		rollbackErr := rollbackDevelopmentSnapshot(root)
-		return Credential{}, errors.Join(errors.New("development owner credential was not durably readable"), statusErr, rollbackErr)
+		return Status{}, errors.Join(errors.New("development session signing key was not durably readable"), statusErr, rollbackErr)
 	}
-	return credential(token, loaded), nil
+	return loaded.status(), nil
 }
 
-// ReadStatusWithinRoot reads development owner state through a pinned root.
+// ReadStatusWithinRoot reads development signing state through a pinned root.
 func ReadStatusWithinRoot(authority *os.Root) (Status, error) {
 	if authority == nil {
-		return Status{}, errors.New("pinned owner authority root is required")
+		return Status{}, errors.New("pinned signing authority root is required")
 	}
 	file, err := authority.Open(secretsFilename)
 	if errors.Is(err, os.ErrNotExist) {
@@ -388,9 +352,9 @@ func ReadStatusWithinRoot(authority *os.Root) (Status, error) {
 
 func writeSnapshotWithinRoot(authority *os.Root, value *snapshot) error {
 	stored := diskSecrets{
-		Version: secretsVersion, TokenHash: base64.RawURLEncoding.EncodeToString(value.tokenHash[:]),
+		Version:           secretsVersion,
 		SessionSigningKey: base64.RawURLEncoding.EncodeToString(value.signingKey[:]), SessionEpoch: value.sessionEpoch,
-		InitializedAtMS: value.initializedAtMS, RotatedAtMS: cloneInt64(value.rotatedAtMS), PasswordHash: string(value.passwordHash),
+		InitializedAtMS: value.initializedAtMS,
 	}
 	encoded, err := json.MarshalIndent(stored, "", "  ")
 	if err != nil {
@@ -451,97 +415,11 @@ func rollbackDevelopmentSnapshot(authority *os.Root) error {
 	return errors.Join(removeErr, syncErr, closeErr)
 }
 
-// RotateOffline changes the bearer hash and epoch while excluding a running
-// server. The signing key remains stable; the epoch revokes every old cookie.
-func RotateOffline(ctx context.Context, runtimeState *runtimefs.Runtime, options Options) (Credential, error) {
-	if runtimeState == nil || runtimeState.Locks == nil {
-		return Credential{}, errors.New("resolved runtime is required")
-	}
-	lease, err := acquireOfflineLease(ctx, runtimeState.Locks)
-	if err != nil {
-		return Credential{}, err
-	}
-	defer func() { _ = lease.Release() }()
-
-	manager, err := NewManager(runtimeState.Root, options)
-	if err != nil {
-		return Credential{}, err
-	}
-	current, err := readSnapshot(runtimeState.Root)
-	if err != nil {
-		return Credential{}, err
-	}
-	token, next, err := manager.newSnapshot(current)
-	if err != nil {
-		return Credential{}, err
-	}
-	if err := writeSnapshot(runtimeState.Root, next); err != nil {
-		return Credential{}, err
-	}
-	return credential(token, next), nil
-}
-
-func (manager *Manager) rotateCurrent(current *snapshot) (Credential, error) {
-	token, next, err := manager.newSnapshot(current)
-	if err != nil {
-		return Credential{}, err
-	}
-	if err := writeSnapshot(manager.root, next); err != nil {
-		return Credential{}, err
-	}
-	manager.current.Store(next)
-	return credential(token, next), nil
-}
-
-// AuthenticateBearer verifies the exact bearer value in constant time.
-func (manager *Manager) AuthenticateBearer(token string) bool {
-	_, err := manager.AuthorizeBearer(token)
-	return err == nil
-}
-
-// AuthorizeBearer verifies the exact bearer value and binds the resulting
-// grant to the same immutable authority snapshot used for verification.
-func (manager *Manager) AuthorizeBearer(token string) (Grant, error) {
-	current := manager.current.Load()
-	if !authenticateBearer(current, token) {
-		return Grant{}, ErrUnauthorized
-	}
-	return Grant{authority: current}, nil
-}
-
-// IssueSession exchanges a valid bearer for a signed, expiring, epoch-bound
-// browser session plus a CSRF token embedded in its authenticated payload.
-func (manager *Manager) IssueSession(token string, subject Subject) (string, Session, error) {
-	manager.mutationMu.Lock()
-	defer manager.mutationMu.Unlock()
-	current := manager.current.Load()
-	if !authenticateBearer(current, token) {
-		return "", Session{}, ErrUnauthorized
-	}
-	return manager.issueSession(current, subject)
-}
-
-// IssuePasswordSession exchanges the configured human password for the same
-// short-lived browser session used by bearer login. Passwords are never used
-// as API bearer credentials.
-func (manager *Manager) IssuePasswordSession(password string, subject Subject) (string, Session, error) {
-	manager.mutationMu.Lock()
-	defer manager.mutationMu.Unlock()
-	current := manager.current.Load()
-	if current == nil || len(current.passwordHash) == 0 ||
-		bcrypt.CompareHashAndPassword(current.passwordHash, []byte(password)) != nil {
-		return "", Session{}, ErrUnauthorized
-	}
-	return manager.issueSession(current, subject)
-}
-
 // IssueSessionForVerifiedSubject signs a session for an account this package
 // did not authenticate itself.
 //
-// It exists for federated sign-in, where the proof of identity is a provider's
-// answer rather than a credential stored here. The name is deliberately
-// awkward: this function performs no verification, and its safety rests
-// entirely on the caller having done so. The OAuth callback is its only caller.
+// The caller verifies a password, account token or provider identity and
+// persists the resulting session before returning the signed value.
 func (manager *Manager) IssueSessionForVerifiedSubject(subject Subject) (string, Session, error) {
 	manager.mutationMu.Lock()
 	defer manager.mutationMu.Unlock()
@@ -584,64 +462,6 @@ func (manager *Manager) issueSession(current *snapshot, subject Subject) (string
 	}, nil
 }
 
-// SetPasswordAuthorized configures or replaces the owner password after a
-// bearer or browser grant was already verified. It deliberately keeps the
-// current session epoch; explicit token rotation remains the revocation tool.
-func (manager *Manager) SetPasswordAuthorized(grant Grant, password string) (Status, error) {
-	if err := validatePassword(password); err != nil {
-		return Status{}, err
-	}
-	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
-	if err != nil {
-		return Status{}, fmt.Errorf("hash owner password: %w", err)
-	}
-	manager.mutationMu.Lock()
-	defer manager.mutationMu.Unlock()
-	current := manager.current.Load()
-	if current == nil {
-		return Status{}, ErrNotInitialized
-	}
-	if grant.authority == nil || grant.authority != current {
-		return Status{}, ErrUnauthorized
-	}
-	next := cloneSnapshot(current)
-	next.passwordHash = append([]byte(nil), hash...)
-	if err := writeSnapshot(manager.root, next); err != nil {
-		return Status{}, err
-	}
-	manager.current.Store(next)
-	return next.status(), nil
-}
-
-// SetPasswordOffline updates the password while excluding a running server.
-func SetPasswordOffline(ctx context.Context, runtimeState *runtimefs.Runtime, password string) (Status, error) {
-	if runtimeState == nil || runtimeState.Locks == nil {
-		return Status{}, errors.New("resolved runtime is required")
-	}
-	if err := validatePassword(password); err != nil {
-		return Status{}, err
-	}
-	lease, err := acquireOfflineLease(ctx, runtimeState.Locks)
-	if err != nil {
-		return Status{}, err
-	}
-	defer func() { _ = lease.Release() }()
-	current, err := readSnapshot(runtimeState.Root)
-	if err != nil {
-		return Status{}, err
-	}
-	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
-	if err != nil {
-		return Status{}, fmt.Errorf("hash owner password: %w", err)
-	}
-	next := cloneSnapshot(current)
-	next.passwordHash = append([]byte(nil), hash...)
-	if err := writeSnapshot(runtimeState.Root, next); err != nil {
-		return Status{}, err
-	}
-	return next.status(), nil
-}
-
 // ValidateSession verifies signature, expiry, and the currently active epoch.
 func (manager *Manager) ValidateSession(value string) (Session, error) {
 	session, _, err := manager.AuthorizeSession(value)
@@ -652,7 +472,7 @@ func (manager *Manager) ValidateSession(value string) (Session, error) {
 // immutable authority snapshot used for signature and epoch validation.
 func (manager *Manager) AuthorizeSession(value string) (Session, Grant, error) {
 	current := manager.current.Load()
-	if current == nil || value == "" || len(value) > maxSessionBytes {
+	if current == nil || value == "" || len(value) > maxSignedBytes {
 		return Session{}, Grant{}, ErrUnauthorized
 	}
 	parts := strings.Split(value, ".")
@@ -695,64 +515,15 @@ func (manager *Manager) AuthorizeSession(value string) (Session, Grant, error) {
 	}, Grant{authority: current}, nil
 }
 
-// RotateAuthorized changes the live authority only if the caller's grant still
-// names the current immutable snapshot. Verification and mutation therefore
-// form one authority decision even when requests were admitted concurrently.
-func (manager *Manager) RotateAuthorized(grant Grant) (Credential, error) {
-	manager.mutationMu.Lock()
-	defer manager.mutationMu.Unlock()
-	current := manager.current.Load()
-	if current == nil {
-		return Credential{}, ErrNotInitialized
+func (manager *Manager) newSnapshot() (*snapshot, error) {
+	value := &snapshot{sessionEpoch: 1, initializedAtMS: manager.now().UTC().UnixMilli()}
+	if value.initializedAtMS <= 0 {
+		return nil, errors.New("initialization time must be after the Unix epoch")
 	}
-	if grant.authority == nil || grant.authority != current {
-		return Credential{}, ErrUnauthorized
-	}
-	return manager.rotateCurrent(current)
-}
-
-func (manager *Manager) newSnapshot(previous *snapshot) (string, *snapshot, error) {
-	token, err := randomToken(manager.random, tokenBytes)
-	if err != nil {
-		return "", nil, fmt.Errorf("generate owner token: %w", err)
-	}
-	nowMS := manager.now().UTC().UnixMilli()
-	next := &snapshot{initializedAtMS: nowMS, sessionEpoch: 1}
-	if previous == nil {
-		if _, err := io.ReadFull(manager.random, next.signingKey[:]); err != nil {
-			return "", nil, fmt.Errorf("generate session signing key: %w", err)
-		}
-	} else {
-		if previous.sessionEpoch == math.MaxUint64 {
-			return "", nil, fmt.Errorf("%w: session epoch exhausted", ErrInvalidSecrets)
-		}
-		next.signingKey = previous.signingKey
-		next.initializedAtMS = previous.initializedAtMS
-		next.sessionEpoch = previous.sessionEpoch + 1
-		next.rotatedAtMS = &nowMS
-		next.passwordHash = append([]byte(nil), previous.passwordHash...)
-	}
-	next.tokenHash = sha256.Sum256([]byte(token))
-	return token, next, nil
-}
-
-func acquireOfflineLease(ctx context.Context, locker *runtimefs.Locker) (*runtimefs.Lease, error) {
-	if err := ctx.Err(); err != nil {
+	if _, err := io.ReadFull(manager.random, value.signingKey[:]); err != nil {
 		return nil, err
 	}
-	lockContext, cancel := context.WithTimeout(ctx, offlineLockTimeout)
-	defer cancel()
-	lease, err := locker.Acquire(lockContext, runtimefs.ServeLock, runtimefs.Exclusive)
-	if err == nil {
-		return lease, nil
-	}
-	if ctx.Err() != nil {
-		return nil, ctx.Err()
-	}
-	if errors.Is(err, context.DeadlineExceeded) {
-		return nil, ErrInstanceInUse
-	}
-	return nil, fmt.Errorf("acquire offline owner lock: %w", err)
+	return value, nil
 }
 
 func readSnapshot(root string) (*snapshot, error) {
@@ -762,7 +533,7 @@ func readSnapshot(root string) (*snapshot, error) {
 		if errors.Is(err, os.ErrNotExist) {
 			return nil, ErrNotInitialized
 		}
-		return nil, fmt.Errorf("inspect owner secrets: %w", err)
+		return nil, fmt.Errorf("inspect session signing material: %w", err)
 	}
 	if !info.Mode().IsRegular() {
 		return nil, fmt.Errorf("%w: secrets.json is not a regular file", ErrInvalidSecrets)
@@ -775,7 +546,7 @@ func readSnapshot(root string) (*snapshot, error) {
 	}
 	file, err := os.Open(path)
 	if err != nil {
-		return nil, fmt.Errorf("open owner secrets: %w", err)
+		return nil, fmt.Errorf("open session signing material: %w", err)
 	}
 	defer func() { _ = file.Close() }()
 	var stored diskSecrets
@@ -791,35 +562,14 @@ func readSnapshot(root string) (*snapshot, error) {
 }
 
 func decodeSnapshot(stored diskSecrets) (*snapshot, error) {
-	if (stored.Version != legacySecretsVersion && stored.Version != secretsVersion) || stored.SessionEpoch == 0 || stored.InitializedAtMS <= 0 {
-		return nil, fmt.Errorf("%w: unsupported or incomplete state", ErrInvalidSecrets)
-	}
-	hash, err := base64.RawURLEncoding.DecodeString(stored.TokenHash)
-	if err != nil || len(hash) != sha256.Size {
-		return nil, fmt.Errorf("%w: malformed token hash", ErrInvalidSecrets)
+	if stored.Version != secretsVersion || stored.SessionEpoch == 0 || stored.InitializedAtMS <= 0 {
+		return nil, fmt.Errorf("%w: unsupported or incomplete signing state", ErrInvalidSecrets)
 	}
 	key, err := base64.RawURLEncoding.DecodeString(stored.SessionSigningKey)
 	if err != nil || len(key) != signingKeyBytes {
 		return nil, fmt.Errorf("%w: malformed signing key", ErrInvalidSecrets)
 	}
-	if stored.RotatedAtMS != nil && *stored.RotatedAtMS < stored.InitializedAtMS {
-		return nil, fmt.Errorf("%w: rotation precedes initialization", ErrInvalidSecrets)
-	}
-	if stored.Version == legacySecretsVersion && stored.PasswordHash != "" {
-		return nil, fmt.Errorf("%w: password hash in legacy state", ErrInvalidSecrets)
-	}
-	if stored.PasswordHash != "" {
-		if _, err := bcrypt.Cost([]byte(stored.PasswordHash)); err != nil {
-			return nil, fmt.Errorf("%w: malformed password hash", ErrInvalidSecrets)
-		}
-	}
-	loaded := &snapshot{
-		sessionEpoch:    stored.SessionEpoch,
-		initializedAtMS: stored.InitializedAtMS,
-		rotatedAtMS:     cloneInt64(stored.RotatedAtMS),
-		passwordHash:    append([]byte(nil), stored.PasswordHash...),
-	}
-	copy(loaded.tokenHash[:], hash)
+	loaded := &snapshot{sessionEpoch: stored.SessionEpoch, initializedAtMS: stored.InitializedAtMS}
 	copy(loaded.signingKey[:], key)
 	return loaded, nil
 }
@@ -827,12 +577,9 @@ func decodeSnapshot(stored diskSecrets) (*snapshot, error) {
 func writeSnapshot(root string, value *snapshot) error {
 	stored := diskSecrets{
 		Version:           secretsVersion,
-		TokenHash:         base64.RawURLEncoding.EncodeToString(value.tokenHash[:]),
 		SessionSigningKey: base64.RawURLEncoding.EncodeToString(value.signingKey[:]),
 		SessionEpoch:      value.sessionEpoch,
 		InitializedAtMS:   value.initializedAtMS,
-		RotatedAtMS:       cloneInt64(value.rotatedAtMS),
-		PasswordHash:      string(value.passwordHash),
 	}
 	encoded, err := json.MarshalIndent(stored, "", "  ")
 	if err != nil {
@@ -840,30 +587,14 @@ func writeSnapshot(root string, value *snapshot) error {
 	}
 	encoded = append(encoded, '\n')
 	if err := runtimefs.WritePrivateFileAtomic(root, secretsFilename, encoded); err != nil {
-		return fmt.Errorf("persist owner secrets: %w", err)
+		return fmt.Errorf("persist session signing material: %w", err)
 	}
 	return nil
 }
 
 func (value *snapshot) status() Status {
 	initializedAt := time.UnixMilli(value.initializedAtMS).UTC()
-	status := Status{Initialized: true, PasswordEnabled: len(value.passwordHash) > 0, SessionEpoch: value.sessionEpoch, InitializedAt: &initializedAt}
-	if value.rotatedAtMS != nil {
-		rotatedAt := time.UnixMilli(*value.rotatedAtMS).UTC()
-		status.RotatedAt = &rotatedAt
-	}
-	return status
-}
-
-func credential(token string, value *snapshot) Credential {
-	status := value.status()
-	return Credential{
-		Token:         token,
-		Initialized:   status.Initialized,
-		SessionEpoch:  status.SessionEpoch,
-		InitializedAt: *status.InitializedAt,
-		RotatedAt:     status.RotatedAt,
-	}
+	return Status{Initialized: true, SessionEpoch: value.sessionEpoch, InitializedAt: &initializedAt}
 }
 
 func randomToken(source io.Reader, size int) (string, error) {
@@ -874,43 +605,10 @@ func randomToken(source io.Reader, size int) (string, error) {
 	return base64.RawURLEncoding.EncodeToString(value), nil
 }
 
-func authenticateBearer(current *snapshot, token string) bool {
-	if current == nil || token == "" {
-		return false
-	}
-	digest := sha256.Sum256([]byte(token))
-	return subtle.ConstantTimeCompare(digest[:], current.tokenHash[:]) == 1
-}
-
 func sign(key []byte, payload string) []byte {
 	mac := hmac.New(sha256.New, key)
 	_, _ = io.WriteString(mac, payload)
 	return mac.Sum(nil)
-}
-
-func cloneInt64(value *int64) *int64 {
-	if value == nil {
-		return nil
-	}
-	cloned := *value
-	return &cloned
-}
-
-func validatePassword(password string) error {
-	if len(password) < minPasswordBytes || len(password) > maxPasswordBytes || strings.TrimSpace(password) != password {
-		return fmt.Errorf("%w: must contain %d to %d bytes and have no surrounding whitespace", ErrInvalidPassword, minPasswordBytes, maxPasswordBytes)
-	}
-	return nil
-}
-
-func cloneSnapshot(value *snapshot) *snapshot {
-	if value == nil {
-		return nil
-	}
-	cloned := *value
-	cloned.rotatedAtMS = cloneInt64(value.rotatedAtMS)
-	cloned.passwordHash = append([]byte(nil), value.passwordHash...)
-	return &cloned
 }
 
 // SealState signs a short-lived value with the instance signing key and
@@ -938,7 +636,7 @@ func (manager *Manager) SealState(payload []byte) (string, error) {
 // OpenState verifies a value produced by SealState and returns its payload.
 func (manager *Manager) OpenState(value string) ([]byte, error) {
 	current := manager.current.Load()
-	if current == nil || value == "" || len(value) > maxSessionBytes {
+	if current == nil || value == "" || len(value) > maxSignedBytes {
 		return nil, ErrUnauthorized
 	}
 	parts := strings.Split(value, ".")
@@ -956,8 +654,12 @@ func (manager *Manager) OpenState(value string) ([]byte, error) {
 	return payload, nil
 }
 
-// RandomToken exposes the manager's entropy source for callers that need a
-// value bound to the same instance, such as an OAuth state or PKCE verifier.
+// RandomToken serializes access to the configured entropy source.
 func (manager *Manager) RandomToken(size int) (string, error) {
+	if size <= 0 || size > maxSessionBytes {
+		return "", ErrUnauthorized
+	}
+	manager.mutationMu.Lock()
+	defer manager.mutationMu.Unlock()
 	return randomToken(manager.random, size)
 }

@@ -1,12 +1,4 @@
-// Package linkfetch owns every outbound request Moment makes on behalf of an
-// owner-supplied URL.
-//
-// Safety lives in the transport, not at the call site. A recognizer or
-// enricher receives a Fetcher, never an http.Client, and a Fetcher refuses to
-// connect to a non-public address no matter which URL it is handed or how many
-// redirects lead there. That placement is deliberate: an interface shaped like
-// Do(*http.Request) would still let a caller name any host, so the guard has
-// to sit where the socket is actually opened.
+// Package linkfetch resolves supplied URLs into bounded previews.
 package linkfetch
 
 import (
@@ -165,7 +157,6 @@ func New(options Options) *Fetcher {
 			if err := validateRequestURL(request.URL); err != nil {
 				return err
 			}
-			// Redirects must not carry an owner's cookies or credentials onward.
 			request.Header.Del("Cookie")
 			request.Header.Del("Authorization")
 			return nil

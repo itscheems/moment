@@ -14,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/moment/moment/internal/app"
 	"github.com/moment/moment/internal/runtimefs"
 )
 
@@ -32,7 +33,7 @@ const (
 
 func TestOpenMigratesCurrentGenerationAndProbesFTS(t *testing.T) {
 	t.Parallel()
-	ctx := context.Background()
+	ctx := testAccountContext()
 	db, runtimeState := openTestDatabase(t, Options{})
 
 	if db.Path() != runtimeState.Current.DatabasePath {
@@ -102,7 +103,7 @@ ORDER BY name`)
 
 func TestEveryConnectionHasRequiredPragmasAndWritePoolIsBounded(t *testing.T) {
 	t.Parallel()
-	ctx := context.Background()
+	ctx := testAccountContext()
 	timeout := 1375 * time.Millisecond
 	db, _ := openTestDatabase(t, Options{BusyTimeout: timeout, ReadPoolSize: 3})
 
@@ -129,7 +130,7 @@ func TestEveryConnectionHasRequiredPragmasAndWritePoolIsBounded(t *testing.T) {
 
 func TestWALAndMigrationsSurviveReopen(t *testing.T) {
 	t.Parallel()
-	ctx := context.Background()
+	ctx := testAccountContext()
 	db, runtimeState := openTestDatabase(t, Options{})
 	insertEntry(t, db, entryOne, "first")
 
@@ -176,7 +177,7 @@ func TestWALRecoversAfterUncleanWriterExit(t *testing.T) {
 		return
 	}
 	t.Parallel()
-	ctx := context.Background()
+	ctx := testAccountContext()
 	db, runtimeState := openTestDatabase(t, Options{})
 	if err := db.Close(); err != nil {
 		t.Fatal(err)
@@ -211,7 +212,7 @@ func TestWALRecoversAfterUncleanWriterExit(t *testing.T) {
 }
 
 func runUncleanWALWriter() {
-	ctx := context.Background()
+	ctx := testAccountContext()
 	runtimeState, err := runtimefs.Open(os.Getenv("MOMENT_SQLITE_WAL_DATA_DIR"))
 	if err != nil {
 		_, _ = fmt.Fprintln(os.Stderr, err)
@@ -238,7 +239,7 @@ func runUncleanWALWriter() {
 
 func TestTransactionsCommitRollbackAndRequireReadiness(t *testing.T) {
 	t.Parallel()
-	ctx := context.Background()
+	ctx := testAccountContext()
 	db, runtimeState := openTestDatabase(t, Options{})
 	injected := errors.New("rollback requested")
 	err := db.WriteTx(ctx, func(queries Queries) error {
@@ -268,7 +269,7 @@ func TestTransactionsCommitRollbackAndRequireReadiness(t *testing.T) {
 
 func TestMigrationChecksumDriftAndNewerSchemaFailReadiness(t *testing.T) {
 	t.Run("checksum drift", func(t *testing.T) {
-		ctx := context.Background()
+		ctx := testAccountContext()
 		db, runtimeState := openTestDatabase(t, Options{})
 		if _, err := db.write.ExecContext(ctx, `UPDATE schema_migrations SET checksum = ? WHERE version = 1`, strings.Repeat("0", 64)); err != nil {
 			t.Fatal(err)
@@ -287,7 +288,7 @@ func TestMigrationChecksumDriftAndNewerSchemaFailReadiness(t *testing.T) {
 	})
 
 	t.Run("schema too new", func(t *testing.T) {
-		ctx := context.Background()
+		ctx := testAccountContext()
 		db, runtimeState := openTestDatabase(t, Options{})
 		if _, err := db.write.ExecContext(ctx, `
 INSERT INTO schema_migrations (version, name, applied_at_ms, checksum)
@@ -322,7 +323,7 @@ func TestSchemaCatalogTamperingFailsReadiness(t *testing.T) {
 		{name: "required index", statement: `DROP INDEX entries_timeline_idx`},
 	} {
 		t.Run(testCase.name, func(t *testing.T) {
-			ctx := context.Background()
+			ctx := testAccountContext()
 			db, runtimeState := openTestDatabase(t, Options{})
 			if _, err := db.write.ExecContext(ctx, testCase.statement); err != nil {
 				t.Fatal(err)
@@ -347,7 +348,7 @@ func TestSchemaCatalogTamperingFailsReadiness(t *testing.T) {
 
 func TestFailedMigrationBatchRollsBackAndLeavesDatabaseNotReady(t *testing.T) {
 	t.Parallel()
-	ctx := context.Background()
+	ctx := testAccountContext()
 	db, _ := openTestDatabase(t, Options{})
 	sqlText := `
 CREATE TABLE migration_must_rollback (id INTEGER);
@@ -373,7 +374,7 @@ THIS IS NOT VALID SQL;`
 
 func TestSchemaEnforcesAuthorityConstraints(t *testing.T) {
 	t.Parallel()
-	ctx := context.Background()
+	ctx := testAccountContext()
 	db, _ := openTestDatabase(t, Options{})
 
 	insertEntry(t, db, entryOne, "one")
@@ -435,10 +436,10 @@ INSERT INTO media VALUES (?, ?, '../escape.jpg', 'escape.jpg', 'image/jpeg', 1, 
 INSERT INTO media VALUES (?, ?, ?, 'invalid.jpg', 'image/jpeg', 1, 1, 1, 1, NULL)`, entryThree, strings.Repeat("c", 64), invalidPath)
 	}
 
-	mustWrite(t, db, `INSERT INTO comments (id, entry_id, parent_id, author_kind, author_name, content_md, created_at_ms) VALUES (?, ?, NULL, 'owner', 'Owner', 'root', 1)`, commentRoot, entryOne)
-	mustWrite(t, db, `INSERT INTO comments (id, entry_id, parent_id, author_kind, author_name, content_md, created_at_ms) VALUES (?, ?, ?, 'guest', 'Guest', 'reply', 2)`, commentLeaf, entryOne, commentRoot)
-	mustWrite(t, db, `INSERT INTO comments (id, entry_id, parent_id, author_kind, author_name, content_md, created_at_ms) VALUES (?, ?, NULL, 'owner', 'Owner', 'peer', 3)`, commentPeer, entryOne)
-	mustWrite(t, db, `INSERT INTO comments (id, entry_id, parent_id, author_kind, author_name, content_md, created_at_ms) VALUES (?, ?, NULL, 'guest', 'Else', 'other entry', 4)`, commentElse, entryTwo)
+	mustWrite(t, db, `INSERT INTO comments (id, entry_id, parent_id, author_name, content_md, created_at_ms) VALUES (?, ?, NULL, 'Owner', 'root', 1)`, commentRoot, entryOne)
+	mustWrite(t, db, `INSERT INTO comments (id, entry_id, parent_id, author_name, content_md, created_at_ms) VALUES (?, ?, ?, 'Guest', 'reply', 2)`, commentLeaf, entryOne, commentRoot)
+	mustWrite(t, db, `INSERT INTO comments (id, entry_id, parent_id, author_name, content_md, created_at_ms) VALUES (?, ?, NULL, 'Owner', 'peer', 3)`, commentPeer, entryOne)
+	mustWrite(t, db, `INSERT INTO comments (id, entry_id, parent_id, author_name, content_md, created_at_ms) VALUES (?, ?, NULL, 'Else', 'other entry', 4)`, commentElse, entryTwo)
 	mustWrite(t, db, `INSERT INTO comment_media VALUES (?, ?, 0, NULL)`, commentRoot, mediaOne)
 	mustWrite(t, db, `INSERT INTO comment_media VALUES (?, ?, 1, '')`, commentRoot, mediaOne)
 	mustWrite(t, db, `INSERT INTO comment_media VALUES (?, ?, 2, 'shoreline')`, commentRoot, mediaOne)
@@ -447,12 +448,12 @@ INSERT INTO media VALUES (?, ?, ?, 'invalid.jpg', 'image/jpeg', 1, 1, 1, 1, NULL
 	assertWriteRejected(t, db, `INSERT INTO comment_media VALUES (?, ?, 4, NULL)`, commentRoot, mediaOne)
 	assertWriteRejected(t, db, `INSERT INTO comment_media VALUES (?, ?, 3, NULL)`, commentBad, mediaOne)
 	assertWriteRejected(t, db, `INSERT INTO comment_media VALUES (?, ?, 3, NULL)`, commentRoot, entryThree)
-	assertWriteRejected(t, db, `INSERT INTO comments (id, entry_id, parent_id, author_kind, author_name, content_md, created_at_ms) VALUES (?, ?, ?, 'guest', 'Deep', 'no', 5)`, commentBad, entryOne, commentLeaf)
-	assertWriteRejected(t, db, `INSERT INTO comments (id, entry_id, parent_id, author_kind, author_name, content_md, created_at_ms) VALUES (?, ?, ?, 'guest', 'Cross', 'no', 5)`, commentBad, entryOne, commentElse)
+	assertWriteRejected(t, db, `INSERT INTO comments (id, entry_id, parent_id, author_name, content_md, created_at_ms) VALUES (?, ?, ?, 'Deep', 'no', 5)`, commentBad, entryOne, commentLeaf)
+	assertWriteRejected(t, db, `INSERT INTO comments (id, entry_id, parent_id, author_name, content_md, created_at_ms) VALUES (?, ?, ?, 'Cross', 'no', 5)`, commentBad, entryOne, commentElse)
 	assertWriteRejected(t, db, `UPDATE comments SET parent_id = ? WHERE id = ?`, commentPeer, commentRoot)
 	assertWriteRejected(t, db, `UPDATE comments SET entry_id = ? WHERE id = ?`, entryTwo, commentRoot)
 	assertWriteRejected(t, db, `UPDATE comments SET parent_id = id WHERE id = ?`, commentPeer)
-	assertWriteRejected(t, db, `INSERT INTO comments (id, entry_id, parent_id, author_kind, author_name, content_md, created_at_ms) VALUES (?, ?, NULL, 'robot', 'Bad', 'no', 5)`, commentBad, entryOne)
+	assertWriteRejected(t, db, `INSERT INTO comments (id, entry_id, parent_id, author_name, author_user_id, content_md, created_at_ms) VALUES (?, ?, NULL, 'Unknown account', 'ffffffffffffffffffffffffffffffff', 'no', 5)`, commentBad, entryOne)
 
 	mustWrite(t, db, `DELETE FROM comments WHERE id = ?`, commentRoot)
 	assertCount(t, db.read, `SELECT count(*) FROM comments WHERE id IN (?, ?)`, 0, commentRoot, commentLeaf)
@@ -467,7 +468,7 @@ WHERE id = 1`)
 	// The avatar reference that keeps media pinned lives on the account row now.
 	mustWrite(t, db, `
 UPDATE users SET avatar_media_id = ?
-WHERE id = (SELECT owner_id FROM site_settings WHERE id = 1)`, mediaTwo)
+WHERE id = (SELECT profile_user_id FROM site_settings WHERE id = 1)`, mediaTwo)
 	var publicBaseURL sql.NullString
 	if err := db.read.QueryRowContext(ctx, `SELECT public_base_url FROM site_settings WHERE id = 1`).Scan(&publicBaseURL); err != nil {
 		t.Fatal(err)
@@ -484,8 +485,8 @@ WHERE id = (SELECT owner_id FROM site_settings WHERE id = 1)`, mediaTwo)
 	}
 	mustWrite(t, db, `UPDATE site_settings SET public_base_url = NULL WHERE id = 1`)
 	assertWriteRejected(t, db, `
-INSERT INTO site_settings (id, title, timezone, public_base_url, comments_enabled, owner_id)
-VALUES (2, 'Other', 'UTC', 'https://other.test', 1, (SELECT owner_id FROM site_settings WHERE id = 1))`)
+INSERT INTO site_settings (id, title, timezone, public_base_url, comments_enabled, profile_user_id)
+VALUES (2, 'Other', 'UTC', 'https://other.test', 1, (SELECT profile_user_id FROM site_settings WHERE id = 1))`)
 	assertWriteRejected(t, db, `UPDATE site_settings SET public_base_url = '' WHERE id = 1`)
 	assertWriteRejected(t, db, `UPDATE site_settings SET public_base_url = '   ' WHERE id = 1`)
 	assertCount(t, db.read, `SELECT count(*) FROM site_settings`, 1)
@@ -505,7 +506,7 @@ VALUES ('posts.create', 'request-1', ?, ?, 2)`, strings.Repeat("e", 64), entryOn
 }
 
 func TestOptionsAreBounded(t *testing.T) {
-	runtimeState, err := runtimefs.Initialize(context.Background(), runtimefs.Config{DataDir: t.TempDir()})
+	runtimeState, err := runtimefs.Initialize(testAccountContext(), runtimefs.Config{DataDir: t.TempDir()})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -515,30 +516,41 @@ func TestOptionsAreBounded(t *testing.T) {
 		{ReadPoolSize: -1},
 		{ReadPoolSize: maxReadPoolSize + 1},
 	} {
-		if _, err := Open(context.Background(), runtimeState, options); err == nil {
+		if _, err := Open(testAccountContext(), runtimeState, options); err == nil {
 			t.Fatalf("invalid options were accepted: %+v", options)
 		}
 	}
 }
 
 const entryInsertSQL = `
-INSERT INTO entries (id, kind, content_md, created_at_ms, updated_at_ms, published_at_ms)
-VALUES (?, ?, ?, ?, ?, ?)`
+INSERT INTO entries (id, kind, content_md, created_at_ms, updated_at_ms, published_at_ms, author_user_id)
+VALUES (?, ?, ?, ?, ?, ?, '0123456789abcdef0123456789abcdef')`
 
 func openTestDatabase(t *testing.T, options Options) (*Database, *runtimefs.Runtime) {
 	t.Helper()
-	runtimeState, err := runtimefs.Initialize(context.Background(), runtimefs.Config{
+	runtimeState, err := runtimefs.Initialize(testAccountContext(), runtimefs.Config{
 		DataDir:     t.TempDir(),
 		Environment: runtimefs.EnvironmentDevelopment,
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	db, err := Open(context.Background(), runtimeState, options)
+	db, err := Open(testAccountContext(), runtimeState, options)
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = db.Close() })
+	repository, err := NewAccountRepository(db, runtimeState.Locks)
+	if err != nil {
+		t.Fatal(err)
+	}
+	accounts, err := app.NewAccountService(repository, app.WithAccountIDGenerator(func() (string, error) { return testAccountID, nil }))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := accounts.InitializeSiteAccount(testAccountContext(), "writer"); err != nil {
+		t.Fatal(err)
+	}
 	return db, runtimeState
 }
 
@@ -549,8 +561,8 @@ func insertEntry(t *testing.T, db *Database, id, content string) {
 
 func mustWrite(t *testing.T, db *Database, statement string, arguments ...any) {
 	t.Helper()
-	err := db.WriteTx(context.Background(), func(queries Queries) error {
-		_, err := queries.ExecContext(context.Background(), statement, arguments...)
+	err := db.WriteTx(testAccountContext(), func(queries Queries) error {
+		_, err := queries.ExecContext(testAccountContext(), statement, arguments...)
 		return err
 	})
 	if err != nil {
@@ -560,8 +572,8 @@ func mustWrite(t *testing.T, db *Database, statement string, arguments ...any) {
 
 func assertWriteRejected(t *testing.T, db *Database, statement string, arguments ...any) {
 	t.Helper()
-	err := db.WriteTx(context.Background(), func(queries Queries) error {
-		_, err := queries.ExecContext(context.Background(), statement, arguments...)
+	err := db.WriteTx(testAccountContext(), func(queries Queries) error {
+		_, err := queries.ExecContext(testAccountContext(), statement, arguments...)
 		return err
 	})
 	if err == nil {
@@ -576,7 +588,7 @@ type countQueryer interface {
 func assertCount(t *testing.T, queryer countQueryer, statement string, expected int, arguments ...any) {
 	t.Helper()
 	var actual int
-	if err := queryer.QueryRowContext(context.Background(), statement, arguments...).Scan(&actual); err != nil {
+	if err := queryer.QueryRowContext(testAccountContext(), statement, arguments...).Scan(&actual); err != nil {
 		t.Fatal(err)
 	}
 	if actual != expected {
@@ -617,11 +629,11 @@ func assertPoolPragmas(ctx context.Context, t *testing.T, pool *sql.DB, count in
 func TestDatabasePathUsesRuntimeGeneration(t *testing.T) {
 	t.Parallel()
 	dataDir := filepath.Join(t.TempDir(), "data with ? and #")
-	runtimeState, err := runtimefs.Initialize(context.Background(), runtimefs.Config{DataDir: dataDir})
+	runtimeState, err := runtimefs.Initialize(testAccountContext(), runtimefs.Config{DataDir: dataDir})
 	if err != nil {
 		t.Fatal(err)
 	}
-	db, err := Open(context.Background(), runtimeState, Options{})
+	db, err := Open(testAccountContext(), runtimeState, Options{})
 	if err != nil {
 		t.Fatal(err)
 	}

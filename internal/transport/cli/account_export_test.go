@@ -19,7 +19,7 @@ import (
 func TestAccountExportCLIFileParityAndIdentityBoundary(t *testing.T) {
 	runtimeState, dataDir := initializeSiteCLIData(t)
 	ctx := context.Background()
-	credential, err := auth.InitializeOffline(ctx, runtimeState, auth.Options{})
+	credential, err := initializeTestAccountCredential(ctx, runtimeState, auth.Options{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -33,7 +33,7 @@ func TestAccountExportCLIFileParityAndIdentityBoundary(t *testing.T) {
 	}
 	defer func() { _ = db.Close() }()
 	accounts := testAccountService(t, db, runtimeState)
-	owner, err := accounts.OwnerAccount(ctx)
+	primaryAccount, err := accounts.ProfileAccount(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -41,7 +41,7 @@ func TestAccountExportCLIFileParityAndIdentityBoundary(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	engine, err := ginhttp.New(ginhttp.Config{Assets: fstest.MapFS{"index.html": &fstest.MapFile{Data: []byte("Moment")}}, OwnerAuth: manager, Accounts: accounts, Archive: exporter})
+	engine, err := ginhttp.New(ginhttp.Config{Assets: fstest.MapFS{"index.html": &fstest.MapFile{Data: []byte("Moment")}}, SessionSigner: manager, Accounts: accounts, Archive: exporter})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -51,7 +51,7 @@ func TestAccountExportCLIFileParityAndIdentityBoundary(t *testing.T) {
 	t.Setenv("MOMENT_TOKEN", credential.Token)
 	directPath := filepath.Join(t.TempDir(), "direct.zip")
 	apiPath := filepath.Join(t.TempDir(), "api.zip")
-	direct := execute(app, "", "user", "export", owner.Username, "--data-dir", dataDir, "--output", directPath, "--json")
+	direct := execute(app, "", "user", "export", primaryAccount.Username, "--data-dir", dataDir, "--output", directPath, "--json")
 	api := execute(app, "", "--url", server.URL, "user", "export", "--output", apiPath, "--json")
 	if direct.exit != ExitSuccess || api.exit != ExitSuccess || direct.stderr != "" || api.stderr != "" {
 		t.Fatalf("direct=%#v api=%#v", direct, api)
@@ -88,11 +88,11 @@ func TestAccountExportCLIFileParityAndIdentityBoundary(t *testing.T) {
 	if !bytes.Equal(readAccount(directPath), readAccount(apiPath)) {
 		t.Fatal("direct/API account drift")
 	}
-	selected := execute(app, "", "--url", server.URL, "user", "export", owner.Username, "--output", filepath.Join(t.TempDir(), "bad.zip"), "--json")
+	selected := execute(app, "", "--url", server.URL, "user", "export", primaryAccount.Username, "--output", filepath.Join(t.TempDir(), "bad.zip"), "--json")
 	if selected.exit != ExitInvalidInput {
 		t.Fatalf("API accepted user selection: %#v", selected)
 	}
-	repeated := execute(app, "", "user", "export", owner.Username, "--data-dir", dataDir, "--output", directPath, "--json")
+	repeated := execute(app, "", "user", "export", primaryAccount.Username, "--data-dir", dataDir, "--output", directPath, "--json")
 	if repeated.exit == ExitSuccess {
 		t.Fatal("overwrote file without consent")
 	}

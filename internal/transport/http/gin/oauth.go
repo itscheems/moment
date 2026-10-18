@@ -33,7 +33,7 @@ const (
 	// being told to try again.
 	oauthExchangeBudget = 20 * time.Second
 	// signInPath is where a failed sign-in returns the person to.
-	signInPath = "/owner/login"
+	signInPath = "/login"
 )
 
 // oauthFlow is the state one sign-in carries between the two requests.

@@ -1,7 +1,6 @@
 package sqlite
 
 import (
-	"context"
 	"errors"
 	"testing"
 
@@ -30,7 +29,7 @@ func newAccountFixture(t *testing.T) (*AccountRepository, *app.AccountService) {
 // below it -- which is exactly the state this asserts is still removable.
 func attach(t *testing.T, repository *AccountRepository, identity domain.Identity) {
 	t.Helper()
-	ctx := context.Background()
+	ctx := testAccountContext()
 	if err := repository.WriteAccounts(ctx, func(accounts app.AccountStore, _ app.SessionStore) error {
 		return accounts.LinkIdentity(ctx, identity)
 	}); err != nil {
@@ -50,7 +49,7 @@ func githubIdentity(userID, providerUserID string) domain.Identity {
 
 func providerNames(t *testing.T, accounts *app.AccountService, userID string) []string {
 	t.Helper()
-	identities, err := accounts.Identities(context.Background(), userID)
+	identities, err := accounts.Identities(testAccountContext(), userID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -70,7 +69,7 @@ func providerNames(t *testing.T, accounts *app.AccountService, userID string) []
 // providers and read the pair as a single way in.
 func TestUnlinkRemovesOneIdentityRatherThanEveryOneFromAProvider(t *testing.T) {
 	repository, accounts := newAccountFixture(t)
-	ctx := context.Background()
+	ctx := testAccountContext()
 
 	outcome, err := accounts.SignIn(ctx, app.ExternalIdentity{
 		Provider: "google", ProviderUserID: "107021282825217378365", DisplayName: "Ada Lovelace",
@@ -117,7 +116,7 @@ func TestUnlinkRemovesOneIdentityRatherThanEveryOneFromAProvider(t *testing.T) {
 // either, which left an account holding a credential nothing could detach.
 func TestLastCredentialGuardCountsIdentities(t *testing.T) {
 	repository, accounts := newAccountFixture(t)
-	ctx := context.Background()
+	ctx := testAccountContext()
 
 	outcome, err := accounts.SignIn(ctx, app.ExternalIdentity{
 		Provider: "github", ProviderUserID: "216108319", DisplayName: "Ada Lovelace",
@@ -140,7 +139,7 @@ func TestLastCredentialGuardCountsIdentities(t *testing.T) {
 // removing whatever the account does hold.
 func TestUnlinkingAProviderThatIsNotLinkedRemovesNothing(t *testing.T) {
 	_, accounts := newAccountFixture(t)
-	ctx := context.Background()
+	ctx := testAccountContext()
 
 	outcome, err := accounts.SignIn(ctx, app.ExternalIdentity{
 		Provider: "google", ProviderUserID: "107021282825217378365", DisplayName: "Ada Lovelace",

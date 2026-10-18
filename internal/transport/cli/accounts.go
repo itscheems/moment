@@ -41,6 +41,8 @@ func accountViewOf(user domain.User) accountView {
 
 func registerAccounts(application *Application, appVersion string) {
 	registerAccountExport(application, appVersion)
+	registerAccountAdministration(application)
+	registerProfile(application)
 	application.MustRegisterLeaf(LeafSpec{
 		Path: []string{"user", "list"}, Short: "List the accounts on this site",
 		Long:       "Report every account with its role and status, so applications waiting on approval can be seen without a browser.",
@@ -60,7 +62,7 @@ func registerAccounts(application *Application, appVersion string) {
 		Long:       "Move one account to active so it may write. This is the everyday operation of the approval registration mode.",
 		Inputs:     "One username.",
 		Output:     "The updated account.",
-		Errors:     "An unknown username returns ACCOUNT_NOT_FOUND; the owner account cannot be changed.",
+		Errors:     "An unknown username returns ACCOUNT_NOT_FOUND; at least one active administrator must remain.",
 		Example:    "moment user approve visitor --data-dir ./moment-data",
 		Args:       cobra.ExactArgs(1),
 		Capability: CapabilityDirectOnly,
@@ -72,7 +74,7 @@ func registerAccounts(application *Application, appVersion string) {
 		Long:       "Stop an account from signing in and end every session it currently holds.",
 		Inputs:     "One username.",
 		Output:     "The updated account.",
-		Errors:     "An unknown username returns ACCOUNT_NOT_FOUND; the owner account cannot be changed.",
+		Errors:     "An unknown username returns ACCOUNT_NOT_FOUND; at least one active administrator must remain.",
 		Example:    "moment user suspend visitor --data-dir ./moment-data",
 		Args:       cobra.ExactArgs(1),
 		Capability: CapabilityDirectOnly,
@@ -86,7 +88,7 @@ func registerAccounts(application *Application, appVersion string) {
 		Long:       "Remove one account and the sign-in methods and sessions that only described it. Comments it wrote stay, attributed to a name rather than an account.",
 		Inputs:     "One username.",
 		Output:     "The account that was removed.",
-		Errors:     "An unknown username returns ACCOUNT_NOT_FOUND; the owner account cannot be removed.",
+		Errors:     "An unknown username returns ACCOUNT_NOT_FOUND; selected display accounts and authors with content cannot be removed.",
 		Example:    "moment user delete visitor --data-dir ./moment-data --yes",
 		Args:       cobra.ExactArgs(1),
 		Capability: CapabilityDirectOnly,
@@ -112,7 +114,7 @@ func registerAccounts(application *Application, appVersion string) {
 //
 // These commands are direct-only. Reviewing who may write is exactly the kind
 // of decision worth requiring physical access to the data directory for, and
-// the API-mode alternative already exists in the browser for an owner who is
+// the API-mode alternative already exists in the browser for an account who is
 // signed in.
 func openDirectAccounts(ctx context.Context, invocation Invocation) (*app.AccountService, *sqlitestore.Database, error) {
 	target, err := invocation.DirectTransport()
@@ -121,7 +123,7 @@ func openDirectAccounts(ctx context.Context, invocation Invocation) (*app.Accoun
 	}
 	runtimeState, err := runtimefs.OpenContext(ctx, target.DataDirectory())
 	if err != nil {
-		return nil, nil, ownerRuntimeError(err)
+		return nil, nil, runtimeError(err)
 	}
 	database, err := sqlitestore.Open(ctx, runtimeState, sqlitestore.Options{})
 	if err != nil {
@@ -278,13 +280,12 @@ func accountCLIError(err error) error {
 		return err
 	}
 	switch domainErr.Code {
-	case domain.CodeAccountNotFound:
-		return NewCommandError(string(domainErr.Code), domainErr.Message, "run 'moment user list' to see the accounts on this site", ExitInvalidInput)
-	case domain.CodeInvalidArgument, domain.CodeUsernameTaken, domain.CodeUsernameReserved:
-		return NewCommandError(string(domainErr.Code), domainErr.Message, "correct the input and retry", ExitInvalidInput)
+	case domain.CodeLastAdministrator, domain.CodeAccountInUse, domain.CodeInstanceAlreadyInitialized, domain.CodeAccountNotFound, domain.CodeInvalidArgument, domain.CodeUsernameTaken, domain.CodeUsernameReserved, domain.CodeMediaNotFound:
+		return canonicalPublicError(string(domainErr.Code), domainErr.Message, domainErr.Details, 0)
 	default:
 		return err
 	}
+
 }
 
 func runAccountDelete(ctx context.Context, invocation Invocation, input CommandInput) (Result, error) {

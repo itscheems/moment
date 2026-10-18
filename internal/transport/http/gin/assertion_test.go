@@ -51,7 +51,7 @@ func (provider *stubAssertionProvider) VerifyAssertion(_ context.Context, assert
 // assertionFixture wires an engine whose google speaks assertions and whose
 // github does not.
 type assertionFixture struct {
-	ownerTestFixture
+	authenticationTestFixture
 	google *stubAssertionProvider
 	github *stubProvider
 	engine http.Handler
@@ -59,7 +59,7 @@ type assertionFixture struct {
 
 func newAssertionFixture(t *testing.T) assertionFixture {
 	t.Helper()
-	base := newOwnerTestFixture(t, false)
+	base := newAuthenticationTestFixture(t, false)
 	google := newStubAssertionProvider()
 	github := &stubProvider{
 		name: "github",
@@ -71,7 +71,7 @@ func newAssertionFixture(t *testing.T) assertionFixture {
 	}
 	engine, err := New(Config{
 		Assets:         testAssets(),
-		OwnerAuth:      base.manager,
+		SessionSigner:  base.manager,
 		Accounts:       base.accounts,
 		OAuthProviders: oauth.NewRegistry(google, github),
 		RequestID:      func() string { return "req_assert" },
@@ -79,7 +79,7 @@ func newAssertionFixture(t *testing.T) assertionFixture {
 	if err != nil {
 		t.Fatal(err)
 	}
-	return assertionFixture{ownerTestFixture: base, google: google, github: github, engine: engine}
+	return assertionFixture{authenticationTestFixture: base, google: google, github: github, engine: engine}
 }
 
 func (fixture assertionFixture) postJSON(t *testing.T, target, body string, cookies ...*http.Cookie) *httptest.ResponseRecorder {
@@ -387,15 +387,6 @@ func TestLinkIdentityRequiresExactlyOneCredential(t *testing.T) {
 	}
 }
 
-// Removing a provider that is not attached is a 404 about that provider, not a
-// 401 about the caller.
-//
-// It reported ACCOUNT_NOT_FOUND, which the account error writer maps to "owner
-// authentication is required". The account was fine -- it had just been
-// authenticated to reach the handler -- and the answer told whoever asked to
-// sign in again, which is the one thing that could not help. On a client that
-// reads a 401 as a dead session, unlinking a row that had already gone would
-// have ended the session.
 func TestUnlinkingAProviderThatIsNotAttachedIsNotAnAuthFailure(t *testing.T) {
 	fixture := newAssertionFixture(t)
 	base := newLinkFixtureFrom(t, fixture)

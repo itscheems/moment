@@ -47,23 +47,23 @@ func TestDirectAPIErrorParityPreservesCompleteCanonicalErrors(t *testing.T) {
 		t.Setenv("MOMENT_TOKEN", fixture.token)
 		missingPost := "01ARZ3NDEKTSV4RRFFQ69G5FAY"
 		assertCanonicalParity(t,
-			execute(application, "", "post", "get", missingPost, "--data-dir", fixture.dataDir, "--json"),
+			execute(application, "", "post", "get", missingPost, "--data-dir", fixture.dataDir, "--as", "writer", "--json"),
 			execute(application, "", "--url", fixture.server.URL, "post", "get", missingPost, "--json"),
 		)
 		assertCanonicalParity(t,
-			execute(application, "", "post", "create", "--content", "![external](https://example.test/x.png)", "--data-dir", fixture.dataDir, "--json"),
+			execute(application, "", "post", "create", "--content", "![external](https://example.test/x.png)", "--data-dir", fixture.dataDir, "--as", "writer", "--json"),
 			execute(application, "", "--url", fixture.server.URL, "post", "create", "--content", "![external](https://example.test/x.png)", "--json"),
 		)
 		missingMedia := "01ARZ3NDEKTSV4RRFFQ69G5FAX"
 		directPath := t.TempDir() + "/missing.png"
 		apiPath := directPath
 		assertCanonicalParity(t,
-			execute(application, "", "media", "get", missingMedia, "--output", directPath, "--data-dir", fixture.dataDir, "--json"),
+			execute(application, "", "media", "get", missingMedia, "--output", directPath, "--data-dir", fixture.dataDir, "--as", "writer", "--json"),
 			execute(application, "", "--url", fixture.server.URL, "media", "get", missingMedia, "--output", apiPath, "--json"),
 		)
 		assertCanonicalParity(t,
-			execute(application, "", "site", "update", "--avatar-media-id", missingMedia, "--data-dir", fixture.dataDir, "--json"),
-			execute(application, "", "--url", fixture.server.URL, "site", "update", "--avatar-media-id", missingMedia, "--json"),
+			execute(application, "", "user", "update-profile", "--avatar-media-id", missingMedia, "--data-dir", fixture.dataDir, "--as", "writer", "--json"),
+			execute(application, "", "--url", fixture.server.URL, "user", "update-profile", "--avatar-media-id", missingMedia, "--json"),
 		)
 	})
 
@@ -73,7 +73,7 @@ func TestDirectAPIErrorParityPreservesCompleteCanonicalErrors(t *testing.T) {
 		t.Setenv("MOMENT_TOKEN", fixture.token)
 		missingComment := "01ARZ3NDEKTSV4RRFFQ69G5FAX"
 		assertCanonicalParity(t,
-			execute(application, "", "comment", "delete", missingComment, "--yes", "--data-dir", fixture.dataDir, "--json"),
+			execute(application, "", "comment", "delete", missingComment, "--yes", "--data-dir", fixture.dataDir, "--as", "writer", "--json"),
 			execute(application, "", "--url", fixture.server.URL, "comment", "delete", missingComment, "--yes", "--json"),
 		)
 	})
@@ -91,14 +91,14 @@ func TestParityNormalizationNeverRemovesSubstantiveFields(t *testing.T) {
 }
 
 func TestAllAPIFamiliesRejectIncompleteSharedErrorEnvelope(t *testing.T) {
-	const token = "CANARY_SHARED_OWNER_TOKEN"
+	const token = "CANARY_SHARED_ACCOUNT_TOKEN"
 	t.Setenv("MOMENT_TOKEN", token)
 	mediaOutput := filepath.Join(t.TempDir(), "media.png")
 	families := []struct {
 		name string
 		args []string
 	}{
-		{name: "owner", args: []string{"owner", "status", "--json"}},
+		{name: "account", args: []string{"auth", "status", "--json"}},
 		{name: "post", args: []string{"post", "get", "01ARZ3NDEKTSV4RRFFQ69G5FAV", "--json"}},
 		{name: "comment", args: []string{"comment", "list", "01ARZ3NDEKTSV4RRFFQ69G5FAV", "--json"}},
 		{name: "media", args: []string{"media", "get", "01ARZ3NDEKTSV4RRFFQ69G5FAV", "--output", mediaOutput, "--json"}},
@@ -143,7 +143,7 @@ func TestAllAPIFamiliesRejectIncompleteSharedErrorEnvelope(t *testing.T) {
 func TestSharedSuccessAdaptersRequireServerRequestID(t *testing.T) {
 	application := momentTestApplication()
 	postFixture := newPostCLIFixture(t)
-	post := commandData(t, execute(application, "", "post", "create", "--data-dir", postFixture.dataDir,
+	post := commandData(t, execute(application, "", "post", "create", "--data-dir", postFixture.dataDir, "--as", "writer",
 		"--content", "strict response metadata", "--idempotency-key", "strict-response-meta", "--json"))
 	postID := post["id"].(string)
 	commentFixture := newCommentCLIFixture(t)
@@ -160,7 +160,7 @@ func TestSharedSuccessAdaptersRequireServerRequestID(t *testing.T) {
 		mutate   func(map[string]any)
 		args     []string
 	}{
-		{name: "owner empty", upstream: postFixture.server.URL, token: postFixture.token, mutate: empty, args: []string{"owner", "status", "--json"}},
+		{name: "account empty", upstream: postFixture.server.URL, token: postFixture.token, mutate: empty, args: []string{"auth", "status", "--json"}},
 		{name: "site missing", upstream: postFixture.server.URL, token: postFixture.token, mutate: missing, args: []string{"site", "get", "--json"}},
 		{name: "media blank", upstream: postFixture.server.URL, token: postFixture.token, mutate: blank, args: []string{"media", "add", imagePath, "--json"}},
 		{name: "post wrong type", upstream: postFixture.server.URL, token: postFixture.token, mutate: wrongType, args: []string{"post", "get", postID, "--json"}},
@@ -189,7 +189,7 @@ func TestSharedSuccessAdaptersRequireExactHTTPStatus(t *testing.T) {
 	fixture := newPostCLIFixture(t)
 	t.Setenv("MOMENT_TOKEN", fixture.token)
 	imagePath := writeCLIImage(t)
-	added := commandData(t, execute(application, "", "media", "add", imagePath, "--data-dir", fixture.dataDir, "--json"))
+	added := commandData(t, execute(application, "", "media", "add", imagePath, "--data-dir", fixture.dataDir, "--as", "writer", "--json"))
 	mediaID := added["media"].(map[string]any)["id"].(string)
 
 	tests := []struct {
@@ -197,12 +197,12 @@ func TestSharedSuccessAdaptersRequireExactHTTPStatus(t *testing.T) {
 		status int
 		args   []string
 	}{
-		{name: "owner status", status: http.StatusCreated, args: []string{"owner", "status", "--json"}},
+		{name: "account status", status: http.StatusCreated, args: []string{"auth", "status", "--json"}},
 		{name: "site get", status: http.StatusCreated, args: []string{"site", "get", "--json"}},
 		{name: "site update", status: http.StatusAccepted, args: []string{"site", "update", "--title", "Exact status", "--json"}},
 		{name: "media add", status: http.StatusOK, args: []string{"media", "add", imagePath, "--json"}},
 		{name: "media get", status: http.StatusPartialContent, args: []string{"media", "get", mediaID, "--output", filepath.Join(t.TempDir(), "media.png"), "--json"}},
-		{name: "owner rotate", status: http.StatusAccepted, args: []string{"owner", "rotate-token", "--json"}},
+		{name: "account create token", status: http.StatusAccepted, args: []string{"auth", "create-token", "--json"}},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -223,7 +223,7 @@ func TestSharedSuccessAdaptersRequireExactHTTPStatus(t *testing.T) {
 func TestSharedPostCommentSearchAdaptersRejectNullOrMissingCanonicalScalars(t *testing.T) {
 	application := momentTestApplication()
 	postFixture := newPostCLIFixture(t)
-	post := commandData(t, execute(application, "", "post", "create", "--data-dir", postFixture.dataDir,
+	post := commandData(t, execute(application, "", "post", "create", "--data-dir", postFixture.dataDir, "--as", "writer",
 		"--content", "strict nullable scalar search", "--idempotency-key", "strict-null-scalars", "--json"))
 	postID := post["id"].(string)
 	const mediaID = "01ARZ3NDEKTSV4RRFFQ69G5FAZ"
@@ -253,7 +253,7 @@ func TestSharedPostCommentSearchAdaptersRejectNullOrMissingCanonicalScalars(t *t
 	}
 
 	commentFixture := newCommentCLIFixture(t)
-	comment := commandData(t, execute(application, "", "comment", "create", commentFixture.postID, "--data-dir", commentFixture.dataDir,
+	comment := commandData(t, execute(application, "", "comment", "create", commentFixture.postID, "--data-dir", commentFixture.dataDir, "--as", "writer",
 		"--content", "strict comment scalar", "--idempotency-key", "strict-comment-null", "--json"))
 	_ = comment
 	for _, mutation := range []struct {

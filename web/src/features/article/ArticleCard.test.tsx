@@ -20,7 +20,7 @@ afterEach(() => {
 });
 
 const site: SiteIdentity = {
-  ownerId: "00000000000000000000000000000000",
+  profileUserId: "00000000000000000000000000000000",
   username: "owner",
   displayName: "Moment",
   title: "乔乔的 Moment",

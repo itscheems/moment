@@ -574,16 +574,6 @@ func (service *Service) inspectSite(ctx context.Context, builder *reportBuilder,
 	service.inspectArticles(ctx, builder, database)
 }
 
-// inspectAccounts reports whether the account graph still holds together.
-//
-// Two of these have no database constraint behind them and can only be noticed
-// here. comments.author_user_id deliberately carries no foreign key -- adding
-// one would have meant rebuilding a table six others cascade from -- so a row
-// pointing at a deleted account is invisible until something looks. And a
-// username that collides with a reserved path produces an account whose profile
-// is unreachable, which is a warning rather than a failure precisely because
-// the reserved list is enforced on write and never on read: an existing account
-// keeps working, and renaming it is the owner's decision, not the migration's.
 func (service *Service) inspectAccounts(ctx context.Context, builder *reportBuilder, database *sqlitestore.DiagnosticDatabase) {
 	accounts, err := database.Accounts(ctx, domain.UsernameReserved)
 	if err != nil {
@@ -591,17 +581,17 @@ func (service *Service) inspectAccounts(ctx context.Context, builder *reportBuil
 		return
 	}
 	evidence := map[string]any{
-		"owners":                 uint64(accounts.Owners),
-		"owner_resolves":         accounts.OwnerResolves == 1,
+		"active_administrators":  uint64(accounts.ActiveAdministrators),
+		"profile_resolves":       accounts.ProfileResolves == 1,
 		"orphan_identities":      uint64(accounts.OrphanIdentities),
 		"orphan_sessions":        uint64(accounts.OrphanSessions),
 		"orphan_comment_authors": uint64(accounts.OrphanCommentRefs),
 		"reserved_usernames":     uint64(len(accounts.ReservedUsernames)),
 	}
 	switch {
-	case accounts.Owners != 1 || accounts.OwnerResolves != 1:
-		builder.set(failed(CheckAccountIntegrity, "the site does not have exactly one resolvable owner account",
-			"restore the owner account from a backup before signing in", evidence, failureIntegrity))
+	case accounts.ActiveAdministrators < 1 || accounts.ProfileResolves != 1:
+		builder.set(failed(CheckAccountIntegrity, "the site requires an active administrator and a resolvable display account",
+			"restore the missing account or select an active display account", evidence, failureIntegrity))
 	case accounts.OrphanIdentities > 0 || accounts.OrphanSessions > 0:
 		builder.set(failed(CheckAccountIntegrity, "sign-in records point at accounts that do not exist",
 			"restore from a backup or remove the dangling identity and session rows", evidence, failureIntegrity))
@@ -653,18 +643,18 @@ func (service *Service) inspectSecrets(builder *reportBuilder, root string) {
 	path := filepath.Join(root, "secrets.json")
 	info, err := os.Lstat(path)
 	if errors.Is(err, os.ErrNotExist) {
-		builder.set(failed(CheckSecretPermissions, "owner secrets are not initialized", "run 'moment owner init' while the server is stopped", map[string]any{"exists": false, "permissions_valid": false}, failureIntegrity))
+		builder.set(failed(CheckSecretPermissions, "session signing material is not initialized", "initialize the instance while the server is stopped", map[string]any{"exists": false, "permissions_valid": false}, failureIntegrity))
 		return
 	}
 	if err != nil || !info.Mode().IsRegular() || info.Mode()&os.ModeSymlink != 0 {
-		builder.set(failed(CheckSecretPermissions, "owner secrets are missing or unsafe", "restore a regular private secrets.json without exposing its contents", map[string]any{"exists": err == nil, "permissions_valid": false}, failureIO))
+		builder.set(failed(CheckSecretPermissions, "session signing material is missing or unsafe", "restore a regular private secrets.json without exposing its contents", map[string]any{"exists": err == nil, "permissions_valid": false}, failureIO))
 		return
 	}
 	if err := runtimefs.VerifyPrivateFilePermissions(path); err != nil {
-		builder.set(failed(CheckSecretPermissions, "owner secrets permissions are not private", "restrict secrets.json to the supported private-file policy", map[string]any{"exists": true, "permissions_valid": false, "platform": runtime.GOOS}, failureIntegrity))
+		builder.set(failed(CheckSecretPermissions, "session signing material permissions are not private", "restrict secrets.json to the supported private-file policy", map[string]any{"exists": true, "permissions_valid": false, "platform": runtime.GOOS}, failureIntegrity))
 		return
 	}
-	builder.set(pass(CheckSecretPermissions, "owner secrets exist with private permissions", "no action is required", map[string]any{"exists": true, "permissions_valid": true, "platform": runtime.GOOS}))
+	builder.set(pass(CheckSecretPermissions, "session signing material exists with private permissions", "no action is required", map[string]any{"exists": true, "permissions_valid": true, "platform": runtime.GOOS}))
 }
 
 func (service *Service) inspectDisk(builder *reportBuilder, root string) {

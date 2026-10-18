@@ -47,11 +47,11 @@ const emptyCopy: Record<
     action: { label: "发布 Moment", href: "/compose" },
   },
   login: {
-    marker: "所有者",
-    title: "输入所有者令牌",
+    marker: "账号",
+    title: "登录账号",
     detail: "登录后可以发布和管理内容。",
   },
-  "owner-compose": {
+  compose: {
     marker: "发布",
     title: "发布 Moment",
     detail: "写下内容或添加图片。",
@@ -61,13 +61,13 @@ const emptyCopy: Record<
     title: "写文章",
     detail: "标题、封面和正文，写到一半也会自己存成草稿。",
   },
-  "owner-edit": {
+  edit: {
     marker: "编辑",
     title: "编辑 Moment",
     detail: "修改内容不会改变原发布时间。",
   },
-  "owner-settings": {
-    marker: "所有者",
+  settings: {
+    marker: "账号",
     title: "站点设置",
     detail: "管理站点资料、评论、凭据和备份。",
   },

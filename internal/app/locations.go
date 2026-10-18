@@ -26,7 +26,7 @@ type LocationResolver interface {
 	Nearby(context.Context, domain.GeoPoint, int) ([]domain.Location, error)
 }
 
-// LocationService validates and normalizes owner location searches.
+// LocationService resolves canonical place labels through the configured provider.
 type LocationService struct{ resolver LocationResolver }
 
 // NewLocationService constructs a location service with one required resolver.

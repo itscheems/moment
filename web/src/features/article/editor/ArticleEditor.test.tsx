@@ -52,10 +52,12 @@ vi.mock("../../auth/SessionProvider", () => ({
   }),
 }));
 
+vi.mock("../../../api/media", () => ({ mediaApi: { uploadMedia } }));
+
 const { ArticleEditor } = await import("./ArticleEditor");
 
 const site: SiteIdentity = {
-  ownerId: "00000000000000000000000000000000",
+  profileUserId: "00000000000000000000000000000000",
   username: "owner",
   displayName: "乔乔",
   title: "乔乔的 Moment",
@@ -191,9 +193,6 @@ async function typeTitle(value: string) {
   });
 }
 
-// A blank page nobody has typed on has no unsaved change to report. Saying it
-// does trains the owner to ignore the one line that tells them whether their
-// words are safe.
 it("opens a new article idle rather than claiming unsaved changes", async () => {
   stubFetch();
   renderEditor(null);
@@ -773,7 +772,6 @@ describe("when the same draft was written from somewhere else", () => {
     await advance(2_100);
     expect(putCalls()).toHaveLength(1);
 
-    // Typing continues; the autosave does not resume until the owner answers.
     await typeTitle("还在写");
     await advance(30_000);
     await act(async () => {

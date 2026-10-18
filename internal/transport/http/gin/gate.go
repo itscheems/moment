@@ -3,6 +3,7 @@ package ginhttp
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"strings"
 	"time"
@@ -29,7 +30,7 @@ const (
 //
 //	RequireAccount        signed in, not suspended            -- read yourself, edit yourself
 //	RequireActiveAccount  + approved                          -- write things others see
-//	RequireOwner          + owns the site                     -- everything else
+//	RequireAdmin          + owns the site                     -- everything else
 //
 // VerifiedAccount is not a fourth level. It is the same resolution the three
 // share, handed to a route that has to stay open to a caller with no session
@@ -67,20 +68,20 @@ func (gate *Gate) RequireAccount() gin.HandlerFunc {
 func (gate *Gate) RequireActiveAccount() gin.HandlerFunc {
 	return gate.admit(func(user domain.User) error {
 		if !user.CanWritePublicContent() {
-			return domain.NewError(domain.CodeAccountNotApproved, "this account is waiting to be approved by the site owner", nil)
+			return domain.NewError(domain.CodeAccountNotApproved, "this account is waiting to be approved by an administrator", nil)
 		}
 		return nil
 	})
 }
 
-// RequireOwner admits only the account that owns the site.
-func (gate *Gate) RequireOwner() gin.HandlerFunc {
+// RequireAdmin admits active administrators, independently of content authorship.
+func (gate *Gate) RequireAdmin() gin.HandlerFunc {
 	return gate.admit(func(user domain.User) error {
 		if !user.CanWritePublicContent() {
-			return domain.NewError(domain.CodeAccountNotApproved, "this account is waiting to be approved by the site owner", nil)
+			return domain.NewError(domain.CodeAccountNotApproved, "this account is waiting to be approved by an administrator", nil)
 		}
-		if !user.IsOwner() {
-			return domain.NewError(domain.CodeUnauthorized, "owner access is required", nil)
+		if !user.IsAdmin() {
+			return domain.NewError(domain.CodeUnauthorized, "administrator access is required", nil)
 		}
 		return nil
 	})
@@ -95,6 +96,11 @@ func (gate *Gate) admit(check func(domain.User) error) gin.HandlerFunc {
 			return
 		}
 		if failure := check(user); failure != nil {
+			var refusal *domain.Error
+			if errors.As(failure, &refusal) && refusal.Code == domain.CodeUnauthorized {
+				Failure(ctx, http.StatusForbidden, string(refusal.Code), refusal.Message, refusal.Details)
+				return
+			}
 			writeAccountError(ctx, failure)
 			return
 		}
@@ -121,13 +127,7 @@ func (gate *Gate) VerifiedAccount(ctx *gin.Context) (domain.User, bool) {
 	return user, true
 }
 
-// Viewer reports how much of the site this request may read.
-//
-// It is VerifiedAccount handed to the visibility policy, and it exists so a
-// public read route never has to touch the account itself: the route asks who
-// is reading, the policy answers what they see, and the rule that an owner
-// reads everything while everyone else reads what was published to everyone
-// lives in exactly one place, app.ViewerFor.
+// Viewer returns the real account's author-scoped reading identity.
 func (gate *Gate) Viewer(ctx *gin.Context) app.Viewer {
 	if gate == nil {
 		return app.PublicViewer()
@@ -146,6 +146,8 @@ var errNoCredential = errors.New("no usable credential was presented")
 // bound into it.
 var errCSRFRequired = errors.New("a CSRF token is required")
 
+var errAccountUnavailable = errors.New("account authentication is unavailable")
+
 // authenticate turns the request's credential into an account and stores it on
 // the context. It writes nothing; every refusal is returned.
 func (gate *Gate) authenticate(ctx *gin.Context) (domain.User, error) {
@@ -155,8 +157,7 @@ func (gate *Gate) authenticate(ctx *gin.Context) (domain.User, error) {
 	}
 
 	if len(authorizationValues) == 1 {
-		// A bearer token is the owner's own credential, kept outside the
-		// database so it still works when the database does not.
+		// A verified credential must still resolve to a real, admitted account.
 		if strings.TrimSpace(authorizationValues[0]) == "" {
 			return domain.User{}, errNoCredential
 		}
@@ -164,33 +165,21 @@ func (gate *Gate) authenticate(ctx *gin.Context) (domain.User, error) {
 		if len(parts) != 2 || !strings.EqualFold(parts[0], "Bearer") {
 			return domain.User{}, errNoCredential
 		}
-		grant, err := gate.manager.AuthorizeBearer(parts[1])
+		verified, err := gate.accounts.ResolveAPIToken(ctx.Request.Context(), parts[1])
 		if err != nil {
-			return domain.User{}, errNoCredential
+			return domain.User{}, accountAuthenticationError(err)
 		}
-		ctx.Set(ownerSourceKey, "bearer")
-		ctx.Set(ownerGrantKey, grant)
-		// The token names no account, so the owner row is read to put a name to
-		// it -- but that read does not get to decide admission. Requiring it
-		// would take doctor and credential repair away at exactly the moment
-		// they are wanted, which is the moment the database is what is broken,
-		// and the token was kept outside the database precisely so that could
-		// not happen. A caller admitted without the row keeps every power the
-		// token carries and loses only its name, so a handler that has to
-		// attribute work to an account finds none and refuses on its own.
-		owner, err := gate.accounts.OwnerAccount(ctx.Request.Context())
-		if err != nil {
-			return unnamedOwner, nil
-		}
-		ctx.Set(accountKey, owner)
-		return owner, nil
+		account := verified.User
+		ctx.Set(accountCredentialKey, "token:"+verified.Token.ID)
+		ctx.Set(accountKey, account)
+		return account, nil
 	}
 
 	cookie, err := ctx.Request.Cookie(SessionCookieName)
 	if err != nil {
 		return domain.User{}, errNoCredential
 	}
-	session, grant, err := gate.manager.AuthorizeSession(cookie.Value)
+	session, _, err := gate.manager.AuthorizeSession(cookie.Value)
 	if err != nil {
 		return domain.User{}, errNoCredential
 	}
@@ -200,7 +189,7 @@ func (gate *Gate) authenticate(ctx *gin.Context) (domain.User, error) {
 
 	resolved, err := gate.accounts.ResolveSession(ctx.Request.Context(), session.SessionID)
 	if err != nil {
-		return domain.User{}, err
+		return domain.User{}, accountAuthenticationError(err)
 	}
 	// The signature already proves the cookie was issued here, so a mismatch
 	// between the two halves is not something an attacker can reach. It would
@@ -213,19 +202,19 @@ func (gate *Gate) authenticate(ctx *gin.Context) (domain.User, error) {
 	// valid request.
 	_ = gate.accounts.TouchSession(ctx.Request.Context(), resolved.Session)
 
-	ctx.Set(ownerSourceKey, "session")
-	ctx.Set(ownerGrantKey, grant)
+	ctx.Set(accountCredentialKey, "session:"+resolved.Session.ID)
 	ctx.Set(accountKey, resolved.User)
 	ctx.Set(accountSessionKey, resolved.Session)
 	return resolved.User, nil
 }
 
-// unnamedOwner is everything a bearer token proves without reading a row: the
-// owner's authority, and no identity to attribute anything to.
-//
-// It is deliberately never stored as the current account. An id of "" that
-// reached CurrentAccount would be authored content signed by nobody.
-var unnamedOwner = domain.User{Role: domain.UserRoleOwner, Status: domain.AccountActive}
+func accountAuthenticationError(err error) error {
+	var refusal *domain.Error
+	if errors.As(err, &refusal) || errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return err
+	}
+	return fmt.Errorf("%w: %w", errAccountUnavailable, err)
+}
 
 // writeGateError answers a refusal authenticate returned.
 func writeGateError(ctx *gin.Context, err error) {
@@ -234,6 +223,8 @@ func writeGateError(ctx *gin.Context, err error) {
 		unauthorized(ctx)
 	case errors.Is(err, errCSRFRequired):
 		Failure(ctx, http.StatusForbidden, "CSRF_INVALID", "a valid CSRF token is required", nil)
+	case errors.Is(err, errAccountUnavailable):
+		Failure(ctx, http.StatusServiceUnavailable, "AUTH_UNAVAILABLE", "account authentication is temporarily unavailable", nil)
 	default:
 		writeAccountError(ctx, err)
 	}
@@ -286,6 +277,12 @@ func writeAccountError(ctx *gin.Context, err error) {
 	// in and allowed; the provider they named simply is not attached.
 	case domain.CodeIdentityNotLinked:
 		Failure(ctx, http.StatusNotFound, string(domainErr.Code), domainErr.Message, domainErr.Details)
+	case domain.CodeLastAdministrator, domain.CodeAccountInUse, domain.CodeInstanceAlreadyInitialized:
+		Failure(ctx, http.StatusConflict, string(domainErr.Code), domainErr.Message, domainErr.Details)
+	case domain.CodeMediaNotFound:
+		Failure(ctx, http.StatusNotFound, string(domainErr.Code), domainErr.Message, domainErr.Details)
+	case domain.CodeAPITokenNotFound:
+		Failure(ctx, http.StatusNotFound, string(domainErr.Code), domainErr.Message, nil)
 	case domain.CodeAccountSuspended:
 		Failure(ctx, http.StatusForbidden, string(domainErr.Code), domainErr.Message, domainErr.Details)
 	case domain.CodeAccountNotApproved:

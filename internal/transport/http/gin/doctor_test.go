@@ -17,7 +17,7 @@ import (
 	sqlitestore "github.com/moment/moment/internal/storage/sqlite"
 )
 
-func TestDoctorHTTPSummaryOwnerAuthStrictInputAndRedaction(t *testing.T) {
+func TestDoctorHTTPSummarySessionSignerStrictInputAndRedaction(t *testing.T) {
 	root := filepath.Join(t.TempDir(), "CANARY_ABSOLUTE_DATA_PATH")
 	runtimeState, err := runtimefs.Initialize(context.Background(), runtimefs.Config{DataDir: root, Environment: runtimefs.EnvironmentDevelopment})
 	if err != nil {
@@ -27,16 +27,17 @@ func TestDoctorHTTPSummaryOwnerAuthStrictInputAndRedaction(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	testAccounts(t, database, runtimeState)
 	defer func() { _ = database.Close() }()
 	if err := database.WriteTx(context.Background(), func(queries sqlitestore.Queries) error {
 		_, writeErr := queries.ExecContext(context.Background(), `INSERT INTO entries
-(id, kind, content_md, created_at_ms, updated_at_ms, published_at_ms, content_text)
-VALUES ('01ARZ3NDEKTSV4RRFFQ69G5FC0', 'moment', 'CANARY_PRIVATE_POST_BODY', 1, 1, 1, 'CANARY_PRIVATE_POST_BODY')`)
+(id, kind, content_md, created_at_ms, updated_at_ms, published_at_ms, content_text, author_user_id)
+VALUES ('01ARZ3NDEKTSV4RRFFQ69G5FC0', 'moment', 'CANARY_PRIVATE_POST_BODY', 1, 1, 1, 'CANARY_PRIVATE_POST_BODY', '0123456789abcdef0123456789abcdef')`)
 		return writeErr
 	}); err != nil {
 		t.Fatal(err)
 	}
-	credential, err := auth.InitializeOffline(context.Background(), runtimeState, auth.Options{})
+	_, err = auth.InitializeOffline(context.Background(), runtimeState, auth.Options{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -57,9 +58,10 @@ VALUES ('01ARZ3NDEKTSV4RRFFQ69G5FC0', 'moment', 'CANARY_PRIVATE_POST_BODY', 1, 1
 	if err != nil {
 		t.Fatal(err)
 	}
+	token := issueTestAPIToken(t, testAccountsForRuntime(t, runtimeState))
 	var logs []string
 	engine, err := New(Config{
-		Assets: testAssets(), OwnerAuth: manager, Accounts: testAccountsForRuntime(t, runtimeState), Doctor: reporter,
+		Assets: testAssets(), SessionSigner: manager, Accounts: testAccountsForRuntime(t, runtimeState), Doctor: reporter,
 		RequestID: func() string { return "req_doctor" },
 		Log: func(level, event string, fields map[string]any) {
 			logs = append(logs, fmt.Sprintf("%s:%s:%v", level, event, fields))
@@ -69,13 +71,13 @@ VALUES ('01ARZ3NDEKTSV4RRFFQ69G5FC0', 'moment', 'CANARY_PRIVATE_POST_BODY', 1, 1
 		t.Fatal(err)
 	}
 
-	unauthorized := performRequest(engine, ownerRequest(http.MethodGet, "/api/v1/owner/doctor", ""))
+	unauthorized := performRequest(engine, jsonRequest(http.MethodGet, "/api/v1/diagnostics", ""))
 	if unauthorized.Code != http.StatusUnauthorized || decodeError(t, unauthorized.Body).Error.Code != "UNAUTHORIZED" {
 		t.Fatalf("unauthorized=%d %s", unauthorized.Code, unauthorized.Body.String())
 	}
 
-	request := ownerRequest(http.MethodGet, "/api/v1/owner/doctor", "")
-	request.Header.Set("Authorization", "Bearer "+credential.Token)
+	request := jsonRequest(http.MethodGet, "/api/v1/diagnostics", "")
+	request.Header.Set("Authorization", "Bearer "+token)
 	response := performRequest(engine, request)
 	if response.Code != http.StatusOK || response.Header().Get("Cache-Control") != "no-store" {
 		t.Fatalf("summary=%d %s", response.Code, response.Body.String())
@@ -99,7 +101,7 @@ VALUES ('01ARZ3NDEKTSV4RRFFQ69G5FC0', 'moment', 'CANARY_PRIVATE_POST_BODY', 1, 1
 		t.Fatal(err)
 	}
 	allOutput := string(encoded) + strings.Join(logs, "\n")
-	for _, canary := range []string{credential.Token, root, "CANARY_ABSOLUTE_DATA_PATH", "CANARY_PRIVATE_POST_BODY", "CANARY_STAGING_TOKEN_HASH"} {
+	for _, canary := range []string{token, root, "CANARY_ABSOLUTE_DATA_PATH", "CANARY_PRIVATE_POST_BODY", "CANARY_STAGING_TOKEN_HASH"} {
 		if strings.Contains(allOutput, canary) {
 			t.Fatalf("HTTP summary or logs leaked %q: %s", canary, allOutput)
 		}
@@ -112,16 +114,16 @@ VALUES ('01ARZ3NDEKTSV4RRFFQ69G5FC0', 'moment', 'CANARY_PRIVATE_POST_BODY', 1, 1
 		}
 	}
 
-	for _, path := range []string{"/api/v1/owner/doctor?deep=true", "/api/v1/owner/doctor?unknown=1"} {
-		strict := ownerRequest(http.MethodGet, path, "")
-		strict.Header.Set("Authorization", "Bearer "+credential.Token)
+	for _, path := range []string{"/api/v1/diagnostics?deep=true", "/api/v1/diagnostics?unknown=1"} {
+		strict := jsonRequest(http.MethodGet, path, "")
+		strict.Header.Set("Authorization", "Bearer "+token)
 		strictResponse := performRequest(engine, strict)
 		if strictResponse.Code != http.StatusBadRequest || decodeError(t, strictResponse.Body).Error.Code != "INVALID_ARGUMENT" {
 			t.Fatalf("strict query %s = %d %s", path, strictResponse.Code, strictResponse.Body.String())
 		}
 	}
-	body := ownerRequest(http.MethodGet, "/api/v1/owner/doctor", `{"deep":true}`)
-	body.Header.Set("Authorization", "Bearer "+credential.Token)
+	body := jsonRequest(http.MethodGet, "/api/v1/diagnostics", `{"deep":true}`)
+	body.Header.Set("Authorization", "Bearer "+token)
 	bodyResponse := performRequest(engine, body)
 	if bodyResponse.Code != http.StatusBadRequest || decodeError(t, bodyResponse.Body).Error.Code != "INVALID_ARGUMENT" {
 		t.Fatalf("strict body = %d %s", bodyResponse.Code, bodyResponse.Body.String())
@@ -141,12 +143,12 @@ func (cancelledDoctorReporter) Run(context.Context, doctor.Mode) (doctor.Report,
 }
 
 func TestDoctorHTTPWrappedCancellationIsTimeout(t *testing.T) {
-	fixture := newOwnerTestFixture(t, false)
-	engine, err := New(Config{Assets: testAssets(), OwnerAuth: fixture.manager, Accounts: fixture.accounts, Doctor: cancelledDoctorReporter{}})
+	fixture := newAuthenticationTestFixture(t, false)
+	engine, err := New(Config{Assets: testAssets(), SessionSigner: fixture.manager, Accounts: fixture.accounts, Doctor: cancelledDoctorReporter{}})
 	if err != nil {
 		t.Fatal(err)
 	}
-	request := ownerRequest(http.MethodGet, "/api/v1/owner/doctor", "")
+	request := jsonRequest(http.MethodGet, "/api/v1/diagnostics", "")
 	request.Header.Set("Authorization", "Bearer "+fixture.token)
 	response := performRequest(engine, request)
 	if response.Code != http.StatusRequestTimeout || decodeError(t, response.Body).Error.Code != "TIMEOUT" {
@@ -158,10 +160,10 @@ func TestDoctorHTTPPanicIsRedactedAndConfigRequiresAuth(t *testing.T) {
 	if _, err := New(Config{Assets: testAssets(), Doctor: panicDoctorReporter{}}); err == nil {
 		t.Fatal("doctor route without owner auth was accepted")
 	}
-	fixture := newOwnerTestFixture(t, false)
+	fixture := newAuthenticationTestFixture(t, false)
 	var logs []string
 	engine, err := New(Config{
-		Assets: testAssets(), OwnerAuth: fixture.manager, Accounts: fixture.accounts, Doctor: panicDoctorReporter{},
+		Assets: testAssets(), SessionSigner: fixture.manager, Accounts: fixture.accounts, Doctor: panicDoctorReporter{},
 		RequestID: func() string { return "req_doctor_panic" },
 		Log: func(level, event string, fields map[string]any) {
 			logs = append(logs, fmt.Sprintf("%s:%s:%v", level, event, fields))
@@ -170,7 +172,7 @@ func TestDoctorHTTPPanicIsRedactedAndConfigRequiresAuth(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	request := ownerRequest(http.MethodGet, "/api/v1/owner/doctor", "")
+	request := jsonRequest(http.MethodGet, "/api/v1/diagnostics", "")
 	request.Header.Set("Authorization", "Bearer "+fixture.token)
 	response := performRequest(engine, request)
 	if response.Code != http.StatusInternalServerError || decodeError(t, response.Body).Error.Code != "INTERNAL" {

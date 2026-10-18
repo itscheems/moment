@@ -11,7 +11,7 @@ import (
 func TestApprovedAuthorManagesArticlesWithoutAdministratorOverride(t *testing.T) {
 	fixture := newCommentHTTPFixture(t, nil)
 	// This fixture uses one deterministic post id. Remove its initial comment target through the API before publishing another entry.
-	remove := ownerRequest(http.MethodDelete, "/api/v1/owner/posts/"+fixture.postID.String(), "")
+	remove := jsonRequest(http.MethodDelete, "/api/v1/posts/"+fixture.postID.String(), "")
 	remove.Header.Set("Authorization", "Bearer "+fixture.token)
 	if response := performRequest(fixture.engine, remove); response.Code != http.StatusOK {
 		t.Fatalf("prepare fixture=%s", response.Body.String())
@@ -32,10 +32,10 @@ func TestApprovedAuthorManagesArticlesWithoutAdministratorOverride(t *testing.T)
 	if replay.Code != http.StatusCreated || decodeDataMap(t, replay)["id"] != id {
 		t.Fatal("create replay duplicated a draft")
 	}
-	for _, prefix := range []string{"/api/v1", "/api/v1/owner"} {
-		ownerRead := ownerRequest(http.MethodGet, prefix+"/articles/drafts/"+id, "")
-		ownerRead.Header.Set("Authorization", "Bearer "+fixture.token)
-		if response := performRequest(fixture.engine, ownerRead); response.Code == http.StatusOK {
+	for _, prefix := range []string{"/api/v1", "/api/v1"} {
+		authorRead := jsonRequest(http.MethodGet, prefix+"/articles/drafts/"+id, "")
+		authorRead.Header.Set("Authorization", "Bearer "+fixture.token)
+		if response := performRequest(fixture.engine, authorRead); response.Code == http.StatusOK {
 			t.Fatal("non-author admin read member draft")
 		}
 		response := performRequest(fixture.engine, memberCommentRequest(member, http.MethodGet, prefix+"/articles/drafts", ""))
@@ -61,12 +61,10 @@ func TestApprovedAuthorManagesArticlesWithoutAdministratorOverride(t *testing.T)
 	}
 	post := decodeDataMap(t, publish)
 	postID := post["id"].(string)
-	for _, path := range []string{"/api/v1/articles/" + postID, "/api/v1/owner/posts/" + postID} {
-		request := ownerRequest(http.MethodDelete, path, "")
-		request.Header.Set("Authorization", "Bearer "+fixture.token)
-		if response := performRequest(fixture.engine, request); response.Code == http.StatusOK {
-			t.Fatal("admin generic delete bypassed authorship")
-		}
+	adminEdit := jsonRequest(http.MethodPost, "/api/v1/articles/"+postID+"/draft", "")
+	adminEdit.Header.Set("Authorization", "Bearer "+fixture.token)
+	if response := performRequest(fixture.engine, adminEdit); response.Code == http.StatusOK {
+		t.Fatal("administrator opened another author's working copy")
 	}
 	withdrawn := performRequest(fixture.engine, memberCommentRequest(member, http.MethodPost, "/api/v1/articles/"+postID+"/unpublish", ""))
 	if withdrawn.Code != http.StatusOK {
@@ -77,5 +75,14 @@ func TestApprovedAuthorManagesArticlesWithoutAdministratorOverride(t *testing.T)
 	}
 	if response := performRequest(fixture.engine, httptest.NewRequest(http.MethodGet, "/api/v1/posts", nil)); strings.Contains(response.Body.String(), postID) {
 		t.Fatal("withdrawn article remained in timeline")
+	}
+	republished := performRequest(fixture.engine, memberCommentRequest(member, http.MethodPost, "/api/v1/articles/drafts/"+id+"/publish", ""))
+	if republished.Code != http.StatusOK && republished.Code != http.StatusCreated {
+		t.Fatalf("republish=%d %s", republished.Code, republished.Body.String())
+	}
+	moderation := jsonRequest(http.MethodDelete, "/api/v1/posts/"+postID, "")
+	moderation.Header.Set("Authorization", "Bearer "+fixture.token)
+	if response := performRequest(fixture.engine, moderation); response.Code != http.StatusOK {
+		t.Fatalf("administrator could not moderate published article: %d %s", response.Code, response.Body.String())
 	}
 }

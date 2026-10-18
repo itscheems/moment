@@ -2,15 +2,6 @@ package domain
 
 import "testing"
 
-// Every character an account may hold in its name has to survive being stamped
-// on a comment.
-//
-// TestEveryStorableDisplayNameCanAuthorAComment settled the lengths after they
-// drifted apart. The character rules had drifted the same way and further: this
-// normalizer exempted newline and tab and stopped at DEL, while the comment one
-// refuses anything unicode.IsControl calls a control. A name in the gap saved
-// fine and then failed every comment the account tried to write, under an error
-// naming a field its owner never typed.
 func TestNoStorableDisplayNameCarriesACharacterAcommentRefuses(t *testing.T) {
 	for name, candidate := range map[string]string{
 		"an interior newline":      "Che\nems",

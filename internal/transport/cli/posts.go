@@ -52,6 +52,7 @@ func registerPosts(application *Application) {
 			flags.String("from", "", "inclusive local date in YYYY-MM-DD format")
 			flags.String("to", "", "exclusive local date in YYYY-MM-DD format")
 			flags.String("anchor", "", "local date in YYYY-MM-DD format to read back from")
+			flags.String("author-id", "", "only posts authored by this account ID")
 		},
 		Run: runPostList,
 	})
@@ -71,13 +72,13 @@ func registerPosts(application *Application) {
 	application.MustRegisterLeaf(LeafSpec{
 		Path:   []string{"post", "create"},
 		Short:  "Publish a Moment post",
-		Long:   "Publish one Markdown post through the shared application service in direct mode or the authenticated owner HTTP API.",
+		Long:   "Publish one Markdown post through the shared application service in direct mode or the authenticated account HTTP API.",
 		Inputs: "Provide --content, managed media, --quote, or a combination of them. Add either --location-name or a canonical --location-json path|-; media and location JSON cannot both read stdin. --visibility everyone|only_me chooses who may read the post (default everyone).",
 		Output: "The canonical created post and replay metadata.",
 		Errors: "Content validation, authentication, and idempotency conflicts use stable codes and exit statuses.",
-		Example: "moment post create --data-dir ./moment-data --content 'hello **moment**' --media ./cat.jpg --media-alt 'cat sleeping' --idempotency-key demo-001 --json\n" +
-			"moment post create --data-dir ./moment-data --media ./photo.jpg --idempotency-key demo-002 --json\n" +
-			"moment post create --data-dir ./moment-data --quote 01ARZ3NDEKTSV4RRFFQ69G5FAV --content '我的补充' --json",
+		Example: "moment --as writer post create --data-dir ./moment-data --content 'hello **moment**' --media ./cat.jpg --media-alt 'cat sleeping' --idempotency-key demo-001 --json\n" +
+			"moment --as writer post create --data-dir ./moment-data --media ./photo.jpg --idempotency-key demo-002 --json\n" +
+			"moment --as writer post create --data-dir ./moment-data --quote 01ARZ3NDEKTSV4RRFFQ69G5FAV --content '我的补充' --json",
 		Capability: CapabilityBoth,
 		Flags: func(flags *pflag.FlagSet) {
 			flags.String("content", "", "authoritative UTF-8 Markdown content")
@@ -98,8 +99,8 @@ func registerPosts(application *Application) {
 		Inputs:    "Provide one post ULID and at least one content, media, location, link, or visibility change. Omitted location preserves it; --clear-location removes it.",
 		Output:    "The complete updated canonical post DTO.",
 		Errors:    "Invalid content, missing posts, and authentication failures use stable codes and exit statuses.",
-		Example: "moment post update 01ARZ3NDEKTSV4RRFFQ69G5FAV --data-dir ./moment-data --content 'updated' --json\n" +
-			"printf '[]' | moment post update 01ARZ3NDEKTSV4RRFFQ69G5FAV --data-dir ./moment-data --media-manifest - --json",
+		Example: "moment --as writer post update 01ARZ3NDEKTSV4RRFFQ69G5FAV --data-dir ./moment-data --content 'updated' --json\n" +
+			"printf '[]' | moment --as writer post update 01ARZ3NDEKTSV4RRFFQ69G5FAV --data-dir ./moment-data --media-manifest - --json",
 		Args:       cobra.ExactArgs(1),
 		Capability: CapabilityBoth,
 		Flags: func(flags *pflag.FlagSet) {
@@ -120,7 +121,7 @@ func registerPosts(application *Application) {
 		Output:     "The canonical post that would be or was deleted, with dry_run or deleted metadata.",
 		Errors:     "Missing posts, declined confirmation, and authentication failures use stable codes and exit statuses.",
 		Safety:     "Destructive. --yes confirms intent only; --dry-run performs a read and leaves authority unchanged.",
-		Example:    "moment post delete 01ARZ3NDEKTSV4RRFFQ69G5FAV --data-dir ./moment-data --dry-run --json",
+		Example:    "moment --as writer post delete 01ARZ3NDEKTSV4RRFFQ69G5FAV --data-dir ./moment-data --dry-run --json",
 		Args:       cobra.ExactArgs(1),
 		Capability: CapabilityBoth,
 		Policy: SafetyPolicy{
@@ -134,11 +135,11 @@ func registerPosts(application *Application) {
 		Path:       []string{"post", "repost"},
 		ArgsUsage:  "<post-id>",
 		Short:      "Repost one Moment to the top of the timeline",
-		Long:       "Record an owner repost activity while preserving the Moment's original publication timestamp.",
+		Long:       "Record an account repost activity while preserving the Moment's original publication timestamp.",
 		Inputs:     "Provide one canonical post ULID. Repeating the same repost is an idempotent success.",
 		Output:     "The complete canonical post DTO with reposted_at set.",
 		Errors:     "Invalid or absent posts and authentication failures use stable codes and exit statuses.",
-		Example:    "moment post repost 01ARZ3NDEKTSV4RRFFQ69G5FAV --data-dir ./moment-data --json",
+		Example:    "moment --as writer post repost 01ARZ3NDEKTSV4RRFFQ69G5FAV --data-dir ./moment-data --json",
 		Args:       cobra.ExactArgs(1),
 		Capability: CapabilityBoth,
 		Run: func(ctx context.Context, invocation Invocation, input CommandInput) (Result, error) {
@@ -149,11 +150,11 @@ func registerPosts(application *Application) {
 		Path:       []string{"post", "unrepost"},
 		ArgsUsage:  "<post-id>",
 		Short:      "Remove one Moment repost",
-		Long:       "Remove the owner repost activity and return the Moment to its original chronological position.",
+		Long:       "Remove the account repost activity and return the Moment to its original chronological position.",
 		Inputs:     "Provide one canonical post ULID. Repeating the same removal is an idempotent success.",
 		Output:     "The complete canonical post DTO with reposted_at cleared.",
 		Errors:     "Invalid or absent posts and authentication failures use stable codes and exit statuses.",
-		Example:    "moment post unrepost 01ARZ3NDEKTSV4RRFFQ69G5FAV --data-dir ./moment-data --json",
+		Example:    "moment --as writer post unrepost 01ARZ3NDEKTSV4RRFFQ69G5FAV --data-dir ./moment-data --json",
 		Args:       cobra.ExactArgs(1),
 		Capability: CapabilityBoth,
 		Run: func(ctx context.Context, invocation Invocation, input CommandInput) (Result, error) {
@@ -169,7 +170,7 @@ func registerPosts(application *Application) {
 		Output:     "The complete site settings DTO with pinned_post_id set to the selected post.",
 		Errors:     "Invalid or absent posts, declined confirmation, and authentication failures use stable codes and exit statuses.",
 		Safety:     "Destructive profile presentation change. --yes confirms replacement; no post content or timestamp is changed.",
-		Example:    "moment post pin 01ARZ3NDEKTSV4RRFFQ69G5FAV --data-dir ./moment-data --yes --json",
+		Example:    "moment --as writer post pin 01ARZ3NDEKTSV4RRFFQ69G5FAV --data-dir ./moment-data --yes --json",
 		Args:       cobra.ExactArgs(1),
 		Capability: CapabilityBoth,
 		Policy: SafetyPolicy{
@@ -187,7 +188,7 @@ func registerPosts(application *Application) {
 		Output:     "The complete site settings DTO with pinned_post_id cleared.",
 		Errors:     "Invalid IDs, declined confirmation, and authentication failures use stable codes and exit statuses.",
 		Safety:     "Destructive profile presentation change. --yes confirms removal; no post content is deleted.",
-		Example:    "moment post unpin 01ARZ3NDEKTSV4RRFFQ69G5FAV --data-dir ./moment-data --yes --json",
+		Example:    "moment --as writer post unpin 01ARZ3NDEKTSV4RRFFQ69G5FAV --data-dir ./moment-data --yes --json",
 		Args:       cobra.ExactArgs(1),
 		Capability: CapabilityBoth,
 		Policy: SafetyPolicy{
@@ -224,7 +225,7 @@ func runPostRepostChange(ctx context.Context, invocation Invocation, input Comma
 			method = http.MethodDelete
 		}
 		var status int
-		meta, status, err = postAPIRequest(ctx, invocation, method, "/api/v1/owner/posts/"+url.PathEscape(id.String())+"/repost", nil, nil, "", true, &post)
+		meta, status, err = postAPIRequest(ctx, invocation, method, "/api/v1/posts/"+url.PathEscape(id.String())+"/repost", nil, nil, "", true, &post)
 		if err != nil {
 			return Result{}, postCLIError(err)
 		}
@@ -263,7 +264,7 @@ func runPostList(ctx context.Context, invocation Invocation, input CommandInput)
 			return Result{}, postCLIError(err)
 		}
 		listInput.Timezone = settings.Timezone
-		listInput.Viewer = app.OwnerViewer()
+		listInput.Viewer = app.ViewerFromContext(ctx)
 		result, err := service.List(ctx, listInput)
 		if err != nil {
 			return Result{}, postCLIError(err)
@@ -287,6 +288,9 @@ func runPostList(ctx context.Context, invocation Invocation, input CommandInput)
 		}
 		if listInput.Anchor != "" {
 			query.Set("anchor", listInput.Anchor)
+		}
+		if listInput.AuthorUserID != "" {
+			query.Set("author_user_id", listInput.AuthorUserID)
 		}
 		var status int
 		meta, status, err = postAPIRequest(ctx, invocation, http.MethodGet, "/api/v1/posts", query, nil, "", false, &page)
@@ -414,7 +418,7 @@ func runPostCreate(ctx context.Context, invocation Invocation, input CommandInpu
 			payload.LinkCards = linkCardPayload(linkInput.Cards)
 		}
 		var status int
-		meta, status, err = postAPIRequest(ctx, invocation, http.MethodPost, "/api/v1/owner/posts", nil, payload, idempotencyKey, true, &post)
+		meta, status, err = postAPIRequest(ctx, invocation, http.MethodPost, "/api/v1/posts", nil, payload, idempotencyKey, true, &post)
 		if err != nil {
 			return Result{}, postCLIError(err)
 		}
@@ -529,7 +533,7 @@ func runPostUpdate(ctx context.Context, invocation Invocation, input CommandInpu
 			payload.Visibility = &value
 		}
 		var status int
-		meta, status, err = postAPIRequest(ctx, invocation, http.MethodPatch, "/api/v1/owner/posts/"+id.String(), nil, payload, "", true, &post)
+		meta, status, err = postAPIRequest(ctx, invocation, http.MethodPatch, "/api/v1/posts/"+id.String(), nil, payload, "", true, &post)
 		if err != nil {
 			return Result{}, postCLIError(err)
 		}
@@ -577,7 +581,7 @@ func runPostDelete(ctx context.Context, invocation Invocation, input CommandInpu
 		meta = map[string]any{"deleted": true}
 	case ModeAPI:
 		var status int
-		meta, status, err = postAPIRequest(ctx, invocation, http.MethodDelete, "/api/v1/owner/posts/"+id.String(), nil, nil, "", true, &post)
+		meta, status, err = postAPIRequest(ctx, invocation, http.MethodDelete, "/api/v1/posts/"+id.String(), nil, nil, "", true, &post)
 		if err != nil {
 			return Result{}, postCLIError(err)
 		}
@@ -616,7 +620,7 @@ func runPostPinChange(ctx context.Context, invocation Invocation, input CommandI
 		if !pin {
 			method = http.MethodDelete
 		}
-		meta, err = siteAPIRequest(ctx, invocation, method, "/api/v1/owner/posts/"+id.String()+"/pin", http.StatusOK, nil, true, &settings)
+		meta, err = siteAPIRequest(ctx, invocation, method, "/api/v1/posts/"+id.String()+"/pin", http.StatusOK, nil, true, &settings)
 		if err == nil {
 			if (pin && (settings.PinnedPostID == nil || *settings.PinnedPostID != id.String())) || (!pin && settings.PinnedPostID != nil) {
 				return Result{}, invalidAPIResponse()
@@ -1248,7 +1252,14 @@ func postListFlags(input CommandInput) (app.ListPostsInput, error) {
 	if input.Changed("anchor") && anchor == "" {
 		return app.ListPostsInput{}, invalidArgument("--anchor cannot be empty", "provide a local date in YYYY-MM-DD format or remove --anchor")
 	}
-	return app.ListPostsInput{Cursor: cursor, Limit: limit, FromDate: fromDate, ToDate: toDate, Anchor: anchor}, nil
+	author, err := input.String("author-id")
+	if err != nil {
+		return app.ListPostsInput{}, err
+	}
+	if input.Changed("author-id") && domain.ValidateUserID(author) != nil {
+		return app.ListPostsInput{}, invalidArgument("--author-id must be an account ID", "use the immutable user_id from an account")
+	}
+	return app.ListPostsInput{AuthorUserID: author, Cursor: cursor, Limit: limit, FromDate: fromDate, ToDate: toDate, Anchor: anchor}, nil
 }
 
 func postID(value string) (domain.ID, error) { return domain.ParseID(value) }
@@ -1266,8 +1277,8 @@ func getPostByTransport(ctx context.Context, invocation Invocation, id domain.ID
 		}
 		defer func() { _ = database.Close() }()
 		// Direct mode opens the data directory itself; whoever can do that
-		// is the owner, and reads the way the owner does.
-		result, err := service.Get(ctx, id, app.OwnerViewer())
+		// is the account, and reads the way the account does.
+		result, err := service.Get(ctx, id, app.ViewerFromContext(ctx))
 		if err != nil {
 			return post, nil, err
 		}
@@ -1295,7 +1306,7 @@ func openDirectPostRead(ctx context.Context, invocation Invocation) (*app.PostSe
 	}
 	runtimeState, err := runtimefs.OpenContext(ctx, target.DataDirectory())
 	if err != nil {
-		return nil, nil, nil, ownerRuntimeError(err)
+		return nil, nil, nil, runtimeError(err)
 	}
 	database, err := sqlitestore.Open(ctx, runtimeState, sqlitestore.Options{})
 	if err != nil {
@@ -1336,13 +1347,20 @@ func (runtime *directPostRuntime) Close() error {
 }
 
 func openDirectPostWrite(ctx context.Context, invocation Invocation) (*directPostRuntime, error) {
+	if _, err := directContentActor(ctx); err != nil {
+		return nil, err
+	}
+	return openDirectPostMaintenance(ctx, invocation)
+}
+
+func openDirectPostMaintenance(ctx context.Context, invocation Invocation) (*directPostRuntime, error) {
 	target, err := invocation.DirectTransport()
 	if err != nil {
 		return nil, err
 	}
 	runtimeState, maintenance, err := runtimefs.OpenForWriteContext(ctx, target.DataDirectory())
 	if err != nil {
-		return nil, ownerRuntimeError(err)
+		return nil, runtimeError(err)
 	}
 	database, err := sqlitestore.Open(ctx, runtimeState, sqlitestore.Options{})
 	if err != nil {
@@ -1418,9 +1436,9 @@ func postAPIRequest(
 	if idempotencyKey != "" {
 		request.Header.Set("Idempotency-Key", idempotencyKey)
 	}
-	// A write needs the owner's token. A read does not, but presents it when
+	// A write needs the account's token. A read does not, but presents it when
 	// one is configured: the public routes answer according to the credential,
-	// and the owner listing their own site expects to see all of it. Without
+	// and the account listing their own site expects to see all of it. Without
 	// a token the read is a visitor's, which is also what the server makes of
 	// a token it does not honour.
 	token, err := apiToken(target, authenticate)
@@ -1446,7 +1464,7 @@ func postAPIRequest(
 		return nil, response.StatusCode, invalidAPIResponse()
 	}
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
-		return nil, response.StatusCode, decodeOwnerAPIFailure(response.StatusCode, responseBody)
+		return nil, response.StatusCode, decodeAPIFailure(response.StatusCode, responseBody)
 	}
 	data, meta, err := decodePostAPIEnvelope(responseBody)
 	if err != nil {
@@ -1576,8 +1594,8 @@ func validRawAPIPostPage(data json.RawMessage, page postdto.Page) bool {
 }
 
 func validRawAPIComment(data json.RawMessage, comment commentdto.Comment) bool {
-	if !hasRequiredAPIDataFields(data, "id", "post_id", "parent_id", "depth", "author_kind", "author_name", "content_md", "content_html", "created_at", "media", "location") ||
-		!hasRequiredNonNullAPIDataFields(data, "id", "post_id", "depth", "author_kind", "author_name", "content_md", "content_html", "created_at", "media") ||
+	if !hasRequiredAPIDataFields(data, "id", "post_id", "parent_id", "depth", "author_name", "content_md", "content_html", "created_at", "media", "location") ||
+		!hasRequiredNonNullAPIDataFields(data, "id", "post_id", "depth", "author_name", "content_md", "content_html", "created_at", "media") ||
 		!validCanonicalAPIInstantField(data, "created_at", comment.CreatedAt) {
 		return false
 	}

@@ -46,11 +46,6 @@ export type SaveState =
   | { kind: "saving" }
   | { kind: "saved"; at: string }
   | { kind: "failed"; message: string }
-  /**
-   * Somebody else wrote over this draft. Nothing is saved again until the
-   * owner says which copy wins, because either answer loses an edit and only
-   * they know which one.
-   */
   | { kind: "conflict"; serverUpdatedAt: string | null };
 
 /**

@@ -1,18 +1,3 @@
-/**
- * The archive payload shapes the server actually sends, in one place.
- *
- * The owner API validates every response against an exact key set, so a
- * fixture that is a field behind the server does not fail -- it passes, while
- * the real page throws on every real response. That is precisely how the
- * `users` and `identities` dimensions reached production with five green
- * hand-written counts objects standing behind them.
- *
- * So the fixtures share one factory. When the server grows a sixth dimension,
- * this file is the only place that has to learn about it, and every test that
- * decodes an archive starts exercising the new shape at once instead of five
- * transcriptions drifting apart.
- */
-
 /** An archive counts object as it appears on the wire. */
 export interface ImportCountsWire {
   entries: number;
@@ -24,12 +9,6 @@ export interface ImportCountsWire {
   identities: number;
 }
 
-/**
- * Counts in the current wire shape.
- *
- * Accounts default to one because every archive carries at least the owner;
- * a fixture claiming zero accounts describes an archive that cannot exist.
- */
 export function makeImportCounts(
   overrides: Partial<ImportCountsWire> = {},
 ): ImportCountsWire {
@@ -87,7 +66,7 @@ export function makeReviewComment(
     id: "comment-1",
     content_md: "一条回应",
     entry_id: "post-1",
-    author_kind: "guest",
+
     author_name: "路人",
     pinned: false,
     created_at: "2026-08-11T00:00:00Z",

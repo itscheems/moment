@@ -3,16 +3,11 @@ package cli
 import (
 	"bytes"
 	"context"
-	"crypto/sha256"
 	"database/sql"
-	"encoding/hex"
 	"os"
 	"path/filepath"
 	"reflect"
-	"runtime"
-	"strings"
 	"testing"
-	"time"
 
 	"github.com/moment/moment/internal/runtimefs"
 	"github.com/moment/moment/internal/storage/sqlite"
@@ -21,12 +16,12 @@ import (
 func TestSearchCLIDirectAPIParityAndRebuildSafety(t *testing.T) {
 	fixture := newPostCLIFixture(t)
 	application := momentTestApplication()
-	created := execute(application, "", "post", "create", "--data-dir", fixture.dataDir, "--content", "旧城雨 searchable", "--json")
+	created := execute(application, "", "post", "create", "--data-dir", fixture.dataDir, "--as", "writer", "--content", "旧城雨 searchable", "--json")
 	if created.exit != ExitSuccess {
 		t.Fatalf("create = %#v", created)
 	}
 
-	direct := execute(application, "", "search", "query", "--data-dir", fixture.dataDir, "--query", "旧城雨", "--json")
+	direct := execute(application, "", "search", "query", "--data-dir", fixture.dataDir, "--as", "writer", "--query", "旧城雨", "--json")
 	api := execute(application, "", "--url", fixture.server.URL, "search", "query", "--query", "旧城雨", "--json")
 	if direct.exit != ExitSuccess || api.exit != ExitSuccess || direct.stderr != "" || api.stderr != "" {
 		t.Fatalf("direct=%#v API=%#v", direct, api)
@@ -38,12 +33,12 @@ func TestSearchCLIDirectAPIParityAndRebuildSafety(t *testing.T) {
 		t.Fatalf("direct meta = %#v", envelope["meta"])
 	}
 
-	missing := execute(application, "", "search", "query", "--data-dir", fixture.dataDir, "--json")
+	missing := execute(application, "", "search", "query", "--data-dir", fixture.dataDir, "--as", "writer", "--json")
 	if missing.exit != ExitInvalidInput || decodeOneDocument(t, missing.stdout)["error"].(map[string]any)["code"] != "INVALID_ARGUMENT" {
 		t.Fatalf("missing query = %#v", missing)
 	}
 	for _, invalidFlag := range []string{"--limit=0", "--from=", "--to=", "--cursor="} {
-		for _, mode := range [][]string{{"--data-dir", fixture.dataDir}, {"--url", fixture.server.URL}} {
+		for _, mode := range [][]string{{"--data-dir", fixture.dataDir, "--as", "writer"}, {"--url", fixture.server.URL}} {
 			args := append([]string{}, mode...)
 			args = append(args, "search", "query", "--query", "旧城雨", invalidFlag, "--json")
 			invalid := execute(application, "", args...)
@@ -63,19 +58,19 @@ func TestSearchCLIDirectAPIParityAndRebuildSafety(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	dryRun := execute(application, "", "search", "rebuild", "--data-dir", fixture.dataDir, "--dry-run", "--json")
+	dryRun := execute(application, "", "search", "rebuild", "--data-dir", fixture.dataDir, "--as", "writer", "--dry-run", "--json")
 	if dryRun.exit != ExitSuccess || commandData(t, dryRun)["drifted"].(float64) != 1 || commandData(t, dryRun)["rebuilt"].(float64) != 0 {
 		t.Fatalf("dry-run = %#v", dryRun)
 	}
-	refused := execute(application, "", "search", "rebuild", "--data-dir", fixture.dataDir, "--no-input", "--json")
+	refused := execute(application, "", "search", "rebuild", "--data-dir", fixture.dataDir, "--as", "writer", "--no-input", "--json")
 	if refused.exit != ExitInvalidInput {
 		t.Fatalf("refused = %#v", refused)
 	}
-	rebuilt := execute(application, "", "search", "rebuild", "--data-dir", fixture.dataDir, "--yes", "--json")
+	rebuilt := execute(application, "", "search", "rebuild", "--data-dir", fixture.dataDir, "--as", "writer", "--yes", "--json")
 	if rebuilt.exit != ExitSuccess || commandData(t, rebuilt)["rebuilt"].(float64) != 1 {
 		t.Fatalf("rebuilt = %#v", rebuilt)
 	}
-	verified := execute(application, "", "search", "query", "--data-dir", fixture.dataDir, "--query", "旧城雨", "--json")
+	verified := execute(application, "", "search", "query", "--data-dir", fixture.dataDir, "--as", "writer", "--query", "旧城雨", "--json")
 	if verified.exit != ExitSuccess || len(commandData(t, verified)["items"].([]any)) != 1 {
 		t.Fatalf("verified = %#v", verified)
 	}
@@ -115,13 +110,13 @@ func TestSearchRebuildRuntimeErrorAndLegacyDryRunAreNonMutating(t *testing.T) {
 	}
 	defer func() { _ = database.Close() }()
 	var version, indexed int
-	if err := database.QueryRow(`SELECT max(version) FROM schema_migrations`).Scan(&version); err != nil {
+	if err := database.QueryRow(`SELECT coalesce(max(version),0) FROM schema_migrations`).Scan(&version); err != nil {
 		t.Fatal(err)
 	}
 	if err := database.QueryRow(`SELECT count(*) FROM entry_fts`).Scan(&indexed); err != nil {
 		t.Fatal(err)
 	}
-	if version != 3 || indexed != 0 {
+	if version != 0 || indexed != 0 {
 		t.Fatalf("legacy dry-run state version=%d indexed=%d", version, indexed)
 	}
 }
@@ -133,28 +128,8 @@ func createLegacySearchSchema(t *testing.T, databasePath string) {
 		t.Fatal(err)
 	}
 	defer func() { _ = database.Close() }()
-	_, currentFile, _, ok := runtime.Caller(0)
-	if !ok {
-		t.Fatal("resolve search test source path")
-	}
-	migrationDirectory := filepath.Join(filepath.Dir(currentFile), "..", "..", "storage", "sqlite", "migrations")
-	for version, filename := range []string{"0001_core.sql", "0002_media_storage_path.sql", "0003_site_settings_defaults.sql"} {
-		contents, err := os.ReadFile(filepath.Join(migrationDirectory, filename))
-		if err != nil {
-			t.Fatal(err)
-		}
-		canonical := bytes.ReplaceAll(contents, []byte("\r\n"), []byte("\n"))
-		canonical = bytes.ReplaceAll(canonical, []byte("\r"), []byte("\n"))
-		if _, err := database.Exec(string(canonical)); err != nil {
-			t.Fatalf("apply %s: %v", filename, err)
-		}
-		digest := sha256.Sum256(canonical)
-		name := strings.TrimSuffix(strings.SplitN(filename, "_", 2)[1], ".sql")
-		if _, err := database.Exec(`
-INSERT INTO schema_migrations (version, name, applied_at_ms, checksum)
-VALUES (?, ?, ?, ?)`, version+1, name, time.Now().UnixMilli(), hex.EncodeToString(digest[:])); err != nil {
-			t.Fatalf("record %s: %v", filename, err)
-		}
+	if _, err := database.Exec(`CREATE TABLE schema_migrations(version INTEGER PRIMARY KEY,name TEXT NOT NULL,applied_at_ms INTEGER NOT NULL,checksum TEXT NOT NULL); CREATE TABLE entry_fts(content_text TEXT)`); err != nil {
+		t.Fatal(err)
 	}
 }
 
@@ -165,12 +140,12 @@ VALUES (?, ?, ?, ?)`, version+1, name, time.Now().UnixMilli(), hex.EncodeToStrin
 func TestSearchQueryTakesItsTextAsAnArgument(t *testing.T) {
 	fixture := newPostCLIFixture(t)
 	application := momentTestApplication()
-	if created := execute(application, "", "post", "create", "--data-dir", fixture.dataDir, "--content", "旧城雨 searchable", "--json"); created.exit != ExitSuccess {
+	if created := execute(application, "", "post", "create", "--data-dir", fixture.dataDir, "--as", "writer", "--content", "旧城雨 searchable", "--json"); created.exit != ExitSuccess {
 		t.Fatalf("create = %#v", created)
 	}
 
-	positional := execute(application, "", "search", "query", "旧城", "--data-dir", fixture.dataDir, "--json")
-	flagged := execute(application, "", "search", "query", "--query", "旧城", "--data-dir", fixture.dataDir, "--json")
+	positional := execute(application, "", "search", "query", "旧城", "--data-dir", fixture.dataDir, "--as", "writer", "--json")
+	flagged := execute(application, "", "search", "query", "--query", "旧城", "--data-dir", fixture.dataDir, "--as", "writer", "--json")
 	if positional.exit != ExitSuccess || flagged.exit != ExitSuccess {
 		t.Fatalf("positional = %#v\nflagged = %#v", positional, flagged)
 	}
@@ -183,11 +158,11 @@ func TestSearchQueryTakesItsTextAsAnArgument(t *testing.T) {
 	}
 
 	// Saying it twice is a mistake worth pointing at rather than resolving.
-	both := execute(application, "", "search", "query", "旧城", "--query", "别的", "--data-dir", fixture.dataDir, "--json")
+	both := execute(application, "", "search", "query", "旧城", "--query", "别的", "--data-dir", fixture.dataDir, "--as", "writer", "--json")
 	if both.exit == ExitSuccess {
 		t.Fatalf("naming the text twice must fail: %#v", both)
 	}
-	none := execute(application, "", "search", "query", "--data-dir", fixture.dataDir, "--json")
+	none := execute(application, "", "search", "query", "--data-dir", fixture.dataDir, "--as", "writer", "--json")
 	if none.exit == ExitSuccess {
 		t.Fatalf("no text at all must fail: %#v", none)
 	}

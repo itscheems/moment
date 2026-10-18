@@ -10,13 +10,6 @@ import (
 	"github.com/moment/moment/internal/domain"
 )
 
-// Moderating the conversation is a different authority from taking part in it.
-//
-// Both lived in one owner-only route group until a second account could exist.
-// Stepping that group down to "any approved account" -- which is what lets a
-// member comment at all -- would otherwise hand every approved member the
-// power to pin and unpin anyone's conversation. This is the test that keeps the
-// two authorities apart.
 func TestAnApprovedMemberCannotModerateTheConversation(t *testing.T) {
 	fixture := newCommentHTTPFixture(t, nil)
 	member := approvedMemberSession(t, fixture)
@@ -25,8 +18,8 @@ func TestAnApprovedMemberCannotModerateTheConversation(t *testing.T) {
 		method string
 		path   string
 	}{
-		"pinning a conversation":   {http.MethodPut, "/api/v1/owner/posts/01ARZ3NDEKTSV4RRFFQ69G5FAV/comments/01ARZ3NDEKTSV4RRFFQ69G5FB0/pin"},
-		"unpinning a conversation": {http.MethodDelete, "/api/v1/owner/posts/01ARZ3NDEKTSV4RRFFQ69G5FAV/comments/01ARZ3NDEKTSV4RRFFQ69G5FB0/pin"},
+		"pinning a conversation":   {http.MethodPut, "/api/v1/posts/01ARZ3NDEKTSV4RRFFQ69G5FAV/comments/01ARZ3NDEKTSV4RRFFQ69G5FB0/pin"},
+		"unpinning a conversation": {http.MethodDelete, "/api/v1/posts/01ARZ3NDEKTSV4RRFFQ69G5FAV/comments/01ARZ3NDEKTSV4RRFFQ69G5FB0/pin"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			response := performRequest(fixture.engine, memberCommentRequest(member, probe.method, probe.path, ""))
@@ -45,7 +38,7 @@ func TestAnApprovedMemberCannotDeleteAnotherAccountsReply(t *testing.T) {
 	fixture := newCommentHTTPFixture(t, nil)
 	member := approvedMemberSession(t, fixture)
 
-	created := performRequest(fixture.engine, memberCommentRequest(member, http.MethodPost, ownerCommentPath(fixture), `{"content_md":"a member writes first"}`))
+	created := performRequest(fixture.engine, memberCommentRequest(member, http.MethodPost, commentResourcePath(fixture), `{"content_md":"a member writes first"}`))
 	if created.Code != http.StatusCreated {
 		t.Fatalf("member create = %d %s", created.Code, created.Body.String())
 	}
@@ -54,16 +47,14 @@ func TestAnApprovedMemberCannotDeleteAnotherAccountsReply(t *testing.T) {
 	if !ok {
 		t.Fatalf("member comment = %#v", written)
 	}
-	// The refusal below turns on the stored author, so the row has to be the
-	// member's own rather than the owner's for any of this to mean anything.
 	if author, resolved := written["author"].(map[string]any); !resolved || author["user_id"] != member.user.ID {
 		t.Fatalf("member comment author = %#v, want %s", written["author"], member.user.ID)
 	}
-	reply := postOwnerComment(t, fixture, `{"content_md":"and the owner answers","parent_id":"`+rootID+`"}`)
+	reply := postAccountComment(t, fixture, `{"content_md":"and the owner answers","parent_id":"`+rootID+`"}`)
 
 	for name, path := range map[string]string{
-		"removal": "/api/v1/owner/comments/" + rootID,
-		"preview": "/api/v1/owner/comments/" + rootID + "?dry_run=true",
+		"removal": "/api/v1/comments/" + rootID,
+		"preview": "/api/v1/comments/" + rootID + "?dry_run=true",
 	} {
 		t.Run(name, func(t *testing.T) {
 			response := performRequest(fixture.engine, memberCommentRequest(member, http.MethodDelete, path, ""))
@@ -85,13 +76,13 @@ func TestAnApprovedMemberCannotDeleteAnotherAccountsReply(t *testing.T) {
 func TestAnApprovedMemberCannotDeleteSomebodyElsesComment(t *testing.T) {
 	fixture := newCommentHTTPFixture(t, nil)
 	member := approvedMemberSession(t, fixture)
-	owned := postOwnerComment(t, fixture, `{"content_md":"the owner's own words"}`)
+	owned := postAccountComment(t, fixture, `{"content_md":"the owner's own words"}`)
 	ownedID, ok := owned["id"].(string)
 	if !ok {
 		t.Fatalf("owner comment = %#v", owned)
 	}
 
-	response := performRequest(fixture.engine, memberCommentRequest(member, http.MethodDelete, "/api/v1/owner/comments/"+ownedID, ""))
+	response := performRequest(fixture.engine, memberCommentRequest(member, http.MethodDelete, "/api/v1/comments/"+ownedID, ""))
 	if response.Code != http.StatusForbidden || decodeError(t, response.Body).Error.Code != "UNAUTHORIZED" {
 		t.Fatalf("member delete of the owner's comment = %d: %s", response.Code, response.Body.String())
 	}
@@ -102,17 +93,12 @@ func TestAnApprovedMemberCannotDeleteSomebodyElsesComment(t *testing.T) {
 	}
 }
 
-// commentMember is one approved non-owner account together with what a browser
-// signed in as it would be holding.
 type commentMember struct {
 	user    domain.User
 	session *http.Cookie
 	csrf    string
 }
 
-// approvedMemberSession signs a second account in through the substituted
-// provider and approves it. Signing in is the only way an account that is not
-// the owner comes to exist, so there is no shorter route to one.
 func approvedMemberSession(t *testing.T, fixture commentHTTPFixture) commentMember {
 	t.Helper()
 	flow, state := startOAuthFlowOn(t, fixture.engine)
@@ -152,7 +138,7 @@ func approvedMemberSession(t *testing.T, fixture commentHTTPFixture) commentMemb
 // memberCommentRequest authenticates as a member the way a browser does: the
 // session cookie, and the CSRF header that cookie authentication requires.
 func memberCommentRequest(member commentMember, method, path, body string) *http.Request {
-	request := ownerRequest(method, path, body)
+	request := jsonRequest(method, path, body)
 	request.RemoteAddr = "192.0.2.25:4000"
 	request.AddCookie(member.session)
 	request.Header.Set(CSRFHeaderName, member.csrf)

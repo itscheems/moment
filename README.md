@@ -79,12 +79,12 @@ Moment 也提供 CLI 和 HTTP API。如果你习惯从终端做事，或想把�
 ```sh
 mise install
 mise exec -- task setup
-mise exec -- task run
+MOMENT_USERNAME=writer mise exec -- task run
 ```
 
 打开 **<http://127.0.0.1:8080>**，开始你的第一条记录。
 
-首次启动会初始化本地数据目录 `moment-data/`，并将所有者令牌保存到 `.moment-local/owner.token`。在登录页选择所有者令牌登录；后续启动会复用已有数据。
+首次启动会用 `MOMENT_USERNAME` 指定的名字创建管理员账号，并将该账号的初始 API 令牌保存到 `.moment-local/account.token`。在登录页选择 API 令牌登录，也可以在账号设置中配置密码。后续启动复用已有数据，不要求保存着初始令牌。所有已启用的账号都可以发布内容；管理权限、内容作者和站点展示账号分别设置。
 
 需要部署到服务器、使用容器，或了解媒体处理依赖，可以查看 [部署与发布指南](docs/releasing.md) 和 [媒体处理说明](docs/media-pipeline.md)。
 

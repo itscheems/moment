@@ -15,125 +15,125 @@ import (
 	"github.com/moment/moment/internal/media"
 )
 
-type importInspectorFunc func(context.Context, io.Reader, uint64) (archive.Inspection, error)
+type importInspectorFunc func(context.Context, io.Reader, archive.Authorization) (archive.Inspection, error)
 
-func (function importInspectorFunc) Inspect(ctx context.Context, input io.Reader, epoch uint64) (archive.Inspection, error) {
+func (function importInspectorFunc) Inspect(ctx context.Context, input io.Reader, epoch archive.Authorization) (archive.Inspection, error) {
 	return function(ctx, input, epoch)
 }
 
 type importInspectorPlanner struct {
 	inspect importInspectorFunc
-	plan    func(context.Context, io.Reader, uint64) (archive.ImportPlan, error)
+	plan    func(context.Context, io.Reader, archive.Authorization) (archive.ImportPlan, error)
 }
 
-func (value importInspectorPlanner) Inspect(ctx context.Context, input io.Reader, epoch uint64) (archive.Inspection, error) {
+func (value importInspectorPlanner) Inspect(ctx context.Context, input io.Reader, epoch archive.Authorization) (archive.Inspection, error) {
 	return value.inspect(ctx, input, epoch)
 }
 
-func (value importInspectorPlanner) Plan(ctx context.Context, input io.Reader, epoch uint64) (archive.ImportPlan, error) {
+func (value importInspectorPlanner) Plan(ctx context.Context, input io.Reader, epoch archive.Authorization) (archive.ImportPlan, error) {
 	return value.plan(ctx, input, epoch)
 }
 
 type fakeImportCommitter struct {
-	commit func(context.Context, string, uint64) (archive.CommitResult, error)
+	commit func(context.Context, string, archive.Authorization) (archive.CommitResult, error)
 	status func(context.Context) (archive.CommitStatus, error)
 }
 
 type fakeArchiveImportCommitter struct {
 	fakeImportCommitter
-	restore func(context.Context, io.Reader, string, uint64) (archive.CommitResult, error)
+	restore func(context.Context, io.Reader, string, archive.Authorization) (archive.CommitResult, error)
 }
 
 type fakeMergeImportCommitter struct {
 	fakeImportCommitter
-	planMerge    func(context.Context, io.Reader, uint64) (archive.MergeInspection, error)
-	commitMerge  func(context.Context, string, uint64, archive.MergeSelection) (archive.CommitResult, error)
-	discardMerge func(context.Context, string, uint64) error
+	planMerge    func(context.Context, io.Reader, archive.Authorization) (archive.MergeInspection, error)
+	commitMerge  func(context.Context, string, archive.Authorization, archive.MergeSelection) (archive.CommitResult, error)
+	discardMerge func(context.Context, string, archive.Authorization) error
 }
 
 type fakeReviewImportCommitter struct {
 	fakeImportCommitter
-	review      func(context.Context, io.Reader, uint64) (archive.MergeInspection, error)
-	replace     func(context.Context, string, uint64, string) (archive.CommitResult, error)
-	reviewMedia func(context.Context, string, uint64, string, archive.MergeReviewSource, string) (media.Asset, error)
+	review      func(context.Context, io.Reader, archive.Authorization) (archive.MergeInspection, error)
+	replace     func(context.Context, string, archive.Authorization, string) (archive.CommitResult, error)
+	reviewMedia func(context.Context, string, archive.Authorization, string, archive.MergeReviewSource, string) (media.Asset, error)
 }
 
-func (fake fakeReviewImportCommitter) InspectReviewArchive(ctx context.Context, input io.Reader, epoch uint64) (archive.MergeInspection, error) {
+func (fake fakeReviewImportCommitter) InspectReviewArchive(ctx context.Context, input io.Reader, epoch archive.Authorization) (archive.MergeInspection, error) {
 	return fake.review(ctx, input, epoch)
 }
 
-func (fake fakeReviewImportCommitter) CommitReviewedReplacement(ctx context.Context, token string, epoch uint64, planID string) (archive.CommitResult, error) {
+func (fake fakeReviewImportCommitter) CommitReviewedReplacement(ctx context.Context, token string, epoch archive.Authorization, planID string) (archive.CommitResult, error) {
 	return fake.replace(ctx, token, epoch, planID)
 }
 
-func (fake fakeReviewImportCommitter) ReadReviewMedia(ctx context.Context, token string, epoch uint64, planID string, source archive.MergeReviewSource, mediaID string) (media.Asset, error) {
+func (fake fakeReviewImportCommitter) ReadReviewMedia(ctx context.Context, token string, epoch archive.Authorization, planID string, source archive.MergeReviewSource, mediaID string) (media.Asset, error) {
 	return fake.reviewMedia(ctx, token, epoch, planID, source, mediaID)
 }
 
-func (fake fakeMergeImportCommitter) InspectMergeArchive(ctx context.Context, input io.Reader, epoch uint64) (archive.MergeInspection, error) {
+func (fake fakeMergeImportCommitter) InspectMergeArchive(ctx context.Context, input io.Reader, epoch archive.Authorization) (archive.MergeInspection, error) {
 	return fake.planMerge(ctx, input, epoch)
 }
 
-func (fake fakeMergeImportCommitter) CommitMerge(ctx context.Context, token string, epoch uint64, selection archive.MergeSelection) (archive.CommitResult, error) {
+func (fake fakeMergeImportCommitter) CommitMerge(ctx context.Context, token string, epoch archive.Authorization, selection archive.MergeSelection) (archive.CommitResult, error) {
 	return fake.commitMerge(ctx, token, epoch, selection)
 }
 
-func (fake fakeMergeImportCommitter) DiscardMerge(ctx context.Context, token string, epoch uint64) error {
+func (fake fakeMergeImportCommitter) DiscardMerge(ctx context.Context, token string, epoch archive.Authorization) error {
 	return fake.discardMerge(ctx, token, epoch)
 }
 
-func (fake fakeArchiveImportCommitter) CommitArchive(ctx context.Context, input io.Reader, expectedArchiveSHA string, epoch uint64) (archive.CommitResult, error) {
+func (fake fakeArchiveImportCommitter) CommitArchive(ctx context.Context, input io.Reader, expectedArchiveSHA string, epoch archive.Authorization) (archive.CommitResult, error) {
 	return fake.restore(ctx, input, expectedArchiveSHA, epoch)
 }
 
 func TestImportReviewReplacementAndMediaContracts(t *testing.T) {
-	fixture := newOwnerTestFixture(t, false)
+	fixture := newAuthenticationTestFixture(t, false)
 	planID := strings.Repeat("a", 64)
 	mediaID := "01ARZ3NDEKTSV4RRFFQ69G5FAV"
 	committer := fakeReviewImportCommitter{
 		fakeImportCommitter: fakeImportCommitter{
-			commit: func(context.Context, string, uint64) (archive.CommitResult, error) {
+			commit: func(context.Context, string, archive.Authorization) (archive.CommitResult, error) {
 				return archive.CommitResult{}, nil
 			},
 			status: func(context.Context) (archive.CommitStatus, error) { return archive.CommitStatus{}, nil },
 		},
-		review: func(_ context.Context, input io.Reader, epoch uint64) (archive.MergeInspection, error) {
+		review: func(_ context.Context, input io.Reader, epoch archive.Authorization) (archive.MergeInspection, error) {
 			body, _ := io.ReadAll(input)
-			if string(body) != "review-zip" || epoch != 1 {
-				t.Fatalf("review body=%q epoch=%d", body, epoch)
+			if string(body) != "review-zip" || (!epoch.Valid() || epoch.AccountID != "0123456789abcdef0123456789abcdef") {
+				t.Fatalf("review body=%q subject=%+v", body, epoch)
 			}
 			return archive.MergeInspection{Plan: archive.MergePlan{PlanID: planID}, MergeAllowed: true, Warnings: []string{}, StagingToken: "review-token"}, nil
 		},
-		replace: func(_ context.Context, token string, epoch uint64, gotPlanID string) (archive.CommitResult, error) {
-			if token != "review-token" || epoch != 1 || gotPlanID != planID {
-				t.Fatalf("replace token=%q epoch=%d plan=%q", token, epoch, gotPlanID)
+		replace: func(_ context.Context, token string, epoch archive.Authorization, gotPlanID string) (archive.CommitResult, error) {
+			if token != "review-token" || (!epoch.Valid() || epoch.AccountID != "0123456789abcdef0123456789abcdef") || gotPlanID != planID {
+				t.Fatalf("replace token=%q subject=%+v plan=%q", token, epoch, gotPlanID)
 			}
 			return archive.CommitResult{Status: archive.CommitStatus{Phase: archive.CommitSucceeded}}, nil
 		},
-		reviewMedia: func(_ context.Context, token string, epoch uint64, gotPlanID string, source archive.MergeReviewSource, gotMediaID string) (media.Asset, error) {
-			if token != "review-token" || epoch != 1 || gotPlanID != planID || source != archive.MergeReviewIncoming || gotMediaID != mediaID {
-				t.Fatalf("media token=%q epoch=%d plan=%q source=%q id=%q", token, epoch, gotPlanID, source, gotMediaID)
+		reviewMedia: func(_ context.Context, token string, epoch archive.Authorization, gotPlanID string, source archive.MergeReviewSource, gotMediaID string) (media.Asset, error) {
+			if token != "review-token" || (!epoch.Valid() || epoch.AccountID != "0123456789abcdef0123456789abcdef") || gotPlanID != planID || source != archive.MergeReviewIncoming || gotMediaID != mediaID {
+				t.Fatalf("media token=%q subject=%+v plan=%q source=%q id=%q", token, epoch, gotPlanID, source, gotMediaID)
 			}
 			return media.Asset{Contents: []byte("image"), MIMEType: "image/png", ETag: `"sha256-image"`}, nil
 		},
 	}
-	engine, err := New(Config{Assets: testAssets(), OwnerAuth: fixture.manager, Accounts: fixture.accounts, ImportCommitter: committer})
+	engine, err := New(Config{Assets: testAssets(), SessionSigner: fixture.manager, Accounts: fixture.accounts, ImportCommitter: committer})
 	if err != nil {
 		t.Fatal(err)
 	}
-	reviewRequest := headerRequest(http.MethodPost, "/api/v1/owner/import/review", fixture.token, strings.NewReader("review-zip"))
+	reviewRequest := headerRequest(http.MethodPost, "/api/v1/backups/import/review", fixture.token, strings.NewReader("review-zip"))
 	reviewRequest.Header.Set("Content-Type", "application/zip")
 	if response := performRequest(engine, reviewRequest); response.Code != http.StatusCreated || !strings.Contains(response.Body.String(), `"staging_token":"review-token"`) {
 		t.Fatalf("review response=%d %s", response.Code, response.Body.String())
 	}
 	replaceBody := `{"staging_token":"review-token","plan_id":"` + planID + `"}`
-	replaceRequest := headerRequest(http.MethodPost, "/api/v1/owner/import/review/replace", fixture.token, strings.NewReader(replaceBody))
+	replaceRequest := headerRequest(http.MethodPost, "/api/v1/backups/import/review/replace", fixture.token, strings.NewReader(replaceBody))
 	replaceRequest.Header.Set("Content-Type", "application/json")
 	if response := performRequest(engine, replaceRequest); response.Code != http.StatusOK || !strings.Contains(response.Body.String(), `"phase":"succeeded"`) {
 		t.Fatalf("replace response=%d %s", response.Code, response.Body.String())
 	}
 	mediaBody := `{"staging_token":"review-token","plan_id":"` + planID + `","source":"incoming","media_id":"` + mediaID + `"}`
-	mediaRequest := headerRequest(http.MethodPost, "/api/v1/owner/import/review/media", fixture.token, strings.NewReader(mediaBody))
+	mediaRequest := headerRequest(http.MethodPost, "/api/v1/backups/import/review/media", fixture.token, strings.NewReader(mediaBody))
 	mediaRequest.Header.Set("Content-Type", "application/json")
 	mediaResponse := performRequest(engine, mediaRequest)
 	if mediaResponse.Code != http.StatusOK || mediaResponse.Body.String() != "image" || mediaResponse.Header().Get("Cache-Control") != "private, no-store" {
@@ -144,7 +144,7 @@ func TestImportReviewReplacementAndMediaContracts(t *testing.T) {
 		`{"staging_token":"review-token","plan_id":"` + planID + `","extra":true}`,
 		`{"staging_token":"review-token","staging_token":"again","plan_id":"` + planID + `"}`,
 	} {
-		request := headerRequest(http.MethodPost, "/api/v1/owner/import/review/replace", fixture.token, strings.NewReader(body))
+		request := headerRequest(http.MethodPost, "/api/v1/backups/import/review/replace", fixture.token, strings.NewReader(body))
 		request.Header.Set("Content-Type", "application/json")
 		if response := performRequest(engine, request); response.Code != http.StatusBadRequest {
 			t.Fatalf("invalid review body %s => %d %s", body, response.Code, response.Body.String())
@@ -152,7 +152,7 @@ func TestImportReviewReplacementAndMediaContracts(t *testing.T) {
 	}
 }
 
-func (fake fakeImportCommitter) Commit(ctx context.Context, token string, epoch uint64) (archive.CommitResult, error) {
+func (fake fakeImportCommitter) Commit(ctx context.Context, token string, epoch archive.Authorization) (archive.CommitResult, error) {
 	return fake.commit(ctx, token, epoch)
 }
 
@@ -160,8 +160,8 @@ func (fake fakeImportCommitter) Status(ctx context.Context) (archive.CommitStatu
 	return fake.status(ctx)
 }
 
-func TestImportMergePlanAndCommitStrictOwnerContracts(t *testing.T) {
-	fixture := newOwnerTestFixture(t, false)
+func TestImportMergePlanAndCommitAdministratorContracts(t *testing.T) {
+	fixture := newAuthenticationTestFixture(t, false)
 	selection := archive.MergeSelection{
 		PlanID: strings.Repeat("a", 64), ArchiveSHA256: strings.Repeat("b", 64),
 		BaseGeneration: "generation", BaseAuthoritySHA256: strings.Repeat("c", 64),
@@ -169,36 +169,36 @@ func TestImportMergePlanAndCommitStrictOwnerContracts(t *testing.T) {
 	}
 	committer := fakeMergeImportCommitter{
 		fakeImportCommitter: fakeImportCommitter{
-			commit: func(context.Context, string, uint64) (archive.CommitResult, error) {
+			commit: func(context.Context, string, archive.Authorization) (archive.CommitResult, error) {
 				return archive.CommitResult{}, nil
 			},
 			status: func(context.Context) (archive.CommitStatus, error) { return archive.CommitStatus{}, nil },
 		},
-		planMerge: func(_ context.Context, input io.Reader, epoch uint64) (archive.MergeInspection, error) {
+		planMerge: func(_ context.Context, input io.Reader, epoch archive.Authorization) (archive.MergeInspection, error) {
 			body, _ := io.ReadAll(input)
-			if string(body) != "zip-merge" || epoch != 1 {
-				t.Fatalf("plan body=%q epoch=%d", body, epoch)
+			if string(body) != "zip-merge" || (!epoch.Valid() || epoch.AccountID != "0123456789abcdef0123456789abcdef") {
+				t.Fatalf("plan body=%q subject=%+v", body, epoch)
 			}
 			return archive.MergeInspection{Plan: archive.MergePlan{PlanID: selection.PlanID}, Warnings: []string{}, StagingToken: "merge-token"}, nil
 		},
-		commitMerge: func(_ context.Context, token string, epoch uint64, got archive.MergeSelection) (archive.CommitResult, error) {
-			if token != "merge-token" || epoch != 1 || got.PlanID != selection.PlanID {
-				t.Fatalf("commit token=%q epoch=%d selection=%#v", token, epoch, got)
+		commitMerge: func(_ context.Context, token string, epoch archive.Authorization, got archive.MergeSelection) (archive.CommitResult, error) {
+			if token != "merge-token" || (!epoch.Valid() || epoch.AccountID != "0123456789abcdef0123456789abcdef") || got.PlanID != selection.PlanID {
+				t.Fatalf("commit token=%q subject=%+v selection=%#v", token, epoch, got)
 			}
 			return archive.CommitResult{Status: archive.CommitStatus{Phase: archive.CommitSucceeded}}, nil
 		},
-		discardMerge: func(_ context.Context, token string, epoch uint64) error {
-			if token != "merge-token" || epoch != 1 {
-				t.Fatalf("discard token=%q epoch=%d", token, epoch)
+		discardMerge: func(_ context.Context, token string, epoch archive.Authorization) error {
+			if token != "merge-token" || (!epoch.Valid() || epoch.AccountID != "0123456789abcdef0123456789abcdef") {
+				t.Fatalf("discard token=%q subject=%+v", token, epoch)
 			}
 			return nil
 		},
 	}
-	engine, err := New(Config{Assets: testAssets(), OwnerAuth: fixture.manager, Accounts: fixture.accounts, ImportCommitter: committer, RequestID: func() string { return "req_merge" }})
+	engine, err := New(Config{Assets: testAssets(), SessionSigner: fixture.manager, Accounts: fixture.accounts, ImportCommitter: committer, RequestID: func() string { return "req_merge" }})
 	if err != nil {
 		t.Fatal(err)
 	}
-	planRequest := headerRequest(http.MethodPost, "/api/v1/owner/import/merge/plan", fixture.token, strings.NewReader("zip-merge"))
+	planRequest := headerRequest(http.MethodPost, "/api/v1/backups/import/merge/plan", fixture.token, strings.NewReader("zip-merge"))
 	planRequest.Header.Set("Content-Type", "application/zip")
 	planResponse := performRequest(engine, planRequest)
 	if planResponse.Code != http.StatusCreated || !strings.Contains(planResponse.Body.String(), `"staging_token":"merge-token"`) ||
@@ -206,13 +206,13 @@ func TestImportMergePlanAndCommitStrictOwnerContracts(t *testing.T) {
 		t.Fatalf("plan response=%d %s", planResponse.Code, planResponse.Body.String())
 	}
 	selectionJSON, _ := json.Marshal(selection)
-	commitRequest := headerRequest(http.MethodPost, "/api/v1/owner/import/merge/commit", fixture.token, strings.NewReader(`{"staging_token":"merge-token","selection":`+string(selectionJSON)+`}`))
+	commitRequest := headerRequest(http.MethodPost, "/api/v1/backups/import/merge/commit", fixture.token, strings.NewReader(`{"staging_token":"merge-token","selection":`+string(selectionJSON)+`}`))
 	commitRequest.Header.Set("Content-Type", "application/json")
 	commitResponse := performRequest(engine, commitRequest)
 	if commitResponse.Code != http.StatusOK || !strings.Contains(commitResponse.Body.String(), `"phase":"succeeded"`) {
 		t.Fatalf("commit response=%d %s", commitResponse.Code, commitResponse.Body.String())
 	}
-	discardRequest := headerRequest(http.MethodPost, "/api/v1/owner/import/merge/discard", fixture.token, strings.NewReader(`{"staging_token":"merge-token"}`))
+	discardRequest := headerRequest(http.MethodPost, "/api/v1/backups/import/merge/discard", fixture.token, strings.NewReader(`{"staging_token":"merge-token"}`))
 	discardRequest.Header.Set("Content-Type", "application/json")
 	discardResponse := performRequest(engine, discardRequest)
 	if discardResponse.Code != http.StatusOK || !strings.Contains(discardResponse.Body.String(), `"discarded":true`) {
@@ -223,7 +223,7 @@ func TestImportMergePlanAndCommitStrictOwnerContracts(t *testing.T) {
 		`{"staging_token":"merge-token","selection":{},"extra":true}`,
 		`{"staging_token":"merge-token","staging_token":"again","selection":{}}`,
 	} {
-		request := headerRequest(http.MethodPost, "/api/v1/owner/import/merge/commit", fixture.token, strings.NewReader(body))
+		request := headerRequest(http.MethodPost, "/api/v1/backups/import/merge/commit", fixture.token, strings.NewReader(body))
 		request.Header.Set("Content-Type", "application/json")
 		if response := performRequest(engine, request); response.Code != http.StatusBadRequest {
 			t.Fatalf("invalid merge body %s => %d %s", body, response.Code, response.Body.String())
@@ -231,15 +231,15 @@ func TestImportMergePlanAndCommitStrictOwnerContracts(t *testing.T) {
 	}
 }
 
-func TestImportCommitStrictOwnerContractAndStatus(t *testing.T) {
-	fixture := newOwnerTestFixture(t, false)
+func TestImportCommitAdministratorContractAndStatus(t *testing.T) {
+	fixture := newAuthenticationTestFixture(t, false)
 	now := time.Date(2026, 8, 11, 1, 2, 3, 0, time.UTC)
 	calls := 0
 	fake := fakeImportCommitter{
-		commit: func(_ context.Context, token string, epoch uint64) (archive.CommitResult, error) {
+		commit: func(_ context.Context, token string, epoch archive.Authorization) (archive.CommitResult, error) {
 			calls++
-			if token != "stage-token" || epoch != 1 {
-				t.Fatalf("token=%q epoch=%d", token, epoch)
+			if token != "stage-token" || (!epoch.Valid() || epoch.AccountID != "0123456789abcdef0123456789abcdef") {
+				t.Fatalf("token=%q subject=%+v", token, epoch)
 			}
 			return archive.CommitResult{Status: archive.CommitStatus{
 				OperationID: "import-20260811T010203000Z-0011223344556677", Phase: archive.CommitSucceeded,
@@ -253,19 +253,19 @@ func TestImportCommitStrictOwnerContractAndStatus(t *testing.T) {
 		},
 	}
 	engine, err := New(Config{
-		Assets: testAssets(), OwnerAuth: fixture.manager, Accounts: fixture.accounts, ImportCommitter: fake,
+		Assets: testAssets(), SessionSigner: fixture.manager, Accounts: fixture.accounts, ImportCommitter: fake,
 		Readiness: func(context.Context) error { return nil }, RequestID: func() string { return "req_commit" },
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	request := headerRequest(http.MethodPost, "/api/v1/owner/import/commit", fixture.token, strings.NewReader(`{"staging_token":"stage-token"}`))
+	request := headerRequest(http.MethodPost, "/api/v1/backups/import/commit", fixture.token, strings.NewReader(`{"staging_token":"stage-token"}`))
 	request.Header.Set("Content-Type", "application/json")
 	response := performRequest(engine, request)
 	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), `"phase":"succeeded"`) || !strings.Contains(response.Body.String(), `"request_id":"req_commit"`) {
 		t.Fatalf("commit response=%d %s", response.Code, response.Body.String())
 	}
-	statusRequest := headerRequest(http.MethodGet, "/api/v1/owner/import/status", fixture.token, nil)
+	statusRequest := headerRequest(http.MethodGet, "/api/v1/backups/import/status", fixture.token, nil)
 	statusResponse := performRequest(engine, statusRequest)
 	if statusResponse.Code != http.StatusOK || !strings.Contains(statusResponse.Body.String(), `"phase":"backing_up"`) {
 		t.Fatalf("status response=%d %s", statusResponse.Code, statusResponse.Body.String())
@@ -277,19 +277,19 @@ func TestImportCommitStrictOwnerContractAndStatus(t *testing.T) {
 		`[{"staging_token":"stage-token"}]`,
 	}
 	for _, body := range invalidBodies {
-		invalid := headerRequest(http.MethodPost, "/api/v1/owner/import/commit", fixture.token, strings.NewReader(body))
+		invalid := headerRequest(http.MethodPost, "/api/v1/backups/import/commit", fixture.token, strings.NewReader(body))
 		invalid.Header.Set("Content-Type", "application/json")
 		result := performRequest(engine, invalid)
 		if result.Code != http.StatusBadRequest {
 			t.Fatalf("invalid body %s => %d %s", body, result.Code, result.Body.String())
 		}
 	}
-	query := headerRequest(http.MethodPost, "/api/v1/owner/import/commit?x=1", fixture.token, strings.NewReader(`{"staging_token":"stage-token"}`))
+	query := headerRequest(http.MethodPost, "/api/v1/backups/import/commit?x=1", fixture.token, strings.NewReader(`{"staging_token":"stage-token"}`))
 	query.Header.Set("Content-Type", "application/json")
 	if result := performRequest(engine, query); result.Code != http.StatusBadRequest {
 		t.Fatalf("query status=%d", result.Code)
 	}
-	wrongType := headerRequest(http.MethodPost, "/api/v1/owner/import/commit", fixture.token, strings.NewReader(`{"staging_token":"stage-token"}`))
+	wrongType := headerRequest(http.MethodPost, "/api/v1/backups/import/commit", fixture.token, strings.NewReader(`{"staging_token":"stage-token"}`))
 	wrongType.Header.Set("Content-Type", "text/plain")
 	if result := performRequest(engine, wrongType); result.Code != http.StatusUnsupportedMediaType {
 		t.Fatalf("content type status=%d", result.Code)
@@ -300,20 +300,20 @@ func TestImportCommitStrictOwnerContractAndStatus(t *testing.T) {
 }
 
 func TestImportCommitMapsDomainFailure(t *testing.T) {
-	fixture := newOwnerTestFixture(t, false)
+	fixture := newAuthenticationTestFixture(t, false)
 	fake := fakeImportCommitter{
-		commit: func(context.Context, string, uint64) (archive.CommitResult, error) {
+		commit: func(context.Context, string, archive.Authorization) (archive.CommitResult, error) {
 			return archive.CommitResult{}, domain.NewError(domain.CodeImportDiskSpaceInsufficient, "low disk", map[string]any{"required_additional_bytes": 10})
 		},
 		status: func(context.Context) (archive.CommitStatus, error) {
 			return archive.CommitStatus{}, domain.NewError(domain.CodeDataIntegrityFailed, "needs attention", nil)
 		},
 	}
-	engine, err := New(Config{Assets: testAssets(), OwnerAuth: fixture.manager, Accounts: fixture.accounts, ImportCommitter: fake})
+	engine, err := New(Config{Assets: testAssets(), SessionSigner: fixture.manager, Accounts: fixture.accounts, ImportCommitter: fake})
 	if err != nil {
 		t.Fatal(err)
 	}
-	request := headerRequest(http.MethodPost, "/api/v1/owner/import/commit", fixture.token, strings.NewReader(`{"staging_token":"stage-token"}`))
+	request := headerRequest(http.MethodPost, "/api/v1/backups/import/commit", fixture.token, strings.NewReader(`{"staging_token":"stage-token"}`))
 	request.Header.Set("Content-Type", "application/json")
 	response := performRequest(engine, request)
 	if response.Code != http.StatusInsufficientStorage || decodeError(t, response.Body).Error.Code != string(domain.CodeImportDiskSpaceInsufficient) {
@@ -321,17 +321,17 @@ func TestImportCommitMapsDomainFailure(t *testing.T) {
 	}
 }
 
-func TestImportInspectOwnerUploadEpochAndEnvelope(t *testing.T) {
-	fixture := newOwnerTestFixture(t, false)
+func TestImportInspectCredentialBindingAndEnvelope(t *testing.T) {
+	fixture := newAuthenticationTestFixture(t, false)
 	called := 0
-	inspector := importInspectorFunc(func(_ context.Context, input io.Reader, epoch uint64) (archive.Inspection, error) {
+	inspector := importInspectorFunc(func(_ context.Context, input io.Reader, epoch archive.Authorization) (archive.Inspection, error) {
 		called++
 		body, err := io.ReadAll(input)
 		if err != nil {
 			return archive.Inspection{}, err
 		}
-		if string(body) != "zip" || epoch != 1 {
-			t.Fatalf("body=%q epoch=%d", body, epoch)
+		if string(body) != "zip" || (!epoch.Valid() || epoch.AccountID != "0123456789abcdef0123456789abcdef") {
+			t.Fatalf("body=%q subject=%+v", body, epoch)
 		}
 		return archive.Inspection{
 			FormatVersion: 1, StagingToken: "token", ExpiresAt: time.Date(2026, 8, 11, 0, 0, 0, 0, time.UTC),
@@ -339,13 +339,13 @@ func TestImportInspectOwnerUploadEpochAndEnvelope(t *testing.T) {
 		}, nil
 	})
 	engine, err := New(Config{
-		Assets: testAssets(), OwnerAuth: fixture.manager, Accounts: fixture.accounts, ImportInspector: inspector,
+		Assets: testAssets(), SessionSigner: fixture.manager, Accounts: fixture.accounts, ImportInspector: inspector,
 		Readiness: func(context.Context) error { return nil }, RequestID: func() string { return "req_import" },
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	request := headerRequest(http.MethodPost, "/api/v1/owner/import/inspect", fixture.token, strings.NewReader("zip"))
+	request := headerRequest(http.MethodPost, "/api/v1/backups/import/inspect", fixture.token, strings.NewReader("zip"))
 	request.Header.Set("Content-Type", "application/zip")
 	response := performRequest(engine, request)
 	if response.Code != http.StatusCreated || !strings.Contains(response.Body.String(), `"staging_token":"token"`) || !strings.Contains(response.Body.String(), `"request_id":"req_import"`) {
@@ -356,9 +356,9 @@ func TestImportInspectOwnerUploadEpochAndEnvelope(t *testing.T) {
 	}
 
 	for _, request := range []*http.Request{
-		headerRequest(http.MethodPost, "/api/v1/owner/import/inspect", "wrong", strings.NewReader("zip")),
-		headerRequest(http.MethodPost, "/api/v1/owner/import/inspect?x=1", fixture.token, strings.NewReader("zip")),
-		headerRequest(http.MethodPost, "/api/v1/owner/import/inspect", fixture.token, strings.NewReader("zip")),
+		headerRequest(http.MethodPost, "/api/v1/backups/import/inspect", "wrong", strings.NewReader("zip")),
+		headerRequest(http.MethodPost, "/api/v1/backups/import/inspect?x=1", fixture.token, strings.NewReader("zip")),
+		headerRequest(http.MethodPost, "/api/v1/backups/import/inspect", fixture.token, strings.NewReader("zip")),
 	} {
 		if request.URL.RawQuery == "" && request.Header.Get("Authorization") == "Bearer "+fixture.token {
 			request.Header.Set("Content-Type", "application/json")
@@ -375,18 +375,18 @@ func TestImportInspectOwnerUploadEpochAndEnvelope(t *testing.T) {
 	}
 }
 
-func TestImportPlanAndSingleRequestRestoreOwnerContracts(t *testing.T) {
-	fixture := newOwnerTestFixture(t, false)
+func TestImportPlanAndSingleRequestRestoreAdministratorContracts(t *testing.T) {
+	fixture := newAuthenticationTestFixture(t, false)
 	now := time.Date(2026, 8, 11, 1, 30, 0, 0, time.UTC)
 	id := "import-20260811T013000000Z-0011223344556677"
 	inspector := importInspectorPlanner{
-		inspect: importInspectorFunc(func(context.Context, io.Reader, uint64) (archive.Inspection, error) {
+		inspect: importInspectorFunc(func(context.Context, io.Reader, archive.Authorization) (archive.Inspection, error) {
 			return archive.Inspection{}, errors.New("inspect must not run")
 		}),
-		plan: func(_ context.Context, input io.Reader, epoch uint64) (archive.ImportPlan, error) {
+		plan: func(_ context.Context, input io.Reader, epoch archive.Authorization) (archive.ImportPlan, error) {
 			body, err := io.ReadAll(input)
-			if err != nil || string(body) != "zip-plan" || epoch != 1 {
-				t.Fatalf("plan body=%q epoch=%d err=%v", body, epoch, err)
+			if err != nil || string(body) != "zip-plan" || (!epoch.Valid() || epoch.AccountID != "0123456789abcdef0123456789abcdef") {
+				t.Fatalf("plan body=%q subject=%+v err=%v", body, epoch, err)
 			}
 			return archive.ImportPlan{DryRun: true, FormatVersion: archive.FormatVersion, ArchiveSHA256: strings.Repeat("a", 64), Warnings: []string{}, Disk: archive.DiskEstimate{SpaceOK: true}}, nil
 		},
@@ -394,18 +394,18 @@ func TestImportPlanAndSingleRequestRestoreOwnerContracts(t *testing.T) {
 	restoreCalls := 0
 	committer := fakeArchiveImportCommitter{
 		fakeImportCommitter: fakeImportCommitter{
-			commit: func(context.Context, string, uint64) (archive.CommitResult, error) {
+			commit: func(context.Context, string, archive.Authorization) (archive.CommitResult, error) {
 				return archive.CommitResult{}, errors.New("token commit must not run")
 			},
 			status: func(context.Context) (archive.CommitStatus, error) {
 				return archive.CommitStatus{}, errors.New("status must not run")
 			},
 		},
-		restore: func(_ context.Context, input io.Reader, expectedArchiveSHA string, epoch uint64) (archive.CommitResult, error) {
+		restore: func(_ context.Context, input io.Reader, expectedArchiveSHA string, epoch archive.Authorization) (archive.CommitResult, error) {
 			restoreCalls++
 			body, err := io.ReadAll(input)
-			if err != nil || string(body) != "zip-restore" || expectedArchiveSHA != strings.Repeat("a", 64) || epoch != 1 {
-				t.Fatalf("restore body=%q sha=%q epoch=%d err=%v", body, expectedArchiveSHA, epoch, err)
+			if err != nil || string(body) != "zip-restore" || expectedArchiveSHA != strings.Repeat("a", 64) || (!epoch.Valid() || epoch.AccountID != "0123456789abcdef0123456789abcdef") {
+				t.Fatalf("restore body=%q sha=%q subject=%+v err=%v", body, expectedArchiveSHA, epoch, err)
 			}
 			return archive.CommitResult{Status: archive.CommitStatus{
 				OperationID: id, Phase: archive.CommitSucceeded, ActiveGeneration: id, PreviousGeneration: "gen-old", NewGeneration: id,
@@ -413,17 +413,17 @@ func TestImportPlanAndSingleRequestRestoreOwnerContracts(t *testing.T) {
 			}}, nil
 		},
 	}
-	engine, err := New(Config{Assets: testAssets(), OwnerAuth: fixture.manager, Accounts: fixture.accounts, ImportInspector: inspector, ImportCommitter: committer, RequestID: func() string { return "req_archive" }})
+	engine, err := New(Config{Assets: testAssets(), SessionSigner: fixture.manager, Accounts: fixture.accounts, ImportInspector: inspector, ImportCommitter: committer, RequestID: func() string { return "req_archive" }})
 	if err != nil {
 		t.Fatal(err)
 	}
-	planRequest := headerRequest(http.MethodPost, "/api/v1/owner/import/plan", fixture.token, strings.NewReader("zip-plan"))
+	planRequest := headerRequest(http.MethodPost, "/api/v1/backups/import/plan", fixture.token, strings.NewReader("zip-plan"))
 	planRequest.Header.Set("Content-Type", "application/zip")
 	planResponse := performRequest(engine, planRequest)
 	if planResponse.Code != http.StatusOK || !strings.Contains(planResponse.Body.String(), `"dry_run":true`) || strings.Contains(planResponse.Body.String(), "staging_token") {
 		t.Fatalf("plan response=%d %s", planResponse.Code, planResponse.Body.String())
 	}
-	restoreRequest := headerRequest(http.MethodPost, "/api/v1/owner/import/restore", fixture.token, strings.NewReader("zip-restore"))
+	restoreRequest := headerRequest(http.MethodPost, "/api/v1/backups/import/restore", fixture.token, strings.NewReader("zip-restore"))
 	restoreRequest.Header.Set("Content-Type", "application/zip")
 	restoreRequest.Header.Set("X-Moment-Archive-SHA256", strings.Repeat("a", 64))
 	restoreResponse := performRequest(engine, restoreRequest)
@@ -438,7 +438,7 @@ func TestImportPlanAndSingleRequestRestoreOwnerContracts(t *testing.T) {
 			request.Header.Add("X-Moment-Archive-SHA256", strings.Repeat("a", 64))
 		},
 	} {
-		request := headerRequest(http.MethodPost, "/api/v1/owner/import/restore", fixture.token, strings.NewReader("zip"))
+		request := headerRequest(http.MethodPost, "/api/v1/backups/import/restore", fixture.token, strings.NewReader("zip"))
 		request.Header.Set("Content-Type", "application/zip")
 		configure(request)
 		if response := performRequest(engine, request); response.Code != http.StatusBadRequest {
@@ -448,7 +448,7 @@ func TestImportPlanAndSingleRequestRestoreOwnerContracts(t *testing.T) {
 	if restoreCalls != 1 {
 		t.Fatalf("invalid expected archive hash invoked restore: %d", restoreCalls)
 	}
-	for _, path := range []string{"/api/v1/owner/import/plan?x=1", "/api/v1/owner/import/restore?x=1"} {
+	for _, path := range []string{"/api/v1/backups/import/plan?x=1", "/api/v1/backups/import/restore?x=1"} {
 		request := headerRequest(http.MethodPost, path, fixture.token, strings.NewReader("zip"))
 		request.Header.Set("Content-Type", "application/zip")
 		if response := performRequest(engine, request); response.Code != http.StatusBadRequest {
@@ -458,7 +458,7 @@ func TestImportPlanAndSingleRequestRestoreOwnerContracts(t *testing.T) {
 }
 
 func TestImportInspectMapsLimitsDomainAndCancellation(t *testing.T) {
-	fixture := newOwnerTestFixture(t, false)
+	fixture := newAuthenticationTestFixture(t, false)
 	tests := []struct {
 		name      string
 		inspector ImportInspector
@@ -467,17 +467,17 @@ func TestImportInspectMapsLimitsDomainAndCancellation(t *testing.T) {
 		status    int
 		code      string
 	}{
-		{name: "body limit", limit: 2, body: "zip", inspector: importInspectorFunc(func(_ context.Context, input io.Reader, _ uint64) (archive.Inspection, error) {
+		{name: "body limit", limit: 2, body: "zip", inspector: importInspectorFunc(func(_ context.Context, input io.Reader, _ archive.Authorization) (archive.Inspection, error) {
 			_, err := io.ReadAll(input)
 			return archive.Inspection{}, err
 		}), status: http.StatusRequestEntityTooLarge, code: "REQUEST_BODY_TOO_LARGE"},
-		{name: "disk", body: "z", inspector: importInspectorFunc(func(context.Context, io.Reader, uint64) (archive.Inspection, error) {
+		{name: "disk", body: "z", inspector: importInspectorFunc(func(context.Context, io.Reader, archive.Authorization) (archive.Inspection, error) {
 			return archive.Inspection{}, domain.NewError(domain.CodeImportDiskSpaceInsufficient, "low disk", map[string]any{"required_additional_bytes": 10})
 		}), status: http.StatusInsufficientStorage, code: "IMPORT_DISK_SPACE_INSUFFICIENT"},
-		{name: "in progress", body: "z", inspector: importInspectorFunc(func(context.Context, io.Reader, uint64) (archive.Inspection, error) {
+		{name: "in progress", body: "z", inspector: importInspectorFunc(func(context.Context, io.Reader, archive.Authorization) (archive.Inspection, error) {
 			return archive.Inspection{}, domain.NewError(domain.CodeImportInProgress, "active", nil)
 		}), status: http.StatusConflict, code: "IMPORT_IN_PROGRESS"},
-		{name: "cancel", body: "z", inspector: importInspectorFunc(func(context.Context, io.Reader, uint64) (archive.Inspection, error) {
+		{name: "cancel", body: "z", inspector: importInspectorFunc(func(context.Context, io.Reader, archive.Authorization) (archive.Inspection, error) {
 			return archive.Inspection{}, context.Canceled
 		}), status: http.StatusRequestTimeout, code: "CANCELLED"},
 	}
@@ -488,13 +488,13 @@ func TestImportInspectMapsLimitsDomainAndCancellation(t *testing.T) {
 				limit = 1 << 20
 			}
 			engine, err := New(Config{
-				Assets: testAssets(), OwnerAuth: fixture.manager, Accounts: fixture.accounts, ImportInspector: test.inspector,
+				Assets: testAssets(), SessionSigner: fixture.manager, Accounts: fixture.accounts, ImportInspector: test.inspector,
 				Readiness: func(context.Context) error { return nil }, Limits: BodyLimits{Archive: limit},
 			})
 			if err != nil {
 				t.Fatal(err)
 			}
-			request := headerRequest(http.MethodPost, "/api/v1/owner/import/inspect", fixture.token, strings.NewReader(test.body))
+			request := headerRequest(http.MethodPost, "/api/v1/backups/import/inspect", fixture.token, strings.NewReader(test.body))
 			request.Header.Set("Content-Type", "application/zip")
 			response := performRequest(engine, request)
 			if response.Code != test.status || decodeError(t, response.Body).Error.Code != test.code {
@@ -504,8 +504,8 @@ func TestImportInspectMapsLimitsDomainAndCancellation(t *testing.T) {
 	}
 }
 
-func TestImportInspectConfigRequiresOwnerAuth(t *testing.T) {
-	inspector := importInspectorFunc(func(context.Context, io.Reader, uint64) (archive.Inspection, error) {
+func TestImportInspectConfigRequiresSessionSigner(t *testing.T) {
+	inspector := importInspectorFunc(func(context.Context, io.Reader, archive.Authorization) (archive.Inspection, error) {
 		return archive.Inspection{}, errors.New("must not run")
 	})
 	if _, err := New(Config{Assets: testAssets(), ImportInspector: inspector}); err == nil {

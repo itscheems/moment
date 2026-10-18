@@ -39,13 +39,13 @@ func registerBackup(application *Application, info buildinfo.Info) {
 	application.MustRegisterLeaf(LeafSpec{
 		Path:   []string{"backup", "export"},
 		Short:  "Export one consistent portable archive",
-		Long:   "Stream Moment export format v1 from one logical SQLite and reachable-media snapshot through direct or authenticated API mode.",
+		Long:   "Stream Moment export format v2 from one logical SQLite and reachable-media snapshot through direct or authenticated API mode.",
 		Inputs: "Choose exactly one destination: --output <zip> for atomic file publication or --stdout for raw ZIP bytes. Direct file output must be outside the selected --data-dir. --stdout is mutually exclusive with --json. API mode authenticates through MOMENT_TOKEN or --token-file.",
-		Output: "File mode validates v1 then reports path, format_version, archive_bytes, and archive_sha256 in the normal human/JSON contract. --stdout fail-closes on the HTTP format header before writing only ZIP bytes; a transport failure after the first byte leaves an intentionally truncated stdout stream and diagnostics only on stderr.",
+		Output: "File mode validates v2 then reports path, format_version, archive_bytes, and archive_sha256 in the normal human/JSON contract. --stdout fail-closes on the HTTP format header before writing only ZIP bytes; a transport failure after the first byte leaves an intentionally truncated stdout stream and diagnostics only on stderr.",
 		Errors: "Invalid output flags use exit 2; unsafe or unavailable destinations use exit 6; existing destinations without --overwrite use OUTPUT_EXISTS; data/checksum failures use exit 7; cancellation and timeout use exit 9.",
 		Safety: "File output is prepared and flushed beside the destination, then atomically published. Direct output inside --data-dir is rejected before creating a partial. --overwrite replaces only the exact regular non-symlink destination and never weakens archive validation.",
 		Example: "moment backup export --data-dir ./moment-data --output ./moment-export.zip --json\n" +
-			"moment --url http://127.0.0.1:8080 --token-file ./owner.token backup export --stdout > moment-export.zip",
+			"moment --url http://127.0.0.1:8080 --token-file ./account.token backup export --stdout > moment-export.zip",
 		Capability: CapabilityBoth,
 		RawStdout:  true,
 		Flags: func(flags *pflag.FlagSet) {
@@ -62,12 +62,12 @@ func registerBackup(application *Application, info buildinfo.Info) {
 		ArgsUsage: "<archive.zip>",
 		Short:     "Inspect a portable archive into restartable staging",
 		Long:      "Treat one Moment export as hostile input, validate it completely, rebuild the current schema and search index in a restartable staging generation, and issue one expiring commit token without changing active data.",
-		Inputs:    "Exactly one regular non-symlink v1 ZIP path. Direct mode stages locally and binds the result to the current owner epoch. API mode streams application/zip to the authenticated server. --timeout bounds upload, validation, media checks, migrations, and index rebuild.",
+		Inputs:    "Exactly one regular non-symlink v2 ZIP path. Direct mode requires --as naming an active administrator and stages locally and binds the result to the initiating account and credential. API mode streams application/zip to the authenticated server. --timeout bounds upload, validation, media checks, migrations, and index rebuild.",
 		Output:    "The normal human/JSON contract reports format, counts, time range, media bytes, missing-alt warnings, replacement impact, the complete peak disk estimate, expiry, and the one-time staging token. Save the token for backup import confirmation.",
 		Errors:    "Hostile or corrupt archives use stable integrity errors and exit 7; unavailable input or disk uses exit 6; an active inspection uses IMPORT_IN_PROGRESS; cancellation uses exit 9.",
 		Safety:    "Inspection never changes CURRENT or active media. ZIP paths, links, duplicates, counts, sizes, ratios, checksums, records, references, and image bytes are bounded before staging members become authority candidates.",
-		Example: "moment backup inspect ./moment-export.zip --data-dir ./moment-data --json\n" +
-			"moment --url http://127.0.0.1:8080 --token-file ./owner.token backup inspect ./moment-export.zip --json",
+		Example: "moment --as writer backup inspect ./moment-export.zip --data-dir ./moment-data --json\n" +
+			"moment --url http://127.0.0.1:8080 --token-file ./account.token backup inspect ./moment-export.zip --json",
 		Args:       cobra.ExactArgs(1),
 		Capability: CapabilityBoth,
 		Run:        runBackupInspect,
@@ -77,12 +77,12 @@ func registerBackup(application *Application, info buildinfo.Info) {
 		ArgsUsage: "[archive.zip]",
 		Short:     "Plan or commit one portable archive replacement",
 		Long:      "Validate one archive and replace the active generation in one coordinated operation, or consume an advanced staging token from backup inspect. Commit creates and verifies a pre-import backup, atomically switches CURRENT, proves readiness, and can automatically roll back on failure.",
-		Inputs:    "Provide exactly one positional archive path or --staging-token. Archive mode first computes a zero-persistence plan; interactive confirmation names that archive hash and replacement scope before a separately bound restore. Direct mode requires the server to be stopped and holds Import→Serve continuously before its second validation and commit. --dry-run returns only the plan.",
+		Inputs:    "Provide exactly one positional archive path or --staging-token. Archive mode first computes a zero-persistence plan; interactive confirmation names that archive hash and replacement scope before a separately bound restore. Direct mode requires --as naming an active administrator and the server to be stopped and holds Import→Serve continuously before its second validation and commit. --dry-run returns only the plan.",
 		Output:    "Dry-run reports the token-free replacement/disk plan after removing all temporary staging. Interactive archive import presents the same hash, counts, replacement, disk, and warnings before confirmation; --yes still computes and binds that plan before returning durable commit status. Tokens are never echoed.",
-		Errors:    "Replay, expiry, owner rotation, disk pressure, instance use, integrity, maintenance, and rollback failures use stable codes and exits. Resolve an ambiguous API result with 'moment backup status', never by replaying the token.",
+		Errors:    "Replay, expiry, credential revocation, disk pressure, instance use, integrity, maintenance, and rollback failures use stable codes and exits. Resolve an ambiguous API result with 'moment backup status', never by replaying the token.",
 		Safety:    "This command replaces active authority. --dry-run leaves no staging token, journal, backup, CURRENT, or maintenance change. Actual archive import binds confirmation to a zero-persistence plan, then revalidates the same file identity, size, and SHA-256 before commit. --no-input never confirms implicitly.",
-		Example: "moment backup import ./moment-export.zip --data-dir ./moment-data --dry-run --json\n" +
-			"moment --url http://127.0.0.1:8080 --token-file ./owner.token backup import ./moment-export.zip --yes --json",
+		Example: "moment --as writer backup import ./moment-export.zip --data-dir ./moment-data --dry-run --json\n" +
+			"moment --url http://127.0.0.1:8080 --token-file ./account.token backup import ./moment-export.zip --yes --json",
 		Args:       cobra.MaximumNArgs(1),
 		Capability: CapabilityBoth,
 		Policy: SafetyPolicy{
@@ -105,7 +105,7 @@ func registerBackup(application *Application, info buildinfo.Info) {
 		Errors: "Missing or unsafe journal state, authentication, transport, and integrity failures use stable codes and exits. A needs_attention phase remains visible and never implies readiness.",
 		Safety: "Read-only. The command never claims a token, enters maintenance, changes CURRENT, or exposes token, archive hash, or local paths.",
 		Example: "moment backup status --data-dir ./moment-data --json\n" +
-			"moment --url http://127.0.0.1:8080 --token-file ./owner.token backup status --json",
+			"moment --url http://127.0.0.1:8080 --token-file ./account.token backup status --json",
 		Capability: CapabilityBoth,
 		Run: func(ctx context.Context, invocation Invocation, input CommandInput) (Result, error) {
 			return runBackupStatus(ctx, invocation, input, info.Version)
@@ -211,7 +211,7 @@ func runBackupImport(ctx context.Context, invocation Invocation, input CommandIn
 		}
 		status, statusErr := auth.ReadStatus(root)
 		if statusErr != nil || !status.Initialized || status.SessionEpoch == 0 {
-			return Result{}, ownerAuthError(errors.Join(statusErr, auth.ErrNotInitialized))
+			return Result{}, authenticationError(errors.Join(statusErr, auth.ErrNotInitialized))
 		}
 		committer, createErr := archive.NewCommitter(archive.CommitOptions{DataDir: root, AppVersion: appVersion})
 		if createErr != nil {
@@ -220,9 +220,9 @@ func runBackupImport(ctx context.Context, invocation Invocation, input CommandIn
 		if hasArchive {
 			result, err = committer.CommitFileOffline(ctx, archivePath, archive.InputBinding{
 				FileInfo: confirmedIdentity.info, Size: confirmedIdentity.size, SHA256: confirmedPlan.ArchiveSHA256,
-			}, status.SessionEpoch)
+			}, directArchiveSubject(ctx))
 		} else {
-			result, err = committer.Commit(ctx, token, status.SessionEpoch, nil)
+			result, err = committer.Commit(ctx, token, directArchiveSubject(ctx), nil)
 		}
 	case ModeAPI:
 		if hasArchive {
@@ -305,7 +305,7 @@ func importScopeConfirmation(plan archive.ImportPlan) string {
 	if len(plan.Warnings) != 0 {
 		warnings = strings.Join(plan.Warnings, "; ")
 	}
-	// Accounts belong in the sentence the owner is answering yes to. Commit
+	// Accounts belong in the sentence the account is answering yes to. Commit
 	// replaces them along with everything else, and this prompt is the last
 	// place that can be said before it happens.
 	return fmt.Sprintf(
@@ -332,13 +332,13 @@ func runBackupImportPlan(ctx context.Context, invocation Invocation, archivePath
 		}
 		status, err := auth.ReadStatus(root)
 		if err != nil || !status.Initialized || status.SessionEpoch == 0 {
-			return archive.ImportPlan{}, nil, ownerAuthError(errors.Join(err, auth.ErrNotInitialized))
+			return archive.ImportPlan{}, nil, authenticationError(errors.Join(err, auth.ErrNotInitialized))
 		}
 		committer, err := archive.NewCommitter(archive.CommitOptions{DataDir: root, AppVersion: appVersion})
 		if err != nil {
 			return archive.ImportPlan{}, nil, err
 		}
-		plan, err := committer.PlanFileOffline(ctx, archivePath, status.SessionEpoch)
+		plan, err := committer.PlanFileOffline(ctx, archivePath, directArchiveSubject(ctx))
 		return plan, nil, err
 	case ModeAPI:
 		return uploadImportPlan(ctx, invocation, archivePath)
@@ -364,16 +364,16 @@ func runBackupInspect(ctx context.Context, invocation Invocation, input CommandI
 		}
 		status, statusErr := auth.ReadStatus(runtimeState.Root)
 		if statusErr != nil {
-			return Result{}, ownerAuthError(statusErr)
+			return Result{}, authenticationError(statusErr)
 		}
 		if !status.Initialized || status.SessionEpoch == 0 {
-			return Result{}, ownerAuthError(auth.ErrNotInitialized)
+			return Result{}, authenticationError(auth.ErrNotInitialized)
 		}
 		inspector, createErr := archive.NewInspector(archive.InspectOptions{DataDir: runtimeState.Root})
 		if createErr != nil {
 			return Result{}, createErr
 		}
-		result, err = inspector.InspectFile(ctx, archivePath, status.SessionEpoch)
+		result, err = inspector.InspectFile(ctx, archivePath, directArchiveSubject(ctx))
 	case ModeAPI:
 		result, meta, err = uploadImportInspection(ctx, invocation, archivePath)
 	default:
@@ -414,7 +414,7 @@ func uploadImportInspection(ctx context.Context, invocation Invocation, archiveP
 	if err != nil {
 		return archive.Inspection{}, nil, err
 	}
-	endpoint, err := url.JoinPath(target.BaseURL().String(), "/api/v1/owner/import/inspect")
+	endpoint, err := url.JoinPath(target.BaseURL().String(), "/api/v1/backups/import/inspect")
 	if err != nil {
 		return archive.Inspection{}, nil, invalidArgument("the import inspection endpoint URL is invalid", "check --url and retry")
 	}
@@ -442,7 +442,7 @@ func uploadImportInspection(ctx context.Context, invocation Invocation, archiveP
 		return archive.Inspection{}, nil, invalidAPIResponse()
 	}
 	if response.StatusCode != http.StatusCreated {
-		return archive.Inspection{}, nil, decodeOwnerAPIFailure(response.StatusCode, body)
+		return archive.Inspection{}, nil, decodeAPIFailure(response.StatusCode, body)
 	}
 	inspection, meta, err := decodeImportInspectionAPI(body, after.Size(), time.Now().UTC())
 	if err != nil {
@@ -452,7 +452,7 @@ func uploadImportInspection(ctx context.Context, invocation Invocation, archiveP
 }
 
 func uploadImportPlan(ctx context.Context, invocation Invocation, archivePath string) (archive.ImportPlan, map[string]any, error) {
-	body, archiveBytes, err := uploadImportArchive(ctx, invocation, archivePath, "/api/v1/owner/import/plan", http.StatusOK, "", importArchiveIdentity{})
+	body, archiveBytes, err := uploadImportArchive(ctx, invocation, archivePath, "/api/v1/backups/import/plan", http.StatusOK, "", importArchiveIdentity{})
 	if err != nil {
 		return archive.ImportPlan{}, nil, err
 	}
@@ -464,7 +464,7 @@ func uploadImportPlan(ctx context.Context, invocation Invocation, archivePath st
 }
 
 func restoreImportAPI(ctx context.Context, invocation Invocation, archivePath, expectedArchiveSHA string, identity importArchiveIdentity) (archive.CommitResult, map[string]any, error) {
-	body, _, err := uploadImportArchive(ctx, invocation, archivePath, "/api/v1/owner/import/restore", http.StatusOK, expectedArchiveSHA, identity)
+	body, _, err := uploadImportArchive(ctx, invocation, archivePath, "/api/v1/backups/import/restore", http.StatusOK, expectedArchiveSHA, identity)
 	if err != nil {
 		return archive.CommitResult{}, nil, err
 	}
@@ -543,7 +543,7 @@ func uploadImportArchiveBounded(ctx context.Context, invocation Invocation, arch
 		return nil, 0, invalidAPIResponse()
 	}
 	if response.StatusCode != successStatus {
-		return nil, 0, decodeOwnerAPIFailure(response.StatusCode, body)
+		return nil, 0, decodeAPIFailure(response.StatusCode, body)
 	}
 	return body, after.Size(), nil
 }
@@ -553,11 +553,11 @@ func commitImportAPI(ctx context.Context, invocation Invocation, stagingToken st
 	if err != nil {
 		return archive.CommitResult{}, nil, err
 	}
-	ownerToken, err := readAPIToken(target)
+	accountToken, err := readAPIToken(target)
 	if err != nil {
 		return archive.CommitResult{}, nil, err
 	}
-	endpoint, err := url.JoinPath(target.BaseURL().String(), "/api/v1/owner/import/commit")
+	endpoint, err := url.JoinPath(target.BaseURL().String(), "/api/v1/backups/import/commit")
 	if err != nil {
 		return archive.CommitResult{}, nil, invalidArgument("the import commit endpoint URL is invalid", "check --url and retry")
 	}
@@ -569,7 +569,7 @@ func commitImportAPI(ctx context.Context, invocation Invocation, stagingToken st
 	if err != nil {
 		return archive.CommitResult{}, nil, err
 	}
-	request.Header.Set("Authorization", "Bearer "+ownerToken)
+	request.Header.Set("Authorization", "Bearer "+accountToken)
 	request.Header.Set("Content-Type", "application/json")
 	request.Header.Set("Accept", "application/json")
 	response, err := http.DefaultClient.Do(request)
@@ -588,7 +588,7 @@ func commitImportAPI(ctx context.Context, invocation Invocation, stagingToken st
 		return archive.CommitResult{}, nil, invalidAPIResponse()
 	}
 	if response.StatusCode != http.StatusOK {
-		return archive.CommitResult{}, nil, decodeOwnerAPIFailure(response.StatusCode, responseBody)
+		return archive.CommitResult{}, nil, decodeAPIFailure(response.StatusCode, responseBody)
 	}
 	result, meta, err := decodeImportCommitAPI(responseBody)
 	if err != nil {
@@ -602,11 +602,11 @@ func importStatusAPI(ctx context.Context, invocation Invocation) (archive.Commit
 	if err != nil {
 		return archive.CommitStatus{}, nil, err
 	}
-	ownerToken, err := readAPIToken(target)
+	accountToken, err := readAPIToken(target)
 	if err != nil {
 		return archive.CommitStatus{}, nil, err
 	}
-	endpoint, err := url.JoinPath(target.BaseURL().String(), "/api/v1/owner/import/status")
+	endpoint, err := url.JoinPath(target.BaseURL().String(), "/api/v1/backups/import/status")
 	if err != nil {
 		return archive.CommitStatus{}, nil, invalidArgument("the import status endpoint URL is invalid", "check --url and retry")
 	}
@@ -614,7 +614,7 @@ func importStatusAPI(ctx context.Context, invocation Invocation) (archive.Commit
 	if err != nil {
 		return archive.CommitStatus{}, nil, err
 	}
-	request.Header.Set("Authorization", "Bearer "+ownerToken)
+	request.Header.Set("Authorization", "Bearer "+accountToken)
 	request.Header.Set("Accept", "application/json")
 	response, err := http.DefaultClient.Do(request)
 	if err != nil {
@@ -632,7 +632,7 @@ func importStatusAPI(ctx context.Context, invocation Invocation) (archive.Commit
 		return archive.CommitStatus{}, nil, invalidAPIResponse()
 	}
 	if response.StatusCode != http.StatusOK {
-		return archive.CommitStatus{}, nil, decodeOwnerAPIFailure(response.StatusCode, responseBody)
+		return archive.CommitStatus{}, nil, decodeAPIFailure(response.StatusCode, responseBody)
 	}
 	status, meta, err := decodeImportStatusAPI(responseBody)
 	if err != nil {
@@ -1152,7 +1152,7 @@ func validImportCounts(value archive.ImportCounts, enforcePortableLimits bool) b
 	if value.Entries < 0 || value.Comments < 0 || value.Media < 0 || value.Users < 0 || value.Identities < 0 {
 		return false
 	}
-	// Every authority has an owner, so an incoming archive that claims no
+	// Every authority has an account, so an incoming archive that claims no
 	// account at all is describing something the importer cannot produce.
 	if enforcePortableLimits && value.Users < 1 {
 		return false
@@ -1368,7 +1368,7 @@ func backupProducer(_ context.Context, invocation Invocation, appVersion string)
 }
 
 func downloadExport(ctx context.Context, invocation Invocation, destination io.Writer) (archive.Summary, error) {
-	return downloadNamedExport(ctx, invocation, destination, "/api/v1/owner/export", archive.FormatHeaderValue)
+	return downloadNamedExport(ctx, invocation, destination, "/api/v1/backups/export", archive.FormatHeaderValue)
 }
 
 func downloadNamedExport(ctx context.Context, invocation Invocation, destination io.Writer, route, format string) (archive.Summary, error) {
@@ -1409,7 +1409,7 @@ func downloadNamedExport(ctx context.Context, invocation Invocation, destination
 		if !validAPIJSONContentType(response.Header.Get("Content-Type")) || validateUniqueJSONObjects(body) != nil {
 			return archive.Summary{}, invalidAPIResponse()
 		}
-		return archive.Summary{}, decodeOwnerAPIFailure(response.StatusCode, body)
+		return archive.Summary{}, decodeAPIFailure(response.StatusCode, body)
 	}
 	mediaType, _, parseErr := mime.ParseMediaType(response.Header.Get("Content-Type"))
 	if parseErr != nil || mediaType != "application/zip" {

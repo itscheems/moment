@@ -1,21 +1,12 @@
 import { Icon } from "../../../../components/icons";
 import { Tabs } from "@base-ui/react/tabs";
-import { ConfirmDialog } from "../../../owner/ConfirmDialog";
+import { ConfirmDialog } from "../../../../components/ConfirmDialog";
 import { formatMomentDate } from "../../../posts/dates";
 import type { ArticleDraftSummary } from "../../articleDrafts";
 import { MAX_ARTICLE_DRAFTS } from "../../articleDrafts";
 import styles from "../Editor.module.css";
 import { PublishedArticles } from "./PublishedArticles";
 
-/**
- * The drafts this site keeps, newest first.
- *
- * Server-side, not this browser's: an article is written over days and often
- * from more than one machine, and a list held in localStorage would tell the
- * owner they had lost work every time they opened it somewhere else. The
- * moment composer's own 草稿 list is the opposite decision for the opposite
- * reason -- a moment is one sitting -- and the two lists are unrelated.
- */
 export function DraftRail({
   drafts,
   currentId,

@@ -1,13 +1,5 @@
 import styles from "../Editor.module.css";
 
-/**
- * What happens when the same draft was written from two places.
- *
- * Nothing is resolved automatically, and nothing is saved again until the
- * owner has answered. Either answer loses an edit -- theirs or the other
- * copy's -- and only they know which one matters, so the choice is put in
- * front of them in the sheet rather than behind a toast that times out.
- */
 export function ConflictNotice({
   busy,
   onKeepMine,

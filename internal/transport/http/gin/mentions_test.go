@@ -26,7 +26,7 @@ func newMentionFixture(t *testing.T) mentionFixture {
 	if err != nil {
 		t.Fatal(err)
 	}
-	credential, err := auth.InitializeOffline(context.Background(), runtimeState, auth.Options{})
+	_, err = auth.InitializeOffline(context.Background(), runtimeState, auth.Options{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -37,26 +37,19 @@ func newMentionFixture(t *testing.T) mentionFixture {
 	if err := manager.Load(); err != nil {
 		t.Fatal(err)
 	}
-	site, err := app.NewSiteService(&httpSiteTransactions{
-		settings: app.SiteSettings{Title: "Moment", Timezone: "UTC", CommentsEnabled: true},
-		media:    map[string]bool{},
-	}, app.SiteOptions{AllowDevelopmentLocalHTTP: true})
-	if err != nil {
-		t.Fatal(err)
-	}
+
 	accounts := testAccountsForRuntime(t, runtimeState)
 	engine, err := New(Config{
-		Assets:       testAssets(),
-		OwnerAuth:    manager,
-		Accounts:     accounts,
-		SiteSettings: site,
-		Readiness:    func(context.Context) error { return nil },
-		RequestID:    func() string { return "req_mentions" },
+		Assets:        testAssets(),
+		SessionSigner: manager,
+		Accounts:      accounts,
+		Readiness:     func(context.Context) error { return nil },
+		RequestID:     func() string { return "req_mentions" },
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	return mentionFixture{engine: engine, manager: manager, accounts: accounts, token: credential.Token}
+	return mentionFixture{engine: engine, manager: manager, accounts: accounts, token: issueTestAPIToken(t, accounts)}
 }
 
 // signIn puts one account behind a browser credential, the same way the
@@ -114,17 +107,9 @@ func mentionUsernames(t *testing.T, response *httptest.ResponseRecorder) []strin
 	return names
 }
 
-// Who may enumerate the roster.
-//
-// This endpoint answered for the site's single owner when it was written, which
-// made it a public fact about a public profile. It now answers for every
-// admitted account, over a leading-wildcard scan, and its only caller is a
-// composer -- so it is admitted at the tier that may open one. Approval is the
-// line because a pending account is an application, and an autocomplete that
-// returned applications would be a way to read the review queue.
 func TestMentionSuggestionsAreForApprovedAccountsOnly(t *testing.T) {
 	fixture := newMentionFixture(t)
-	owner, err := fixture.accounts.OwnerAccount(context.Background())
+	primaryAccount, err := fixture.accounts.ProfileAccount(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -160,7 +145,7 @@ func TestMentionSuggestionsAreForApprovedAccountsOnly(t *testing.T) {
 			t.Fatalf("member = %d, body = %s", response.Code, response.Body.String())
 		}
 		names := mentionUsernames(t, response)
-		if len(names) != 2 || names[0] != owner.Username || names[1] != admitted.Username {
+		if len(names) != 2 || names[0] != primaryAccount.Username || names[1] != admitted.Username {
 			t.Fatalf("suggestions = %v, want the owner first then %q", names, admitted.Username)
 		}
 		for _, name := range names {

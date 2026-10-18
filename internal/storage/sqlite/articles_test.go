@@ -1,7 +1,6 @@
 package sqlite
 
 import (
-	"context"
 	"strings"
 	"testing"
 
@@ -36,13 +35,13 @@ func seedArticleEntry(t *testing.T, db *Database) (string, string) {
 	t.Helper()
 	first, second := articleMediaID(t, db, "a"), articleMediaID(t, db, "b")
 	mustWrite(t, db, `
-INSERT INTO entries (id, kind, content_md, created_at_ms, updated_at_ms, published_at_ms, content_text)
-VALUES (?, 'article', NULL, 1, 1, 1, '')`, articleEntryID)
+INSERT INTO entries (id, kind, content_md, created_at_ms, updated_at_ms, published_at_ms, content_text, author_user_id)
+VALUES (?, 'article', NULL, 1, 1, 1, '', '0123456789abcdef0123456789abcdef')`, articleEntryID)
 	mustWrite(t, db, entryInsertSQL, momentEntryID, "moment", "一条普通帖子", int64(1), int64(1), int64(1))
 	return first, second
 }
 
-func articleMediaID(t *testing.T, db *Database, fill string) string {
+func articleMediaID(t *testing.T, db *Database, fill string, uploaders ...string) string {
 	t.Helper()
 	sha := strings.Repeat(fill, 64)
 	id := "01ARZ3NDEKTSV4RRFFQ69G5F" + strings.ToUpper(fill) + "1"
@@ -50,6 +49,11 @@ func articleMediaID(t *testing.T, db *Database, fill string) string {
 INSERT INTO media (id, sha256, storage_path, original_name, mime_type, byte_size, width, height, created_at_ms, unreferenced_since_ms)
 VALUES (?, ?, ?, 'p.jpg', 'image/jpeg', 1024, 10, 10, 1, NULL)`,
 		id, sha, "media/original/"+sha[:2]+"/"+sha+".jpg")
+	uploader := testAccountID
+	if len(uploaders) > 0 {
+		uploader = uploaders[0]
+	}
+	mustWrite(t, db, `INSERT INTO media_grants(user_id,media_id,created_at_ms) VALUES(?,?,1)`, uploader, id)
 	return id
 }
 
@@ -59,20 +63,20 @@ func writeArticle(t *testing.T, db *Database, article domain.Article, replace bo
 	if err != nil {
 		t.Fatal(err)
 	}
-	return db.WriteTx(context.Background(), func(queries Queries) error {
+	return db.WriteTx(testAccountContext(), func(queries Queries) error {
 		store := newPostStore(queries)
 		if replace {
-			return store.ReplaceArticle(context.Background(), id, article)
+			return store.ReplaceArticle(testAccountContext(), id, article)
 		}
-		return store.InsertArticle(context.Background(), id, article)
+		return store.InsertArticle(testAccountContext(), id, article)
 	})
 }
 
 func articleMediaRows(t *testing.T, db *Database, entryID string) []string {
 	t.Helper()
 	var rows []string
-	if err := db.ReadTx(context.Background(), func(queries Queries) error {
-		result, err := queries.QueryContext(context.Background(), `
+	if err := db.ReadTx(testAccountContext(), func(queries Queries) error {
+		result, err := queries.QueryContext(testAccountContext(), `
 SELECT position, media_id, coalesce(alt_text, '<none>') FROM entry_media WHERE entry_id = ? ORDER BY position`, entryID)
 		if err != nil {
 			return err
@@ -124,8 +128,8 @@ func TestArticleStorageProjectsBodyPicturesAndReadsBack(t *testing.T) {
 
 	id, _ := domain.ParseID(articleEntryID)
 	var stored domain.Article
-	if err := db.ReadTx(context.Background(), func(queries Queries) error {
-		read, found, readErr := newPostStore(queries).ArticleByEntryID(context.Background(), id)
+	if err := db.ReadTx(testAccountContext(), func(queries Queries) error {
+		read, found, readErr := newPostStore(queries).ArticleByEntryID(testAccountContext(), id)
 		if readErr != nil || !found {
 			t.Fatalf("read back: found=%v err=%v", found, readErr)
 		}
@@ -207,8 +211,8 @@ func TestArticleStorageHoldsThePictureLimitsOfEachKind(t *testing.T) {
 	for index := range domain.MaxEntryMediaUsages + 1 {
 		usages = append(usages, domain.EntryMediaUsage{MediaID: mediaID, Position: index})
 	}
-	err = db.WriteTx(context.Background(), func(queries Queries) error {
-		return newPostStore(queries).ReplaceEntryMediaUsages(context.Background(), momentID, usages)
+	err = db.WriteTx(testAccountContext(), func(queries Queries) error {
+		return newPostStore(queries).ReplaceEntryMediaUsages(testAccountContext(), momentID, usages)
 	})
 	if err == nil {
 		t.Fatal("a moment must still be held to nine pictures")
@@ -235,8 +239,8 @@ func TestArticleCardsCarryTheListFieldsAndNotTheBody(t *testing.T) {
 	id, _ := domain.ParseID(articleEntryID)
 	momentID, _ := domain.ParseID(momentEntryID)
 	var cards map[domain.ID]app.ArticleCard
-	if err := db.ReadTx(context.Background(), func(queries Queries) error {
-		read, readErr := newPostStore(queries).ArticleCards(context.Background(), []domain.ID{id, momentID})
+	if err := db.ReadTx(testAccountContext(), func(queries Queries) error {
+		read, readErr := newPostStore(queries).ArticleCards(testAccountContext(), []domain.ID{id, momentID})
 		cards = read
 		return readErr
 	}); err != nil {
@@ -269,8 +273,8 @@ func TestArticleBodyCannotHangOffAMoment(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	err = db.WriteTx(context.Background(), func(queries Queries) error {
-		return newPostStore(queries).InsertArticle(context.Background(), momentID, article)
+	err = db.WriteTx(testAccountContext(), func(queries Queries) error {
+		return newPostStore(queries).InsertArticle(testAccountContext(), momentID, article)
 	})
 	if err == nil {
 		t.Fatal("a moment must not carry an article body")
@@ -292,9 +296,9 @@ func equalStrings(left, right []string) bool {
 func readArticleDerivations(t *testing.T, db *Database) []app.ArticleDerivation {
 	t.Helper()
 	var derivations []app.ArticleDerivation
-	if err := db.ReadTx(context.Background(), func(queries Queries) error {
+	if err := db.ReadTx(testAccountContext(), func(queries Queries) error {
 		var err error
-		derivations, err = newPostStore(queries).ArticleDerivations(context.Background())
+		derivations, err = newPostStore(queries).ArticleDerivations(testAccountContext())
 		return err
 	}); err != nil {
 		t.Fatal(err)

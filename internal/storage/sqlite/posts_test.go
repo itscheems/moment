@@ -1,7 +1,6 @@
 package sqlite
 
 import (
-	"context"
 	"errors"
 	"reflect"
 	"sort"
@@ -21,7 +20,7 @@ func TestPostServiceCRUDPreservesTimelineAndRendersSafely(t *testing.T) {
 	createdAt := time.Date(2026, time.August, 10, 9, 30, 0, 987654321, time.FixedZone("source", 8*60*60))
 	clock := newSequenceClock(createdAt, createdAt.Add(-time.Hour))
 	service := newTestPostService(t, db, clock.Now, sequenceIDs(entryOne))
-	ctx := context.Background()
+	ctx := testAccountContext()
 
 	created, err := service.Create(ctx, app.CreatePostInput{ContentMD: "hello **Moment** [site](https://example.test)"})
 	if err != nil {
@@ -39,7 +38,7 @@ func TestPostServiceCRUDPreservesTimelineAndRendersSafely(t *testing.T) {
 		t.Fatalf("unexpected creation instants: %+v", created.Post.Entry)
 	}
 
-	got, err := service.Get(ctx, created.Post.Entry.ID, app.OwnerViewer())
+	got, err := service.Get(ctx, created.Post.Entry.ID, app.AccountViewer(testAccountID))
 	if err != nil || !reflect.DeepEqual(got.Entry, created.Post.Entry) {
 		t.Fatalf("get = %+v, %v", got, err)
 	}
@@ -59,7 +58,7 @@ func TestPostServiceCRUDPreservesTimelineAndRendersSafely(t *testing.T) {
 	if _, err := service.Update(ctx, app.UpdatePostInput{ID: got.Entry.ID, ContentMD: "![external](https://example.test/a.png)"}); !domain.HasCode(err, domain.CodeExternalImageNotAllowed) {
 		t.Fatalf("unsafe edit error = %v", err)
 	}
-	afterRejected, err := service.Get(ctx, got.Entry.ID, app.OwnerViewer())
+	afterRejected, err := service.Get(ctx, got.Entry.ID, app.AccountViewer(testAccountID))
 	if err != nil || !reflect.DeepEqual(afterRejected.Entry, updated.Entry) {
 		t.Fatalf("rejected edit changed the Entry: %+v, %v", afterRejected, err)
 	}
@@ -68,7 +67,7 @@ func TestPostServiceCRUDPreservesTimelineAndRendersSafely(t *testing.T) {
 	if err != nil || !reflect.DeepEqual(deleted.Entry, updated.Entry) {
 		t.Fatalf("delete = %+v, %v", deleted, err)
 	}
-	if _, err := service.Get(ctx, got.Entry.ID, app.OwnerViewer()); !domain.HasCode(err, domain.CodePostNotFound) {
+	if _, err := service.Get(ctx, got.Entry.ID, app.AccountViewer(testAccountID)); !domain.HasCode(err, domain.CodePostNotFound) {
 		t.Fatalf("get deleted post error = %v", err)
 	}
 	if _, err := service.Delete(ctx, got.Entry.ID); !domain.HasCode(err, domain.CodePostNotFound) {
@@ -80,7 +79,7 @@ func TestPostContentBoundariesLeaveNoPartialEntry(t *testing.T) {
 	t.Parallel()
 	db, _ := openTestDatabase(t, Options{})
 	service := newTestPostService(t, db, func() time.Time { return time.UnixMilli(1_700_000_000_000) }, sequenceIDs(entryOne))
-	ctx := context.Background()
+	ctx := testAccountContext()
 
 	for _, testCase := range []struct {
 		content string
@@ -107,7 +106,7 @@ func TestPostLocationLifecycleAndIdempotency(t *testing.T) {
 	db, _ := openTestDatabase(t, Options{})
 	clock := newSequenceClock(time.UnixMilli(1_700_000_000_000), time.UnixMilli(1_700_000_001_000), time.UnixMilli(1_700_000_002_000))
 	service := newTestPostService(t, db, clock.Now, sequenceIDs(entryOne))
-	ctx := context.Background()
+	ctx := testAccountContext()
 	point, err := domain.NewGeoPoint(31.223186, 121.445260, domain.CoordinateGCJ02)
 	if err != nil {
 		t.Fatal(err)
@@ -123,7 +122,7 @@ func TestPostLocationLifecycleAndIdempotency(t *testing.T) {
 		t.Fatalf("created = %#v, %v", created, err)
 	}
 	location.Name = "调用方后来修改了名称"
-	stored, err := service.Get(ctx, created.Post.Entry.ID, app.OwnerViewer())
+	stored, err := service.Get(ctx, created.Post.Entry.ID, app.AccountViewer(testAccountID))
 	if err != nil || stored.Location == nil || stored.Location.Name != "静安寺" {
 		t.Fatalf("stored = %#v, %v", stored, err)
 	}
@@ -155,7 +154,7 @@ func TestPostLocationLifecycleAndIdempotency(t *testing.T) {
 func TestPostCreateIdempotencyIsAtomicAndConcurrent(t *testing.T) {
 	db, _ := openTestDatabase(t, Options{})
 	service := newTestPostService(t, db, func() time.Time { return time.UnixMilli(1_700_000_000_000) }, sequenceIDs(entryOne))
-	ctx := context.Background()
+	ctx := testAccountContext()
 	const workers = 24
 
 	results := make(chan app.CreatePostResult, workers)
@@ -216,7 +215,7 @@ func TestPostCreateReplayReturnsImmutableResultAfterUpdateAndDelete(t *testing.T
 	createdAt := time.UnixMilli(1_700_000_000_000)
 	clock := newSequenceClock(createdAt, createdAt.Add(time.Hour))
 	service := newTestPostService(t, db, clock.Now, sequenceIDs(entryOne))
-	ctx := context.Background()
+	ctx := testAccountContext()
 	input := app.CreatePostInput{ContentMD: "original **post**", IdempotencyKey: "immutable-replay"}
 
 	created, err := service.Create(ctx, input)
@@ -261,7 +260,7 @@ func TestPostCreateReplayRejectsCorruptSnapshot(t *testing.T) {
 			t.Parallel()
 			db, _ := openTestDatabase(t, Options{})
 			service := newTestPostService(t, db, func() time.Time { return time.UnixMilli(1_700_000_000_000) }, sequenceIDs(entryOne))
-			ctx := context.Background()
+			ctx := testAccountContext()
 			input := app.CreatePostInput{ContentMD: "original", IdempotencyKey: "corrupt-replay"}
 			if _, err := service.Create(ctx, input); err != nil {
 				t.Fatal(err)
@@ -281,7 +280,7 @@ func TestPostCreateRollsBackWhenRetryRecordFails(t *testing.T) {
 	t.Parallel()
 	db, _ := openTestDatabase(t, Options{})
 	service := newTestPostService(t, db, func() time.Time { return time.UnixMilli(1_700_000_000_000) }, sequenceIDs(entryOne))
-	ctx := context.Background()
+	ctx := testAccountContext()
 
 	if _, err := db.write.ExecContext(ctx, `
 CREATE TRIGGER reject_test_idempotency
@@ -304,7 +303,7 @@ func TestPostUpdateRollbackDoesNotAdvanceTimestamp(t *testing.T) {
 	createdAt := time.UnixMilli(1_700_000_000_000)
 	clock := newSequenceClock(createdAt, createdAt.Add(time.Hour))
 	service := newTestPostService(t, db, clock.Now, sequenceIDs(entryOne))
-	ctx := context.Background()
+	ctx := testAccountContext()
 	created, err := service.Create(ctx, app.CreatePostInput{ContentMD: "before"})
 	if err != nil {
 		t.Fatal(err)
@@ -321,7 +320,7 @@ END`); err != nil {
 	if _, err := service.Update(ctx, app.UpdatePostInput{ID: created.Post.Entry.ID, ContentMD: "after"}); !domain.HasCode(err, domain.CodeInternal) {
 		t.Fatalf("injected update error = %v", err)
 	}
-	unchanged, err := service.Get(ctx, created.Post.Entry.ID, app.OwnerViewer())
+	unchanged, err := service.Get(ctx, created.Post.Entry.ID, app.AccountViewer(testAccountID))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -336,7 +335,7 @@ func TestPostTimelineUsesStableDualKeyCursor(t *testing.T) {
 	instant := time.UnixMilli(1_700_000_000_000)
 	ids := []string{entryOne, entryTwo, entryThree, "01ARZ3NDEKTSV4RRFFQ69G5FAY", "01ARZ3NDEKTSV4RRFFQ69G5FAZ"}
 	service := newTestPostService(t, db, func() time.Time { return instant }, sequenceIDs(ids...))
-	ctx := context.Background()
+	ctx := testAccountContext()
 	for index := range ids {
 		if _, err := service.Create(ctx, app.CreatePostInput{ContentMD: "post " + ids[index]}); err != nil {
 			t.Fatal(err)
@@ -380,7 +379,7 @@ func TestPostRepostAddsLinkedTimelineItemAndUndoRemovesIt(t *testing.T) {
 	base := time.UnixMilli(1_700_000_000_000)
 	clock := newSequenceClock(base, base.Add(time.Hour), base.Add(2*time.Hour), base.Add(3*time.Hour))
 	service := newTestPostService(t, db, clock.Now, sequenceIDs(entryOne, entryTwo))
-	ctx := context.Background()
+	ctx := testAccountContext()
 
 	first, err := service.Create(ctx, app.CreatePostInput{ContentMD: "first"})
 	if err != nil {
@@ -455,7 +454,7 @@ func TestPostConcurrentCreatesAndDeletesPreserveOrdering(t *testing.T) {
 	db, _ := openTestDatabase(t, Options{})
 	instant := time.UnixMilli(1_700_000_000_000)
 	service := newTestPostService(t, db, func() time.Time { return instant }, nil)
-	ctx := context.Background()
+	ctx := testAccountContext()
 	const workers = 32
 
 	createdIDs := make(chan domain.ID, workers)
@@ -596,7 +595,7 @@ func TestPostTimelineReadsBothWaysFromAnAnchoredDay(t *testing.T) {
 	}
 	now := instants[0]
 	service := newTestPostService(t, db, func() time.Time { return now }, sequenceIDs(ids...))
-	ctx := context.Background()
+	ctx := testAccountContext()
 	for index := range ids {
 		now = instants[index]
 		if _, err := service.Create(ctx, app.CreatePostInput{ContentMD: "post " + ids[index]}); err != nil {

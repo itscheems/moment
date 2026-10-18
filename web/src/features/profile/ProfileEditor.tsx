@@ -1,19 +1,20 @@
+import { accountsApi, type AccountProfileUpdate } from "../../api/accounts";
+
 import { Dialog } from "@base-ui/react/dialog";
 import { Menu } from "@base-ui/react/menu";
 import { type ChangeEvent, useEffect, useRef, useState } from "react";
 
-import type { AccountProfileUpdate, SiteSettingsUpdate } from "../../api/owner";
 import { mediaPreviewUrl } from "../../api/mediaUrls";
 import {
   PublicApiError,
   type Account,
-  type SiteIdentity,
+  type PublicAccount,
 } from "../../api/public";
 import { notify } from "../../components/Feedback";
 import { Icon } from "../../components/icons";
 import { SiteAvatar } from "../../components/SiteIdentity";
 import { useDocumentScrollLock } from "../../components/useDocumentScrollLock";
-import { fileValidation } from "../media/mediaState";
+
 import { useSession } from "../auth/SessionProvider";
 import styles from "./ProfileEditor.module.css";
 
@@ -37,18 +38,10 @@ function tooLargeMessage(ceilingBytes: number | null): string {
     : `图片不能超过 ${Math.round(ceilingBytes / 1024 / 1024)} MB`;
 }
 
-/**
- * What the editor is editing.
- *
- * The owner's identity is the site's, so their edits land on the site row and
- * their pictures go through the owner media route. A member has an account and
- * nothing else, and it has its own routes. One dialog serves both because the
- * fields a reader fills in are the same either way; only where they are sent
- * differs, and that is what this union names.
- */
-type ProfileEditorProps =
-  | { site: SiteIdentity; onSaved: (site: SiteIdentity) => void }
-  | { account: Account; onSaved: (account: Account) => void };
+type ProfileEditorProps = {
+  account: PublicAccount;
+  onSaved: (account: Account) => void;
+};
 
 function mediaURL(id: string | null): string | null {
   return id ? mediaPreviewUrl(id) : null;
@@ -114,7 +107,7 @@ function saveFailure(error: unknown): string {
 export function ProfileEditor(props: ProfileEditorProps) {
   const {
     account: viewer,
-    api,
+
     limits,
     session,
     applyAccount,
@@ -127,41 +120,22 @@ export function ProfileEditor(props: ProfileEditorProps) {
   const nameLimit = limits?.displayNameLength ?? 80;
   const bioLimit = limits?.bioLength ?? 500;
   // Held as consts so the narrowing survives into the async handlers below.
-  const subject: Account | SiteIdentity =
-    "account" in props ? props.account : props.site;
-  const siteSubject: SiteIdentity | null =
-    "account" in props ? null : props.site;
-  const saveAccount = "account" in props ? props.onSaved : null;
-  const saveSite = "account" in props ? null : props.onSaved;
-  const editingAccount = saveAccount !== null;
-  // Bytes are gated on approval; words are not. A pending account has
-  // validators standing behind every text field and nothing standing behind a
-  // file, so it keeps the whole form and loses only the ability to add one --
-  // including the ability to clear a picture it already has. Disabled rather
-  // than hidden: a control that vanishes reads as a feature this site does not
-  // have, which is a different and untrue statement.
-  const uploadNote = !editingAccount
-    ? null
-    : viewer?.status === "pending"
+  const subject = props.account;
+  const targetId = subject.userId;
+  const saveAccount = props.onSaved;
+  const uploadNote =
+    viewer?.status === "pending"
       ? NOT_APPROVED
       : viewer?.status === "suspended"
         ? "账户已停用，暂时不能上传图片"
         : null;
   const canUpload = uploadNote === null;
   const [open, setOpen] = useState(false);
-  const [title, setTitle] = useState(siteSubject?.title ?? "");
   const [displayName, setDisplayName] = useState(subject.displayName);
   const [username, setUsername] = useState(subject.username);
   const [bio, setBio] = useState(subject.bio);
   const [avatarId, setAvatarId] = useState(subject.avatarMediaId);
   const [coverId, setCoverId] = useState(subject.coverMediaId);
-  // What the server is already holding, which in account mode is not the same
-  // thing as what the props say. An account picture upload is a completed
-  // save, so the mark the dialog measures "unsaved" against has to move with
-  // it -- otherwise the save button offers to write a change already written,
-  // and 撤销 offers to undo it back to a picture that no longer exists. The
-  // owner's two-step flow keeps measuring against the site row, because there
-  // nothing is saved until the save button says so.
   const [boundAvatarId, setBoundAvatarId] = useState(subject.avatarMediaId);
   const [boundCoverId, setBoundCoverId] = useState(subject.coverMediaId);
   const [avatarPreview, setAvatarPreview] = useState(
@@ -174,13 +148,12 @@ export function ProfileEditor(props: ProfileEditorProps) {
   const [coverState, setCoverState] = useState<UploadState>("idle");
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
-  const avatarBase = siteSubject ? siteSubject.avatarMediaId : boundAvatarId;
-  const coverBase = siteSubject ? siteSubject.coverMediaId : boundCoverId;
+  const avatarBase = boundAvatarId;
+  const coverBase = boundCoverId;
   const avatarInput = useRef<HTMLInputElement>(null);
   const coverInput = useRef<HTMLInputElement>(null);
   const avatarMenuTrigger = useRef<HTMLButtonElement>(null);
   const coverMenuTrigger = useRef<HTMLButtonElement>(null);
-  const titleInput = useRef<HTMLInputElement>(null);
   const displayNameInput = useRef<HTMLInputElement>(null);
   const uploads = useRef<Record<AssetKind, AbortController | null>>({
     avatar: null,
@@ -195,7 +168,6 @@ export function ProfileEditor(props: ProfileEditorProps) {
     uploads.current.cover?.abort();
     objectURLs.current.forEach((url) => URL.revokeObjectURL(url));
     objectURLs.current = [];
-    setTitle(siteSubject?.title ?? "");
     setDisplayName(subject.displayName);
     setUsername(subject.username);
     setBio(subject.bio);
@@ -228,9 +200,7 @@ export function ProfileEditor(props: ProfileEditorProps) {
 
   const upload = async (kind: AssetKind, file: File) => {
     if (!session) return;
-    const validationError = editingAccount
-      ? accountPictureProblem(file, pictureCeiling)
-      : fileValidation(file, []);
+    const validationError = accountPictureProblem(file, pictureCeiling);
     if (validationError) {
       setError(validationError);
       return;
@@ -249,56 +219,38 @@ export function ProfileEditor(props: ProfileEditorProps) {
     }
     setError(null);
     try {
-      if (saveAccount) {
-        // One request ingests and binds, so the picture belongs to this
-        // account the moment the response lands. There is no media id for the
-        // save button to carry afterwards, and nothing orphaned on disk if the
-        // reader closes the dialog on the next breath.
-        const saved =
-          kind === "avatar"
-            ? await api.uploadAccountAvatar(
-                session.csrfToken,
-                file,
-                controller.signal,
-              )
-            : await api.uploadAccountCover(
-                session.csrfToken,
-                file,
-                controller.signal,
-              );
-        if (uploads.current[kind] !== controller) return;
-        applyAccount(saved);
-        saveAccount(saved);
-        if (kind === "avatar") {
-          setAvatarId(saved.avatarMediaId);
-          setBoundAvatarId(saved.avatarMediaId);
-          setAvatarPreview(mediaURL(saved.avatarMediaId));
-          setAvatarState("idle");
-        } else {
-          setCoverId(saved.coverMediaId);
-          setBoundCoverId(saved.coverMediaId);
-          setCoverPreview(mediaURL(saved.coverMediaId));
-          setCoverState("idle");
-        }
-        notify(kind === "avatar" ? "头像已更新" : "封面已更新");
-        return;
-      }
-      const result = await api.uploadMedia(
-        session.csrfToken,
-        file,
-        () => undefined,
-        controller.signal,
-      );
+      // One request ingests and binds, so the picture belongs to this
+      // account the moment the response lands. There is no media id for the
+      // save button to carry afterwards, and nothing orphaned on disk if the
+      // reader closes the dialog on the next breath.
+      const saved =
+        kind === "avatar"
+          ? await accountsApi.uploadAccountAvatar(
+              session.csrfToken,
+              file,
+              controller.signal,
+            )
+          : await accountsApi.uploadAccountCover(
+              session.csrfToken,
+              file,
+              controller.signal,
+            );
       if (uploads.current[kind] !== controller) return;
+      applyAccount(saved);
+      saveAccount(saved);
       if (kind === "avatar") {
-        setAvatarId(result.id);
-        setAvatarPreview(result.previewUrl);
+        setAvatarId(saved.avatarMediaId);
+        setBoundAvatarId(saved.avatarMediaId);
+        setAvatarPreview(mediaURL(saved.avatarMediaId));
         setAvatarState("idle");
       } else {
-        setCoverId(result.id);
-        setCoverPreview(result.previewUrl);
+        setCoverId(saved.coverMediaId);
+        setBoundCoverId(saved.coverMediaId);
+        setCoverPreview(mediaURL(saved.coverMediaId));
         setCoverState("idle");
       }
+      notify(kind === "avatar" ? "头像已更新" : "封面已更新");
+      return;
     } catch (nextError) {
       if (controller.signal.aborted) return;
       expireIfInvalidSession(nextError);
@@ -306,9 +258,7 @@ export function ProfileEditor(props: ProfileEditorProps) {
       else setCoverState("failed");
       setError(
         pictureFailure(nextError, pictureCeiling) ??
-          (editingAccount
-            ? "图片没有上传完成，头像和封面保持原样，可以重新选择。"
-            : "图片没有上传完成。当前资料尚未改变，可以重新选择后再保存。"),
+          "图片没有上传完成，头像和封面保持原样，可以重新选择。",
       );
     }
   };
@@ -334,7 +284,6 @@ export function ProfileEditor(props: ProfileEditorProps) {
   };
 
   const changed =
-    (siteSubject ? title !== siteSubject.title : false) ||
     displayName !== subject.displayName ||
     username !== subject.username ||
     bio !== subject.bio ||
@@ -343,7 +292,6 @@ export function ProfileEditor(props: ProfileEditorProps) {
   const pending = avatarState === "uploading" || coverState === "uploading";
   const uploadFailed = avatarState === "failed" || coverState === "failed";
   const invalid =
-    (siteSubject ? !title.trim() || Array.from(title).length > 120 : false) ||
     !displayName.trim() ||
     !/^[a-z][a-z0-9_]{2,29}$/.test(username.trim().toLowerCase()) ||
     Array.from(displayName).length > nameLimit ||
@@ -355,37 +303,20 @@ export function ProfileEditor(props: ProfileEditorProps) {
     setSaving(true);
     setError(null);
     try {
-      if (siteSubject && saveSite) {
-        const update: SiteSettingsUpdate = {};
-        if (title !== siteSubject.title) update.title = title;
-        if (displayName !== siteSubject.displayName) {
-          update.displayName = displayName;
-        }
-        if (username !== siteSubject.username) update.username = username;
-        if (bio !== siteSubject.bio) update.bio = bio;
-        if (avatarId !== siteSubject.avatarMediaId) {
-          update.avatarMediaId = avatarId;
-        }
-        if (coverId !== siteSubject.coverMediaId) update.coverMediaId = coverId;
-        const saved = await api.updateSite(session.csrfToken, update);
-        saveSite({
-          ...saved,
-          instanceId: siteSubject.instanceId,
-          instanceInitializedAt: siteSubject.instanceInitializedAt,
-        });
-      } else if (saveAccount) {
-        const update: AccountProfileUpdate = {};
-        if (displayName !== subject.displayName) {
-          update.displayName = displayName;
-        }
-        if (username !== subject.username) update.username = username;
-        if (bio !== subject.bio) update.bio = bio;
-        if (avatarId !== avatarBase) update.avatarMediaId = avatarId;
-        if (coverId !== coverBase) update.coverMediaId = coverId;
-        const saved = await api.updateAccountProfile(session.csrfToken, update);
-        applyAccount(saved);
-        saveAccount(saved);
+      const update: AccountProfileUpdate = {};
+      if (displayName !== subject.displayName) {
+        update.displayName = displayName;
       }
+      if (username !== subject.username) update.username = username;
+      if (bio !== subject.bio) update.bio = bio;
+      if (avatarId !== avatarBase) update.avatarMediaId = avatarId;
+      if (coverId !== coverBase) update.coverMediaId = coverId;
+      const saved = await accountsApi.updateAccountProfile(
+        session.csrfToken,
+        update,
+      );
+      applyAccount(saved);
+      saveAccount(saved);
       notify("个人资料已更新");
       setOpen(false);
     } catch (nextError) {
@@ -397,6 +328,7 @@ export function ProfileEditor(props: ProfileEditorProps) {
     }
   };
 
+  if (viewer?.userId !== targetId) return null;
   return (
     <Dialog.Root
       onOpenChange={(nextOpen) => {
@@ -418,7 +350,7 @@ export function ProfileEditor(props: ProfileEditorProps) {
         >
           <Dialog.Popup
             className={styles.popup}
-            initialFocus={siteSubject ? titleInput : displayNameInput}
+            initialFocus={displayNameInput}
           >
             <form
               className={styles.form}
@@ -646,19 +578,7 @@ export function ProfileEditor(props: ProfileEditorProps) {
                       />
                     </div>
                   </label>
-                  {siteSubject ? (
-                    <label className={styles.fieldWide}>
-                      <span>站点标题</span>
-                      <input
-                        maxLength={120}
-                        onChange={(event) =>
-                          setTitle(event.currentTarget.value)
-                        }
-                        ref={titleInput}
-                        value={title}
-                      />
-                    </label>
-                  ) : null}
+
                   <label className={`${styles.fieldWide} ${styles.bioField}`}>
                     <span>简介</span>
                     <textarea

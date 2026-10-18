@@ -37,7 +37,7 @@ func registerDev(application *Application) {
 		Path: []string{"dev", "seed"}, Short: "Build the deterministic mixed development fixture",
 		Long:       "Atomically seed one marked development instance, or initialize development metadata only when --data-dir names an existing canonical and strictly empty directory.",
 		Inputs:     "Requires explicit --data-dir. --seed controls logical IDs, timestamps, content, comments, and media. The default is 1.",
-		Output:     "The recipe version, exact counts, doctor status, and a cryptographically random owner token exactly once for a fresh instance.",
+		Output:     "The recipe version, exact counts, doctor status, and a cryptographically random account token exactly once for a fresh instance.",
 		Errors:     "Unknown or unsafe input exits 2, active service exits 4, I/O exits 6, integrity exits 7, cancellation exits 9.",
 		Safety:     "Strictly empty bootstrap and marked reset both require confirmation. --dry-run is fully read-only.",
 		Example:    "mkdir ./moment-dev && moment dev seed --data-dir ./moment-dev --seed 42 --yes --no-input --json",
@@ -93,8 +93,8 @@ func runDev(ctx context.Context, invocation Invocation, operation devtools.Opera
 	if result.Showcase != nil {
 		text += fmt.Sprintf("\nShowcase anchored at %s: %d cases listed under data.showcase", result.Showcase.AnchoredAt, len(result.Showcase.Cases))
 	}
-	if result.OwnerToken != "" {
-		text += "\nOwner token (shown once): " + result.OwnerToken
+	if result.APIToken != "" {
+		text += "\nAccount API token (shown once): " + result.APIToken
 	}
 	return Result{Data: result, Text: text}, nil
 }

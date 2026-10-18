@@ -41,7 +41,7 @@ func exportShowcase(t *testing.T, root string) showcaseExport {
 		t.Fatal(err)
 	}
 	result := showcaseExport{}
-	var ownerID string
+	var primaryAccountID string
 	for _, member := range reader.File {
 		if member.Name != "data/site.json" {
 			continue
@@ -51,17 +51,14 @@ func exportShowcase(t *testing.T, root string) showcaseExport {
 			t.Fatal(err)
 		}
 		var site struct {
-			OwnerID string `json:"owner_id"`
+			ProfileUserID string `json:"profile_user_id"`
 		}
 		if err := json.NewDecoder(opened).Decode(&site); err != nil {
 			t.Fatal(err)
 		}
 		_ = opened.Close()
-		ownerID = site.OwnerID
+		primaryAccountID = site.ProfileUserID
 	}
-	// The owner's account id is minted at random per instance and reaches
-	// the export as an author id and a user id, so the logical digest
-	// compares it under one name.
 	digest := sha256.New()
 	for _, member := range reader.File {
 		var into *[]map[string]any
@@ -89,8 +86,8 @@ func exportShowcase(t *testing.T, root string) showcaseExport {
 			}
 			*into = append(*into, record)
 			for _, field := range []string{"id", "author_user_id"} {
-				if record[field] == ownerID {
-					record[field] = "owner"
+				if record[field] == primaryAccountID {
+					record[field] = "profile"
 				}
 			}
 			canonical, err := json.Marshal(record)
@@ -103,8 +100,6 @@ func exportShowcase(t *testing.T, root string) showcaseExport {
 			t.Fatal(err)
 		}
 		_ = opened.Close()
-		// Rows are exported in id order, and the owner's id is random, so
-		// the digest reads them in content order instead.
 		sort.Strings(lines)
 		digest.Write([]byte(member.Name))
 		for _, line := range lines {
@@ -138,7 +133,7 @@ func TestShowcaseBuildsEveryListedCase(t *testing.T) {
 	if !result.Applied || !result.DoctorHealthy || result.Plan.Counts != recipe.Counts || result.Showcase == nil {
 		t.Fatalf("showcase result = %#v", result)
 	}
-	if result.Showcase.AnchoredAt != anchor.Format(time.RFC3339) || result.Showcase.Owner != showcaseOwnerUsername {
+	if result.Showcase.AnchoredAt != anchor.Format(time.RFC3339) || result.Showcase.ProfileUsername != showcaseProfileUsername {
 		t.Fatalf("manifest header = %#v", result.Showcase)
 	}
 	cases := map[string]ShowcaseCase{}
@@ -165,6 +160,33 @@ func TestShowcaseBuildsEveryListedCase(t *testing.T) {
 	}
 
 	export := exportShowcase(t, root)
+	memberPost := cases["post.member.author"]
+	var memberID string
+	for _, user := range export.users {
+		if user["username"] == "aming" {
+			memberID = user["id"].(string)
+		}
+	}
+	foundMemberPost := false
+	for _, entry := range export.entries {
+		if entry["id"] == memberPost.ID {
+			foundMemberPost = entry["author_user_id"] == memberID
+		}
+	}
+	if !foundMemberPost {
+		t.Fatal("member post borrowed the site display identity")
+	}
+	authors := map[string]bool{}
+	for _, comment := range export.comments {
+		if comment["entry_id"] == memberPost.ID {
+			if id, ok := comment["author_user_id"].(string); ok {
+				authors[id] = true
+			}
+		}
+	}
+	if len(authors) != 2 || !authors[memberID] {
+		t.Fatal("member-author and administrator replies are not distinct")
+	}
 	if len(export.entries) != int(recipe.Counts.Entries) || len(export.comments) != int(recipe.Counts.Comments) {
 		t.Fatalf("exported %d entries and %d comments, want %+v", len(export.entries), len(export.comments), recipe.Counts)
 	}
@@ -221,7 +243,7 @@ func TestShowcaseBuildsEveryListedCase(t *testing.T) {
 		if comment["reply_to_comment_id"] != nil {
 			answers++
 		}
-		if comment["author_name"] != showcaseOwnerDisplayName {
+		if comment["author_name"] != showcaseProfileDisplayName {
 			memberAuthored++
 		}
 		if usages, ok := comment["media"].([]any); ok && len(usages) > 0 {
@@ -244,10 +266,10 @@ func TestShowcaseBuildsEveryListedCase(t *testing.T) {
 		statuses[user["role"].(string)+"/"+user["status"].(string)]++
 		usernames[user["username"].(string)] = true
 	}
-	if statuses["owner/active"] != 1 || statuses["member/active"] != 3 || statuses["member/pending"] != 1 || statuses["member/suspended"] != 1 {
+	if statuses["admin/active"] != 1 || statuses["member/active"] != 3 || statuses["member/pending"] != 1 || statuses["member/suspended"] != 1 {
 		t.Fatalf("account statuses = %v", statuses)
 	}
-	for _, username := range []string{showcaseOwnerUsername, "aming", "lena", "xiaobei", "wanger", "bestdeals4u"} {
+	for _, username := range []string{showcaseProfileUsername, "aming", "lena", "xiaobei", "wanger", "bestdeals4u"} {
 		if !usernames[username] {
 			t.Fatalf("username %q is missing from %v", username, usernames)
 		}

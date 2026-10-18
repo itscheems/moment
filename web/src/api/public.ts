@@ -1,7 +1,7 @@
 import { mediaOriginalUrl, mediaPreviewUrl } from "./mediaUrls";
 
 export interface SiteIdentity {
-  ownerId: string;
+  profileUserId: string;
   username: string;
   displayName: string;
   title: string;
@@ -17,18 +17,13 @@ export interface SiteIdentity {
 }
 
 export interface MentionSuggestion {
-  ownerId: string;
+  userId: string;
   username: string;
   displayName: string;
   avatarMediaId: string | null;
   profileUrl: string;
 }
 
-/**
- * Who may read a post. The server only ever sends posts the reader may see,
- * so anyone but the owner only ever meets "everyone"; the owner meets both and
- * chooses between them in the composer.
- */
 export type PostVisibility = "everyone" | "only_me";
 
 export const POST_VISIBILITIES: readonly PostVisibility[] = [
@@ -306,6 +301,7 @@ export interface PublicLinkCard {
 }
 
 export interface PublicAvailableQuotedPost {
+  author?: PublicCommentAuthor;
   unavailable: false;
   id: string;
   kind: PostKind;
@@ -356,6 +352,7 @@ export interface TimelinePage {
 }
 
 export interface TimelineRequest {
+  authorUserId?: string;
   cursor?: string | null;
   from?: string | null;
   to?: string | null;
@@ -416,15 +413,6 @@ export interface PublicComment {
   postId: string;
   parentId: string | null;
   depth: 0 | 1;
-  /**
-   * `"guest"` is a legacy read-only kind. Nothing produces it any more — the
-   * anonymous write path is gone — but rows carrying it still arrive from
-   * archives exported before commenting required an account, and importing
-   * those archives has to keep working for a product whose promise is that the
-   * data is yours. So the accept set stays wider than the produce set, here and
-   * in every renderer downstream.
-   */
-  authorKind: "owner" | "guest";
   /**
    * The name stored on the row. `author` is what to render; this is kept so a
    * client can round trip a comment without losing what was persisted, and it
@@ -830,7 +818,7 @@ export function parseComment(
         "post_id",
         "parent_id",
         "depth",
-        "author_kind",
+
         "author_name",
         "author",
         "reply_to",
@@ -864,12 +852,6 @@ export function parseComment(
     (parentId !== null && depth !== 1)
   ) {
     throw invalidResponse("comment depth does not match parent_id");
-  }
-  const authorKind = stringField(value, "author_kind");
-  // Narrowing this to `"owner"` would make every archive taken before accounts
-  // were required undecodable. See PublicComment.authorKind.
-  if (authorKind !== "owner" && authorKind !== "guest") {
-    throw invalidResponse("comment author_kind is invalid");
   }
   const authorName = commentTextField(
     value,
@@ -922,7 +904,6 @@ export function parseComment(
     postId,
     parentId,
     depth: depth as 0 | 1,
-    authorKind,
     authorName,
     author: parseCommentAuthor(value.author),
     replyTo: parseCommentReplyTarget(value.reply_to, id),
@@ -1716,6 +1697,7 @@ export function parsePost(value: unknown): PublicPost {
     if (
       !isRecord(quoted) ||
       !hasExactKeys(quoted, [
+        ...(Object.hasOwn(quoted, "author") ? ["author"] : []),
         "unavailable",
         "id",
         "kind",
@@ -1742,7 +1724,8 @@ export function parsePost(value: unknown): PublicPost {
         quoted.content_html !== null ||
         quoted.published_at !== null ||
         quoted.media !== null ||
-        quoted.location !== null
+        quoted.location !== null ||
+        quoted.author != null
       ) {
         throw invalidResponse(
           "unavailable quoted post must not expose deleted target data",
@@ -1779,6 +1762,8 @@ export function parsePost(value: unknown): PublicPost {
         throw invalidResponse("a quote shows an article's card, not its body");
       }
       quotedPost = {
+        author:
+          quoted.author == null ? undefined : parseCommentAuthor(quoted.author),
         unavailable: false,
         id: stringField(quoted, "id"),
         kind: quotedBody.kind,
@@ -2247,7 +2232,7 @@ export function parseSiteIdentity(
   // mirrors app.SiteSettings (internal/app/site.go)
   if (
     !hasExactKeys(data, [
-      "owner_id",
+      "profile_user_id",
       "username",
       "display_name",
       "title",
@@ -2267,11 +2252,13 @@ export function parseSiteIdentity(
     throw invalidResponse("response field comments_enabled must be a boolean");
   }
   const timezone = stringField(data, "timezone");
-  const ownerId = stringField(data, "owner_id");
+  const profileUserId = stringField(data, "profile_user_id");
   const username = stringField(data, "username");
   const displayName = stringField(data, "display_name");
-  if (!/^[0-9a-f]{32}$/.test(ownerId)) {
-    throw invalidResponse("response field owner_id must be a stable owner ID");
+  if (!/^[0-9a-f]{32}$/.test(profileUserId)) {
+    throw invalidResponse(
+      "response field profile_user_id must be a stable account ID",
+    );
   }
   if (!/^[a-z][a-z0-9_]{2,29}$/.test(username)) {
     throw invalidResponse(
@@ -2303,7 +2290,7 @@ export function parseSiteIdentity(
     throw invalidResponse("response field pinned_post_id must be a post ID");
   }
   return {
-    ownerId,
+    profileUserId,
     username,
     displayName,
     title: stringField(data, "title"),
@@ -2319,130 +2306,106 @@ export function parseSiteIdentity(
   };
 }
 
-export type AccountRole = "owner" | "member";
+export type AccountRole = "admin" | "member";
 export type AccountStatus = "pending" | "active" | "suspended";
 
-/**
- * One person on this instance.
- *
- * `status` and `usernameChosen` are moderation and onboarding facts that only
- * the account itself and the site owner are allowed to read, so the public
- * projection leaves them out. Null therefore means "this endpoint does not
- * disclose it", never "the server does not know".
- */
-export interface Account {
+export interface PublicAccount {
   userId: string;
   username: string;
   displayName: string;
   bio: string;
   avatarMediaId: string | null;
   coverMediaId: string | null;
-  role: AccountRole;
   profileUrl: string;
-  status: AccountStatus | null;
-  usernameChosen: boolean | null;
+}
+export interface Account extends PublicAccount {
+  role: AccountRole;
+  status: AccountStatus;
+  usernameChosen: boolean;
 }
 
-const accountRoles = new Set(["owner", "member"]);
-const accountStatuses = new Set(["pending", "active", "suspended"]);
-
-export function parseAccount(value: unknown): Account {
-  if (!isRecord(value)) throw invalidResponse("account must be an object");
-  if (
-    !hasKeys(
-      value,
-      [
-        "user_id",
-        "username",
-        "display_name",
-        "bio",
-        "avatar_media_id",
-        "cover_media_id",
-        "role",
-        "profile_url",
-      ],
-      ["status", "username_chosen"],
-    )
-  ) {
-    throw invalidResponse("account contains unsupported fields");
-  }
+function publicAccountFields(value: Record<string, unknown>): PublicAccount {
   const userId = stringField(value, "user_id");
   const username = stringField(value, "username");
   const displayName = stringField(value, "display_name");
-  const role = stringField(value, "role");
   const profileUrl = stringField(value, "profile_url");
-  if (!/^[0-9a-f]{32}$/.test(userId)) {
-    throw invalidResponse("response field user_id must be an account ID");
-  }
-  if (!/^[a-z][a-z0-9_]{2,29}$/.test(username)) {
-    throw invalidResponse(
-      "response field username must be a canonical username",
-    );
-  }
   if (
+    !/^[0-9a-f]{32}$/.test(userId) ||
+    !/^[a-z][a-z0-9_]{2,29}$/.test(username) ||
     !displayName.trim() ||
-    Array.from(displayName).length > MAX_DISPLAY_NAME_CODE_POINTS
+    Array.from(displayName).length > MAX_DISPLAY_NAME_CODE_POINTS ||
+    profileUrl !== `/${username}`
   ) {
-    throw invalidResponse("response field display_name must be a display name");
-  }
-  if (!accountRoles.has(role)) {
-    throw invalidResponse("response field role must be an account role");
-  }
-  // The handle is the profile URL. Keeping that identity checked here is what
-  // lets a renderer link an account without re-deriving the path itself.
-  if (profileUrl !== `/${username}`) {
-    throw invalidResponse("response field profile_url must address the handle");
+    throw invalidResponse("account identity is invalid");
   }
   const avatarMediaId = nullableStringField(value, "avatar_media_id");
-  if (avatarMediaId !== null && !isCanonicalUlid(avatarMediaId)) {
-    throw invalidResponse("response field avatar_media_id must be a media ID");
-  }
   const coverMediaId = nullableStringField(value, "cover_media_id");
-  if (coverMediaId !== null && !isCanonicalUlid(coverMediaId)) {
-    throw invalidResponse("response field cover_media_id must be a media ID");
-  }
-  const status =
-    value.status === undefined ? null : stringField(value, "status");
-  if (status !== null && !accountStatuses.has(status)) {
-    throw invalidResponse("response field status must be an account status");
-  }
+  for (const id of [avatarMediaId, coverMediaId])
+    if (id !== null && !isCanonicalUlid(id))
+      throw invalidResponse("account picture must name managed media");
   return {
     userId,
     username,
     displayName,
+    profileUrl,
     bio: stringField(value, "bio"),
     avatarMediaId,
     coverMediaId,
-    role: role as AccountRole,
-    profileUrl,
-    status: status as AccountStatus | null,
-    usernameChosen:
-      value.username_chosen === undefined
-        ? null
-        : booleanField(value, "username_chosen"),
   };
 }
-
-/**
- * The same account, read from an endpoint that is allowed to disclose the
- * private fields: the account's own session, and the owner's roster.
- *
- * Only the public projection may leave `status` and `usernameChosen` out, so
- * their absence anywhere else is a malformed response rather than discretion.
- */
+const publicAccountKeys = [
+  "user_id",
+  "username",
+  "display_name",
+  "bio",
+  "avatar_media_id",
+  "cover_media_id",
+  "profile_url",
+];
+export function parseAccount(value: unknown): PublicAccount {
+  if (!isRecord(value) || !hasKeys(value, publicAccountKeys, []))
+    throw invalidResponse("public account contains unsupported fields");
+  return publicAccountFields(value);
+}
 export function parsePrivateAccount(value: unknown): Account {
-  const account = parseAccount(value);
-  if (account.status === null || account.usernameChosen === null) {
-    throw invalidResponse("account view must disclose status and onboarding");
-  }
-  return account;
+  if (
+    !isRecord(value) ||
+    !hasKeys(
+      value,
+      [...publicAccountKeys, "role", "status", "username_chosen"],
+      [],
+    )
+  )
+    throw invalidResponse("private account is incomplete");
+  const role = value.role,
+    status = value.status;
+  if (
+    (role !== "admin" && role !== "member") ||
+    (status !== "pending" && status !== "active" && status !== "suspended")
+  )
+    throw invalidResponse("account role or status is invalid");
+  return {
+    ...publicAccountFields(value),
+    role,
+    status,
+    usernameChosen: booleanField(value, "username_chosen"),
+  };
 }
 
 export class PublicApi {
   private readonly fetcher: Fetcher;
+  private readonly authorUserId: string | undefined;
 
-  constructor(fetcher: Fetcher = window.fetch.bind(window)) {
+  constructor(
+    fetcher: Fetcher = (input, init) => window.fetch(input, init),
+    authorUserId?: string,
+  ) {
     this.fetcher = fetcher;
+    this.authorUserId = authorUserId;
+  }
+
+  forAuthor(userId: string): PublicApi {
+    return new PublicApi(this.fetcher, userId);
   }
 
   async site(signal?: AbortSignal): Promise<SiteIdentity> {
@@ -2490,7 +2453,7 @@ export class PublicApi {
    * one does. An account that is not active reads as absent rather than as
    * hidden, so the server answers ACCOUNT_NOT_FOUND for both.
    */
-  async user(username: string, signal?: AbortSignal): Promise<Account> {
+  async user(username: string, signal?: AbortSignal): Promise<PublicAccount> {
     const response = await this.fetcher(
       `/api/v1/users/${encodeURIComponent(username)}`,
       { headers: { Accept: "application/json" }, signal },
@@ -2516,7 +2479,7 @@ export class PublicApi {
       if (
         !isRecord(item) ||
         !hasExactKeys(item, [
-          "owner_id",
+          "user_id",
           "username",
           "display_name",
           "avatar_media_id",
@@ -2525,13 +2488,13 @@ export class PublicApi {
       ) {
         throw invalidResponse("mention suggestion contains unsupported fields");
       }
-      const ownerId = stringField(item, "owner_id");
+      const userId = stringField(item, "user_id");
       const username = stringField(item, "username");
       const displayName = stringField(item, "display_name");
       const avatarMediaId = nullableStringField(item, "avatar_media_id");
       const profileUrl = stringField(item, "profile_url");
       if (
-        !/^[0-9a-f]{32}$/.test(ownerId) ||
+        !/^[0-9a-f]{32}$/.test(userId) ||
         !/^[a-z][a-z0-9_]{2,29}$/.test(username) ||
         !displayName ||
         profileUrl !== `/${username}` ||
@@ -2539,13 +2502,15 @@ export class PublicApi {
       ) {
         throw invalidResponse("mention suggestion identity is invalid");
       }
-      return { ownerId, username, displayName, avatarMediaId, profileUrl };
+      return { userId, username, displayName, avatarMediaId, profileUrl };
     });
   }
 
   async timeline(request: TimelineRequest = {}): Promise<TimelinePage> {
     const query = new URLSearchParams();
     query.set("limit", String(request.limit ?? 20));
+    const author = request.authorUserId ?? this.authorUserId;
+    if (author) query.set("author_user_id", author);
     if (request.cursor) query.set("cursor", request.cursor);
     if (request.from) query.set("from", request.from);
     if (request.to) query.set("to", request.to);
@@ -2746,7 +2711,7 @@ export function uploadMediaXHR(
       if (!posterPolling || !uploadID || signal?.aborted) return;
       try {
         const response = await fetch(
-          `/api/v1/owner/media-uploads/${encodeURIComponent(uploadID)}/poster`,
+          `/api/v1/media/uploads/${encodeURIComponent(uploadID)}/poster`,
           { credentials: "same-origin", headers: { Accept: "image/jpeg" } },
         );
         if (
@@ -2922,7 +2887,6 @@ export async function decodeCreatedComment(
   postId: string,
   expected?: {
     parentId: string | null;
-    authorKind: PublicComment["authorKind"];
   },
 ): Promise<CreatedComment> {
   const { data, meta } = await decodeCommentResponse(response, ["replayed"]);
@@ -2937,11 +2901,7 @@ export async function decodeCreatedComment(
     );
   }
   const comment = parseComment(data, postId);
-  if (
-    expected &&
-    (comment.parentId !== expected.parentId ||
-      comment.authorKind !== expected.authorKind)
-  ) {
+  if (expected && comment.parentId !== expected.parentId) {
     throw invalidResponse(
       "created comment does not match the submitted identity or parent",
     );

@@ -27,7 +27,7 @@ const legacyGuestCommentID = "01ARZ3NDEKTSV4RRFFQ69G5FB9"
 
 type commentHTTPFixture struct {
 	runtime *runtimefs.Runtime
-	ownerTestFixture
+	authenticationTestFixture
 	accountService *app.AccountService
 	comments       *app.CommentService
 	site           *app.SiteService
@@ -42,7 +42,7 @@ func newCommentHTTPFixture(t *testing.T, log LogFunc) commentHTTPFixture {
 	if err != nil {
 		t.Fatal(err)
 	}
-	credential, err := auth.InitializeOffline(context.Background(), runtimeState, auth.Options{})
+	_, err = auth.InitializeOffline(context.Background(), runtimeState, auth.Options{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -57,6 +57,7 @@ func newCommentHTTPFixture(t *testing.T, log LogFunc) commentHTTPFixture {
 	if err != nil {
 		t.Fatal(err)
 	}
+	testAccounts(t, database, runtimeState)
 	t.Cleanup(func() { _ = database.Close() })
 	postRepository, _ := sqlitestore.NewPostRepository(database, runtimeState.Locks)
 	postID := domain.ID("01ARZ3NDEKTSV4RRFFQ69G5FAV")
@@ -64,7 +65,7 @@ func newCommentHTTPFixture(t *testing.T, log LogFunc) commentHTTPFixture {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := posts.Create(context.Background(), app.CreatePostInput{ContentMD: "comment host"}); err != nil {
+	if _, err := posts.Create(fixtureContentContext(t, testAccounts(t, database, runtimeState)), app.CreatePostInput{ContentMD: "comment host"}); err != nil {
 		t.Fatal(err)
 	}
 	siteRepository, _ := sqlitestore.NewSiteRepository(database, runtimeState.Locks)
@@ -95,15 +96,15 @@ func newCommentHTTPFixture(t *testing.T, log LogFunc) commentHTTPFixture {
 	}
 	// Federated sign-in is wired in so a test can mint a real member account
 	// against this same engine; the provider is substituted, not reached.
-	engine, err := New(Config{Assets: testAssets(), OwnerAuth: manager, Accounts: commentAccounts, SiteSettings: site, Posts: posts, Comments: comments, Media: mediaStore, OAuthProviders: oauth.NewRegistry(newStubProvider()), Log: log, RequestID: func() string { return "req_comments" }})
+	engine, err := New(Config{Assets: testAssets(), SessionSigner: manager, Accounts: commentAccounts, SiteSettings: site, Posts: posts, Comments: comments, Media: mediaStore, OAuthProviders: oauth.NewRegistry(newStubProvider()), Log: log, RequestID: func() string { return "req_comments" }})
 	if err != nil {
 		t.Fatal(err)
 	}
 	return commentHTTPFixture{
-		runtime:          runtimeState,
-		ownerTestFixture: ownerTestFixture{manager: manager, accounts: commentAccounts, gate: NewGate(manager, commentAccounts), token: credential.Token, engine: engine, now: &now},
-		accountService:   commentAccounts,
-		comments:         comments, site: site, postID: postID, clock: &now, database: database,
+		runtime:                   runtimeState,
+		authenticationTestFixture: authenticationTestFixture{manager: manager, accounts: commentAccounts, gate: NewGate(manager, commentAccounts), token: issueTestAPIToken(t, commentAccounts), engine: engine, now: &now},
+		accountService:            commentAccounts,
+		comments:                  comments, site: site, postID: postID, clock: &now, database: database,
 	}
 }
 
@@ -113,19 +114,17 @@ func publicCommentPath(fixture commentHTTPFixture) string {
 }
 
 // ownerCommentPath is the only route that writes a comment.
-func ownerCommentPath(fixture commentHTTPFixture) string {
-	return "/api/v1/owner/posts/" + fixture.postID.String() + "/comments"
+func commentResourcePath(fixture commentHTTPFixture) string {
+	return "/api/v1/posts/" + fixture.postID.String() + "/comments"
 }
 
 func commentRequest(method, path, body string) *http.Request {
-	request := ownerRequest(method, path, body)
+	request := jsonRequest(method, path, body)
 	request.RemoteAddr = "192.0.2.25:4000"
 	return request
 }
 
-// ownerCommentRequest authenticates the way every other owner-route test in
-// this package does: a bearer token, which needs no CSRF header.
-func ownerCommentRequest(fixture commentHTTPFixture, method, path, body string) *http.Request {
+func authenticatedCommentRequest(fixture commentHTTPFixture, method, path, body string) *http.Request {
 	request := commentRequest(method, path, body)
 	request.Header.Set("Authorization", "Bearer "+fixture.token)
 	return request
@@ -139,16 +138,16 @@ func commentData(t *testing.T, response *httptest.ResponseRecorder) map[string]a
 	return decodeDataMap(t, response)
 }
 
-func postOwnerComment(t *testing.T, fixture commentHTTPFixture, body string) map[string]any {
+func postAccountComment(t *testing.T, fixture commentHTTPFixture, body string) map[string]any {
 	t.Helper()
-	response := performRequest(fixture.engine, ownerCommentRequest(fixture, http.MethodPost, ownerCommentPath(fixture), body))
+	response := performRequest(fixture.engine, authenticatedCommentRequest(fixture, http.MethodPost, commentResourcePath(fixture), body))
 	if response.Code != http.StatusCreated {
 		t.Fatalf("owner create = %d %s", response.Code, response.Body.String())
 	}
 	return commentData(t, response)
 }
 
-func uploadOwnerMedia(t *testing.T, fixture commentHTTPFixture) string {
+func uploadAccountMedia(t *testing.T, fixture commentHTTPFixture) string {
 	t.Helper()
 	request := mediaUploadRequest(t, testGIF(t))
 	request.Header.Set("Authorization", "Bearer "+fixture.token)
@@ -167,17 +166,13 @@ func uploadOwnerMedia(t *testing.T, fixture commentHTTPFixture) string {
 	return id
 }
 
-// insertLegacyGuestComment writes the row an anonymous visitor used to leave:
-// author_kind 'guest', a name the visitor typed, and no account reference.
-// The write path can no longer produce it, so the regression guard for reading
-// one has to build it directly.
 func insertLegacyGuestComment(t *testing.T, fixture commentHTTPFixture, id, name, content string) {
 	t.Helper()
 	ctx := context.Background()
 	err := fixture.database.WriteTx(ctx, func(queries sqlitestore.Queries) error {
 		_, execErr := queries.ExecContext(ctx, `
-INSERT INTO comments (id, entry_id, parent_id, author_kind, author_name, content_md, created_at_ms)
-VALUES (?, ?, NULL, 'guest', ?, ?, ?)`, id, fixture.postID.String(), name, content, fixture.clock.Add(-time.Hour).UnixMilli())
+INSERT INTO comments (id, entry_id, parent_id, author_name, content_md, created_at_ms)
+VALUES (?, ?, NULL, ?, ?, ?)`, id, fixture.postID.String(), name, content, fixture.clock.Add(-time.Hour).UnixMilli())
 		return execErr
 	})
 	if err != nil {
@@ -198,10 +193,10 @@ func decodeCommentItems(t *testing.T, response *httptest.ResponseRecorder) []map
 	return envelope.Data.Items
 }
 
-func TestCommentHTTPOwnerMediaUploadCreateAndReadContract(t *testing.T) {
+func TestCommentHTTPAccountMediaUploadCreateAndReadContract(t *testing.T) {
 	fixture := newCommentHTTPFixture(t, nil)
-	mediaID := uploadOwnerMedia(t, fixture)
-	data := postOwnerComment(t, fixture,
+	mediaID := uploadAccountMedia(t, fixture)
+	data := postAccountComment(t, fixture,
 		`{"content_md":"image reply","media":[{"media_id":"`+mediaID+`","position":0,"alt_text":"night sky"}]}`)
 	mediaItems, ok := data["media"].([]any)
 	if !ok || len(mediaItems) != 1 {
@@ -219,20 +214,20 @@ func TestCommentHTTPOwnerMediaUploadCreateAndReadContract(t *testing.T) {
 	}
 }
 
-func TestCommentHTTPOwnerThreadAndModerationContract(t *testing.T) {
+func TestCommentHTTPAccountThreadAndModerationContract(t *testing.T) {
 	fixture := newCommentHTTPFixture(t, nil)
 	publicPath := publicCommentPath(fixture)
-	root := postOwnerComment(t, fixture, `{"content_md":"first **comment**"}`)
-	if root["author_kind"] != "owner" || root["author_name"] != "Moment" || root["parent_id"] != nil ||
+	root := postAccountComment(t, fixture, `{"content_md":"first **comment**"}`)
+	if root["author_kind"] != nil || root["author_name"] != "writer" || root["parent_id"] != nil ||
 		root["depth"] != float64(0) || !strings.Contains(root["content_html"].(string), "<strong>comment</strong>") {
 		t.Fatalf("root = %#v", root)
 	}
 	rootID := root["id"].(string)
-	reply := postOwnerComment(t, fixture, `{"content_md":"owner reply","parent_id":"`+rootID+`"}`)
-	if reply["author_kind"] != "owner" || reply["author_name"] != "Moment" || reply["parent_id"] != rootID || reply["depth"] != float64(1) {
+	reply := postAccountComment(t, fixture, `{"content_md":"owner reply","parent_id":"`+rootID+`"}`)
+	if reply["author_kind"] != nil || reply["author_name"] != "writer" || reply["parent_id"] != rootID || reply["depth"] != float64(1) {
 		t.Fatalf("reply = %#v", reply)
 	}
-	deep := performRequest(fixture.engine, ownerCommentRequest(fixture, http.MethodPost, ownerCommentPath(fixture),
+	deep := performRequest(fixture.engine, authenticatedCommentRequest(fixture, http.MethodPost, commentResourcePath(fixture),
 		`{"content_md":"reply to a reply","parent_id":"`+reply["id"].(string)+`"}`))
 	if deep.Code != http.StatusConflict || decodeError(t, deep.Body).Error.Code != "COMMENT_DEPTH_EXCEEDED" {
 		t.Fatalf("depth = %d", deep.Code)
@@ -248,18 +243,18 @@ func TestCommentHTTPOwnerThreadAndModerationContract(t *testing.T) {
 		t.Fatalf("post comment_count = %#v", count)
 	}
 
-	unauthorized := performRequest(fixture.engine, commentRequest(http.MethodDelete, "/api/v1/owner/comments/"+rootID, ""))
+	unauthorized := performRequest(fixture.engine, commentRequest(http.MethodDelete, "/api/v1/comments/"+rootID, ""))
 	if unauthorized.Code != http.StatusUnauthorized || decodeError(t, unauthorized.Body).Error.Code != "UNAUTHORIZED" {
 		t.Fatalf("unauthorized = %d", unauthorized.Code)
 	}
-	cookie, session := exchangeOwnerSession(t, fixture.ownerTestFixture, fixture.token)
-	missingCSRF := commentRequest(http.MethodDelete, "/api/v1/owner/comments/"+rootID, "")
+	cookie, session := exchangeAccountSession(t, fixture.authenticationTestFixture, fixture.token)
+	missingCSRF := commentRequest(http.MethodDelete, "/api/v1/comments/"+rootID, "")
 	missingCSRF.AddCookie(cookie)
 	if response := performRequest(fixture.engine, missingCSRF); response.Code != http.StatusForbidden || decodeError(t, response.Body).Error.Code != "CSRF_INVALID" {
 		t.Fatalf("csrf = %d", response.Code)
 	}
 
-	dryRun := commentRequest(http.MethodDelete, "/api/v1/owner/comments/"+rootID+"?dry_run=true", "")
+	dryRun := commentRequest(http.MethodDelete, "/api/v1/comments/"+rootID+"?dry_run=true", "")
 	dryRun.AddCookie(cookie)
 	dryRun.Header.Set(CSRFHeaderName, session["csrf_token"].(string))
 	dryResponse := performRequest(fixture.engine, dryRun)
@@ -270,7 +265,7 @@ func TestCommentHTTPOwnerThreadAndModerationContract(t *testing.T) {
 	if dryResponse.Code != http.StatusOK || dryEnvelope.Meta["dry_run"] != true || dryEnvelope.Meta["deleted"] != false || dryEnvelope.Meta["replies_affected"] != float64(1) {
 		t.Fatalf("dry-run = %s", dryResponse.Body.String())
 	}
-	deleted := performRequest(fixture.engine, ownerCommentRequest(fixture, http.MethodDelete, "/api/v1/owner/comments/"+rootID, ""))
+	deleted := performRequest(fixture.engine, authenticatedCommentRequest(fixture, http.MethodDelete, "/api/v1/comments/"+rootID, ""))
 	if deleted.Code != http.StatusOK || !strings.Contains(deleted.Body.String(), `"replies_affected":1`) {
 		t.Fatalf("delete = %d %s", deleted.Code, deleted.Body.String())
 	}
@@ -284,10 +279,10 @@ func TestCommentHTTPOwnerThreadAndModerationContract(t *testing.T) {
 	}
 }
 
-func TestCommentHTTPOwnerCreateReplaysOneIdempotencyKey(t *testing.T) {
+func TestCommentHTTPAccountCreateReplaysOneIdempotencyKey(t *testing.T) {
 	fixture := newCommentHTTPFixture(t, nil)
 	const body = `{"content_md":"retried once"}`
-	first := ownerCommentRequest(fixture, http.MethodPost, ownerCommentPath(fixture), body)
+	first := authenticatedCommentRequest(fixture, http.MethodPost, commentResourcePath(fixture), body)
 	first.Header.Set("Idempotency-Key", "owner-comment-retry")
 	created := performRequest(fixture.engine, first)
 	if created.Code != http.StatusCreated {
@@ -295,7 +290,7 @@ func TestCommentHTTPOwnerCreateReplaysOneIdempotencyKey(t *testing.T) {
 	}
 	createdID := commentData(t, created)["id"]
 
-	repeat := ownerCommentRequest(fixture, http.MethodPost, ownerCommentPath(fixture), body)
+	repeat := authenticatedCommentRequest(fixture, http.MethodPost, commentResourcePath(fixture), body)
 	repeat.Header.Set("Idempotency-Key", "owner-comment-retry")
 	replayed := performRequest(fixture.engine, repeat)
 	var envelope struct {
@@ -309,7 +304,7 @@ func TestCommentHTTPOwnerCreateReplaysOneIdempotencyKey(t *testing.T) {
 		t.Fatalf("replay = %d %s", replayed.Code, replayed.Body.String())
 	}
 
-	changed := ownerCommentRequest(fixture, http.MethodPost, ownerCommentPath(fixture), `{"content_md":"different body"}`)
+	changed := authenticatedCommentRequest(fixture, http.MethodPost, commentResourcePath(fixture), `{"content_md":"different body"}`)
 	changed.Header.Set("Idempotency-Key", "owner-comment-retry")
 	conflict := performRequest(fixture.engine, changed)
 	if conflict.Code != http.StatusConflict || decodeError(t, conflict.Body).Error.Code != "IDEMPOTENCY_KEY_REUSED" {
@@ -323,15 +318,15 @@ func TestCommentHTTPOwnerCreateReplaysOneIdempotencyKey(t *testing.T) {
 func TestCommentHTTPPinContractExposesOneTopLevelSelection(t *testing.T) {
 	fixture := newCommentHTTPFixture(t, nil)
 	publicPath := publicCommentPath(fixture)
-	rootID := postOwnerComment(t, fixture, `{"content_md":"root"}`)["id"].(string)
-	replyID := postOwnerComment(t, fixture, `{"content_md":"reply","parent_id":"`+rootID+`"}`)["id"].(string)
-	pinPath := "/api/v1/owner/posts/" + fixture.postID.String() + "/comments/" + rootID + "/pin"
+	rootID := postAccountComment(t, fixture, `{"content_md":"root"}`)["id"].(string)
+	replyID := postAccountComment(t, fixture, `{"content_md":"reply","parent_id":"`+rootID+`"}`)["id"].(string)
+	pinPath := "/api/v1/posts/" + fixture.postID.String() + "/comments/" + rootID + "/pin"
 
 	unauthorized := performRequest(fixture.engine, commentRequest(http.MethodPut, pinPath, ""))
 	if unauthorized.Code != http.StatusUnauthorized {
 		t.Fatalf("unauthorized pin = %d %s", unauthorized.Code, unauthorized.Body.String())
 	}
-	pinned := performRequest(fixture.engine, ownerCommentRequest(fixture, http.MethodPut, pinPath, ""))
+	pinned := performRequest(fixture.engine, authenticatedCommentRequest(fixture, http.MethodPut, pinPath, ""))
 	data := commentData(t, pinned)
 	if pinned.Code != http.StatusOK || data["post_id"] != fixture.postID.String() || data["pinned_comment_id"] != rootID {
 		t.Fatalf("pin = %d %s", pinned.Code, pinned.Body.String())
@@ -341,13 +336,13 @@ func TestCommentHTTPPinContractExposesOneTopLevelSelection(t *testing.T) {
 		t.Fatalf("listed pin = %d %s", listed.Code, listed.Body.String())
 	}
 
-	rejected := performRequest(fixture.engine, ownerCommentRequest(fixture, http.MethodPut,
-		"/api/v1/owner/posts/"+fixture.postID.String()+"/comments/"+replyID+"/pin", ""))
+	rejected := performRequest(fixture.engine, authenticatedCommentRequest(fixture, http.MethodPut,
+		"/api/v1/posts/"+fixture.postID.String()+"/comments/"+replyID+"/pin", ""))
 	if rejected.Code != http.StatusBadRequest || decodeError(t, rejected.Body).Error.Code != "INVALID_ARGUMENT" {
 		t.Fatalf("reply pin = %d %s", rejected.Code, rejected.Body.String())
 	}
 
-	unpinned := performRequest(fixture.engine, ownerCommentRequest(fixture, http.MethodDelete, pinPath, ""))
+	unpinned := performRequest(fixture.engine, authenticatedCommentRequest(fixture, http.MethodDelete, pinPath, ""))
 	if unpinned.Code != http.StatusOK || commentData(t, unpinned)["pinned_comment_id"] != nil {
 		t.Fatalf("unpin = %d %s", unpinned.Code, unpinned.Body.String())
 	}
@@ -361,7 +356,7 @@ func TestCommentHTTPStrictJSONUnsupportedFieldsAndClosedComments(t *testing.T) {
 		defer logsMu.Unlock()
 		logs = append(logs, fields)
 	})
-	ownerPath := ownerCommentPath(fixture)
+	authorPath := commentResourcePath(fixture)
 	secret := "private-comment-body"
 
 	// author_name and website were the anonymous author's identity and the
@@ -371,7 +366,7 @@ func TestCommentHTTPStrictJSONUnsupportedFieldsAndClosedComments(t *testing.T) {
 		{body: `{"author_name":"Guest","content_md":"` + secret + `"}`, field: "author_name", value: "Guest"},
 		{body: `{"content_md":"` + secret + `","website":"trap-value"}`, field: "website", value: "trap-value"},
 	} {
-		response := performRequest(fixture.engine, ownerCommentRequest(fixture, http.MethodPost, ownerPath, test.body))
+		response := performRequest(fixture.engine, authenticatedCommentRequest(fixture, http.MethodPost, authorPath, test.body))
 		raw := response.Body.String()
 		failure := decodeError(t, strings.NewReader(raw))
 		if response.Code != http.StatusBadRequest || failure.Error.Code != "INVALID_ARGUMENT" || failure.Error.Details["field"] != test.field {
@@ -383,7 +378,7 @@ func TestCommentHTTPStrictJSONUnsupportedFieldsAndClosedComments(t *testing.T) {
 	}
 
 	for _, body := range []string{`{}`, `{"content_md":null}`, `{"content_md":"x","extra":true}`, `{"content_md":"x","content_md":"y"}`, `{"content_md":"x"} {}`} {
-		response := performRequest(fixture.engine, ownerCommentRequest(fixture, http.MethodPost, ownerPath, body))
+		response := performRequest(fixture.engine, authenticatedCommentRequest(fixture, http.MethodPost, authorPath, body))
 		if response.Code != http.StatusBadRequest || decodeError(t, response.Body).Error.Code != "INVALID_ARGUMENT" {
 			t.Fatalf("strict %q = %d %s", body, response.Code, response.Body.String())
 		}
@@ -395,7 +390,7 @@ func TestCommentHTTPStrictJSONUnsupportedFieldsAndClosedComments(t *testing.T) {
 		`{"content_md":"x","media":[{"media_id":"` + mediaID + `","position":0,"alt_text":null,"extra":true}]}`,
 		`{"content_md":"x","media":[` + strings.TrimSuffix(strings.Repeat(`{"media_id":"`+mediaID+`","position":0,"alt_text":null},`, domain.MaxCommentMediaUsages+1), ",") + `]}`,
 	} {
-		response := performRequest(fixture.engine, ownerCommentRequest(fixture, http.MethodPost, ownerPath, body))
+		response := performRequest(fixture.engine, authenticatedCommentRequest(fixture, http.MethodPost, authorPath, body))
 		if response.Code != http.StatusBadRequest || decodeError(t, response.Body).Error.Code != "INVALID_ARGUMENT" {
 			t.Fatalf("strict media %q = %d %s", body, response.Code, response.Body.String())
 		}
@@ -407,7 +402,7 @@ func TestCommentHTTPStrictJSONUnsupportedFieldsAndClosedComments(t *testing.T) {
 		{body: `{"content_md":"<b>raw</b>"}`, code: "INVALID_ARGUMENT", status: http.StatusBadRequest},
 		{body: `{"content_md":"![x](https://example.test/x.png)"}`, code: "EXTERNAL_IMAGE_NOT_ALLOWED", status: http.StatusUnprocessableEntity},
 	} {
-		response := performRequest(fixture.engine, ownerCommentRequest(fixture, http.MethodPost, ownerPath, test.body))
+		response := performRequest(fixture.engine, authenticatedCommentRequest(fixture, http.MethodPost, authorPath, test.body))
 		if response.Code != test.status || decodeError(t, response.Body).Error.Code != test.code {
 			t.Fatalf("unsafe %q = %d %s", test.body, response.Code, response.Body.String())
 		}
@@ -416,12 +411,12 @@ func TestCommentHTTPStrictJSONUnsupportedFieldsAndClosedComments(t *testing.T) {
 		t.Fatalf("a rejected write persisted: %s", list.Body.String())
 	}
 
-	accepted := postOwnerComment(t, fixture, `{"content_md":"accepted"}`)
+	accepted := postAccountComment(t, fixture, `{"content_md":"accepted"}`)
 	commentsEnabled := false
 	if _, err := fixture.site.Update(context.Background(), app.SiteUpdate{CommentsEnabled: &commentsEnabled}); err != nil {
 		t.Fatal(err)
 	}
-	closed := performRequest(fixture.engine, ownerCommentRequest(fixture, http.MethodPost, ownerPath, `{"content_md":"closed"}`))
+	closed := performRequest(fixture.engine, authenticatedCommentRequest(fixture, http.MethodPost, authorPath, `{"content_md":"closed"}`))
 	if closed.Code != http.StatusForbidden || decodeError(t, closed.Body).Error.Code != "COMMENTS_DISABLED" {
 		t.Fatalf("closed = %d %s", closed.Code, closed.Body.String())
 	}
@@ -440,53 +435,29 @@ func TestCommentHTTPStrictJSONUnsupportedFieldsAndClosedComments(t *testing.T) {
 	}
 }
 
-// TestCommentHTTPRetiredAnonymousWriteRoutesRejectEveryCaller pins the shape of
-// the removal: the two anonymous write routes are not merely guarded, they are
-// not routes. An owner token does not bring them back either -- the owner
-// group is the only place a comment write is mounted.
-func TestCommentHTTPRetiredAnonymousWriteRoutesRejectEveryCaller(t *testing.T) {
+// Resource URLs admit authenticated writing while keeping anonymous uploads retired.
+func TestCommentResourceRequiresAnAccountAndRetiredUploadsStayAbsent(t *testing.T) {
 	fixture := newCommentHTTPFixture(t, nil)
-	for _, test := range []struct {
-		name, path, code string
-		status           int
-	}{
-		{
-			// The path still exists for GET, so the router answers the write
-			// with "not this method" rather than "no such route".
-			name:   "create",
-			path:   "/api/v1/posts/" + fixture.postID.String() + "/comments",
-			status: http.StatusMethodNotAllowed,
-			code:   "METHOD_NOT_ALLOWED",
-		},
-		{
-			name:   "media upload",
-			path:   "/api/v1/posts/" + fixture.postID.String() + "/comment-media",
-			status: http.StatusNotFound,
-			code:   "API_ROUTE_NOT_FOUND",
-		},
-	} {
-		t.Run(test.name, func(t *testing.T) {
-			anonymous := performRequest(fixture.engine, commentRequest(http.MethodPost, test.path, `{"content_md":"anonymous"}`))
-			if anonymous.Code != test.status || decodeError(t, anonymous.Body).Error.Code != test.code {
-				t.Fatalf("anonymous = %d %s", anonymous.Code, anonymous.Body.String())
-			}
-			authenticated := performRequest(fixture.engine, ownerCommentRequest(fixture, http.MethodPost, test.path, `{"content_md":"authenticated"}`))
-			if authenticated.Code != test.status || decodeError(t, authenticated.Body).Error.Code != test.code {
-				t.Fatalf("authenticated = %d %s", authenticated.Code, authenticated.Body.String())
-			}
-		})
+	path := "/api/v1/posts/" + fixture.postID.String() + "/comments"
+	anonymous := performRequest(fixture.engine, commentRequest(http.MethodPost, path, `{"content_md":"anonymous"}`))
+	if anonymous.Code != http.StatusUnauthorized {
+		t.Fatalf("anonymous write=%d %s", anonymous.Code, anonymous.Body.String())
 	}
-	if listed := performRequest(fixture.engine, commentRequest(http.MethodGet, publicCommentPath(fixture), "")); !strings.Contains(listed.Body.String(), `"items":[]`) {
-		t.Fatalf("a retired route wrote a comment: %s", listed.Body.String())
+	authenticated := performRequest(fixture.engine, authenticatedCommentRequest(fixture, http.MethodPost, path, `{"content_md":"authenticated"}`))
+	if authenticated.Code != http.StatusCreated {
+		t.Fatalf("account write=%d %s", authenticated.Code, authenticated.Body.String())
+	}
+	for _, request := range []*http.Request{commentRequest(http.MethodPost, "/api/v1/posts/"+fixture.postID.String()+"/comment-media", ""), authenticatedCommentRequest(fixture, http.MethodPost, "/api/v1/posts/"+fixture.postID.String()+"/comment-media", "")} {
+		response := performRequest(fixture.engine, request)
+		if response.Code != http.StatusNotFound || decodeError(t, response.Body).Error.Code != "API_ROUTE_NOT_FOUND" {
+			t.Fatalf("retired upload=%d %s", response.Code, response.Body.String())
+		}
 	}
 }
 
-// TestCommentHTTPPublicThreadReadStaysOpenToAnyone guards the half of the
-// surface that was deliberately kept: reading a thread never needed an account
-// and still does not.
 func TestCommentHTTPPublicThreadReadStaysOpenToAnyone(t *testing.T) {
 	fixture := newCommentHTTPFixture(t, nil)
-	created := postOwnerComment(t, fixture, `{"content_md":"published"}`)
+	created := postAccountComment(t, fixture, `{"content_md":"published"}`)
 
 	anonymous := commentRequest(http.MethodGet, publicCommentPath(fixture), "")
 	if anonymous.Header.Get("Authorization") != "" || len(anonymous.Cookies()) != 0 {
@@ -513,7 +484,7 @@ func TestCommentHTTPListsLegacyGuestRowsWrittenBeforeAccountsWereRequired(t *tes
 	fixture := newCommentHTTPFixture(t, nil)
 	const legacyName = "访客"
 	insertLegacyGuestComment(t, fixture, legacyGuestCommentID, legacyName, "left before accounts existed")
-	current := postOwnerComment(t, fixture, `{"content_md":"left after accounts existed"}`)
+	current := postAccountComment(t, fixture, `{"content_md":"left after accounts existed"}`)
 
 	listed := performRequest(fixture.engine, commentRequest(http.MethodGet, publicCommentPath(fixture), ""))
 	items := decodeCommentItems(t, listed)
@@ -521,12 +492,12 @@ func TestCommentHTTPListsLegacyGuestRowsWrittenBeforeAccountsWereRequired(t *tes
 		t.Fatalf("thread = %d %s", listed.Code, listed.Body.String())
 	}
 	legacy := items[0]
-	if legacy["id"] != legacyGuestCommentID || legacy["author_kind"] != "guest" || legacy["author_name"] != legacyName ||
+	if legacy["id"] != legacyGuestCommentID || legacy["author_kind"] != nil || legacy["author_name"] != legacyName ||
 		legacy["depth"] != float64(0) || legacy["parent_id"] != nil ||
 		!strings.Contains(legacy["content_html"].(string), "left before accounts existed") {
 		t.Fatalf("legacy guest comment = %#v", legacy)
 	}
-	if items[1]["id"] != current["id"] || items[1]["author_kind"] != "owner" || items[1]["author_name"] != "Moment" {
+	if items[1]["id"] != current["id"] || items[1]["author_kind"] != nil || items[1]["author_name"] != "writer" {
 		t.Fatalf("owner comment = %#v", items[1])
 	}
 	postResponse := performRequest(fixture.engine, commentRequest(http.MethodGet, "/api/v1/posts/"+fixture.postID.String(), ""))

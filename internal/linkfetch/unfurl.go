@@ -29,7 +29,7 @@ type Preview struct {
 	LikeCount       *int64
 }
 
-// Resolver turns an owner-supplied URL into a Preview.
+// Resolver turns supplied URLs into bounded immutable previews.
 type Resolver struct {
 	fetcher   *Fetcher
 	providers []Provider
@@ -50,14 +50,6 @@ type ResolverOptions struct {
 // origin, not to be an authority: a published card is always a stored snapshot.
 const DefaultCacheTTL = 5 * time.Minute
 
-// challengeRetries bounds how many times an incomplete document is
-// re-requested, and challengeBackoff spaces those attempts out.
-//
-// The spacing is the part that matters. An origin serving challenges does not
-// decide per request: observed runs come in bursts of several seconds, so
-// three back-to-back attempts land entirely inside one burst and all fail.
-// Waiting between them is what lets a retry reach the other side. The whole
-// sequence still only ever runs once, for one owner-initiated unfurl.
 const (
 	challengeRetries = 3
 	challengeBackoff = 500 * time.Millisecond

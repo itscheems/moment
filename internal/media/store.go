@@ -229,6 +229,9 @@ func (store *Store) IngestObserved(ctx context.Context, originalName string, inp
 		if err := store.commitPreparedPreview(ctx, prepared); err != nil {
 			return Media{}, Preview{}, err
 		}
+		if err := store.grantExistingMedia(ctx, existing.ID); err != nil {
+			return Media{}, Preview{}, err
+		}
 		return existing, prepared.preview, nil
 	}
 
@@ -270,6 +273,9 @@ func (store *Store) IngestObserved(ctx context.Context, originalName string, inp
 		// platform that cannot share advisory locks. Recover deterministically.
 		if existing, found, lookupErr := store.findBySHA(ctx, sha); lookupErr == nil && found {
 			cleanupOriginal = false
+			if err := store.grantExistingMedia(ctx, existing.ID); err != nil {
+				return Media{}, Preview{}, err
+			}
 			return existing, prepared.preview, nil
 		}
 		return Media{}, Preview{}, err
@@ -610,7 +616,7 @@ INSERT INTO media (
 		if err != nil {
 			return fmt.Errorf("insert media metadata: %w", err)
 		}
-		return nil
+		return grantIngestedMedia(ctx, queries, media.ID, media.CreatedAt)
 	})
 }
 

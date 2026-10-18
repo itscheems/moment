@@ -15,12 +15,12 @@ import (
 
 func TestUserSuggestDirectAPIParity(t *testing.T) {
 	runtimeState, dataDir := initializeSiteCLIData(t)
-	credential, err := auth.InitializeOffline(context.Background(), runtimeState, auth.Options{})
+	credential, err := initializeTestAccountCredential(context.Background(), runtimeState, auth.Options{})
 	if err != nil {
 		t.Fatal(err)
 	}
 	application := momentTestApplication()
-	updated := commandData(t, execute(application, "", "site", "update", "--data-dir", dataDir,
+	updated := commandData(t, execute(application, "", "user", "update-profile", "--as", "writer", "--data-dir", dataDir,
 		"--username", "cheems", "--display-name", "Cheems", "--json"))
 	if updated["username"] != "cheems" || updated["display_name"] != "Cheems" {
 		t.Fatalf("updated identity = %#v", updated)
@@ -47,11 +47,11 @@ func TestUserSuggestDirectAPIParity(t *testing.T) {
 		t.Fatal(err)
 	}
 	engine, err := ginhttp.New(ginhttp.Config{
-		Assets:       fstest.MapFS{"index.html": &fstest.MapFile{Data: []byte("Moment")}},
-		OwnerAuth:    manager,
-		Accounts:     testAccountService(t, database, runtimeState),
-		SiteSettings: service,
-		Readiness:    service.Ready,
+		Assets:        fstest.MapFS{"index.html": &fstest.MapFile{Data: []byte("Moment")}},
+		SessionSigner: manager,
+		Accounts:      testAccountService(t, database, runtimeState),
+		SiteSettings:  service,
+		Readiness:     service.Ready,
 	})
 	if err != nil {
 		t.Fatal(err)

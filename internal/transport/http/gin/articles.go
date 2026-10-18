@@ -13,24 +13,21 @@ import (
 	"github.com/moment/moment/internal/transport/postdto"
 )
 
-// RegisterArticleRoutes exposes the owner's unfinished articles and the act of
-// publishing one. Nothing here is public: a draft is by definition not.
+// RegisterArticleRoutes installs author-scoped article and draft management resources.
 func RegisterArticleRoutes(engine *gin.Engine, posts *app.PostService, gate *Gate) {
-	for _, prefix := range []string{"/api/v1", "/api/v1/owner"} {
-		routes := engine.Group(prefix)
-		routes.Use(gate.RequireActiveAccount())
-		routes.GET("/articles/drafts", listArticleDrafts(posts))
-		routes.POST("/articles/drafts", createArticleDraft(posts))
-		routes.GET("/articles/drafts/:id", getArticleDraft(posts))
-		routes.PUT("/articles/drafts/:id", replaceArticleDraft(posts))
-		routes.DELETE("/articles/drafts/:id", deleteArticleDraft(posts))
-		routes.POST("/articles/drafts/:id/publish", publishArticleDraft(posts))
-		routes.POST("/articles/:id/draft", editArticle(posts))
-		routes.GET("/articles", listManagedArticles(posts))
-		routes.GET("/articles/:id", getManagedArticle(posts))
-		routes.POST("/articles/:id/unpublish", withdrawArticle(posts))
-		routes.DELETE("/articles/:id", deletePost(posts))
-	}
+	routes := engine.Group("/api/v1")
+	routes.Use(gate.RequireActiveAccount())
+	routes.GET("/articles/drafts", listArticleDrafts(posts))
+	routes.POST("/articles/drafts", createArticleDraft(posts))
+	routes.GET("/articles/drafts/:id", getArticleDraft(posts))
+	routes.PUT("/articles/drafts/:id", replaceArticleDraft(posts))
+	routes.DELETE("/articles/drafts/:id", deleteArticleDraft(posts))
+	routes.POST("/articles/drafts/:id/publish", publishArticleDraft(posts))
+	routes.POST("/articles/:id/draft", editArticle(posts))
+	routes.GET("/articles", listManagedArticles(posts))
+	routes.GET("/articles/:id", getManagedArticle(posts))
+	routes.POST("/articles/:id/unpublish", withdrawArticle(posts))
+	routes.DELETE("/articles/:id", deletePost(posts))
 }
 
 // articleDraftBody is the write shape. body is the document itself rather than

@@ -40,7 +40,7 @@ func TestMergeCommitKeepsBothThroughBackupAndAtomicGenerationSwitch(t *testing.T
 	if err != nil {
 		t.Fatal(err)
 	}
-	inspection, err := committer.InspectMergeFileOffline(context.Background(), archivePath, 1)
+	inspection, err := committer.InspectMergeFileOffline(context.Background(), archivePath, testAuthorization(1))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -58,7 +58,7 @@ func TestMergeCommitKeepsBothThroughBackupAndAtomicGenerationSwitch(t *testing.T
 	if !found {
 		t.Fatalf("entry conflict missing from plan: %#v", inspection.Plan)
 	}
-	result, err := committer.CommitMerge(context.Background(), inspection.StagingToken, 1, selection, nil)
+	result, err := committer.CommitMerge(context.Background(), inspection.StagingToken, testAuthorization(1), selection, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -90,10 +90,10 @@ func TestMergeCommitKeepsBothThroughBackupAndAtomicGenerationSwitch(t *testing.T
 	}
 }
 
-func TestReviewAllowsReplacementAcrossOwnersButDisablesMerge(t *testing.T) {
+func TestReviewReportsHandleCollisionAcrossDisplayAccounts(t *testing.T) {
 	source := newExportFixture(t, true)
 	archivePath := exportFixtureFile(t, source)
-	target := newExportFixture(t, false)
+	target := newExportFixture(t, false, "fedcba9876543210fedcba9876543210")
 	now := time.Date(2026, 8, 15, 12, 0, 0, 0, time.UTC)
 	committer, err := NewCommitter(CommitOptions{
 		DataDir: target.runtime.Root, AppVersion: "0.1.0", Clock: func() time.Time { return now },
@@ -107,17 +107,17 @@ func TestReviewAllowsReplacementAcrossOwnersButDisablesMerge(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer func() { _ = file.Close() }()
-	inspection, err := committer.InspectReviewArchive(context.Background(), file, 1, target.database)
+	inspection, err := committer.InspectReviewArchive(context.Background(), file, Authorization{AccountID: "fedcba9876543210fedcba9876543210", CredentialID: testAuthorization(1).CredentialID}, target.database)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if inspection.MergeAllowed || inspection.MergeBlockedReason == nil || *inspection.MergeBlockedReason != string(domain.CodeImportOwnerMismatch) {
+	if inspection.MergeAllowed || inspection.MergeBlockedReason == nil || *inspection.MergeBlockedReason != string(domain.CodeUsernameTaken) {
 		t.Fatalf("merge availability = %#v", inspection)
 	}
 	if inspection.Review.IncomingOnly.Total == 0 || inspection.Review.SiteFields == nil {
 		t.Fatalf("review = %#v", inspection.Review)
 	}
-	if err := committer.DiscardMerge(context.Background(), inspection.StagingToken, 1); err != nil {
+	if err := committer.DiscardMerge(context.Background(), inspection.StagingToken, Authorization{AccountID: "fedcba9876543210fedcba9876543210", CredentialID: testAuthorization(1).CredentialID}); err != nil {
 		t.Fatal(err)
 	}
 	strictFile, err := os.Open(archivePath)
@@ -125,8 +125,8 @@ func TestReviewAllowsReplacementAcrossOwnersButDisablesMerge(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer func() { _ = strictFile.Close() }()
-	if _, err := committer.InspectMergeArchive(context.Background(), strictFile, 1, target.database); !domain.HasCode(err, domain.CodeImportOwnerMismatch) {
-		t.Fatalf("strict merge error = %v", err)
+	if result, err := committer.InspectMergeArchive(context.Background(), strictFile, Authorization{AccountID: "fedcba9876543210fedcba9876543210", CredentialID: testAuthorization(1).CredentialID}, target.database); err != nil || result.MergeAllowed || result.MergeBlockedReason == nil || *result.MergeBlockedReason != string(domain.CodeUsernameTaken) {
+		t.Fatalf("merge collision result=%+v err=%v", result, err)
 	}
 }
 
@@ -151,13 +151,13 @@ func TestReviewedReplacementRejectsAuthorityChangedAfterReview(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	inspection, err := committer.InspectReviewArchive(context.Background(), file, 1, fixture.database)
+	inspection, err := committer.InspectReviewArchive(context.Background(), file, testAuthorization(1), fixture.database)
 	closeErr := file.Close()
 	if err != nil || closeErr != nil {
 		t.Fatal(err, closeErr)
 	}
 	if err := fixture.database.WriteTx(context.Background(), func(queries sqlitestore.Queries) error {
-		_, err := queries.ExecContext(context.Background(), `INSERT INTO entries (id, kind, content_md, created_at_ms, updated_at_ms, published_at_ms) VALUES ('01ARZ3NDEKTSV4RRFFQ69G5FC0', 'moment', 'created after review', 1, 1, 1)`)
+		_, err := queries.ExecContext(context.Background(), `INSERT INTO entries (id, kind, content_md, created_at_ms, updated_at_ms, published_at_ms, author_user_id) VALUES ('01ARZ3NDEKTSV4RRFFQ69G5FC0', 'moment', 'created after review', 1, 1, 1, '0123456789abcdef0123456789abcdef')`)
 		return err
 	}); err != nil {
 		t.Fatal(err)
@@ -166,7 +166,7 @@ func TestReviewedReplacementRejectsAuthorityChangedAfterReview(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = committer.CommitReviewedReplacement(context.Background(), inspection.StagingToken, 1, inspection.Plan.PlanID, nil)
+	_, err = committer.CommitReviewedReplacement(context.Background(), inspection.StagingToken, testAuthorization(1), inspection.Plan.PlanID, nil)
 	if !domain.HasCode(err, domain.CodeImportMergePlanStale) {
 		t.Fatalf("replacement error = %v", err)
 	}
@@ -190,19 +190,19 @@ func TestReviewMediaIsBoundToTokenPlanAndSource(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	inspection, err := committer.InspectReviewArchive(context.Background(), file, 1, fixture.database)
+	inspection, err := committer.InspectReviewArchive(context.Background(), file, testAuthorization(1), fixture.database)
 	_ = file.Close()
 	if err != nil {
 		t.Fatal(err)
 	}
-	asset, err := committer.ReadReviewMedia(context.Background(), inspection.StagingToken, 1, inspection.Plan.PlanID, MergeReviewIncoming, mediaOneID)
+	asset, err := committer.ReadReviewMedia(context.Background(), inspection.StagingToken, testAuthorization(1), inspection.Plan.PlanID, MergeReviewIncoming, mediaOneID)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(asset.Contents) == 0 || asset.MIMEType != "image/jpeg" {
 		t.Fatalf("asset = %#v", asset)
 	}
-	_, err = committer.ReadReviewMedia(context.Background(), inspection.StagingToken, 1, "wrong-plan", MergeReviewIncoming, mediaOneID)
+	_, err = committer.ReadReviewMedia(context.Background(), inspection.StagingToken, testAuthorization(1), "wrong-plan", MergeReviewIncoming, mediaOneID)
 	if err == nil {
 		t.Fatal("wrong plan unexpectedly returned review media")
 	}
@@ -222,7 +222,7 @@ func TestDiscardMergeReleasesReadyStagingWithoutChangingAuthority(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	first, err := committer.InspectMergeFileOffline(context.Background(), archivePath, 1)
+	first, err := committer.InspectMergeFileOffline(context.Background(), archivePath, testAuthorization(1))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -230,7 +230,7 @@ func TestDiscardMergeReleasesReadyStagingWithoutChangingAuthority(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := committer.DiscardMergeFileOffline(context.Background(), first.StagingToken, 1); err != nil {
+	if err := committer.DiscardMergeFileOffline(context.Background(), first.StagingToken, testAuthorization(1)); err != nil {
 		t.Fatal(err)
 	}
 	after, err := fixture.runtime.ResolveCurrent()
@@ -244,7 +244,7 @@ func TestDiscardMergeReleasesReadyStagingWithoutChangingAuthority(t *testing.T) 
 	if err != nil || len(stages) != 0 {
 		t.Fatalf("discard left staging=%v err=%v", stages, err)
 	}
-	if _, err := committer.InspectMergeFileOffline(context.Background(), archivePath, 1); err != nil {
+	if _, err := committer.InspectMergeFileOffline(context.Background(), archivePath, testAuthorization(1)); err != nil {
 		t.Fatalf("new merge inspection remained blocked after discard: %v", err)
 	}
 }

@@ -92,6 +92,7 @@ func (capability Capability) supports(mode Mode) bool {
 // Options contains the common flags shared by every command.
 type Options struct {
 	DataDir   string
+	As        string
 	URL       string
 	TokenFile string
 	JSON      bool

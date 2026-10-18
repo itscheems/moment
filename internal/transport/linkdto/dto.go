@@ -1,7 +1,4 @@
-// Package linkdto carries the owner-facing link card write shape. It is
-// deliberately separate from the narrow public read projection in postdto: a
-// write must name the originally typed source URL and the recognizer that
-// produced the card, while a reader never needs either.
+// Package linkdto maps immutable link snapshots between transport and domain forms.
 package linkdto
 
 import (
@@ -77,11 +74,7 @@ func (card *Card) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
-// Domain converts the wire shape into the validated snapshot at a position.
-//
-// The embed URL is re-checked against the allowlist here rather than trusted:
-// the card body arrives from a client, and an owner session must not be able to
-// name an arbitrary frame source.
+// Domain constructs a validated stored preview snapshot.
 func (card Card) Domain(position int) (domain.LinkCard, error) {
 	value := domain.LinkCard{
 		Position:     position,
@@ -133,7 +126,7 @@ func copyCount(value *int64) *int64 {
 	return &count
 }
 
-// FromPreview renders one resolved preview for an owner client.
+// FromPreview maps an application preview into its public representation.
 func FromPreview(preview app.LinkPreview) Card {
 	card := Card{
 		SourceURL:    preview.Card.SourceURL,

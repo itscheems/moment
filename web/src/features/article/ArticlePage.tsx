@@ -22,8 +22,8 @@ import {
   SiteIdentityPreview,
 } from "../../components/TimelineInteractions";
 import { mediaPreviewUrl } from "../../api/mediaUrls";
-import { OwnerPostActions } from "../owner/OwnerPostActions";
-import { OwnerRepostAction } from "../owner/OwnerRepostAction";
+import { PostActions } from "../posts/PostActions";
+import { RepostAction } from "../posts/RepostAction";
 import { formatMomentDate } from "../posts/dates";
 import postStyles from "../posts/PostPresentation.module.css";
 import { shareCardBlocks } from "../share/shareCard";
@@ -38,7 +38,7 @@ export function ArticlePage({
   post,
   site,
   now,
-  owner = false,
+  canPublish = false,
   focusReading = false,
   layout = "document",
   showActions = true,
@@ -50,7 +50,7 @@ export function ArticlePage({
   post: PublicReadArticlePost;
   site: SiteIdentity;
   now?: Date;
-  owner?: boolean;
+  canPublish?: boolean;
   focusReading?: boolean;
   layout?: "document" | "detail";
   showActions?: boolean;
@@ -60,10 +60,10 @@ export function ArticlePage({
   onReply?: MouseEventHandler<HTMLButtonElement>;
 }) {
   const session = useOptionalSession();
-  owner = post.author?.userId
+  canPublish = post.author?.userId
     ? session?.account?.userId === post.author.userId &&
       session?.account?.status === "active"
-    : owner;
+    : canPublish;
   site = postAuthorSite(post, site);
   const { title, cover } = post.article;
   const published = formatMomentDate(post.publishedAt, site.timezone, now);
@@ -152,9 +152,9 @@ export function ArticlePage({
                 ) : null}
               </p>
             </div>
-            {owner && showActions ? (
+            {canPublish && showActions ? (
               <div className={styles.bylineActions}>
-                <OwnerPostActions
+                <PostActions
                   showArticleEdit
                   onDeleted={onDeleted}
                   onSiteChanged={onSiteChanged}
@@ -235,8 +235,8 @@ export function ArticlePage({
               ) : null}
             </button>
           </ActionTooltip>
-          {owner && showActions ? (
-            <OwnerRepostAction onChanged={onReposted} post={post} />
+          {canPublish && showActions ? (
+            <RepostAction onChanged={onReposted} post={post} />
           ) : null}
           <ShareMenu
             align="start"

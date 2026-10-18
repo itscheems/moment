@@ -20,23 +20,21 @@ import (
 	"github.com/moment/moment/internal/transport/postdto"
 )
 
-// RegisterPostRoutes exposes public plain-text reads and owner-only mutations
-// over one PostService. SiteService supplies the authoritative IANA timezone
-// used by application-owned date range interpretation.
+// RegisterPostRoutes installs public reading, author mutations and administrative moderation.
 func RegisterPostRoutes(engine *gin.Engine, posts *app.PostService, site *app.SiteService, gate *Gate) {
 	// The two reads stay public but are not anonymous: a session or token,
 	// when one is presented, widens what they return.
 	engine.GET("/api/v1/posts", listPosts(posts, site, gate))
 	engine.GET("/api/v1/posts/:id", getPost(posts, gate))
-	owner := engine.Group("/api/v1/owner")
-	owner.Use(gate.RequireOwner())
-	owner.POST("/posts", createPost(posts))
-	owner.PATCH("/posts/:id", updatePost(posts))
-	owner.DELETE("/posts/:id", deletePost(posts))
-	owner.PUT("/posts/:id/repost", repostPost(posts, true))
-	owner.DELETE("/posts/:id/repost", repostPost(posts, false))
-	owner.PUT("/posts/:id/pin", pinPost(site))
-	owner.DELETE("/posts/:id/pin", unpinPost(site))
+	authored := engine.Group("/api/v1")
+	authored.Use(gate.RequireActiveAccount())
+	authored.POST("/posts", createPost(posts))
+	authored.PATCH("/posts/:id", updatePost(posts))
+	authored.DELETE("/posts/:id", deletePost(posts))
+	authored.PUT("/posts/:id/repost", repostPost(posts, true))
+	authored.DELETE("/posts/:id/repost", repostPost(posts, false))
+	engine.PUT("/api/v1/posts/:id/pin", gate.RequireAdmin(), pinPost(site))
+	engine.DELETE("/api/v1/posts/:id/pin", gate.RequireAdmin(), unpinPost(site))
 }
 
 func repostPost(posts *app.PostService, active bool) gin.HandlerFunc {
@@ -215,7 +213,7 @@ func postListInput(ctx *gin.Context) (app.ListPostsInput, error) {
 	}
 	for key, values := range query {
 		switch key {
-		case "cursor", "limit", "from", "to", "anchor", "kind":
+		case "cursor", "limit", "from", "to", "anchor", "kind", "author_user_id":
 		default:
 			return app.ListPostsInput{}, invalidPostArgument("unsupported query parameter", key)
 		}
@@ -224,10 +222,14 @@ func postListInput(ctx *gin.Context) (app.ListPostsInput, error) {
 		}
 	}
 	input := app.ListPostsInput{
-		Cursor:   query.Get("cursor"),
-		FromDate: query.Get("from"),
-		ToDate:   query.Get("to"),
-		Anchor:   query.Get("anchor"),
+		AuthorUserID: query.Get("author_user_id"),
+		Cursor:       query.Get("cursor"),
+		FromDate:     query.Get("from"),
+		ToDate:       query.Get("to"),
+		Anchor:       query.Get("anchor"),
+	}
+	if values, present := query["author_user_id"]; present && (len(values) != 1 || domain.ValidateUserID(values[0]) != nil) {
+		return app.ListPostsInput{}, invalidPostArgument("author_user_id must be an account ID", "author_user_id")
 	}
 	// Absent reads both kinds. An empty value is a client that meant to send
 	// something, which is worth refusing rather than silently widening.
@@ -481,6 +483,8 @@ func writePostError(ctx *gin.Context, err error) {
 		return
 	}
 	switch domainErr.Code {
+	case domain.CodeUnauthorized:
+		Failure(ctx, http.StatusForbidden, string(domainErr.Code), domainErr.Message, domainErr.Details)
 	case domain.CodeInvalidArgument:
 		Failure(ctx, http.StatusBadRequest, string(domainErr.Code), domainErr.Message, domainErr.Details)
 	case domain.CodeContentEmpty, domain.CodeContentTooLarge, domain.CodeExternalImageNotAllowed:

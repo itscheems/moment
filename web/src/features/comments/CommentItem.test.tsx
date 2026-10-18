@@ -27,16 +27,13 @@ const rootId = "01K2ABCDEF0123456789ABCDE1";
 const replyId = "01K2ABCDEF0123456789ABCDE2";
 const siblingId = "01K2ABCDEF0123456789ABCDE3";
 const offPageId = "01K2ABCDEF0123456789ABCDE4";
-const ownerId = "11d003f31a23262ea0f6cbe9857981a1";
+const profileUserId = "11d003f31a23262ea0f6cbe9857981a1";
 const strangerId = "22e114g42b34373fb1g7dcfa968a92b2";
-const sessionKey = "moment.owner.session.v1";
+const sessionKey = "moment.auth.session.v2";
 
 const site: SiteIdentity = {
-  ownerId,
+  profileUserId,
   username: "itscheems",
-  // Deliberately different from the author projection below. Reading the site
-  // for an owner comment is the bug being removed, so the two have to disagree
-  // for any of these tests to prove anything.
   displayName: "Moment 站点",
   title: "乔乔的 Moment",
   bio: "沿着日常留下坐标",
@@ -51,7 +48,7 @@ const site: SiteIdentity = {
 };
 
 const ownerAuthor: PublicCommentAuthor = {
-  userId: ownerId,
+  userId: profileUserId,
   username: "itscheems",
   displayName: "Cheems",
   avatarMediaId: "01M08A31N0WNK66SC39ZAQFK6M",
@@ -85,7 +82,7 @@ function comment(
     postId,
     parentId,
     depth: parentId === null ? 0 : 1,
-    authorKind: "owner",
+
     authorName: "Owner",
     author: ownerAuthor,
     replyTo: null,
@@ -153,7 +150,8 @@ function renderItem(
   target: PublicComment,
   others: PublicComment[] = [],
   overrides: {
-    owner?: boolean;
+    canModerate?: boolean;
+    postAuthorUserId?: string;
     pinned?: boolean;
     replyRoot?: PublicComment;
     canReply?: boolean;
@@ -171,12 +169,13 @@ function renderItem(
             onDeleted={() => {}}
             onPinChange={() => {}}
             onReply={() => {}}
-            owner={overrides.owner ?? false}
+            canModerate={overrides.canModerate ?? false}
             pinned={overrides.pinned ?? false}
             replyCount={0}
             canReply={overrides.canReply ?? true}
             replyRoot={overrides.replyRoot ?? null}
             site={site}
+            postAuthorUserId={overrides.postAuthorUserId ?? profileUserId}
           />
         ))}
       </ol>
@@ -216,13 +215,12 @@ describe("comment identity", () => {
     expect(handle).toHaveAttribute("href", "/itscheems");
     expect(screen.queryByText("Moment 站点")).not.toBeInTheDocument();
     expect(screen.getByLabelText("Cheems的回复")).toBeInTheDocument();
-    expect(screen.getByText("所有者")).toBeInTheDocument();
+    expect(screen.getByText("作者")).toBeInTheDocument();
   });
 
   it("renders a legacy guest row as plain text with no profile and no badge", () => {
     renderItem(
       comment(rootId, "很久以前的留言", {
-        authorKind: "guest",
         authorName: "路过的人",
         author: guestAuthor,
       }),
@@ -230,26 +228,23 @@ describe("comment identity", () => {
 
     expect(screen.getByText("路过的人")).toBeInTheDocument();
     expect(screen.queryByRole("link")).not.toBeInTheDocument();
-    expect(screen.queryByText("所有者")).not.toBeInTheDocument();
+    expect(screen.queryByText("作者")).not.toBeInTheDocument();
     expect(screen.queryByText(/^@/)).not.toBeInTheDocument();
   });
 
-  it("decides the badge on the account id, not on author_kind", () => {
+  it("marks the current post author and never a different account", () => {
     // Same verdict as the retired axis today, and a different one the moment a
     // second account exists — which is the whole reason for moving it.
-    const { unmount } = renderItem(
-      comment(rootId, "所有者写的", { authorKind: "guest" }),
-    );
-    expect(screen.getByText("所有者")).toBeInTheDocument();
+    const { unmount } = renderItem(comment(rootId, "作者写的", {}));
+    expect(screen.getByText("作者")).toBeInTheDocument();
     unmount();
 
     renderItem(
       comment(rootId, "别人写的", {
-        authorKind: "owner",
         author: strangerAuthor,
       }),
     );
-    expect(screen.queryByText("所有者")).not.toBeInTheDocument();
+    expect(screen.queryByText("作者")).not.toBeInTheDocument();
   });
 
   it("does not lend the site identity to an account that is not the owner", () => {
@@ -261,9 +256,6 @@ describe("comment identity", () => {
       "/someone",
     );
     expect(screen.getByRole("link", { name: "@someone" })).toBeInTheDocument();
-    // ...but nothing of this site's is borrowed for it. The face is the
-    // author's own media, never the site avatar, and there is no preview card
-    // trigger, which would show the owner's cover and bio under this name.
     const avatar = document.querySelector("img");
     expect(avatar).toHaveAttribute(
       "src",
@@ -275,9 +267,6 @@ describe("comment identity", () => {
     );
   });
 
-  // The server already resolves and ships avatar_media_id for every author.
-  // Deciding the face on "is this the site owner" discarded it for everybody
-  // else, so every member wore a letter beside their own picture.
   it("draws a member's own avatar rather than their initial", () => {
     renderItem(comment(rootId, "别人写的", { author: strangerAuthor }));
 
@@ -297,6 +286,20 @@ describe("comment identity", () => {
     expect(document.querySelector("img")).toBeNull();
     expect(screen.getByText("别")).toBeInTheDocument();
   });
+});
+
+it("marks the post author even when that account is not the site's display account", () => {
+  const view = renderItem(
+    comment(rootId, "实际作者", { author: strangerAuthor }),
+    [],
+    { postAuthorUserId: strangerId },
+  );
+  expect(screen.getByText("作者")).toBeVisible();
+  view.unmount();
+  renderItem(comment(rootId, "展示账号写的"), [], {
+    postAuthorUserId: strangerId,
+  });
+  expect(screen.queryByText("作者")).toBeNull();
 });
 
 describe("long comment folding", () => {
@@ -528,10 +531,10 @@ describe("the composer's reply target", () => {
         post_id: postId,
         parent_id: rootId,
         depth: 1,
-        author_kind: "owner",
+
         author_name: "Owner",
         author: {
-          user_id: ownerId,
+          user_id: profileUserId,
           username: "itscheems",
           display_name: "Cheems",
           avatar_media_id: null,
@@ -559,7 +562,7 @@ describe("the composer's reply target", () => {
     );
     const posted: Array<Record<string, unknown>> = [];
     installApi((url, init) => {
-      if (url === "/api/v1/owner/status") {
+      if (url === "/api/v1/status") {
         return new Response(
           JSON.stringify({
             data: {

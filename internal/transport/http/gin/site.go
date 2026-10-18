@@ -14,13 +14,13 @@ import (
 	"github.com/moment/moment/internal/domain"
 )
 
-// RegisterSiteRoutes installs the public settings read and owner-only partial
-// mutation over one application service.
+// RegisterSiteRoutes installs public site identity and administrative configuration.
 func RegisterSiteRoutes(engine *gin.Engine, service *app.SiteService, gate *Gate, instanceID string, instanceInitializedAt time.Time) {
 	engine.GET("/api/v1/site", getSiteSettings(service, instanceID, instanceInitializedAt))
-	owner := engine.Group("/api/v1/owner")
-	owner.Use(gate.RequireOwner())
-	owner.PATCH("/site", updateSiteSettings(service))
+	settings := engine.Group("/api/v1")
+	settings.Use(gate.RequireAdmin())
+	settings.PATCH("/site", updateSiteSettings(service))
+	settings.PUT("/site/profile", selectSiteProfile(service, gate))
 }
 
 func getSiteSettings(service *app.SiteService, instanceID string, instanceInitializedAt time.Time) gin.HandlerFunc {
@@ -113,18 +113,10 @@ func (field *requiredBoolField) UnmarshalJSON(data []byte) error {
 }
 
 type siteUpdateRequest struct {
-	Username        requiredStringField `json:"username"`
-	DisplayName     requiredStringField `json:"display_name"`
-	Title           requiredStringField `json:"title"`
-	Bio             requiredStringField `json:"bio"`
-	Timezone        requiredStringField `json:"timezone"`
-	PublicBaseURL   optionalStringField `json:"public_base_url"`
-	AvatarMediaID   optionalStringField `json:"avatar_media_id"`
-	CoverMediaID    optionalStringField `json:"cover_media_id"`
-	CommentsEnabled requiredBoolField   `json:"comments_enabled"`
-	// Accepted on the write and absent from the read: the route is owner-only,
-	// while GET /api/v1/site is public and SiteSettings is serialised straight
-	// to it. Whether applications are being accepted is the owner's to publish.
+	Title            requiredStringField `json:"title"`
+	Timezone         requiredStringField `json:"timezone"`
+	PublicBaseURL    optionalStringField `json:"public_base_url"`
+	CommentsEnabled  requiredBoolField   `json:"comments_enabled"`
 	RegistrationMode requiredStringField `json:"registration_mode"`
 }
 
@@ -139,30 +131,18 @@ func decodeSiteUpdate(body []byte) (app.SiteUpdate, error) {
 		return app.SiteUpdate{}, errors.New("request must contain exactly one JSON document")
 	}
 	update := app.SiteUpdate{}
-	if request.Username.set {
-		update.Username = &request.Username.value
-	}
-	if request.DisplayName.set {
-		update.DisplayName = &request.DisplayName.value
-	}
+
 	if request.Title.set {
 		update.Title = &request.Title.value
 	}
-	if request.Bio.set {
-		update.Bio = &request.Bio.value
-	}
+
 	if request.Timezone.set {
 		update.Timezone = &request.Timezone.value
 	}
 	if request.PublicBaseURL.set {
 		update.PublicBaseURL = &app.NullableString{Value: request.PublicBaseURL.value}
 	}
-	if request.AvatarMediaID.set {
-		update.AvatarMediaID = &app.NullableString{Value: request.AvatarMediaID.value}
-	}
-	if request.CoverMediaID.set {
-		update.CoverMediaID = &app.NullableString{Value: request.CoverMediaID.value}
-	}
+
 	if request.CommentsEnabled.set {
 		update.CommentsEnabled = &request.CommentsEnabled.value
 	}
@@ -183,11 +163,10 @@ func writeSiteError(ctx *gin.Context, err error) {
 		return
 	}
 	switch domainErr.Code {
+	case domain.CodeUnauthorized:
+		Failure(ctx, http.StatusForbidden, string(domainErr.Code), domainErr.Message, domainErr.Details)
 	case domain.CodeInvalidArgument, domain.CodeUsernameReserved:
 		Failure(ctx, http.StatusBadRequest, string(domainErr.Code), domainErr.Message, domainErr.Details)
-	// A conflict with the state of the world rather than a fault in what was
-	// sent, and the same status the account route answers with -- one handle
-	// column, one answer, whichever form the owner reached it from.
 	case domain.CodeUsernameTaken:
 		Failure(ctx, http.StatusConflict, string(domainErr.Code), domainErr.Message, domainErr.Details)
 	case domain.CodeMediaNotFound:
@@ -198,5 +177,33 @@ func writeSiteError(ctx *gin.Context, err error) {
 		Failure(ctx, http.StatusInternalServerError, string(domainErr.Code), domainErr.Message, domainErr.Details)
 	default:
 		Failure(ctx, http.StatusInternalServerError, "INTERNAL", "site settings operation failed", nil)
+	}
+}
+
+func selectSiteProfile(service *app.SiteService, gate *Gate) gin.HandlerFunc {
+	return func(ctx *gin.Context) {
+		body, ok := readBody(ctx)
+		if !ok {
+			return
+		}
+		var patch struct {
+			UserID string `json:"user_id"`
+		}
+		decoder := json.NewDecoder(bytes.NewReader(body))
+		decoder.DisallowUnknownFields()
+		if err := decoder.Decode(&patch); err != nil || decoder.Decode(&struct{}{}) != io.EOF || domain.ValidateUserID(patch.UserID) != nil {
+			Failure(ctx, http.StatusBadRequest, "INVALID_ARGUMENT", "an account user_id is required", nil)
+			return
+		}
+		if _, err := gate.accounts.SelectSiteProfile(ctx.Request.Context(), patch.UserID); err != nil {
+			writeAdministrativeAccountError(ctx, err)
+			return
+		}
+		settings, err := service.Get(ctx.Request.Context())
+		if err != nil {
+			writeSiteError(ctx, err)
+			return
+		}
+		Success(ctx, http.StatusOK, settings, nil)
 	}
 }

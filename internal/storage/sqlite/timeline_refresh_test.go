@@ -2,7 +2,6 @@ package sqlite
 
 import (
 	"bytes"
-	"context"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -19,7 +18,7 @@ func TestTimelineRefreshCursorSurvivesEmptyHeadAndSameMillisecondPublications(t 
 	db, _ := openTestDatabase(t, Options{})
 	now := time.UnixMilli(1_780_000_000_000)
 	service := newTestPostService(t, db, func() time.Time { return now }, sequenceIDs(entryTwo, entryOne))
-	ctx := context.Background()
+	ctx := testAccountContext()
 	empty, err := service.List(ctx, app.ListPostsInput{})
 	if err != nil || empty.RefreshCursor == "" || len(empty.Items) != 0 {
 		t.Fatalf("empty head: %+v %v", empty, err)
@@ -62,16 +61,16 @@ func TestTimelineRefreshCursorSurvivesEmptyHeadAndSameMillisecondPublications(t 
 	if err != nil || len(visible.Items) != 1 {
 		t.Fatalf("visibility: %+v %v", visible, err)
 	}
-	owner, err := service.List(ctx, app.ListPostsInput{Cursor: loaded.RefreshCursor, Viewer: app.OwnerViewer()})
-	if err != nil || len(owner.Items) != 2 {
-		t.Fatalf("owner visibility: %+v %v", owner, err)
+	primaryAccount, err := service.List(ctx, app.ListPostsInput{Cursor: loaded.RefreshCursor, Viewer: app.AccountViewer(testAccountID)})
+	if err != nil || len(primaryAccount.Items) != 2 {
+		t.Fatalf("owner visibility: %+v %v", primaryAccount, err)
 	}
 }
 
 func TestTimelineRefreshSeeksTenThousandEntriesWithBoundedProjectionMerge(t *testing.T) {
 	t.Parallel()
 	db, _ := openTestDatabase(t, Options{})
-	ctx := context.Background()
+	ctx := testAccountContext()
 	base := time.UnixMilli(1_780_000_000_000)
 	service := newTestPostService(t, db, func() time.Time { return base.Add(9960 * time.Millisecond) }, sequenceIDs(entryOne))
 	empty, err := service.List(ctx, app.ListPostsInput{})
@@ -110,6 +109,7 @@ func TestTimelineRefreshSeeksTenThousandEntriesWithBoundedProjectionMerge(t *tes
 			if i%5 == 0 {
 				entry.SetReposted(true, instant.Add(10*time.Millisecond))
 			}
+			entry.AuthorUserID = testAccountID
 			if err := store.InsertEntry(ctx, entry, "body"); err != nil {
 				return err
 			}

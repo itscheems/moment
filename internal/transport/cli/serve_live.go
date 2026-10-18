@@ -57,36 +57,36 @@ type hostedImportCommitter struct {
 	host *liveServerHost
 }
 
-func (committer *hostedImportCommitter) Commit(ctx context.Context, token string, epoch uint64) (archive.CommitResult, error) {
-	return committer.core.Commit(ctx, token, epoch, committer.host)
+func (committer *hostedImportCommitter) Commit(ctx context.Context, token string, subject archive.Authorization) (archive.CommitResult, error) {
+	return committer.core.Commit(ctx, token, subject, committer.host)
 }
 
-func (committer *hostedImportCommitter) CommitArchive(ctx context.Context, source io.Reader, expectedArchiveSHA string, epoch uint64) (archive.CommitResult, error) {
-	return committer.core.CommitArchive(ctx, source, expectedArchiveSHA, epoch, committer.host)
+func (committer *hostedImportCommitter) CommitArchive(ctx context.Context, source io.Reader, expectedArchiveSHA string, subject archive.Authorization) (archive.CommitResult, error) {
+	return committer.core.CommitArchive(ctx, source, expectedArchiveSHA, subject, committer.host)
 }
 
-func (committer *hostedImportCommitter) InspectMergeArchive(ctx context.Context, source io.Reader, epoch uint64) (archive.MergeInspection, error) {
-	return committer.core.InspectMergeArchive(ctx, source, epoch, committer.host.ActiveDatabase())
+func (committer *hostedImportCommitter) InspectMergeArchive(ctx context.Context, source io.Reader, subject archive.Authorization) (archive.MergeInspection, error) {
+	return committer.core.InspectMergeArchive(ctx, source, subject, committer.host.ActiveDatabase())
 }
 
-func (committer *hostedImportCommitter) InspectReviewArchive(ctx context.Context, source io.Reader, epoch uint64) (archive.MergeInspection, error) {
-	return committer.core.InspectReviewArchive(ctx, source, epoch, committer.host.ActiveDatabase())
+func (committer *hostedImportCommitter) InspectReviewArchive(ctx context.Context, source io.Reader, subject archive.Authorization) (archive.MergeInspection, error) {
+	return committer.core.InspectReviewArchive(ctx, source, subject, committer.host.ActiveDatabase())
 }
 
-func (committer *hostedImportCommitter) CommitReviewedReplacement(ctx context.Context, token string, epoch uint64, planID string) (archive.CommitResult, error) {
-	return committer.core.CommitReviewedReplacement(ctx, token, epoch, planID, committer.host)
+func (committer *hostedImportCommitter) CommitReviewedReplacement(ctx context.Context, token string, subject archive.Authorization, planID string) (archive.CommitResult, error) {
+	return committer.core.CommitReviewedReplacement(ctx, token, subject, planID, committer.host)
 }
 
-func (committer *hostedImportCommitter) ReadReviewMedia(ctx context.Context, token string, epoch uint64, planID string, source archive.MergeReviewSource, mediaID string) (media.Asset, error) {
-	return committer.core.ReadReviewMedia(ctx, token, epoch, planID, source, mediaID)
+func (committer *hostedImportCommitter) ReadReviewMedia(ctx context.Context, token string, subject archive.Authorization, planID string, source archive.MergeReviewSource, mediaID string) (media.Asset, error) {
+	return committer.core.ReadReviewMedia(ctx, token, subject, planID, source, mediaID)
 }
 
-func (committer *hostedImportCommitter) CommitMerge(ctx context.Context, token string, epoch uint64, selection archive.MergeSelection) (archive.CommitResult, error) {
-	return committer.core.CommitMerge(ctx, token, epoch, selection, committer.host)
+func (committer *hostedImportCommitter) CommitMerge(ctx context.Context, token string, subject archive.Authorization, selection archive.MergeSelection) (archive.CommitResult, error) {
+	return committer.core.CommitMerge(ctx, token, subject, selection, committer.host)
 }
 
-func (committer *hostedImportCommitter) DiscardMerge(ctx context.Context, token string, epoch uint64) error {
-	return committer.core.DiscardMerge(ctx, token, epoch)
+func (committer *hostedImportCommitter) DiscardMerge(ctx context.Context, token string, subject archive.Authorization) error {
+	return committer.core.DiscardMerge(ctx, token, subject)
 }
 
 func (committer *hostedImportCommitter) Status(ctx context.Context) (archive.CommitStatus, error) {
@@ -95,11 +95,6 @@ func (committer *hostedImportCommitter) Status(ctx context.Context) (archive.Com
 
 func (host *liveServerHost) BeginMaintenance(ctx context.Context) error {
 	return host.board.BeginMaintenance(ctx)
-}
-
-func (host *liveServerHost) CurrentSessionEpoch() (uint64, error) {
-	status, err := host.auth.Status()
-	return status.SessionEpoch, err
 }
 
 func (host *liveServerHost) EndMaintenance() { host.board.EndMaintenance() }
@@ -199,7 +194,7 @@ func (host *liveServerHost) Activate(ctx context.Context, runtimeState *runtimef
 	}
 	accountService, err := app.NewAccountService(accountRepository,
 		// An account picture is fetched through the same hardened transport a
-		// link thumbnail is, and ingested through the same media path an owner
+		// link thumbnail is, and ingested through the same media path an account
 		// upload uses. Remote bytes get no exemption from either.
 		app.WithAvatarCapture(linkResolver.Fetcher(), media.NewLinkThumbnailAdapter(mediaStore)),
 	)
@@ -211,7 +206,7 @@ func (host *liveServerHost) Activate(ctx context.Context, runtimeState *runtimef
 		return fail(err)
 	}
 	engine, err := ginhttp.New(ginhttp.Config{
-		Assets: host.assets, OwnerAuth: host.auth, Accounts: accountService, OAuthProviders: providers, SiteSettings: siteService, InstanceID: runtimeState.Instance.ID, InstanceInitializedAt: runtimeState.Instance.InitializedAt,
+		Assets: host.assets, SessionSigner: host.auth, Accounts: accountService, OAuthProviders: providers, SiteSettings: siteService, InstanceID: runtimeState.Instance.ID, InstanceInitializedAt: runtimeState.Instance.InitializedAt,
 		Media: mediaStore, Posts: postService, Locations: locationService, Links: linkService, Comments: commentService, Search: searchService,
 		ShareMetadata: shareMetadata, Archive: host.exporter, ImportInspector: inspector, ImportCommitter: host.committer, Doctor: doctorService,
 		SecureCookies: host.secureCookies, TrustedProxies: host.trustedProxies, SurfaceLog: host.log,

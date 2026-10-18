@@ -1,3 +1,4 @@
+import { accountCacheScope } from "../features/auth/accountScope";
 import { Dialog } from "@base-ui/react/dialog";
 import {
   Suspense,
@@ -15,20 +16,16 @@ import { ShellState } from "../components/ShellState";
 import { ArticleWorkspacePage } from "../features/article/editor";
 import { DetailPage } from "../features/timeline/DetailPage";
 import { TimelinePage } from "../features/timeline/TimelinePage";
-import { Composer, type ComposerHandle } from "../features/owner/Composer";
-import { ComposeDrafts } from "../features/owner/ComposeDrafts";
-import { listKeptDrafts } from "../features/owner/drafts";
-import { EditPage } from "../features/owner/EditPage";
-import { LoginPage } from "../features/owner/LoginPage";
+import { Composer, type ComposerHandle } from "../features/compose/Composer";
+import { ComposeDrafts } from "../features/compose/ComposeDrafts";
+import { listKeptDrafts } from "../features/compose/drafts";
+import { EditPage } from "../features/posts/EditPage";
+import { LoginPage } from "../features/auth/LoginPage";
 import { MentionProvider } from "./mentions";
-import { OwnerLogin } from "../features/owner/OwnerLogin";
-import {
-  SessionProvider,
-  ownsSite,
-  useSession,
-} from "../features/auth/SessionProvider";
-import { SettingsPage } from "../features/owner/SettingsPage";
-import { UsernameSetup } from "../features/owner/UsernameSetup";
+import { CredentialLogin } from "../features/auth/CredentialLogin";
+import { SessionProvider, useSession } from "../features/auth/SessionProvider";
+import { SettingsPage } from "../features/settings/SettingsPage";
+import { UsernameSetup } from "../features/auth/UsernameSetup";
 import { ArchivePage } from "../features/memory/ArchivePage";
 import { hasValidRawQueryEncoding } from "../features/memory/memoryState";
 import { SearchPage } from "../features/memory/SearchPage";
@@ -48,10 +45,8 @@ import {
   COMPOSE_DRAFTS_PATH,
   COMPOSE_PATH,
   COMPOSE_MEDIA_PATH,
-  movedArticleComposePath,
   articleFocusIdFromPath,
   isComposeDraftsPath,
-  movedComposePath,
   profileFromPath,
   resolveRoute,
 } from "./routes";
@@ -61,8 +56,8 @@ import styles from "./App.module.css";
 const HOME_LOCATION = { pathname: "/", search: "" };
 
 const fallbackSite: SiteIdentity = {
-  ownerId: "00000000000000000000000000000000",
-  username: "owner",
+  profileUserId: "",
+  username: "",
   displayName: "Moment",
   title: "Moment",
   bio: "",
@@ -86,7 +81,7 @@ function detailId(pathname: string): string {
 }
 
 function editId(pathname: string): string {
-  const raw = pathname.match(/^\/owner\/m\/([^/]+)\/edit\/?$/)?.[1] ?? "";
+  const raw = pathname.match(/^\/m\/([^/]+)\/edit\/?$/)?.[1] ?? "";
   try {
     return decodeURIComponent(raw);
   } catch {
@@ -149,7 +144,7 @@ function PublicApp() {
   // keeps the dialog over the timeline, and so does this.
   const composeDialogViewport = useMediaQuery(COMPOSE_DIALOG_VIEWPORT_QUERY);
   const overlayCompose =
-    requestedRoute.id === "owner-compose" && composeDialogViewport;
+    requestedRoute.id === "compose" && composeDialogViewport;
   const displayLocation = overlayCompose
     ? (contentLocation.overlayFrom ?? HOME_LOCATION)
     : contentLocation;
@@ -164,9 +159,13 @@ function PublicApp() {
       ? null
       : new URLSearchParams(displayLocation.search).get("state");
   const api = useMemo(() => new PublicApi(), []);
-  const owner = useSession();
+  const auth = useSession();
   const mobileViewport = useMediaQuery(MOBILE_VIEWPORT_QUERY);
   const [site, setSite] = useState(fallbackSite);
+  const draftScope = accountCacheScope(
+    site.instanceId,
+    auth.account?.userId ?? null,
+  );
   const [siteLoading, setSiteLoading] = useState(true);
   const [siteError, setSiteError] = useState(false);
   const [siteAttempt, setSiteAttempt] = useState(0);
@@ -186,33 +185,23 @@ function PublicApp() {
   const [draftsEditing, setDraftsEditing] = useState(false);
   const [keptDrafts, setKeptDrafts] = useState(0);
   const siteIdentityReady = !siteLoading && !siteError;
-  // Accounts arrived, so being signed in stopped meaning owning the site.
-  // Every owner-only surface asks the account instead of the session state. A
-  // session with no account behind it -- an instance that cannot answer for
-  // accounts, or a lookup that failed -- keeps the pre-accounts answer, so the
-  // single owner such an instance has is never locked out of it.
-  const siteOwner = ownsSite(owner.account);
-  const ownerSession = owner.state === "signed-in" && siteOwner;
+  const canPublish =
+    auth.state === "signed-in" && auth.account?.status === "active";
   // Retain the expired account's editing surfaces behind reauthentication so
   // the new session can resume the same buffers.
-  const signedIn = owner.state === "signed-in" || owner.state === "expired";
-  const ownerCapable = signedIn && siteOwner;
+  const signedIn = auth.state === "signed-in" || auth.state === "expired";
+  const publishingAvailable = signedIn && auth.account?.status === "active";
 
   useDocumentScrollLock(
     !loginRoute && ((overlayCompose && siteIdentityReady) || composeExitOpen),
   );
 
   useEffect(() => {
-    if (owner.state !== "expired") {
+    if (auth.state !== "expired") {
       expiryRedirected.current = false;
       return;
     }
-    if (
-      loginRoute ||
-      expiryRedirected.current ||
-      owner.expiryReason === "credential-rotation"
-    )
-      return;
+    if (loginRoute || expiryRedirected.current) return;
     expiryRedirected.current = true;
     setReauthLocation({
       pathname: location.pathname,
@@ -222,11 +211,11 @@ function PublicApp() {
     location.replace(
       `/login?return=${encodeURIComponent(`${location.pathname}${location.search}`)}`,
     );
-  }, [location, loginRoute, owner.expiryReason, owner.state]);
+  }, [location, loginRoute, auth.state]);
 
   useEffect(() => {
     if (!reauthLocation || loginRoute) return;
-    if (owner.state === "expired") {
+    if (auth.state === "expired") {
       if (
         location.pathname !== reauthLocation.pathname ||
         location.search !== reauthLocation.search
@@ -241,7 +230,7 @@ function PublicApp() {
       );
     }
     setReauthLocation(null);
-  }, [location, loginRoute, owner.state, reauthLocation]);
+  }, [location, loginRoute, auth.state, reauthLocation]);
 
   const closeOverlayComposer = () => {
     location.goBack(`${displayLocation.pathname}${displayLocation.search}`);
@@ -271,8 +260,8 @@ function PublicApp() {
   // list closes -- the two moments it can have changed.
   useEffect(() => {
     if (!overlayCompose) return;
-    setKeptDrafts(listKeptDrafts(site.instanceId).length);
-  }, [draftsOpen, draftsEditing, overlayCompose, site.instanceId]);
+    setKeptDrafts(listKeptDrafts(draftScope).length);
+  }, [draftsOpen, draftsEditing, overlayCompose, draftScope]);
 
   useEffect(() => {
     if (!draftsOpen) setDraftsEditing(false);
@@ -321,29 +310,24 @@ function PublicApp() {
   // outcome somebody asked for.
   const signOutFromRail = useCallback(async () => {
     try {
-      await owner.logout(site.instanceId);
+      await auth.logout(site.instanceId);
     } catch {
-      owner.forgetSession(site.instanceId);
+      auth.forgetSession(site.instanceId);
     }
     location.navigate("/");
-  }, [location, owner, site.instanceId]);
+  }, [location, auth, site.instanceId]);
 
-  // `/profile` means "mine", and only a session says whose. A visitor without
-  // one is asking for a page that does not exist for them, so they are sent to
-  // sign in; anyone signed in is sent to their own handle, which is the page
-  // they were actually asking for. It used to render the site owner's profile
-  // to whoever opened it, so a signed-in member met somebody else's page.
   useEffect(() => {
     if (loginRoute) return;
     const pathname = displayLocation.pathname;
     if (pathname !== "/profile" && pathname !== "/profile/") return;
     // Still resolving, or unable to say. Neither is an answer to act on.
-    if (owner.state === "checking" || owner.state === "unavailable") return;
-    const own = owner.account?.profileUrl;
+    if (auth.state === "checking" || auth.state === "unavailable") return;
+    const own = auth.account?.profileUrl;
     // A session handed over by a sibling tab arrives before the account behind
     // it does, so "signed in but nobody yet" is a third state and not a guest.
     // Treating it as one sent a fully signed-in reader to the sign-in page.
-    if (own === undefined && owner.state !== "guest") return;
+    if (own === undefined && auth.state !== "guest") return;
     // In place, not pushed. Pushed, the history read home → /profile →
     // sign-in, and every way back from sign-in re-entered /profile, which
     // pushed sign-in again: the arrow on that page went nowhere, and the
@@ -353,43 +337,29 @@ function PublicApp() {
     displayLocation.pathname,
     location,
     loginRoute,
-    owner.account,
-    owner.state,
+    auth.account,
+    auth.state,
   ]);
-
-  // Composing moved out from under /owner. An entry already in somebody's
-  // history renders as it did and has its address corrected in place, rather
-  // than turning into a not-found page.
-  useEffect(() => {
-    const moved =
-      movedArticleComposePath(location.pathname) ??
-      movedComposePath(location.pathname);
-    if (moved) location.replace(`${moved}${location.search}`);
-  }, [location]);
 
   // Posting needs a session, and the place to get one is the sign-in page --
   // not a login form folded into the compose dialog, which asked a visitor to
   // sign in inside a surface they had no business seeing yet.
   useEffect(() => {
-    if (loginRoute || owner.state === "expired") return;
+    if (loginRoute || auth.state === "expired") return;
     const composing =
-      requestedRoute.id === "owner-compose" ||
+      requestedRoute.id === "compose" ||
       requestedRoute.id === "article-workspace";
-    if (!composing || ownerCapable) return;
+    if (!composing || publishingAvailable) return;
     // Still resolving, or unable to say. Neither is an answer to act on.
-    if (owner.state === "checking" || owner.state === "unavailable") return;
-    // A session that exists but has not been answered for yet is not a
-    // guest. Signing in sets it a tick before the account arrives, and
-    // treating that tick as "no session" sent the owner straight back to
-    // the page they had just signed in on.
-    if (owner.session !== null) return;
+    if (auth.state === "checking" || auth.state === "unavailable") return;
+    if (auth.session !== null) return;
     location.replace(`/login?return=${encodeURIComponent(location.pathname)}`);
   }, [
     location,
     loginRoute,
-    owner.account,
-    owner.state,
-    ownerCapable,
+    auth.account,
+    auth.state,
+    publishingAvailable,
     requestedRoute.id,
   ]);
 
@@ -424,7 +394,7 @@ function PublicApp() {
     const newMoment = (event: KeyboardEvent) => {
       if (
         !siteIdentityReady ||
-        !ownerSession ||
+        !canPublish ||
         event.defaultPrevented ||
         event.key.toLowerCase() !== "n" ||
         event.metaKey ||
@@ -453,7 +423,7 @@ function PublicApp() {
       document.removeEventListener("compositionend", endComposition);
       window.removeEventListener("keydown", newMoment);
     };
-  }, [location, ownerSession, siteIdentityReady]);
+  }, [location, canPublish, siteIdentityReady]);
 
   useEffect(() => {
     let composing = false;
@@ -502,27 +472,19 @@ function PublicApp() {
     route.id !== "detail" &&
     route.id !== "article-focus" &&
     route.id !== "login" &&
-    route.id !== "owner-compose" &&
+    route.id !== "compose" &&
     route.id !== "article-workspace" &&
-    route.id !== "owner-edit" &&
-    route.id !== "owner-settings" &&
+    route.id !== "edit" &&
+    route.id !== "settings" &&
     route.id !== "search" &&
     route.id !== "archive" &&
     route.id !== "profile";
   const requestedProfileUsername = profileUsername(displayLocation.pathname);
-  // `/profile` and the owner's own handle are the site page, which already has
-  // every fact it needs. Any other handle is somebody else on this instance,
-  // and only the server can say whether that somebody exists.
   const ownProfile =
     requestedProfileUsername === null ||
     requestedProfileUsername === site.username;
-  // Bare `/profile` is only ever passed through -- to the account's own
-  // handle or to sign-in, once the session is known -- so nothing is drawn
-  // there in the meantime: the site owner's page appearing for a frame before
-  // the redirect was the flash a visitor saw. The one instance that cannot
-  // answer for accounts keeps the pre-accounts page.
   const profileRedirecting =
-    requestedProfileUsername === null && owner.state !== "unavailable";
+    requestedProfileUsername === null && auth.state !== "unavailable";
 
   // Sign-in is the whole page, not a panel inside the shell. Every hook above
   // has already run, so returning here changes what is rendered without
@@ -532,10 +494,10 @@ function PublicApp() {
   const readingSurface = (
     <MentionProvider identities={siteIdentityReady ? [site] : []}>
       <AppShell
-        account={owner.account}
+        account={auth.account}
         onSignOut={() => void signOutFromRail()}
-        ownerSettingsAvailable={siteIdentityReady && signedIn}
-        profileHref={owner.account?.profileUrl ?? undefined}
+        accountSettingsAvailable={siteIdentityReady && signedIn}
+        profileHref={auth.account?.profileUrl ?? undefined}
         route={route}
         site={site}
         state={state}
@@ -553,9 +515,10 @@ function PublicApp() {
         ) : null}
         {hasTimeline ? (
           <div hidden={route.id !== "home"}>
-            {siteIdentityReady && ownerCapable ? (
+            {siteIdentityReady && publishingAvailable ? (
               <div className={styles.homeComposer} hidden={mobileViewport}>
                 <Composer
+                  key={auth.account?.userId ?? "guest"}
                   active={route.id === "home"}
                   site={site}
                   variant="inline"
@@ -563,24 +526,26 @@ function PublicApp() {
               </div>
             ) : null}
             <TimelinePage
+              key={auth.account?.userId ?? "guest"}
               api={api}
               initialSearch={initialHomeSearch.current}
               onSiteChanged={setSite}
               site={site}
-              owner={siteIdentityReady && ownerSession}
+              canPublish={siteIdentityReady && canPublish}
             />
           </div>
         ) : null}
         {route.id === "detail" || route.id === "article-focus" ? (
           <div data-detail-content>
             <DetailPage
+              key={auth.account?.userId ?? "guest"}
               api={api}
               id={
                 articleFocusIdFromPath(displayLocation.pathname) ??
                 detailId(displayLocation.pathname)
               }
               focusReading={route.id === "article-focus"}
-              owner={siteIdentityReady && ownerSession}
+              canPublish={siteIdentityReady && canPublish}
               onSiteChanged={setSite}
               site={site}
             />
@@ -589,9 +554,9 @@ function PublicApp() {
         {route.id === "search" ? (
           <SearchPage
             api={api}
-            key={routeSearchKey(displayLocation.search)}
+            key={`${auth.account?.userId ?? "guest"}:${routeSearchKey(displayLocation.search)}`}
             onSiteChanged={setSite}
-            owner={siteIdentityReady && ownerSession}
+            canPublish={siteIdentityReady && canPublish}
             search={displayLocation.search}
             site={site}
           />
@@ -600,8 +565,9 @@ function PublicApp() {
           // No key: the page follows its own search string, so a day picked on
           // the calendar moves the list without throwing the calendar away.
           <ArchivePage
+            key={auth.account?.userId ?? "guest"}
             api={api}
-            owner={siteIdentityReady && ownerSession}
+            canPublish={siteIdentityReady && canPublish}
             search={displayLocation.search}
             site={site}
           />
@@ -616,11 +582,16 @@ function PublicApp() {
         route.id === "profile" &&
         !ownProfile &&
         requestedProfileUsername ? (
-          <MemberProfilePage api={api} username={requestedProfileUsername} />
+          <MemberProfilePage
+            api={api}
+            username={requestedProfileUsername}
+            site={site}
+          />
         ) : null}
-        {siteIdentityReady && route.id === "owner-compose" ? (
-          ownerCapable ? (
+        {siteIdentityReady && route.id === "compose" ? (
+          publishingAvailable ? (
             <Composer
+              key={auth.account?.userId ?? "guest"}
               // The compose screen has no second face, so the list address
               // opens its panel instead.
               draftsListStart={isComposeDraftsPath(displayLocation.pathname)}
@@ -629,11 +600,11 @@ function PublicApp() {
               variant="page"
             />
           ) : (
-            <OwnerLogin embedded site={site} />
+            <CredentialLogin embedded site={site} />
           )
         ) : null}
         {siteIdentityReady && route.id === "article-workspace" ? (
-          owner.account?.status === "active" && signedIn ? (
+          auth.account?.status === "active" && signedIn ? (
             <Suspense
               fallback={
                 <p className={styles.editorLoading} role="status">
@@ -641,34 +612,35 @@ function PublicApp() {
                 </p>
               }
             >
-              <ArticleWorkspacePage key={owner.account.userId} site={site} />
+              <ArticleWorkspacePage key={auth.account.userId} site={site} />
             </Suspense>
           ) : (
             <p role="status">
-              {owner.account
+              {auth.account
                 ? "账号获准发布后即可管理文章。"
                 : "请先登录以管理自己的文章。"}
             </p>
           )
         ) : null}
-        {siteIdentityReady && route.id === "owner-edit" ? (
-          ownerCapable ? (
+        {siteIdentityReady && route.id === "edit" ? (
+          publishingAvailable ? (
             <EditPage
+              key={auth.account?.userId ?? "guest"}
               api={api}
               id={editId(displayLocation.pathname)}
               site={site}
             />
           ) : (
-            <OwnerLogin embedded site={site} />
+            <CredentialLogin embedded site={site} />
           )
         ) : null}
-        {siteIdentityReady && route.id === "owner-settings" ? (
+        {siteIdentityReady && route.id === "settings" ? (
           // Any signed-in account may open this page. What it shows them is the
           // page's own decision, section by section.
           signedIn ? (
             <SettingsPage onSaved={setSite} site={site} />
           ) : (
-            <OwnerLogin embedded site={site} />
+            <CredentialLogin embedded site={site} />
           )
         ) : null}
         {!siteLoading && placeholderRoute ? (
@@ -701,15 +673,13 @@ function PublicApp() {
             >
               <Dialog.Popup
                 className={styles.composeDialog}
-                // Focus the textarea so the owner can write immediately.
-                // Base UI otherwise focuses the first tabbable control.
                 initialFocus={() =>
                   composeDialogRef.current?.querySelector("textarea") ??
                   composeDialogRef.current
                 }
                 ref={composeDialogRef}
               >
-                {ownerCapable ? (
+                {publishingAvailable ? (
                   <header className={styles.composeDialogHeader}>
                     {/* Keyed, so turning the dialog over replaces these
                         buttons rather than reusing one node and swapping its
@@ -776,12 +746,12 @@ function PublicApp() {
                     发布 Moment
                   </Dialog.Title>
                 )}
-                {!ownerCapable ? (
-                  <OwnerLogin embedded site={site} />
+                {!publishingAvailable ? (
+                  <CredentialLogin embedded site={site} />
                 ) : draftsOpen ? (
                   <ComposeDrafts
                     editing={draftsEditing}
-                    instanceId={site.instanceId}
+                    instanceId={draftScope}
                     onEditingChange={setDraftsEditing}
                     onOpenDraft={(draft) => {
                       overlayComposer.current?.loadDraft(
@@ -797,8 +767,9 @@ function PublicApp() {
                     opened from the list is handed to it through its own
                     ref. */}
                 <div hidden={draftsOpen}>
-                  {ownerCapable ? (
+                  {publishingAvailable ? (
                     <Composer
+                      key={auth.account?.userId ?? "guest"}
                       // The header above already carries it.
                       draftsEntry={false}
                       quotedPostId={quotedPostId}
@@ -816,9 +787,9 @@ function PublicApp() {
       {/* An expired session cannot write a profile, and a prompt whose only
           two buttons are both refused is a trap; it comes back with the next
           session, which is the point at which it can be answered. */}
-      {owner.session && owner.account?.usernameChosen === false ? (
+      {auth.session && auth.account?.usernameChosen === false ? (
         <UsernameSetup
-          account={owner.account}
+          account={auth.account}
           api={api}
           onSiteChanged={setSite}
         />

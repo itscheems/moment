@@ -190,14 +190,6 @@ func TestDayRangeRespectsDSTAndUTCMapping(t *testing.T) {
 	}
 }
 
-// Every name an account may hold has to survive being stamped on a comment.
-//
-// These two limits were independent numbers, and nothing reached the smaller
-// one while every comment carried the literal "Owner". The moment a comment
-// started carrying its author's real name, a display name between the two --
-// forty-one to eighty characters, which is an ordinary length for a name a
-// provider hands over -- became a name an account could hold and could never
-// write a comment under.
 func TestEveryStorableDisplayNameCanAuthorAComment(t *testing.T) {
 	for name, candidate := range map[string]string{
 		"an ordinary long latin name": "Alexander Constantine Featherstonehaugh-Smythe",

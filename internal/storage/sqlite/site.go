@@ -11,33 +11,6 @@ import (
 	"github.com/moment/moment/internal/runtimefs"
 )
 
-const hostTimezoneSentinel = "__moment_host_timezone__"
-
-func initializeSiteSettings(ctx context.Context, database *sql.DB, timezone string) error {
-	result, err := database.ExecContext(ctx, `
-UPDATE site_settings
-SET timezone = ?
-WHERE id = 1 AND timezone = ?`, timezone, hostTimezoneSentinel)
-	if err != nil {
-		return fmt.Errorf("initialize site timezone: %w", err)
-	}
-	changed, err := result.RowsAffected()
-	if err != nil {
-		return fmt.Errorf("inspect site timezone initialization: %w", err)
-	}
-	if changed > 1 {
-		return fmt.Errorf("initialize site timezone changed %d rows", changed)
-	}
-	var count int
-	if err := database.QueryRowContext(ctx, `SELECT count(*) FROM site_settings WHERE id = 1`).Scan(&count); err != nil {
-		return fmt.Errorf("verify site settings singleton: %w", err)
-	}
-	if count != 1 {
-		return fmt.Errorf("%w: site settings singleton count is %d", ErrSchemaIncomplete, count)
-	}
-	return nil
-}
-
 // SiteRepository adapts SQLite and the ordinary-write maintenance boundary to
 // the site settings application ports.
 type SiteRepository struct {
@@ -162,19 +135,14 @@ func (store siteStore) SiteSettings(ctx context.Context) (app.SiteSettings, erro
 
 		registration string
 	)
-	// The owner's name, picture and self-description belong to the account
-	// now; the site row keeps only what is a property of the site. Joining
-	// here rather than duplicating the columns is what stops the two from
-	// ever disagreeing -- and the wire shape stays exactly as it was, so no
-	// adapter above this line has to know the move happened.
 	err := store.queries.QueryRowContext(ctx, `
-SELECT site.owner_id, account.username, account.display_name, site.title, account.bio, site.timezone,
+SELECT site.profile_user_id, account.username, account.display_name, site.title, account.bio, site.timezone,
        site.public_base_url, account.avatar_media_id, account.cover_media_id, site.pinned_entry_id,
        site.comments_enabled, site.registration_mode
 FROM site_settings AS site
-JOIN users AS account ON account.id = site.owner_id
+JOIN users AS account ON account.id = site.profile_user_id
 WHERE site.id = 1`).Scan(
-		&settings.OwnerID, &settings.Username, &settings.DisplayName, &settings.Title, &settings.Bio, &settings.Timezone, &publicURL, &avatarID, &coverID, &pinnedID, &comments, &registration,
+		&settings.ProfileUserID, &settings.Username, &settings.DisplayName, &settings.Title, &settings.Bio, &settings.Timezone, &publicURL, &avatarID, &coverID, &pinnedID, &comments, &registration,
 	)
 	if errors.Is(err, sql.ErrNoRows) {
 		return app.SiteSettings{}, domain.NewError(domain.CodeDataIntegrityFailed, "site settings singleton is missing", nil)
@@ -211,64 +179,25 @@ func (store siteStore) MediaExists(ctx context.Context, id domain.ID) (bool, err
 func (store siteStore) EntryExists(ctx context.Context, id domain.ID) (bool, error) {
 	var exists int
 	// An article can be pinned like any other post.
-	err := store.queries.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM entries WHERE id = ?)`, id.String()).Scan(&exists)
+	err := store.queries.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM entries WHERE id = ? AND visibility='everyone' AND publication_state='published')`, id.String()).Scan(&exists)
 	if err != nil {
 		return false, fmt.Errorf("check pinned post: %w", err)
 	}
 	return exists == 1, nil
 }
 
-// UpdateSiteSettings writes one caller's intent across the two tables that now
-// hold it. Both statements run on the caller's transaction, so a failure in
-// either leaves neither applied -- which is the property that keeps the site
-// row and the owner account from drifting apart.
+// UpdateSiteSettings writes properties of the site, never properties of an account.
 func (store siteStore) UpdateSiteSettings(ctx context.Context, settings app.SiteSettings) error {
-	result, err := store.queries.ExecContext(ctx, `
-UPDATE site_settings
-SET title = ?, timezone = ?, public_base_url = ?, pinned_entry_id = ?, comments_enabled = ?, registration_mode = ?
-WHERE id = 1`,
-		settings.Title, settings.Timezone, optionalString(settings.PublicBaseURL), optionalString(settings.PinnedPostID), boolInteger(settings.CommentsEnabled), string(settings.RegistrationMode),
-	)
+	result, err := store.queries.ExecContext(ctx, `UPDATE site_settings SET title=?,timezone=?,public_base_url=?,pinned_entry_id=?,comments_enabled=?,registration_mode=? WHERE id=1`, settings.Title, settings.Timezone, optionalString(settings.PublicBaseURL), optionalString(settings.PinnedPostID), boolInteger(settings.CommentsEnabled), string(settings.RegistrationMode))
 	if err != nil {
 		return fmt.Errorf("update site settings: %w", err)
 	}
 	changed, err := result.RowsAffected()
 	if err != nil {
-		return fmt.Errorf("inspect site settings update: %w", err)
+		return err
 	}
 	if changed != 1 {
 		return fmt.Errorf("site settings update changed %d rows", changed)
-	}
-
-	// Callers that only touch site fields -- pinning a post, for instance --
-	// leave UpdatedAtMS unset. Stamping zero would violate the account row's
-	// own constraint, so an unstamped write keeps whatever was already there
-	// rather than claiming the profile changed.
-	profile, err := store.queries.ExecContext(ctx, `
-UPDATE users
-SET username = ?, display_name = ?, bio = ?, avatar_media_id = ?, cover_media_id = ?,
-    updated_at_ms = CASE WHEN ? > 0 THEN ? ELSE updated_at_ms END
-WHERE id = (SELECT owner_id FROM site_settings WHERE id = 1)`,
-		settings.Username, settings.DisplayName, settings.Bio, optionalString(settings.AvatarMediaID), optionalString(settings.CoverMediaID),
-		settings.UpdatedAtMS, settings.UpdatedAtMS,
-	)
-	if err != nil {
-		// users_username_unique guards this column for every writer, so the
-		// owner renaming onto a member's handle lands here rather than in the
-		// account service's availability check. Reported the same way from
-		// both, because it is the same refusal and the settings form already
-		// knows what to say about it.
-		if isUniqueViolation(err) {
-			return domain.NewError(domain.CodeUsernameTaken, "that username is taken", map[string]any{"field": "username"})
-		}
-		return fmt.Errorf("update owner profile: %w", err)
-	}
-	changedProfile, err := profile.RowsAffected()
-	if err != nil {
-		return fmt.Errorf("inspect owner profile update: %w", err)
-	}
-	if changedProfile != 1 {
-		return fmt.Errorf("owner profile update changed %d rows", changedProfile)
 	}
 	return nil
 }

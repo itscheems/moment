@@ -7,14 +7,7 @@ import (
 	"github.com/moment/moment/internal/domain"
 )
 
-// LinkThumbnailAdapter exposes the ordinary ingestion seam under the narrow
-// shape the link preview service depends on.
-//
-// A downloaded thumbnail is deliberately given no shortcut: it flows through
-// the same Ingest path an owner upload uses, so signature sniffing, the MIME
-// allowlist, dimension ceilings, and content-hash dedup all apply. Remote bytes
-// are less trustworthy than an owner's own file, so relaxing anything here
-// would be backwards.
+// LinkThumbnailAdapter captures preview images through managed ingestion.
 type LinkThumbnailAdapter struct {
 	store *Store
 }

@@ -65,18 +65,18 @@ func newStubProvider() *stubProvider {
 
 // oauthFixture wires a real engine to a substituted provider.
 type oauthFixture struct {
-	ownerTestFixture
+	authenticationTestFixture
 	provider *stubProvider
 	engine   http.Handler
 }
 
 func newOAuthFixture(t *testing.T) oauthFixture {
 	t.Helper()
-	base := newOwnerTestFixture(t, false)
+	base := newAuthenticationTestFixture(t, false)
 	provider := newStubProvider()
 	engine, err := New(Config{
 		Assets:         testAssets(),
-		OwnerAuth:      base.manager,
+		SessionSigner:  base.manager,
 		Accounts:       base.accounts,
 		OAuthProviders: oauth.NewRegistry(provider),
 		Comments:       nil,
@@ -85,7 +85,7 @@ func newOAuthFixture(t *testing.T) oauthFixture {
 	if err != nil {
 		t.Fatal(err)
 	}
-	return oauthFixture{ownerTestFixture: base, provider: provider, engine: engine}
+	return oauthFixture{authenticationTestFixture: base, provider: provider, engine: engine}
 }
 
 func (fixture oauthFixture) do(t *testing.T, request *http.Request) *httptest.ResponseRecorder {
@@ -143,6 +143,9 @@ func redirectError(t *testing.T, response *httptest.ResponseRecorder) string {
 	location, err := url.Parse(response.Header().Get("Location"))
 	if err != nil {
 		t.Fatal(err)
+	}
+	if location.Query().Get("auth_error") != "" && location.Path != "/login" {
+		t.Fatalf("sign-in error landed at %s", location.Path)
 	}
 	return location.Query().Get("auth_error")
 }
@@ -276,15 +279,13 @@ func TestOAuthSignInCreatesAPendingAccountThatCannotWrite(t *testing.T) {
 		t.Fatal("the browser was given no CSRF token to finish signing in with")
 	}
 
-	// Owner-only routes stay closed to it, with a valid session and a valid
-	// CSRF token in hand. This is the whole point of approval.
 	for _, probe := range []struct {
 		method string
 		path   string
 	}{
-		{http.MethodGet, "/api/v1/owner/accounts"},
-		{http.MethodGet, "/api/v1/owner/status"},
-		{http.MethodPost, "/api/v1/owner/token/rotate"},
+		{http.MethodGet, "/api/v1/accounts"},
+		{http.MethodGet, "/api/v1/accounts"},
+		{http.MethodPost, "/api/v1/account/tokens"},
 	} {
 		request := httptest.NewRequest(probe.method, probe.path, nil)
 		request.AddCookie(session)
@@ -338,9 +339,8 @@ func TestPendingAccountCannotPromoteItself(t *testing.T) {
 		})
 	}
 
-	// And the owner's own control refuses it too.
 	escalate := httptest.NewRequest(http.MethodPatch,
-		"/api/v1/owner/accounts/"+envelope.Data.Account.UserID, strings.NewReader(`{"status":"active"}`))
+		"/api/v1/accounts/"+envelope.Data.Account.UserID, strings.NewReader(`{"status":"active"}`))
 	escalate.Header.Set("Content-Type", "application/json")
 	escalate.Header.Set(CSRFHeaderName, csrf)
 	escalate.AddCookie(session)
@@ -352,9 +352,9 @@ func TestPendingAccountCannotPromoteItself(t *testing.T) {
 
 func TestOAuthStartedWhileSignedInLinksInsteadOfCreatingAnAccount(t *testing.T) {
 	fixture := newOAuthFixture(t)
-	ownerCookie, _ := exchangeOwnerSession(t, fixture.ownerTestFixture, fixture.token)
+	accountCookie, _ := exchangeAccountSession(t, fixture.authenticationTestFixture, fixture.token)
 
-	flow, state := fixture.startFlow(t, "?return="+url.QueryEscape("/owner/settings"), ownerCookie)
+	flow, state := fixture.startFlow(t, "?return="+url.QueryEscape("/owner/settings"), accountCookie)
 	response := fixture.do(t, callbackRequest(state, "code", flow))
 	if response.Code != http.StatusSeeOther {
 		t.Fatalf("callback = %d", response.Code)

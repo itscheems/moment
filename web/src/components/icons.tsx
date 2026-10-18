@@ -13,7 +13,7 @@ export type IconName =
   | "archive"
   | "compose"
   | "publish"
-  | "owner"
+  | "account"
   | "settings"
   | "theme"
   | "back"
@@ -134,7 +134,7 @@ const paths: Record<IconName, React.ReactNode> = {
       <path d="M5 19h14" />
     </>
   ),
-  owner: (
+  account: (
     <>
       <circle cx="12" cy="8.5" r="3.5" />
       <path d="M5.5 20c.7-3.5 2.87-5.5 6.5-5.5s5.8 2 6.5 5.5" />
@@ -448,7 +448,7 @@ const navigationSymbols: Partial<
   home: { idle: "nav-home", active: "nav-home-active" },
   search: { idle: "nav-search", active: "nav-search-active" },
   archive: { idle: "nav-archive", active: "nav-archive-active" },
-  owner: { idle: "nav-profile", active: "nav-profile-active" },
+  account: { idle: "nav-profile", active: "nav-profile-active" },
   more: { idle: "nav-more", active: "nav-more-active" },
 };
 

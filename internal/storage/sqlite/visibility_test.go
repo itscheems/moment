@@ -1,7 +1,6 @@
 package sqlite
 
 import (
-	"context"
 	"strings"
 	"testing"
 	"time"
@@ -10,11 +9,8 @@ import (
 	"github.com/moment/moment/internal/domain"
 )
 
-// A visitor and the owner read the same rows through the same services; only
-// the Viewer differs. Every read path is asserted from both sides so a path
-// that forgets to ask is caught here rather than by a reader.
-func TestHiddenPostsReachOnlyTheOwnerThroughEveryReadPath(t *testing.T) {
-	ctx := context.Background()
+func TestHiddenPostsReachOnlyTheAuthorThroughEveryReadPath(t *testing.T) {
+	ctx := testAccountContext()
 	db, runtimeState := openTestDatabase(t, Options{})
 	clock := time.Date(2024, 3, 10, 12, 0, 0, 0, time.UTC)
 	posts := newTestPostService(t, db, func() time.Time { return clock }, sequenceIDs(entryOne, entryTwo, entryThree))
@@ -42,7 +38,7 @@ func TestHiddenPostsReachOnlyTheOwnerThroughEveryReadPath(t *testing.T) {
 	if _, err := posts.Get(ctx, hidden.Post.Entry.ID, app.PublicViewer()); !domain.HasCode(err, domain.CodePostNotFound) {
 		t.Fatalf("visitor detail of hidden post: %v", err)
 	}
-	if got, err := posts.Get(ctx, hidden.Post.Entry.ID, app.OwnerViewer()); err != nil || got.Entry.Visibility != domain.VisibilityOnlyMe {
+	if got, err := posts.Get(ctx, hidden.Post.Entry.ID, app.AccountViewer(testAccountID)); err != nil || got.Entry.Visibility != domain.VisibilityOnlyMe {
 		t.Fatalf("owner detail of hidden post: %+v %v", got, err)
 	}
 	if _, err := posts.Get(ctx, public.Post.Entry.ID, app.PublicViewer()); err != nil {
@@ -60,11 +56,11 @@ func TestHiddenPostsReachOnlyTheOwnerThroughEveryReadPath(t *testing.T) {
 	if ids := timelineIDs(visitorPage); strings.Join(ids, ",") != entryOne {
 		t.Fatalf("visitor timeline = %v", ids)
 	}
-	ownerPage, err := posts.List(ctx, app.ListPostsInput{Timezone: "UTC", Viewer: app.OwnerViewer()})
+	authorPage, err := posts.List(ctx, app.ListPostsInput{Timezone: "UTC", Viewer: app.AccountViewer(testAccountID)})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if ids := timelineIDs(ownerPage); strings.Join(ids, ",") != strings.Join([]string{entryTwo, entryTwo, entryOne}, ",") {
+	if ids := timelineIDs(authorPage); strings.Join(ids, ",") != strings.Join([]string{entryTwo, entryTwo, entryOne}, ",") {
 		t.Fatalf("owner timeline = %v", ids)
 	}
 
@@ -84,31 +80,30 @@ func TestHiddenPostsReachOnlyTheOwnerThroughEveryReadPath(t *testing.T) {
 	if len(visitorSearch.Items) != 1 || visitorSearch.Items[0].Post.Entry.ID.String() != entryOne || visitorSearch.YearCounts[0].Count != 1 {
 		t.Fatalf("visitor search = %+v", visitorSearch)
 	}
-	ownerSearch, err := search.Search(ctx, app.SearchInput{Query: "shoreline", Viewer: app.OwnerViewer()})
+	authorSearch, err := search.Search(ctx, app.SearchInput{Query: "shoreline", Viewer: app.AccountViewer(testAccountID)})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(ownerSearch.Items) != 2 || ownerSearch.YearCounts[0].Count != 2 {
-		t.Fatalf("owner search = %+v", ownerSearch)
+	if len(authorSearch.Items) != 2 || authorSearch.YearCounts[0].Count != 2 {
+		t.Fatalf("owner search = %+v", authorSearch)
 	}
 	visitorMonths, err := search.ArchiveMonths(ctx, app.ArchiveMonthsInput{})
 	if err != nil || len(visitorMonths.Items) != 1 || visitorMonths.Items[0].Count != 1 {
 		t.Fatalf("visitor months = %+v %v", visitorMonths, err)
 	}
-	ownerMonths, err := search.ArchiveMonths(ctx, app.ArchiveMonthsInput{Viewer: app.OwnerViewer()})
-	if err != nil || ownerMonths.Items[0].Count != 2 {
-		t.Fatalf("owner months = %+v %v", ownerMonths, err)
+	authorMonths, err := search.ArchiveMonths(ctx, app.ArchiveMonthsInput{Viewer: app.AccountViewer(testAccountID)})
+	if err != nil || authorMonths.Items[0].Count != 2 {
+		t.Fatalf("owner months = %+v %v", authorMonths, err)
 	}
 	visitorMonth, err := search.ArchiveMonth(ctx, "2024-03", app.PublicViewer())
 	if err != nil || visitorMonth.Days[0].Count != 1 {
 		t.Fatalf("visitor month = %+v %v", visitorMonth, err)
 	}
-	ownerMonth, err := search.ArchiveMonth(ctx, "2024-03", app.OwnerViewer())
-	if err != nil || ownerMonth.Days[0].Count != 2 {
-		t.Fatalf("owner month = %+v %v", ownerMonth, err)
+	authorMonth, err := search.ArchiveMonth(ctx, "2024-03", app.AccountViewer(testAccountID))
+	if err != nil || authorMonth.Days[0].Count != 2 {
+		t.Fatalf("owner month = %+v %v", authorMonth, err)
 	}
 
-	// A public quote of a hidden post carries the words only to the owner.
 	clock = clock.Add(time.Minute)
 	target := hidden.Post.Entry.ID
 	quote, err := posts.Create(ctx, app.CreatePostInput{ContentMD: "look", QuotedPostID: &target})
@@ -119,22 +114,22 @@ func TestHiddenPostsReachOnlyTheOwnerThroughEveryReadPath(t *testing.T) {
 	if err != nil || visitorQuote.Quoted == nil || !visitorQuote.Quoted.Unavailable {
 		t.Fatalf("visitor quote = %+v %v", visitorQuote.Quoted, err)
 	}
-	ownerQuote, err := posts.Get(ctx, quote.Post.Entry.ID, app.OwnerViewer())
-	if err != nil || ownerQuote.Quoted == nil || ownerQuote.Quoted.Unavailable {
-		t.Fatalf("owner quote = %+v %v", ownerQuote.Quoted, err)
+	authorQuote, err := posts.Get(ctx, quote.Post.Entry.ID, app.AccountViewer(testAccountID))
+	if err != nil || authorQuote.Quoted == nil || authorQuote.Quoted.Unavailable {
+		t.Fatalf("owner quote = %+v %v", authorQuote.Quoted, err)
 	}
-	if quotedBody, ok := ownerQuote.Quoted.Entry.Markdown(); !ok || quotedBody != "shoreline hidden" {
+	if quotedBody, ok := authorQuote.Quoted.Entry.Markdown(); !ok || quotedBody != "shoreline hidden" {
 		t.Fatalf("owner quote body = %q, present = %t", quotedBody, ok)
 	}
 
 	// Comments under a hidden post: a member is a visitor here.
 	comments := newTestCommentService(t, db, runtimeState, func() time.Time { return clock }, commentIDs(commentOne, commentTwo))
-	owner := testCommentAuthor(t, db, runtimeState)
+	primaryAccount := testCommentAuthor(t, db, runtimeState)
 	member := testCommentMember(t, db, runtimeState, "reader", "Reader")
 	if _, err := comments.Create(ctx, app.CreateCommentInput{Author: member, EntryID: target, ContentMD: "hi"}); !domain.HasCode(err, domain.CodePostNotFound) {
 		t.Fatalf("member comment on hidden post: %v", err)
 	}
-	if _, err := comments.Create(ctx, app.CreateCommentInput{Author: owner, EntryID: target, ContentMD: "note to self"}); err != nil {
+	if _, err := comments.Create(ctx, app.CreateCommentInput{Author: primaryAccount, EntryID: target, ContentMD: "note to self"}); err != nil {
 		t.Fatalf("owner comment on hidden post: %v", err)
 	}
 	if _, err := comments.ListPage(ctx, app.ListCommentsInput{EntryID: target}); !domain.HasCode(err, domain.CodePostNotFound) {
@@ -143,7 +138,7 @@ func TestHiddenPostsReachOnlyTheOwnerThroughEveryReadPath(t *testing.T) {
 	if _, err := comments.ListReplies(ctx, app.ListRepliesInput{EntryID: target, RootID: mustID(t, commentOne)}); !domain.HasCode(err, domain.CodePostNotFound) {
 		t.Fatalf("visitor replies of hidden post: %v", err)
 	}
-	if thread, err := comments.ListPage(ctx, app.ListCommentsInput{EntryID: target, Viewer: app.OwnerViewer()}); err != nil || len(thread.Items) != 1 {
+	if thread, err := comments.ListPage(ctx, app.ListCommentsInput{EntryID: target, Viewer: app.AccountViewer(testAccountID)}); err != nil || len(thread.Items) != 1 {
 		t.Fatalf("owner thread of hidden post: %+v %v", thread, err)
 	}
 
@@ -166,7 +161,7 @@ func TestHiddenPostsReachOnlyTheOwnerThroughEveryReadPath(t *testing.T) {
 // A create retried with the same key replays the same audience, and a key
 // minted before visibility existed still matches its default-audience body.
 func TestCreateReplayPreservesVisibility(t *testing.T) {
-	ctx := context.Background()
+	ctx := testAccountContext()
 	db, _ := openTestDatabase(t, Options{})
 	posts := newTestPostService(t, db, func() time.Time { return time.UnixMilli(1_700_000_000_000) }, sequenceIDs(entryOne, entryTwo))
 	first, err := posts.Create(ctx, app.CreatePostInput{ContentMD: "secret", Visibility: domain.VisibilityOnlyMe, IdempotencyKey: "k"})
@@ -184,7 +179,7 @@ func TestCreateReplayPreservesVisibility(t *testing.T) {
 
 // Rows written before the column existed read as public.
 func TestEntriesWithoutAVisibilityColumnValueReadAsEveryone(t *testing.T) {
-	ctx := context.Background()
+	ctx := testAccountContext()
 	db, _ := openTestDatabase(t, Options{})
 	insertEntry(t, db, entryOne, "legacy")
 	posts := newTestPostService(t, db, time.Now, nil)
@@ -196,7 +191,7 @@ func TestEntriesWithoutAVisibilityColumnValueReadAsEveryone(t *testing.T) {
 
 // A file is as visible as the posts that reference it.
 func TestMediaVisibilityFollowsItsReferences(t *testing.T) {
-	ctx := context.Background()
+	ctx := testAccountContext()
 	db, _ := openTestDatabase(t, Options{})
 	references, err := NewMediaReferenceRepository(db)
 	if err != nil {
@@ -219,19 +214,19 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)`, mediaTwo, strings.Repeat("b", 64), "m
 			t.Fatalf("%s: visibility = %q %v, want %q", why, got, err, want)
 		}
 	}
-	expect(mediaOne, domain.VisibilityEveryone, "unreferenced upload")
+	expect(mediaOne, domain.VisibilityOnlyMe, "unreferenced upload")
 	mustWrite(t, db, `INSERT INTO entry_media (entry_id, media_id, position, alt_text) VALUES (?, ?, 0, NULL)`, entryTwo, mediaOne)
 	expect(mediaOne, domain.VisibilityOnlyMe, "referenced only by a hidden post")
 	mustWrite(t, db, `INSERT INTO entry_media (entry_id, media_id, position, alt_text) VALUES (?, ?, 0, NULL)`, entryOne, mediaOne)
 	expect(mediaOne, domain.VisibilityEveryone, "also referenced by a public post")
 
-	mustWrite(t, db, `INSERT INTO comments (id, entry_id, parent_id, author_kind, author_name, content_md, created_at_ms) VALUES (?, ?, NULL, 'owner', 'Owner', 'note', 4)`, commentOne, entryTwo)
+	mustWrite(t, db, `INSERT INTO comments (id, entry_id, parent_id, author_name, content_md, created_at_ms) VALUES (?, ?, NULL, 'Owner', 'note', 4)`, commentOne, entryTwo)
 	mustWrite(t, db, `INSERT INTO comment_media (comment_id, media_id, position, alt_text) VALUES (?, ?, 0, NULL)`, commentOne, mediaTwo)
 	expect(mediaTwo, domain.VisibilityOnlyMe, "comment media under a hidden post")
 	mustWrite(t, db, `UPDATE entries SET visibility = 'everyone' WHERE id = ?`, entryTwo)
 	expect(mediaTwo, domain.VisibilityEveryone, "the post was revealed")
 	mustWrite(t, db, `UPDATE entries SET visibility = 'only_me' WHERE id = ?`, entryTwo)
-	mustWrite(t, db, `UPDATE users SET avatar_media_id = ? WHERE id = (SELECT owner_id FROM site_settings WHERE id = 1)`, mediaTwo)
+	mustWrite(t, db, `UPDATE users SET avatar_media_id = ? WHERE id = (SELECT profile_user_id FROM site_settings WHERE id = 1)`, mediaTwo)
 	expect(mediaTwo, domain.VisibilityEveryone, "an avatar is always public")
 }
 

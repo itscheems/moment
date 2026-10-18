@@ -1,7 +1,6 @@
 package sqlite
 
 import (
-	"context"
 	"reflect"
 	"sync"
 	"testing"
@@ -13,7 +12,7 @@ import (
 
 func TestPostMediaLifecycleOrderingClockAndImmutableReplay(t *testing.T) {
 	t.Parallel()
-	ctx := context.Background()
+	ctx := testAccountContext()
 	database, _ := openTestDatabase(t, Options{})
 	createdAt := time.UnixMilli(1_700_000_000_000)
 	reorderedAt := createdAt.Add(time.Hour)
@@ -46,7 +45,7 @@ func TestPostMediaLifecycleOrderingClockAndImmutableReplay(t *testing.T) {
 	assertMediaClock(t, database, mediaOne, nil)
 	assertMediaClock(t, database, mediaTwo, nil)
 
-	got, err := service.Get(ctx, created.Post.Entry.ID, app.OwnerViewer())
+	got, err := service.Get(ctx, created.Post.Entry.ID, app.AccountViewer(testAccountID))
 	if err != nil || !reflect.DeepEqual(got.Media, expectedMediaProjections(initial)) {
 		t.Fatalf("get media = %#v, %v", got.Media, err)
 	}
@@ -113,7 +112,7 @@ func TestPostMediaLifecycleOrderingClockAndImmutableReplay(t *testing.T) {
 
 func TestPostMediaCreateAndUpdateRollbackAtomically(t *testing.T) {
 	t.Parallel()
-	ctx := context.Background()
+	ctx := testAccountContext()
 	database, _ := openTestDatabase(t, Options{})
 	createdAt := time.UnixMilli(1_700_000_000_000)
 	insertReferenceMedia(t, database, mediaOne, "c", createdAt)
@@ -163,7 +162,7 @@ END`); err != nil {
 	if _, err := service.Update(ctx, app.UpdatePostInput{ID: created.Post.Entry.ID, ContentMD: "after", Media: &replacement}); !domain.HasCode(err, domain.CodeInternal) {
 		t.Fatalf("update rollback error = %v", err)
 	}
-	unchanged, err := service.Get(ctx, created.Post.Entry.ID, app.OwnerViewer())
+	unchanged, err := service.Get(ctx, created.Post.Entry.ID, app.AccountViewer(testAccountID))
 	unchangedBody, unchangedHasBody := unchanged.Entry.Markdown()
 	if err != nil || !unchangedHasBody || unchangedBody != "before" || !reflect.DeepEqual(unchanged.Media, created.Post.Media) {
 		t.Fatalf("failed replacement changed authority: %#v, %v", unchanged, err)
@@ -174,7 +173,7 @@ END`); err != nil {
 
 func TestPostMediaRejectsMissingOverLimitAndOversizeWithoutPartialUsage(t *testing.T) {
 	t.Parallel()
-	ctx := context.Background()
+	ctx := testAccountContext()
 	database, _ := openTestDatabase(t, Options{})
 	createdAt := time.UnixMilli(1_700_000_000_000)
 	insertReferenceMedia(t, database, mediaOne, "e", createdAt)
@@ -222,7 +221,7 @@ func TestPostMediaIdempotentCreateIsConcurrent(t *testing.T) {
 		group.Add(1)
 		go func() {
 			defer group.Done()
-			result, err := service.Create(context.Background(), input)
+			result, err := service.Create(testAccountContext(), input)
 			if err != nil {
 				errorsFound <- err
 				return
@@ -255,7 +254,7 @@ func expectedMediaProjections(inputs []domain.EntryMediaUsage) []app.MediaUsageP
 
 func TestSearchResultsCarryCanonicalPostMedia(t *testing.T) {
 	t.Parallel()
-	ctx := context.Background()
+	ctx := testAccountContext()
 	database, runtimeState := openTestDatabase(t, Options{})
 	createdAt := time.UnixMilli(1_700_000_000_000)
 	insertReferenceMedia(t, database, mediaOne, "9", createdAt)

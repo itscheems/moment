@@ -34,7 +34,7 @@ func registerSite(application *Application) {
 		Path:       []string{"site", "get"},
 		Short:      "Read portable public site settings",
 		Long:       "Read the public site identity from the selected local instance or HTTP API without deriving values from request headers.",
-		Inputs:     "Direct mode reads --data-dir. API mode reads the public endpoint and does not require an owner token.",
+		Inputs:     "Direct mode reads --data-dir. API mode reads the public endpoint and does not require an account token.",
 		Output:     "Title, bio, IANA timezone, normalized public base URL, nullable managed avatar and cover IDs, and comments state.",
 		Errors:     "Missing or invalid authority data returns DATA_INTEGRITY_FAILED; unavailable APIs use dependency exit codes.",
 		Example:    "moment site get --data-dir ./moment-data --json",
@@ -45,24 +45,18 @@ func registerSite(application *Application) {
 		Path:       []string{"site", "update"},
 		Short:      "Partially update portable site settings",
 		Long:       "Atomically validate and update only the explicitly supplied site identity fields through the selected transport.",
-		Inputs:     "Set fields with --username, --display-name, --title, --bio, --timezone, --public-base-url, --avatar-media-id, --cover-media-id, and --comments-enabled. Clear nullable fields with --clear-public-base-url, --clear-avatar, or --clear-cover. API mode authenticates through MOMENT_TOKEN or --token-file.",
-		Output:     "The complete updated public settings DTO, equivalent in direct and API modes.",
-		Errors:     "Invalid IANA zones or URLs return INVALID_ARGUMENT; missing managed media returns MEDIA_NOT_FOUND; API authentication failures return UNAUTHORIZED.",
-		Example:    "moment site update --data-dir ./moment-data --username cheems --display-name 'Cheems' --json",
+		Inputs:     "Set --title, --timezone, --public-base-url, --comments-enabled or --registration-mode. Use --clear-public-base-url to clear the canonical URL. Personal fields belong to user update-profile.",
+		Output:     "The updated public site settings.",
+		Errors:     "Invalid site configuration returns INVALID_ARGUMENT; API mode requires an administrator.",
+		Example:    "moment site update --data-dir ./moment-data --title 'My Moment' --json",
 		Capability: CapabilityBoth,
 		Flags: func(flags *pflag.FlagSet) {
-			flags.String("username", "", "set the unique lowercase public username")
-			flags.String("display-name", "", "set the public owner display name")
-			flags.String("title", "", "set the public site title")
-			flags.String("bio", "", "set the public site biography")
-			flags.String("timezone", "", "set an IANA timezone such as Asia/Shanghai")
-			flags.String("public-base-url", "", "set the canonical absolute public HTTP(S) base URL")
-			flags.Bool("clear-public-base-url", false, "clear the configured public base URL")
-			flags.String("avatar-media-id", "", "set the managed media ID used as the site avatar")
-			flags.Bool("clear-avatar", false, "clear the site avatar")
-			flags.String("cover-media-id", "", "set the managed media ID used as the profile cover")
-			flags.Bool("clear-cover", false, "clear the profile cover")
-			flags.Bool("comments-enabled", true, "enable or disable new public comments")
+			flags.String("title", "", "set the site title")
+			flags.String("timezone", "", "set an IANA timezone")
+			flags.String("public-base-url", "", "set the canonical public URL")
+			flags.Bool("clear-public-base-url", false, "clear the canonical public URL")
+			flags.Bool("comments-enabled", true, "enable or disable new comments")
+			flags.String("registration-mode", "", "open, approval or closed")
 		},
 		Run: runSiteUpdate,
 	})
@@ -103,7 +97,7 @@ func runSiteUpdate(ctx context.Context, invocation Invocation, input CommandInpu
 	case ModeDirect:
 		settings, err = directSiteUpdate(ctx, invocation, update)
 	case ModeAPI:
-		meta, err = siteAPIRequest(ctx, invocation, http.MethodPatch, "/api/v1/owner/site", http.StatusOK, payload, true, &settings)
+		meta, err = siteAPIRequest(ctx, invocation, http.MethodPatch, "/api/v1/site", http.StatusOK, payload, true, &settings)
 	default:
 		err = errors.New("unsupported site update transport")
 	}
@@ -117,92 +111,52 @@ func runSiteUpdate(ctx context.Context, invocation Invocation, input CommandInpu
 
 func siteUpdateInput(input CommandInput) (app.SiteUpdate, map[string]any, error) {
 	update := app.SiteUpdate{}
-	payload := make(map[string]any)
+	payload := map[string]any{}
 	for _, field := range []struct {
-		flag string
-		set  func(string)
+		flag, wire string
+		set        func(*string)
 	}{
-		{flag: "username", set: func(value string) { update.Username = &value; payload["username"] = value }},
-		{flag: "display-name", set: func(value string) { update.DisplayName = &value; payload["display_name"] = value }},
-		{flag: "title", set: func(value string) { update.Title = &value; payload["title"] = value }},
-		{flag: "bio", set: func(value string) { update.Bio = &value; payload["bio"] = value }},
-		{flag: "timezone", set: func(value string) { update.Timezone = &value; payload["timezone"] = value }},
+		{"title", "title", func(v *string) { update.Title = v }},
+		{"timezone", "timezone", func(v *string) { update.Timezone = v }},
+		{"registration-mode", "registration_mode", func(v *string) { update.RegistrationMode = v }},
 	} {
 		if input.Changed(field.flag) {
 			value, err := input.String(field.flag)
 			if err != nil {
-				return app.SiteUpdate{}, nil, err
+				return update, nil, err
 			}
-			field.set(value)
+			field.set(&value)
+			payload[field.wire] = value
 		}
 	}
-	publicChanged := input.Changed("public-base-url")
-	clearPublic, err := input.Bool("clear-public-base-url")
+	clearRequested, err := input.Bool("clear-public-base-url")
 	if err != nil {
-		return app.SiteUpdate{}, nil, err
+		return update, nil, err
 	}
-	if publicChanged && clearPublic {
-		return app.SiteUpdate{}, nil, invalidArgument("--public-base-url and --clear-public-base-url are mutually exclusive", "choose either a canonical URL or an explicit clear")
+	if clearRequested && input.Changed("public-base-url") {
+		return update, nil, invalidArgument("URL selection and clearing are mutually exclusive", "choose one URL operation")
 	}
-	if publicChanged {
+	if clearRequested {
+		update.PublicBaseURL = &app.NullableString{}
+		payload["public_base_url"] = nil
+	} else if input.Changed("public-base-url") {
 		value, err := input.String("public-base-url")
 		if err != nil {
-			return app.SiteUpdate{}, nil, err
+			return update, nil, err
 		}
 		update.PublicBaseURL = &app.NullableString{Value: &value}
 		payload["public_base_url"] = value
-	} else if clearPublic {
-		update.PublicBaseURL = &app.NullableString{}
-		payload["public_base_url"] = nil
-	}
-	avatarChanged := input.Changed("avatar-media-id")
-	clearAvatar, err := input.Bool("clear-avatar")
-	if err != nil {
-		return app.SiteUpdate{}, nil, err
-	}
-	if avatarChanged && clearAvatar {
-		return app.SiteUpdate{}, nil, invalidArgument("--avatar-media-id and --clear-avatar are mutually exclusive", "choose either a managed media ID or an explicit clear")
-	}
-	if avatarChanged {
-		value, err := input.String("avatar-media-id")
-		if err != nil {
-			return app.SiteUpdate{}, nil, err
-		}
-		update.AvatarMediaID = &app.NullableString{Value: &value}
-		payload["avatar_media_id"] = value
-	} else if clearAvatar {
-		update.AvatarMediaID = &app.NullableString{}
-		payload["avatar_media_id"] = nil
-	}
-	coverChanged := input.Changed("cover-media-id")
-	clearCover, err := input.Bool("clear-cover")
-	if err != nil {
-		return app.SiteUpdate{}, nil, err
-	}
-	if coverChanged && clearCover {
-		return app.SiteUpdate{}, nil, invalidArgument("--cover-media-id and --clear-cover are mutually exclusive", "choose either a managed media ID or an explicit clear")
-	}
-	if coverChanged {
-		value, err := input.String("cover-media-id")
-		if err != nil {
-			return app.SiteUpdate{}, nil, err
-		}
-		update.CoverMediaID = &app.NullableString{Value: &value}
-		payload["cover_media_id"] = value
-	} else if clearCover {
-		update.CoverMediaID = &app.NullableString{}
-		payload["cover_media_id"] = nil
 	}
 	if input.Changed("comments-enabled") {
 		value, err := input.Bool("comments-enabled")
 		if err != nil {
-			return app.SiteUpdate{}, nil, err
+			return update, nil, err
 		}
 		update.CommentsEnabled = &value
 		payload["comments_enabled"] = value
 	}
 	if update.Empty() {
-		return app.SiteUpdate{}, nil, invalidArgument("site update requires at least one setting flag", "provide a field to set or an explicit clear flag")
+		return update, nil, invalidArgument("site update requires at least one setting", "provide a site configuration field")
 	}
 	return update, payload, nil
 }
@@ -238,7 +192,7 @@ func directSiteWrite(ctx context.Context, invocation Invocation, mutate func(*ap
 	}
 	runtimeState, lease, err := runtimefs.OpenForWriteContext(ctx, target.DataDirectory())
 	if err != nil {
-		return app.SiteSettings{}, ownerRuntimeError(err)
+		return app.SiteSettings{}, runtimeError(err)
 	}
 	defer func() { _ = lease.Release() }()
 	database, err := sqlitestore.Open(ctx, runtimeState, sqlitestore.Options{})
@@ -264,7 +218,7 @@ func openDirectSite(ctx context.Context, invocation Invocation) (*app.SiteServic
 	}
 	runtimeState, err := runtimefs.OpenContext(ctx, target.DataDirectory())
 	if err != nil {
-		return nil, nil, ownerRuntimeError(err)
+		return nil, nil, runtimeError(err)
 	}
 	database, err := sqlitestore.Open(ctx, runtimeState, sqlitestore.Options{})
 	if err != nil {
@@ -347,7 +301,7 @@ func requestAPIJSON(
 		return nil, nil, invalidAPIResponse()
 	}
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
-		return nil, nil, decodeOwnerAPIFailure(response.StatusCode, responseBody)
+		return nil, nil, decodeAPIFailure(response.StatusCode, responseBody)
 	}
 	if response.StatusCode != expectedStatus {
 		return nil, nil, invalidAPIResponse()
@@ -360,8 +314,8 @@ func requestAPIJSON(
 }
 
 func validSiteAPIData(data json.RawMessage, settings app.SiteSettings) bool {
-	if !hasRequiredAPIDataFields(data, "owner_id", "username", "display_name", "title", "bio", "timezone", "public_base_url", "avatar_media_id", "cover_media_id", "pinned_post_id", "comments_enabled") ||
-		!hasRequiredNonNullAPIDataFields(data, "owner_id", "username", "display_name", "title", "bio", "timezone", "comments_enabled") ||
+	if !hasRequiredAPIDataFields(data, "profile_user_id", "username", "display_name", "title", "bio", "timezone", "public_base_url", "avatar_media_id", "cover_media_id", "pinned_post_id", "comments_enabled") ||
+		!hasRequiredNonNullAPIDataFields(data, "profile_user_id", "username", "display_name", "title", "bio", "timezone", "comments_enabled") ||
 		settings.Timezone == "" || settings.Timezone == "Local" || strings.HasPrefix(settings.Timezone, "/") || strings.Contains(settings.Timezone, "..") {
 		return false
 	}

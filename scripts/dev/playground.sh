@@ -5,7 +5,7 @@
 #   task playground -- reset       # throw the data away and seed again
 #   task playground -- status      # running? which anchor? how many cases?
 #   task playground -- case post.hidden   # the page for one showcase case
-#   task playground -- cookie      # an owner session cookie for curl or a headless browser
+#   task playground -- cookie      # an account session cookie for curl or a headless browser
 #   task playground -- stop
 #
 # It serves the `site-showcase` scenario: a seven-year site with every
@@ -17,21 +17,21 @@
 # they have drifted too far.
 #
 # Everything lives under .moment-local/playground/ (ignored): the binary, the
-# data directory, the owner token, the seed result with its case manifest,
+# data directory, the account token, the seed result with its case manifest,
 # and the server log. Nothing here touches moment-data/ or port 8080.
 set -euo pipefail
 
 repo_root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd -P)"
-home="${PLAYGROUND_DIR:-${repo_root}/.moment-local/playground}"
+playground_home="${PLAYGROUND_DIR:-${repo_root}/.moment-local/playground}"
 port="${PLAYGROUND_PORT:-18080}"
 seed="${PLAYGROUND_SEED:-1}"
 scenario="site-showcase"
-binary="${home}/moment"
-data_dir="${home}/data"
-token_file="${home}/owner.token"
-seed_file="${home}/seed.json"
-cookie_file="${home}/cookie.txt"
-serve_log="${home}/serve.log"
+binary="${playground_home}/moment"
+data_dir="${playground_home}/data"
+token_file="${playground_home}/account.token"
+seed_file="${playground_home}/seed.json"
+cookie_file="${playground_home}/cookie.txt"
+serve_log="${playground_home}/serve.log"
 base_url="http://127.0.0.1:${port}"
 
 say() { printf '\033[36m▸\033[0m %s\n' "$*" >&2; }
@@ -46,8 +46,8 @@ usage() {
     '  reset     Stop, discard the playground data, seed again, and serve' \
     '  stop      Stop the playground server' \
     '  status    Report whether it runs, what it was seeded with, and where things are' \
-    '  token     Print the owner token' \
-    '  cookie    Sign in with the owner token and print a moment_session cookie' \
+    '  token     Print the account token' \
+    '  cookie    Sign in with the account token and print a moment_session cookie' \
     '  manifest  Print the case manifest as JSON' \
     '  cases     List every case key with its page and note' \
     '  case KEY  Print the page for one case key (e.g. post.recent.hidden)' \
@@ -55,7 +55,7 @@ usage() {
     '' \
     'Environment:' \
     '  PLAYGROUND_PORT  Listen port (default 18080)' \
-    '  PLAYGROUND_DIR   Playground home (default ./.moment-local/playground)' \
+    '  PLAYGROUND_DIR   Playground playground_home (default ./.moment-local/playground)' \
     '  PLAYGROUND_SEED  Scenario seed (default 1)' \
     '  SKIP_BUILD=1     Serve the binary already in the playground without rebuilding'
 }
@@ -139,10 +139,10 @@ seed_playground() {
   say "灌入 ${scenario}（seed ${seed}，以当前时间为锚）"
   "$binary" --data-dir "$data_dir" --no-input dev scenario "$scenario" --seed "$seed" --yes --json >"$seed_file"
   umask 077
-  json_field "$seed_file" 'document.data.owner_token' >"$token_file"
+  json_field "$seed_file" 'document.data.api_token' >"$token_file"
   chmod 600 "$token_file"
   rm -f -- "$cookie_file"
-  say "$(json_field "$seed_file" '"锚点 " + document.data.showcase.anchored_at + "，" + document.data.showcase.cases.length + " 个 case，站长 @" + document.data.showcase.owner')"
+  say "$(json_field "$seed_file" '"锚点 " + document.data.showcase.anchored_at + "，" + document.data.showcase.cases.length + " 个 case，展示账号 @" + document.data.showcase.profile_username')"
 }
 
 start_server() {
@@ -185,11 +185,11 @@ stop_server() {
 }
 
 print_summary() {
-  say "好了。${base_url}/ · 站长令牌 ${token_file} · case 清单：task playground -- cases"
+  say "好了。${base_url}/ · 账号令牌 ${token_file} · case 清单：task playground -- cases"
 }
 
 cmd_up() {
-  mkdir -p -- "$home"
+  mkdir -p -- "$playground_home"
   build
   # A fresh build replaces a running server, so the playground always runs
   # the source that was just built; SKIP_BUILD=1 keeps whatever is up.
@@ -202,7 +202,7 @@ cmd_up() {
 }
 
 cmd_reset() {
-  mkdir -p -- "$home"
+  mkdir -p -- "$playground_home"
   build
   stop_server
   seed_playground
@@ -216,7 +216,7 @@ cmd_status() {
   else
     printf 'stopped\t%s\n' "$base_url"
   fi
-  printf 'home\t%s\n' "$home"
+  printf 'directory\t%s\n' "$playground_home"
   if seeded; then
     printf 'scenario\t%s seed %s\n' "$scenario" "$seed"
     printf 'anchored_at\t%s\n' "$(json_field "$seed_file" 'document.data.showcase.anchored_at')"

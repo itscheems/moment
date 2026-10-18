@@ -38,7 +38,7 @@ var evidenceSchemas = map[string]map[string]evidenceKind{
 	CheckStaleImportStaging:        {"total": evidenceUnsigned, "ready": evidenceUnsigned, "expired": evidenceUnsigned, "committing": evidenceUnsigned, "used": evidenceUnsigned, "failed": evidenceUnsigned, "invalid": evidenceUnsigned, "incomplete": evidenceUnsigned, "bounded": evidenceBoolean},
 	CheckCurrentNextState:          {"present": evidenceBoolean, "safe_regular_file": evidenceBoolean, "permissions_valid": evidenceBoolean},
 	CheckSiteConfiguration:         {"valid": evidenceBoolean},
-	CheckAccountIntegrity:          {"owners": evidenceUnsigned, "owner_resolves": evidenceBoolean, "orphan_identities": evidenceUnsigned, "orphan_sessions": evidenceUnsigned, "orphan_comment_authors": evidenceUnsigned, "reserved_usernames": evidenceUnsigned},
+	CheckAccountIntegrity:          {"active_administrators": evidenceUnsigned, "profile_resolves": evidenceBoolean, "orphan_identities": evidenceUnsigned, "orphan_sessions": evidenceUnsigned, "orphan_comment_authors": evidenceUnsigned, "reserved_usernames": evidenceUnsigned},
 	CheckArticleIntegrity:          {"articles": evidenceUnsigned, "bounded": evidenceBoolean, "missing_bodies": evidenceUnsigned, "orphan_bodies": evidenceUnsigned, "unparsable_bodies": evidenceUnsigned, "drifted_projections": evidenceUnsigned, "stale_excerpts": evidenceUnsigned},
 	CheckImportRecoveryState:       {"journals": evidenceUnsigned, "active": evidenceUnsigned, "needs_attention": evidenceUnsigned, "current_mismatch": evidenceUnsigned, "invalid": evidenceUnsigned, "latest_phase": evidenceText, "bounded": evidenceBoolean},
 }

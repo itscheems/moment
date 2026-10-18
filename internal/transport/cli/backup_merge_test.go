@@ -23,7 +23,7 @@ import (
 func TestDecodeMergeInspectionAPIAllowsOnlyExpectedNullBlockReason(t *testing.T) {
 	now := time.Now().UTC().Truncate(time.Millisecond)
 	authority := archive.PortableAuthority{Site: sqlitestore.ArchiveSite{
-		OwnerID: "owner", Username: "owner", DisplayName: "Moment", Title: "Moment",
+		ProfileUserID: "owner", Username: "owner", DisplayName: "Moment", Title: "Moment",
 		Timezone: "UTC", CommentsEnabled: true,
 	}}
 	plan, err := archive.ComparePortableAuthorities(archive.MergePlanInput{
@@ -74,7 +74,6 @@ func TestBackupMergeDomainConflictsUseConflictExit(t *testing.T) {
 		suggestion string
 	}{
 		{code: domain.CodeImportMergePlanStale, suggestion: "moment backup merge-plan"},
-		{code: domain.CodeImportOwnerMismatch, suggestion: "same Moment owner"},
 	} {
 		t.Run(string(test.code), func(t *testing.T) {
 			err := backupImportCLIError(domain.NewError(test.code, "merge conflict", map[string]any{"safe": true}))
@@ -171,7 +170,7 @@ func TestBackupMergeDiscardAPIUsesPrivateCredentialAndStrictJSON(t *testing.T) {
 	}
 	t.Setenv("MOMENT_TOKEN", "owner-test-token")
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
-		if request.Method != http.MethodPost || request.URL.Path != "/api/v1/owner/import/merge/discard" ||
+		if request.Method != http.MethodPost || request.URL.Path != "/api/v1/backups/import/merge/discard" ||
 			request.Header.Get("Authorization") != "Bearer owner-test-token" || request.Header.Get("Content-Type") != "application/json" {
 			t.Errorf("request=%s %s %#v", request.Method, request.URL.Path, request.Header)
 		}

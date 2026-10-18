@@ -22,7 +22,7 @@ import (
 func registerLocations(application *Application) {
 	application.MustRegisterLeaf(LeafSpec{
 		Path: []string{"location", "search"}, Short: "Search selectable post locations",
-		Long:       "Search normalized location candidates through configured providers in direct mode or the owner HTTP API.",
+		Long:       "Search normalized location candidates through configured providers in direct mode or the account HTTP API.",
 		Inputs:     "Provide --query and optionally both --latitude and --longitude to bias results. Provider credentials come from AMAP_API_KEY and GEOAPIFY_API_KEY in direct mode.",
 		Output:     "A canonical location result array suitable for --location-json.",
 		Errors:     "Invalid coordinates and unavailable providers use stable codes.",
@@ -64,7 +64,7 @@ func runLocationSearch(ctx context.Context, invocation Invocation, input Command
 	if err != nil {
 		return Result{}, err
 	}
-	return resolveLocationCommand(ctx, invocation, "/api/v1/owner/locations/search", query, point, limit, false)
+	return resolveLocationCommand(ctx, invocation, "/api/v1/locations/search", query, point, limit, false)
 }
 
 func runLocationNearby(ctx context.Context, invocation Invocation, input CommandInput) (Result, error) {
@@ -76,7 +76,7 @@ func runLocationNearby(ctx context.Context, invocation Invocation, input Command
 	if err != nil {
 		return Result{}, err
 	}
-	return resolveLocationCommand(ctx, invocation, "/api/v1/owner/locations/nearby", "", point, limit, true)
+	return resolveLocationCommand(ctx, invocation, "/api/v1/locations/nearby", "", point, limit, true)
 }
 
 func resolveLocationCommand(ctx context.Context, invocation Invocation, endpoint, query string, point *domain.GeoPoint, limit int, nearby bool) (Result, error) {
@@ -185,7 +185,7 @@ func locationAPIRequest(ctx context.Context, invocation Invocation, endpoint str
 		return nil, invalidAPIResponse()
 	}
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
-		return nil, decodeOwnerAPIFailure(response.StatusCode, body)
+		return nil, decodeAPIFailure(response.StatusCode, body)
 	}
 	data, meta, err := decodeStrictAPIEnvelope(body)
 	if err != nil {

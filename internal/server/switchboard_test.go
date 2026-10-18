@@ -37,7 +37,7 @@ func TestSwitchboardMaintenanceDrainsAndSwapsBundle(t *testing.T) {
 	case <-time.After(20 * time.Millisecond):
 	}
 	rejected := httptest.NewRecorder()
-	board.ServeHTTP(rejected, httptest.NewRequest(http.MethodPost, "/api/v1/owner/posts", strings.NewReader("{}")))
+	board.ServeHTTP(rejected, httptest.NewRequest(http.MethodPost, "/api/v1/posts", strings.NewReader("{}")))
 	if rejected.Code != http.StatusServiceUnavailable || !strings.Contains(rejected.Body.String(), "MAINTENANCE_MODE") {
 		t.Fatalf("maintenance response=%d %s", rejected.Code, rejected.Body.String())
 	}
@@ -71,10 +71,11 @@ func TestSwitchboardCommitAndHealthBypassMaintenance(t *testing.T) {
 	}
 	for _, path := range []string{
 		"/healthz",
-		"/api/v1/owner/import/commit",
-		"/api/v1/owner/import/restore",
-		"/api/v1/owner/import/merge/commit",
-		"/api/v1/owner/import/status",
+		"/api/v1/backups/import/commit",
+		"/api/v1/backups/import/restore",
+		"/api/v1/backups/import/merge/commit",
+		"/api/v1/backups/import/review/replace",
+		"/api/v1/backups/import/status",
 	} {
 		response := httptest.NewRecorder()
 		board.ServeHTTP(response, httptest.NewRequest(http.MethodPost, path, nil))
@@ -143,4 +144,26 @@ func TestSwitchboardCancelledDrainRestoresAdmission(t *testing.T) {
 		t.Fatalf("restored admission status=%d", response.Code)
 	}
 	close(release)
+}
+
+func TestReviewedReplacementDoesNotDrainItsOwnRequest(t *testing.T) {
+	board := NewSwitchboard()
+	if err := board.Swap(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := board.BeginMaintenance(r.Context()); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		board.EndMaintenance()
+		w.WriteHeader(http.StatusNoContent)
+	})); err != nil {
+		t.Fatal(err)
+	}
+	board.EndMaintenance()
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	response := httptest.NewRecorder()
+	board.ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/api/v1/backups/import/review/replace", nil).WithContext(ctx))
+	if response.Code != http.StatusNoContent {
+		t.Fatalf("review replacement waited on its own admitted request: %d %s", response.Code, response.Body.String())
+	}
 }

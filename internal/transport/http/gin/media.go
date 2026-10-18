@@ -11,12 +11,12 @@ import (
 	"time"
 
 	gin "github.com/gin-gonic/gin"
+	"github.com/moment/moment/internal/app"
 	"github.com/moment/moment/internal/domain"
 	"github.com/moment/moment/internal/media"
 )
 
-// RegisterMediaRoutes installs explicit immutable original/preview delivery
-// and owner-authenticated ingestion. Preview failures never route to originals.
+// RegisterMediaRoutes installs reference-authorized reads and account-scoped uploads.
 func RegisterMediaRoutes(engine *gin.Engine, store *media.Store, gate *Gate) {
 	for _, path := range []string{"/api/v1/media/:id", "/api/v1/media/:id/preview", "/api/v1/media/:id/poster"} {
 		kind := "original"
@@ -29,23 +29,12 @@ func RegisterMediaRoutes(engine *gin.Engine, store *media.Store, gate *Gate) {
 		engine.GET(path, mediaDeadlines(false, mediaTransferIdle, mediaTransferMax), getMediaAsset(store, kind, gate))
 		engine.HEAD(path, mediaDeadlines(false, mediaTransferIdle, mediaTransferMax), getMediaAsset(store, kind, gate))
 	}
-	// Approved accounts, not just the owner. Comments carry media and the
-	// comment group already admits them, so leaving the upload behind made the
-	// composer offer a picker whose every use answered 401 -- which the browser
-	// reads as an expired session, telling a correctly signed-in member to sign
-	// in again, forever.
-	//
-	// The pool this writes into is global, and an abandoned upload is
-	// unreferenced rather than lost: the same media sweep that reclaims the
-	// owner's abandoned uploads reclaims these. What that does not bound is how
-	// fast somebody can produce them, which is the rate limit this instance
-	// still owes itself before registration opens to anyone.
-	uploads := engine.Group("/api/v1/owner")
+	uploads := engine.Group("/api/v1")
 	uploads.Use(gate.RequireActiveAccount())
-	engine.DELETE("/api/v1/owner/media/:id", gate.RequireOwner(), deleteMedia(store))
+	engine.DELETE("/api/v1/media/:id", gate.RequireAdmin(), deleteMedia(store))
 	posters := newUploadPosterCache()
 	uploads.POST("/media", mediaDeadlines(true, mediaTransferIdle, mediaTransferMax), uploadMedia(store, posters))
-	uploads.GET("/media-uploads/:uploadID/poster", getUploadPoster(posters))
+	uploads.GET("/media/uploads/:uploadID/poster", getUploadPoster(posters))
 }
 
 const uploadIDHeader = "X-Moment-Upload-ID"
@@ -55,13 +44,15 @@ type uploadPosterEntry struct {
 	expiresAt time.Time
 }
 
+type uploadPosterKey struct{ accountID, uploadID string }
+
 type uploadPosterCache struct {
 	mu      sync.RWMutex
-	entries map[string]uploadPosterEntry
+	entries map[uploadPosterKey]uploadPosterEntry
 }
 
 func newUploadPosterCache() *uploadPosterCache {
-	return &uploadPosterCache{entries: make(map[string]uploadPosterEntry)}
+	return &uploadPosterCache{entries: make(map[uploadPosterKey]uploadPosterEntry)}
 }
 
 func validUploadID(value string) bool {
@@ -78,7 +69,7 @@ func validUploadID(value string) bool {
 	return true
 }
 
-func (cache *uploadPosterCache) put(id string, contents []byte) {
+func (cache *uploadPosterCache) put(accountID, id string, contents []byte) {
 	cache.mu.Lock()
 	defer cache.mu.Unlock()
 	now := time.Now()
@@ -87,26 +78,26 @@ func (cache *uploadPosterCache) put(id string, contents []byte) {
 			delete(cache.entries, key)
 		}
 	}
-	cache.entries[id] = uploadPosterEntry{contents: bytes.Clone(contents), expiresAt: now.Add(5 * time.Minute)}
+	cache.entries[uploadPosterKey{accountID: accountID, uploadID: id}] = uploadPosterEntry{contents: bytes.Clone(contents), expiresAt: now.Add(5 * time.Minute)}
 }
 
-func (cache *uploadPosterCache) get(id string) ([]byte, bool) {
+func (cache *uploadPosterCache) get(accountID, id string) ([]byte, bool) {
 	cache.mu.RLock()
-	entry, found := cache.entries[id]
+	entry, found := cache.entries[uploadPosterKey{accountID: accountID, uploadID: id}]
 	cache.mu.RUnlock()
 	if !found {
 		return nil, false
 	}
 	if time.Now().After(entry.expiresAt) {
-		cache.remove(id)
+		cache.remove(accountID, id)
 		return nil, false
 	}
 	return entry.contents, true
 }
 
-func (cache *uploadPosterCache) remove(id string) {
+func (cache *uploadPosterCache) remove(accountID, id string) {
 	cache.mu.Lock()
-	delete(cache.entries, id)
+	delete(cache.entries, uploadPosterKey{accountID: accountID, uploadID: id})
 	cache.mu.Unlock()
 }
 
@@ -116,6 +107,11 @@ func uploadMedia(store *media.Store, posterCaches ...*uploadPosterCache) gin.Han
 		posters = posterCaches[0]
 	}
 	return func(ctx *gin.Context) {
+		author, present := app.ContentActor(ctx.Request.Context())
+		if !present {
+			unauthorized(ctx)
+			return
+		}
 		uploadID := strings.TrimSpace(ctx.GetHeader(uploadIDHeader))
 		if posters == nil {
 			uploadID = ""
@@ -153,12 +149,12 @@ func uploadMedia(store *media.Store, posterCaches ...*uploadPosterCache) gin.Han
 		_ = http.NewResponseController(ctx.Writer).SetWriteDeadline(time.Now().Add(mediaPreparationMax))
 		observer := media.IngestObserver{}
 		if uploadID != "" {
-			observer.VideoPosterReady = func(contents []byte) { posters.put(uploadID, contents) }
+			observer.VideoPosterReady = func(contents []byte) { posters.put(author.ID, uploadID, contents) }
 		}
 		value, preview, err := store.IngestObserved(operationContext, fileHeader.Filename, file, observer)
 		if err != nil {
 			if uploadID != "" {
-				posters.remove(uploadID)
+				posters.remove(author.ID, uploadID)
 			}
 			writeMediaError(ctx, err)
 			return
@@ -169,12 +165,17 @@ func uploadMedia(store *media.Store, posterCaches ...*uploadPosterCache) gin.Han
 
 func getUploadPoster(posters *uploadPosterCache) gin.HandlerFunc {
 	return func(ctx *gin.Context) {
+		author, present := app.ContentActor(ctx.Request.Context())
+		if !present {
+			unauthorized(ctx)
+			return
+		}
 		uploadID := ctx.Param("uploadID")
 		if !validUploadID(uploadID) {
 			Failure(ctx, http.StatusBadRequest, "INVALID_ARGUMENT", "media upload id is invalid", map[string]any{"path": "uploadID"})
 			return
 		}
-		contents, ready := posters.get(uploadID)
+		contents, ready := posters.get(author.ID, uploadID)
 		if !ready {
 			ctx.Header("Cache-Control", "no-store")
 			ctx.Status(http.StatusNotFound)

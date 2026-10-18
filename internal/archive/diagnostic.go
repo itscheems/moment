@@ -85,7 +85,7 @@ func diagnoseStaging(ctx context.Context, root, instanceID string, now time.Time
 			continue
 		}
 		hashesValid := metadata.State == stagingFailed || diagnosticHex(metadata.TokenHash) && diagnosticHex(metadata.ArchiveSHA)
-		if metadata.InstanceID != instanceID || metadata.GenerationID != entry.Name() || metadata.SessionEpoch == 0 || metadata.ExpiresAtMS <= 0 || !hashesValid {
+		if metadata.InstanceID != instanceID || metadata.GenerationID != entry.Name() || !metadata.Authorization.Valid() || metadata.ExpiresAtMS <= 0 || !hashesValid {
 			result.Invalid++
 			continue
 		}

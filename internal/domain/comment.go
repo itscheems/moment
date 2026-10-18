@@ -8,46 +8,14 @@ import (
 	"unicode/utf8"
 )
 
-// MaxCommentAuthorNameCodePoints bounds the name stored beside a comment.
-//
-// It is defined as the display name bound rather than as a number of its own,
-// because writing a comment stamps the author's display name into this field.
-// Two independent numbers meant a name an account was allowed to hold could be
-// one a comment was not allowed to carry: while every comment was the owner's
-// and the stored name was the literal "Owner", nothing reached the smaller
-// limit, and the day the real name went in instead, a display name of 41 to 80
-// characters made every comment that account tried to write fail validation.
+// MaxCommentAuthorNameCodePoints bounds stored historical signatures to the profile name limit.
 const MaxCommentAuthorNameCodePoints = MaxDisplayNameLength
 
-// CommentAuthorKind separates the accounts that can write from the anonymous
-// visitors that once could.
-type CommentAuthorKind string
-
-const (
-	// CommentAuthorOwner marks an authenticated owner action.
-	CommentAuthorOwner CommentAuthorKind = "owner"
-	// CommentAuthorGuest marks a comment written by an anonymous visitor
-	// before commenting required an account.
-	//
-	// Nothing produces this kind any longer. It stays valid on read because
-	// archives written before the change still contain such rows, and an
-	// archive that cannot be imported is a backup that does not exist.
-	CommentAuthorGuest CommentAuthorKind = "guest"
-)
-
-// Comment is one top-level comment or one reply to a top-level comment.
-//
-// AuthorName and AuthorUserID answer different questions. AuthorName is what
-// the author was called when the row was written and is the only identity a
-// legacy guest row has. AuthorUserID points at the account that wrote it, so
-// a rename reaches every comment that account ever made. Owner rows carry
-// both; rows imported from an archive written before accounts existed carry
-// only the name, and the reader falls back to the site identity for them.
+// Comment stores a reply relationship, content and optional real account identity.
 type Comment struct {
 	ID           ID
 	EntryID      ID
 	ParentID     *ID
-	AuthorKind   CommentAuthorKind
 	AuthorName   string
 	AuthorUserID *string
 	// ReplyToCommentID names the comment being answered. It is an annotation,
@@ -114,9 +82,6 @@ func (comment Comment) Validate() error {
 		if *comment.ParentID == comment.ID {
 			return NewError(CodeCommentDepthExceeded, "a comment cannot reply to itself", nil)
 		}
-	}
-	if comment.AuthorKind != CommentAuthorOwner && comment.AuthorKind != CommentAuthorGuest {
-		return NewError(CodeInvalidArgument, "comment author kind is invalid", map[string]any{"field": "author_kind"})
 	}
 	name, err := NormalizeCommentAuthorName(comment.AuthorName)
 	if err != nil || name != comment.AuthorName {

@@ -17,6 +17,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/moment/moment/internal/app"
 	"github.com/moment/moment/internal/archive"
 	"github.com/moment/moment/internal/auth"
 	"github.com/moment/moment/internal/doctor"
@@ -195,11 +196,31 @@ func performArchiveRoundTrip(ctx context.Context, sourceRuntime *runtimefs.Runti
 	if err != nil {
 		return err
 	}
-	status, err := auth.ReadStatus(workspace.targetPath())
-	if err != nil || !status.Initialized || status.SessionEpoch == 0 {
-		return errors.Join(errors.New("roundtrip target owner authority is unavailable"), err)
+	targetRuntime, err := runtimefs.Open(workspace.targetPath())
+	if err != nil {
+		return err
 	}
-	plan, err := committer.PlanFileOffline(ctx, workspace.archivePath(), status.SessionEpoch)
+	targetDB, err := sqlitestore.Open(ctx, targetRuntime, sqlitestore.Options{})
+	if err != nil {
+		return err
+	}
+	repo, err := sqlitestore.NewAccountRepository(targetDB, targetRuntime.Locks)
+	if err != nil {
+		_ = targetDB.Close()
+		return err
+	}
+	accounts, err := app.NewAccountService(repo)
+	if err != nil {
+		_ = targetDB.Close()
+		return err
+	}
+	user, err := accounts.InitializeSiteAccount(ctx, "roundtrip")
+	closeErr = targetDB.Close()
+	if err != nil || closeErr != nil {
+		return errors.Join(err, closeErr)
+	}
+	subject := archive.Authorization{AccountID: user.ID, CredentialID: "local"}
+	plan, err := committer.PlanFileOffline(ctx, workspace.archivePath(), subject)
 	if err != nil {
 		return fmt.Errorf("plan isolated archive import: %w", err)
 	}
@@ -209,7 +230,7 @@ func performArchiveRoundTrip(ctx context.Context, sourceRuntime *runtimefs.Runti
 	if err := workspace.verify(true); err != nil {
 		return err
 	}
-	if _, err := committer.CommitFileOffline(ctx, workspace.archivePath(), binding, status.SessionEpoch); err != nil {
+	if _, err := committer.CommitFileOffline(ctx, workspace.archivePath(), binding, subject); err != nil {
 		return fmt.Errorf("commit isolated archive import: %w", err)
 	}
 	if hooks != nil && hooks.AfterRoundTripCommit != nil {
@@ -266,7 +287,7 @@ func initializeRoundTripTarget(ctx context.Context, workspace *roundTripWorkspac
 	}
 	credential, err := auth.InitializeDevelopmentWithinLocks(context.WithoutCancel(ctx), runtimeState, capability, held)
 	if err != nil || !credential.Initialized || credential.SessionEpoch == 0 {
-		return errors.Join(errors.New("initialize isolated roundtrip owner authority"), err)
+		return errors.Join(errors.New("initialize isolated roundtrip signing authority"), err)
 	}
 	return nil
 }
@@ -422,7 +443,7 @@ func portableSemanticDigestReader(reader *zip.Reader) (string, error) {
 				return "", err
 			}
 			var site struct {
-				ID string `json:"owner_id"`
+				ID string `json:"profile_user_id"`
 			}
 			err = json.NewDecoder(f).Decode(&site)
 			closeErr := f.Close()
@@ -447,14 +468,14 @@ func portableSemanticDigestReader(reader *zip.Reader) (string, error) {
 			if readErr != nil {
 				copyErr = readErr
 			} else {
-				// owner_id is deliberately random for every real instance. The
+				// profile_user_id is deliberately random for every real instance. The
 				// development fixture digest compares logical scenario content
 				// across instances, so exclude only that immutable deployment ID.
 				var site map[string]any
 				if jsonErr := json.Unmarshal(contents, &site); jsonErr != nil {
 					copyErr = jsonErr
 				} else {
-					delete(site, "owner_id")
+					delete(site, "profile_user_id")
 					contents, copyErr = json.Marshal(site)
 					if copyErr == nil {
 						_, copyErr = digest.Write(contents)
@@ -495,7 +516,7 @@ func portableSemanticDigestReader(reader *zip.Reader) (string, error) {
 			}
 		case "data/users.jsonl", "data/identities.jsonl":
 			// The same random deployment identity reaches these members, as an
-			// account id rather than as owner_id. Excluding it in one place and
+			// account id rather than as profile_user_id. Excluding it in one place and
 			// not the other is what made this digest drift the moment accounts
 			// were exported: the value is per-instance in both.
 			contents, readErr := io.ReadAll(opened)

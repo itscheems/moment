@@ -37,6 +37,7 @@ type fixtureBuilder struct {
 
 	// The showcase alone writes accounts, dates everything from a clock it
 	// sets by hand, and reports what it built under stable keys.
+	actor    domain.User
 	accounts *app.AccountService
 	clock    *settableClock
 	anchor   time.Time
@@ -57,6 +58,27 @@ func newFixtureBuilderWithinLocks(target *Target, runtimeState *runtimefs.Runtim
 	if err != nil {
 		return nil, err
 	}
+	accountRepository, err := sqlitestore.NewDevelopmentAccountRepository(database, runtimeState.Root, held)
+	if err != nil {
+		return nil, err
+	}
+	bootstrapAt := deterministicBase(recipe.Name, seed)
+	if recipe.Name == ShowcaseScenarioName && !anchor.IsZero() {
+		bootstrapAt = anchor.UTC().Truncate(time.Minute)
+	}
+	bootstrapID := sha256.Sum256([]byte(fmt.Sprintf("%s|%s|%d|initial-account", RecipeVersion, recipe.Name, seed)))
+	accounts, err := app.NewAccountService(accountRepository, app.WithAccountClock(func() time.Time { return bootstrapAt }), app.WithAccountIDGenerator(func() (string, error) { return hex.EncodeToString(bootstrapID[:16]), nil }))
+	if err != nil {
+		return nil, err
+	}
+	username := "writer"
+	if recipe.Name == ShowcaseScenarioName {
+		username = showcaseProfileUsername
+	}
+	actor, err := accounts.InitializeSiteAccount(context.Background(), username)
+	if err != nil {
+		return nil, err
+	}
 	if recipe.Name == ShowcaseScenarioName {
 		return newShowcaseBuilderWithinLocks(target, runtimeState, database, authority, held, staged, recipe, seed, anchor, progress, postRepository, commentRepository, siteRepository)
 	}
@@ -73,7 +95,7 @@ func newFixtureBuilderWithinLocks(target *Target, runtimeState *runtimefs.Runtim
 	if err != nil {
 		return nil, err
 	}
-	site, err := app.NewSiteService(siteRepository, app.SiteOptions{AllowDevelopmentLocalHTTP: true, Clock: func() time.Time { return base }})
+	site, err := app.NewSiteService(siteRepository, app.SiteOptions{AllowDevelopmentLocalHTTP: true})
 	if err != nil {
 		return nil, err
 	}
@@ -90,11 +112,12 @@ func newFixtureBuilderWithinLocks(target *Target, runtimeState *runtimefs.Runtim
 	return &fixtureBuilder{
 		target: target, runtime: runtimeState, database: database, recipe: recipe,
 		seed: seed, base: base, posts: posts, comments: comments, site: site,
-		media: mediaStore, staged: staged, progress: progress,
+		media: mediaStore, staged: staged, progress: progress, actor: actor, accounts: accounts,
 	}, nil
 }
 
 func (builder *fixtureBuilder) build(ctx context.Context) (Counts, error) {
+	ctx = app.WithContentActor(ctx, builder.actor)
 	if builder.recipe.Name == ShowcaseScenarioName {
 		return builder.buildShowcase(ctx)
 	}
@@ -106,11 +129,14 @@ func (builder *fixtureBuilder) build(ctx context.Context) (Counts, error) {
 	timezone := "UTC"
 	commentsEnabled := true
 	if _, err := builder.site.Update(ctx, app.SiteUpdate{
-		Title: &title, Bio: &bio, Timezone: &timezone, CommentsEnabled: &commentsEnabled,
+		Title: &title, Timezone: &timezone, CommentsEnabled: &commentsEnabled,
 	}); err != nil {
 		return Counts{}, err
 	}
 
+	if _, err := builder.accounts.UpdateProfile(ctx, builder.actor.ID, app.ProfileUpdate{Bio: &bio}); err != nil {
+		return Counts{}, err
+	}
 	actual := Counts{}
 	var firstMedia *domain.ID
 	for entryIndex := int64(0); entryIndex < builder.recipe.Counts.Entries; entryIndex++ {
@@ -173,7 +199,7 @@ func (builder *fixtureBuilder) build(ctx context.Context) (Counts, error) {
 	}
 	if firstMedia != nil && builder.recipe.Name == "archive-roundtrip" {
 		value := firstMedia.String()
-		if _, err := builder.site.Update(ctx, app.SiteUpdate{AvatarMediaID: &app.NullableString{Value: &value}}); err != nil {
+		if _, err := builder.accounts.UpdateProfile(ctx, builder.actor.ID, app.ProfileUpdate{AvatarMediaID: &app.NullableString{Value: &value}}); err != nil {
 			return Counts{}, err
 		}
 	}
@@ -203,23 +229,15 @@ func (builder *fixtureBuilder) createComments(ctx context.Context, entryID domai
 				input.Media[position].Position = position
 			}
 		}
-		// Every fixture comment is owner-authored because that is the only
-		// kind the product can still write. Legacy guest rows are exercised by
-		// archive tests rather than seeded here: a fixture generator that
-		// produced rows no live code path can produce would drift away from
-		// what an actual instance looks like.
-		// The generator writes as the owner account because that is the only
-		// account a fixture has. Reading it from the site rather than assuming
-		// one keeps the fixture honest about who actually authored the rows.
 		settings, settingsErr := builder.site.Get(ctx)
 		if settingsErr != nil {
 			return index, settingsErr
 		}
 		input.Author = domain.User{
-			ID:          settings.OwnerID,
+			ID:          settings.ProfileUserID,
 			Username:    settings.Username,
 			DisplayName: settings.DisplayName,
-			Role:        domain.UserRoleOwner,
+			Role:        domain.UserRoleAdmin,
 			Status:      domain.AccountActive,
 		}
 

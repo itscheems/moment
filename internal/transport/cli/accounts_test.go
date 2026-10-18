@@ -118,9 +118,6 @@ func TestAccountReviewCommandsAcceptAUsername(t *testing.T) {
 		t.Fatalf("suspended = %#v", suspended)
 	}
 
-	// Removal is the completion of review: an owner who mistakenly signed in
-	// with their own provider account, and so created a member holding the
-	// identity they wanted on the owner, otherwise has no way out of it.
 	removed := commandData(t, execute(application, "", "user", "delete", applicant, "--data-dir", dataDir, "--yes", "--json"))
 	if removed["username"] != applicant {
 		t.Fatalf("removed = %#v", removed)
@@ -140,9 +137,7 @@ func TestAccountReviewCommandsAcceptAUsername(t *testing.T) {
 		"more than one username":   {"user", "approve", applicant, "someone-else", "--data-dir", dataDir, "--json"},
 		"a username nobody holds":  {"user", "approve", "nobodyhere", "--data-dir", dataDir, "--json"},
 		"a username nobody can be": {"user", "identities", "Not A Username", "--data-dir", dataDir, "--json"},
-		// The site row references the owner, so the database would refuse this
-		// too -- but a message is better than a constraint error.
-		"removing the owner": {"user", "delete", "owner", "--data-dir", dataDir, "--yes", "--json"},
+		"removing the owner":       {"user", "delete", "owner", "--data-dir", dataDir, "--yes", "--json"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			output := execute(application, "", args...)

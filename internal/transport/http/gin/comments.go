@@ -19,36 +19,22 @@ import (
 	"github.com/moment/moment/internal/transport/postdto"
 )
 
-// RegisterCommentRoutes installs the public thread read alongside the
-// authenticated owner mutations.
-//
-// Writing a comment now requires an account. The anonymous visitor path that
-// used to live here took an unauthenticated create, an unauthenticated media
-// upload, an IP-keyed rate limiter and a honeypot field with it; removing it
-// leaves the server with no unauthenticated write surface at all.
-//
-// Removal is a write-side decision only. Rows an earlier version accepted stay
-// readable: author_kind still admits 'guest' wherever a comment is read, so an
-// archive taken before this change imports and renders unchanged.
+// RegisterCommentRoutes installs public conversation reads and account-authorized mutations.
 func RegisterCommentRoutes(engine *gin.Engine, service *app.CommentService, gate *Gate) {
 	engine.GET("/api/v1/posts/:id/comments", listComments(service, gate))
 	engine.GET("/api/v1/posts/:id/comments/:comment_id/replies", listCommentReplies(service, gate))
-	// Writing a comment and moderating the conversation are two authorities,
-	// and they were one group until a second account could exist. Pinning
-	// somebody else's comment or removing it is the site owner's; writing one,
-	// and removing your own, belongs to any approved account.
-	authored := engine.Group("/api/v1/owner")
+	authored := engine.Group("/api/v1")
 	authored.Use(gate.RequireActiveAccount())
 	authored.POST("/posts/:id/comments", createComment(service))
 	authored.DELETE("/comments/:id", deleteComment(service))
 
-	moderation := engine.Group("/api/v1/owner")
-	moderation.Use(gate.RequireOwner())
-	moderation.PUT("/posts/:id/comments/:comment_id/pin", changeOwnerCommentPin(service, true))
-	moderation.DELETE("/posts/:id/comments/:comment_id/pin", changeOwnerCommentPin(service, false))
+	moderation := engine.Group("/api/v1")
+	moderation.Use(gate.RequireAdmin())
+	moderation.PUT("/posts/:id/comments/:comment_id/pin", changeCommentPin(service, true))
+	moderation.DELETE("/posts/:id/comments/:comment_id/pin", changeCommentPin(service, false))
 }
 
-func changeOwnerCommentPin(service *app.CommentService, active bool) gin.HandlerFunc {
+func changeCommentPin(service *app.CommentService, active bool) gin.HandlerFunc {
 	return func(ctx *gin.Context) {
 		if ctx.Request.URL.RawQuery != "" {
 			writeCommentError(ctx, invalidCommentArgument("comment pin does not accept query parameters", "query"))

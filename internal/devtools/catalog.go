@@ -7,15 +7,7 @@ import (
 	"strings"
 )
 
-// RecipeVersion changes whenever logical fixture identity, ordering, content,
-// or byte generation changes. Consumers may persist this value in goldens.
-//
-// v2: comments are owner-authored throughout. Retiring anonymous commenting
-// removed the guest branch from the generator, so every scenario with comments
-// now yields author_kind 'owner' where it used to alternate with 'guest' — at
-// the same deterministic IDs, since those derive from this constant. A golden
-// taken under v1 would otherwise have compared clean against different rows,
-// which is the exact failure this version exists to prevent.
+// RecipeVersion identifies the current deterministic fixture contract.
 const RecipeVersion = "moment-dev-v2"
 
 // Category identifies the acceptance surface exercised by a named scenario.
@@ -70,11 +62,11 @@ var scenarios = []Scenario{
 	{Name: "post-long-markdown", Category: CategoryEdge, RecipeVersion: RecipeVersion, Description: "one post at the 20,000-code-point content boundary", Counts: Counts{Entries: 1}},
 	{Name: "post-with-images", Category: CategoryUX, RecipeVersion: RecipeVersion, Description: "one, four, and nine-image post layouts with repeated managed media", Counts: Counts{Entries: 3, Media: 12, MediaBytes: 12 * 4096}},
 	{Name: "post-images-missing-alt", Category: CategoryEdge, RecipeVersion: RecipeVersion, Description: "missing, decorative, and provided image alt states", Counts: Counts{Entries: 1, Media: 3, MediaBytes: 3 * 4096}},
-	{Name: "comment-one-level", Category: CategoryUX, RecipeVersion: RecipeVersion, Description: "owner roots with replies flattened to one level", Counts: Counts{Entries: 1, Comments: 6}},
+	{Name: "comment-one-level", Category: CategoryUX, RecipeVersion: RecipeVersion, Description: "account-authored roots with replies flattened to one level", Counts: Counts{Entries: 1, Comments: 6}},
 	{Name: "search-cjk", Category: CategoryUX, RecipeVersion: RecipeVersion, Description: "Chinese, English, numeric, and phrase search fixtures", Counts: Counts{Entries: 6}},
 	{Name: "archive-years", Category: CategoryUX, RecipeVersion: RecipeVersion, Description: "posts spanning deterministic year, month, and day aggregates", Counts: Counts{Entries: 12}},
 	{Name: ShowcaseScenarioName, Category: CategoryUX, RecipeVersion: RecipeVersion, Description: "a seven-year Shanghai site dated from the clock: every timeline, detail, comment, media, card, calendar, and account state at least once", Counts: showcaseCounts()},
-	{Name: "archive-roundtrip", Category: CategoryArchive, RecipeVersion: RecipeVersion, Description: "portable site, entries, comments, media, and alt states restored through format v1", Counts: Counts{Entries: 4, Comments: 8, Media: 6, MediaBytes: 6 * 4096}, ArchiveRoundTrip: true},
+	{Name: "archive-roundtrip", Category: CategoryArchive, RecipeVersion: RecipeVersion, Description: "portable site, entries, comments, media, and alt states restored through format v2", Counts: Counts{Entries: 4, Comments: 8, Media: 6, MediaBytes: 6 * 4096}, ArchiveRoundTrip: true},
 	{Name: "corruption-search-drift", Category: CategoryCorruption, RecipeVersion: RecipeVersion, Description: "one derived FTS row removed for doctor handoff", Counts: Counts{Entries: 3}, ExpectedDoctorCheckID: "fts_consistency"},
 	{Name: "acceptance-scale", Category: CategoryPerformance, RecipeVersion: RecipeVersion, Description: "release-scale streaming dataset", Counts: Counts{Entries: 10_000, Comments: 50_000, Media: 20_000, MediaBytes: 20 * gib}},
 	{Name: "release-scale", Category: CategoryPerformance, RecipeVersion: RecipeVersion, Description: "release verification streaming dataset", Counts: Counts{Entries: 10_000, Comments: 50_000, Media: 20_000, MediaBytes: 20 * gib}},

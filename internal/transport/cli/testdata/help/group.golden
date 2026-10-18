@@ -19,13 +19,14 @@ Flags:
   -h, --help   help for post
 
 Global Flags:
+      --as string           local account username for content operations; not accepted in API mode
       --data-dir string     local Moment data directory (direct mode)
       --json                write one machine-readable JSON document to stdout
       --log-format string   stderr log format: text or json (default "text")
       --log-level string    stderr log level: error, warn, info, or debug (default "info")
       --no-input            fail instead of prompting for input
       --timeout duration    maximum command duration (default 30s)
-      --token-file string   file containing the owner API token
+      --token-file string   file containing an account API token
       --url string          Moment HTTP API base URL (API mode)
 
 Use "moment post [command] --help" for more information about a command.

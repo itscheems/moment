@@ -17,11 +17,12 @@ import (
 
 // Config provides deterministic seams without weakening production behavior.
 type Config struct {
-	BinaryName string
-	Short      string
-	Long       string
-	Now        func() time.Time
-	RequestID  func() string
+	BinaryName     string
+	Short          string
+	Long           string
+	Now            func() time.Time
+	RequestID      func() string
+	PrepareContext func(context.Context, Invocation) (context.Context, error)
 }
 
 // Application owns the reusable command contract and registration boundary.
@@ -331,7 +332,8 @@ func (application *Application) buildRoot(streams Streams) (*cobra.Command, *Opt
 	flags := root.PersistentFlags()
 	flags.StringVar(&options.DataDir, "data-dir", defaultDataDir, "local Moment data directory (direct mode)")
 	flags.StringVar(&options.URL, "url", "", "Moment HTTP API base URL (API mode)")
-	flags.StringVar(&options.TokenFile, "token-file", "", "file containing the owner API token")
+	flags.StringVar(&options.TokenFile, "token-file", "", "file containing an account API token")
+	flags.StringVar(&options.As, "as", "", "local account username for content operations; not accepted in API mode")
 	flags.BoolVar(&options.JSON, "json", false, "write one machine-readable JSON document to stdout")
 	flags.StringVar(&options.LogLevel, "log-level", "info", "stderr log level: error, warn, info, or debug")
 	flags.StringVar(&options.LogFormat, "log-format", "text", "stderr log format: text or json")
@@ -430,6 +432,9 @@ func (application *Application) buildLeaf(
 		if err != nil {
 			return err
 		}
+		if target.Mode() == ModeAPI && root.PersistentFlags().Changed("as") {
+			return invalidArgument("API mode uses the authenticated account", "omit --as and use that account's credentials")
+		}
 		if !spec.Capability.supports(target.Mode()) {
 			return NewCommandError(
 				"MODE_UNSUPPORTED",
@@ -469,6 +474,12 @@ func (application *Application) buildLeaf(
 			operationContext, cancel = context.WithTimeout(operationContext, options.Timeout)
 		}
 		defer cancel()
+		if application.config.PrepareContext != nil {
+			operationContext, err = application.config.PrepareContext(operationContext, invocation)
+			if err != nil {
+				return err
+			}
+		}
 		result, runErr := spec.Run(operationContext, invocation, CommandInput{
 			args:  args,
 			flags: command.Flags(),

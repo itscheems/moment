@@ -15,13 +15,7 @@ import (
 // only for ASCII.
 const MaxDisplayNameLength = 80
 
-// MaxBioLength bounds the free-text line an account may publish about itself.
-//
-// 500 rather than a rounder number because that is what the site bio has always
-// been, and the same field is now edited through two routes -- the account's own
-// profile and the owner's site settings. A tighter bound here would have meant
-// an owner whose bio predates accounts could read it but never save it again,
-// and an archive carrying one could import but not round-trip.
+// MaxBioLength bounds a personal biography in Unicode code points.
 const MaxBioLength = 500
 
 // UsernameMinLength and UsernameMaxLength bound the handle an account is
@@ -33,20 +27,13 @@ const (
 	UsernameMaxLength = 30
 )
 
-// UserRole separates the single account that owns the site from everyone else.
-//
-// The role lives on the account rather than on anything the account writes.
-// Storing it beside each comment would freeze a fact that can change: an
-// account promoted later would keep rendering under its old role on every row
-// written before the promotion.
+// UserRole describes administration independently from authorship and profiles.
 type UserRole string
 
 const (
-	// UserRoleOwner is the account that owns the site. Exactly one exists,
-	// and the database enforces that with a partial unique index rather than
-	// trusting every write path to remember.
-	UserRoleOwner UserRole = "owner"
-	// UserRoleMember is any other account.
+	// UserRoleAdmin grants administrative operations without changing content authorship.
+	UserRoleAdmin UserRole = "admin"
+	// UserRoleMember permits ordinary participation without administrative privileges.
 	UserRoleMember UserRole = "member"
 )
 
@@ -112,9 +99,9 @@ func (user User) CanSignIn() bool {
 	return user.Status == AccountPending || user.Status == AccountActive
 }
 
-// IsOwner reports whether this account owns the site.
-func (user User) IsOwner() bool {
-	return user.Role == UserRoleOwner
+// IsAdmin reports whether this account owns the site.
+func (user User) IsAdmin() bool {
+	return user.Role == UserRoleAdmin
 }
 
 // Identity is one external account that can sign in as a User.
@@ -175,10 +162,6 @@ func ValidateUserID(value string) error {
 var reservedUsernames = map[string]struct{}{
 	// Server routes: /healthz, /readyz, and everything under /api.
 	"api": {}, "healthz": {}, "readyz": {},
-	// Browser routes declared in web/src/app/routes.ts. "owner" is absent on
-	// purpose: only /owner/<something> is a route, bare /owner is not, and it
-	// is the handle a fresh install ships with -- reserving the default would
-	// mean every new site starts out flagging itself.
 	"compose": {}, "search": {}, "archive": {}, "profile": {},
 	// Bundled asset directories under internal/webassets/dist.
 	"assets": {}, "fonts": {}, "icons": {},
@@ -236,14 +219,7 @@ func validateUsernameShape(value string) error {
 // the database.
 func ValidateStoredUsername(value string) error { return validateUsernameShape(value) }
 
-// NormalizeDisplayName trims surrounding whitespace and rejects control
-// characters, matching how comment author names are handled.
-//
-// The match has to be exact, not approximate. CommentService stamps this value
-// onto every comment the account writes, where NormalizeCommentAuthorName
-// refuses any unicode.IsControl rune -- so a display name this function admits
-// and that one refuses is an account that can be saved and can never comment,
-// under an error naming a field its owner never typed.
+// NormalizeDisplayName trims and validates a human-readable account name.
 func NormalizeDisplayName(value string) (string, error) {
 	if !utf8.ValidString(value) {
 		return "", NewError(CodeInvalidArgument, "display name must be valid UTF-8", map[string]any{"field": "display_name"})
@@ -290,7 +266,7 @@ func isRejectedBioControl(character rune) bool {
 // ValidateUserRole accepts the roles an account may hold.
 func ValidateUserRole(value UserRole) error {
 	switch value {
-	case UserRoleOwner, UserRoleMember:
+	case UserRoleAdmin, UserRoleMember:
 		return nil
 	default:
 		return NewError(CodeInvalidArgument, "account role is not recognised", map[string]any{"field": "role"})

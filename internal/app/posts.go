@@ -135,15 +135,13 @@ func cloneLinkCardProjections(projections []LinkCardProjection) []LinkCardProjec
 	return clones
 }
 
-// TimelineItemKind distinguishes the canonical publication from the owner's
-// later repost activity. Both projections point at the same authoritative
-// Entry and therefore share media, comments, detail URL, and undo state.
+// TimelineItemKind distinguishes original publication from the author's linked repost activity.
 type TimelineItemKind string
 
 const (
 	// TimelineItemOriginal is the canonical publication surface.
 	TimelineItemOriginal TimelineItemKind = "original"
-	// TimelineItemRepost is the linked owner repost activity surface.
+	// TimelineItemRepost is the linked self-repost surface of an existing post.
 	TimelineItemRepost TimelineItemKind = "repost"
 )
 
@@ -164,6 +162,7 @@ func (item TimelineEntry) TimelineAt() time.Time {
 
 // QuotedPost is the non-recursive public projection embedded by a quote Moment.
 type QuotedPost struct {
+	Author      *CommentAuthor
 	Unavailable bool
 	Entry       domain.Entry
 	ContentHTML string
@@ -388,18 +387,23 @@ func (service *PostService) Create(ctx context.Context, input CreatePostInput) (
 	result := CreatePostResult{}
 
 	err = service.transactions.Write(ctx, func(store PostStore) error {
+		authorID, err := contentActorID(ctx, store)
+		if err != nil {
+			return err
+		}
+		scope := postCreateScope(authorID)
 		if input.QuotedPostID != nil {
-			// The owner is the only writer, so the quoted target is theirs to
-			// see whatever its visibility; readers meet the quote through
-			// loadQuotedPost, which asks on their behalf.
-			if _, found, quoteErr := store.EntryByID(ctx, *input.QuotedPostID); quoteErr != nil {
+			target, found, quoteErr := store.EntryByID(ctx, *input.QuotedPostID)
+			if quoteErr != nil {
 				return quoteErr
-			} else if !found {
+			}
+			viewer := ViewerFromContext(ctx)
+			if !found || !viewer.CanReadEntry(target) {
 				return postNotFound(*input.QuotedPostID)
 			}
 		}
 		if input.IdempotencyKey != "" {
-			record, found, storeErr := store.IdempotencyRecord(ctx, postCreateIdempotencyScope, input.IdempotencyKey)
+			record, found, storeErr := store.IdempotencyRecord(ctx, scope, input.IdempotencyKey)
 			if storeErr != nil {
 				return storeErr
 			}
@@ -462,7 +466,7 @@ func (service *PostService) Create(ctx context.Context, input CreatePostInput) (
 		if input.IdempotencyKey != "" {
 			if insertErr := store.InsertIdempotencyRecord(ctx, IdempotencyRecord{
 				AuthorUserID:       entry.AuthorUserID,
-				Scope:              postCreateIdempotencyScope,
+				Scope:              scope,
 				Key:                input.IdempotencyKey,
 				RequestHash:        requestHash,
 				ResponseResourceID: entry.ID,
@@ -483,7 +487,7 @@ func (service *PostService) Create(ctx context.Context, input CreatePostInput) (
 			return err
 		}
 		if input.QuotedPostID != nil {
-			quoted, quoteErr := loadQuotedPost(ctx, store, OwnerViewer(), *input.QuotedPostID)
+			quoted, quoteErr := loadQuotedPost(ctx, store, ViewerFromContext(ctx), *input.QuotedPostID)
 			if quoteErr != nil {
 				return quoteErr
 			}
@@ -508,8 +512,12 @@ func (service *PostService) loadCreateReplay(ctx context.Context, input CreatePo
 	var media []MediaUsageProjection
 	var post Post
 	err := service.transactions.Read(ctx, func(store PostStore) error {
+		authorID, err := contentActorID(ctx, store)
+		if err != nil {
+			return err
+		}
 		var storeErr error
-		record, found, storeErr = store.IdempotencyRecord(ctx, postCreateIdempotencyScope, input.IdempotencyKey)
+		record, found, storeErr = store.IdempotencyRecord(ctx, postCreateScope(authorID), input.IdempotencyKey)
 		if storeErr != nil || !found {
 			return storeErr
 		}
@@ -527,7 +535,7 @@ func (service *PostService) loadCreateReplay(ctx context.Context, input CreatePo
 			return storeErr
 		}
 		if input.QuotedPostID != nil {
-			post.Quoted, storeErr = loadQuotedPost(ctx, store, OwnerViewer(), *input.QuotedPostID)
+			post.Quoted, storeErr = loadQuotedPost(ctx, store, ViewerFromContext(ctx), *input.QuotedPostID)
 		}
 		if storeErr != nil {
 			return storeErr
@@ -549,8 +557,13 @@ func (service *PostService) loadCreateReplay(ctx context.Context, input CreatePo
 	return CreatePostResult{Post: post, Replayed: true}, true, nil
 }
 
+// Retry keys belong to the account that issued them, across all post kinds.
+func postCreateScope(authorID string) string {
+	return postCreateIdempotencyScope + "." + authorID
+}
+
 func reconstructCreateReplay(input CreatePostInput, requestHash string, record IdempotencyRecord) (Post, error) {
-	if record.Scope != postCreateIdempotencyScope || record.Key != input.IdempotencyKey || !validRequestHash(record.RequestHash) {
+	if record.Scope != postCreateScope(record.AuthorUserID) || record.Key != input.IdempotencyKey || !validRequestHash(record.RequestHash) {
 		return Post{}, idempotencySnapshotError()
 	}
 	if record.RequestHash != requestHash {
@@ -608,10 +621,6 @@ func (service *PostService) Get(ctx context.Context, id domain.ID, viewer Viewer
 	var authors map[string]CommentAuthorIdentity
 	err := service.transactions.Read(ctx, func(store PostStore) error {
 		var storeErr error
-		viewer, storeErr = resolvedViewer(ctx, store, viewer)
-		if storeErr != nil {
-			return storeErr
-		}
 		entry, found, storeErr = store.EntryByID(ctx, id)
 		if storeErr != nil || !found {
 			return storeErr
@@ -659,8 +668,7 @@ func (service *PostService) Get(ctx context.Context, id domain.ID, viewer Viewer
 	return post, err
 }
 
-// SetReposted toggles the owner's repost activity. Repeating the requested
-// state is idempotent and does not move the timeline again.
+// SetReposted toggles the author's repost activity without changing publication time.
 func (service *PostService) SetReposted(ctx context.Context, id domain.ID, active bool) (Post, error) {
 	if err := contextError(ctx); err != nil {
 		return Post{}, err
@@ -678,10 +686,8 @@ func (service *PostService) SetReposted(ctx context.Context, id domain.ID, activ
 		if !found {
 			return postNotFound(id)
 		}
-		if entry.Kind == domain.KindArticle {
-			if err := requireContentAuthor(ctx, store, entry.AuthorUserID); err != nil {
-				return err
-			}
+		if err := requireContentAuthor(ctx, store, entry.AuthorUserID); err != nil {
+			return err
 		}
 		alreadyActive := entry.RepostedAt != nil
 		if alreadyActive != active {
@@ -710,7 +716,7 @@ func (service *PostService) SetReposted(ctx context.Context, id domain.ID, activ
 		if storeErr != nil {
 			return storeErr
 		}
-		quoted, quoteErr := loadEntryQuote(ctx, store, OwnerViewer(), id)
+		quoted, quoteErr := loadEntryQuote(ctx, store, ViewerFromContext(ctx), id)
 		if quoteErr != nil {
 			return quoteErr
 		}
@@ -991,10 +997,8 @@ func (service *PostService) Update(ctx context.Context, input UpdatePostInput) (
 		if !found {
 			return postNotFound(input.ID)
 		}
-		if entry.Kind == domain.KindArticle {
-			if err := requireContentAuthor(ctx, store, entry.AuthorUserID); err != nil {
-				return err
-			}
+		if err := requireContentAuthor(ctx, store, entry.AuthorUserID); err != nil {
+			return err
 		}
 		currentMedia, mediaErr := store.EntryMediaUsages(ctx, input.ID)
 		if mediaErr != nil {
@@ -1126,7 +1130,7 @@ func (service *PostService) Update(ctx context.Context, input UpdatePostInput) (
 		resultAuthor = contentAuthor(authors, entry.AuthorUserID)
 		updated = entry
 		if quoteReference.Present {
-			updatedQuoted, mediaErr = loadEntryQuote(ctx, store, OwnerViewer(), input.ID)
+			updatedQuoted, mediaErr = loadEntryQuote(ctx, store, ViewerFromContext(ctx), input.ID)
 			if mediaErr != nil {
 				return mediaErr
 			}
@@ -1161,10 +1165,8 @@ func (service *PostService) Delete(ctx context.Context, id domain.ID) (Post, err
 		if !found {
 			return postNotFound(id)
 		}
-		if entry.Kind == domain.KindArticle {
-			if err := requireContentAuthor(ctx, store, entry.AuthorUserID); err != nil {
-				return err
-			}
+		if err := requireContentRemoval(ctx, store, entry); err != nil {
+			return err
 		}
 		if view, storeErr = loadArticleView(ctx, store, entry); storeErr != nil {
 			return storeErr
@@ -1181,7 +1183,7 @@ func (service *PostService) Delete(ctx context.Context, id domain.ID) (Post, err
 		if mediaErr != nil {
 			return mediaErr
 		}
-		quoted, mediaErr := loadEntryQuote(ctx, store, OwnerViewer(), id)
+		quoted, mediaErr := loadEntryQuote(ctx, store, ViewerFromContext(ctx), id)
 		if mediaErr != nil {
 			return mediaErr
 		}
@@ -1376,13 +1378,14 @@ func loadQuotedPost(ctx context.Context, store PostStore, viewer Viewer, id doma
 	if err != nil {
 		return nil, err
 	}
-	viewer, err = resolvedViewer(ctx, store, viewer)
-	if err != nil {
-		return nil, err
-	}
 	if !found || !viewer.CanReadEntry(entry) {
 		return nil, nil
 	}
+	authors, err := readContentAuthors(ctx, store, []domain.Entry{entry})
+	if err != nil {
+		return nil, err
+	}
+	author := contentAuthor(authors, entry.AuthorUserID)
 	location, err := store.EntryLocation(ctx, id)
 	if err != nil {
 		return nil, err
@@ -1399,7 +1402,7 @@ func loadQuotedPost(ctx context.Context, store PostStore, viewer Viewer, id doma
 		if !present {
 			return nil, storedEntryError(id)
 		}
-		return &QuotedPost{Entry: entry, ArticleCard: &card, Location: location}, nil
+		return &QuotedPost{Author: author, Entry: entry, ArticleCard: &card, Location: location}, nil
 	}
 	media, err := store.EntryMediaUsages(ctx, id)
 	if err != nil {
@@ -1409,7 +1412,7 @@ func loadQuotedPost(ctx context.Context, store PostStore, viewer Viewer, id doma
 	if err != nil {
 		return nil, storedEntryError(id)
 	}
-	return &QuotedPost{Entry: entry, ContentHTML: html, Media: media, Location: location}, nil
+	return &QuotedPost{Author: author, Entry: entry, ContentHTML: html, Media: media, Location: location}, nil
 }
 
 func renderPost(entry domain.Entry, view articleView, media []MediaUsageProjection, location *domain.Location, cards []LinkCardProjection, commentCount int) (Post, error) {

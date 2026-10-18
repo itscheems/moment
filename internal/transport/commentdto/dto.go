@@ -12,18 +12,12 @@ import (
 	"github.com/moment/moment/internal/transport/postdto"
 )
 
-// Comment is the canonical one-level comment wire representation.
-//
-// AuthorName is the value stored on the row and exists so a client can round
-// trip a comment without losing what was persisted. Author is the identity to
-// render: it is resolved server side, so every adapter shows the same name and
-// no client has to know that owner comments take theirs from the site.
+// Comment is the public comment projection with its resolved author.
 type Comment struct {
 	ID          string            `json:"id"`
 	PostID      string            `json:"post_id"`
 	ParentID    *string           `json:"parent_id"`
 	Depth       int               `json:"depth"`
-	AuthorKind  string            `json:"author_kind"`
 	AuthorName  string            `json:"author_name"`
 	Author      Author            `json:"author"`
 	ReplyTo     *ReplyTarget      `json:"reply_to"`
@@ -88,7 +82,7 @@ type ReplyPage struct {
 	Items []Comment `json:"items"`
 }
 
-// Pin is the canonical owner mutation result for one post comment pin.
+// Pin identifies the root pinned within one post's conversation.
 type Pin struct {
 	PostID          string  `json:"post_id"`
 	PinnedCommentID *string `json:"pinned_comment_id"`
@@ -113,7 +107,7 @@ func FromComment(comment app.Comment) Comment {
 	}
 	return Comment{
 		ID: comment.Comment.ID.String(), PostID: comment.Comment.EntryID.String(), ParentID: parentID, Depth: depth,
-		AuthorKind: string(comment.Comment.AuthorKind), AuthorName: comment.Comment.AuthorName, Author: fromAuthor(comment.Author), ReplyTo: fromReplyTarget(comment.ReplyTo),
+		AuthorName: comment.Comment.AuthorName, Author: fromAuthor(comment.Author), ReplyTo: fromReplyTarget(comment.ReplyTo),
 		ReplyCount: comment.ReplyCount, RepliesNextCursor: comment.RepliesNextCursor,
 		ContentMD: comment.Comment.ContentMD, ContentHTML: comment.ContentHTML, CreatedAt: comment.Comment.CreatedAt.UTC(), Media: media, Location: location,
 	}
@@ -177,7 +171,7 @@ func NextCursor(cursor string) *string {
 	return &cursor
 }
 
-// FromPin maps one canonical owner pin result.
+// FromPin maps the application pin into its transport representation.
 func FromPin(pin app.CommentPin) Pin {
 	var pinnedCommentID *string
 	if pin.PinnedCommentID != nil {
@@ -212,7 +206,7 @@ func ValidateComment(comment Comment) error {
 	if comment.Location != nil {
 		location = &domain.Location{Name: comment.Location.Name, DisplayName: comment.Location.DisplayName, Provider: "manual"}
 	}
-	record := domain.Comment{ID: id, EntryID: postID, ParentID: parentID, AuthorKind: domain.CommentAuthorKind(comment.AuthorKind), AuthorName: comment.AuthorName, ContentMD: comment.ContentMD, Location: location, CreatedAt: comment.CreatedAt}
+	record := domain.Comment{ID: id, EntryID: postID, ParentID: parentID, AuthorName: comment.AuthorName, ContentMD: comment.ContentMD, Location: location, CreatedAt: comment.CreatedAt}
 	if err := record.Validate(); err != nil {
 		return err
 	}
@@ -453,7 +447,7 @@ func validateCommentRun(comments []Comment) error {
 	return nil
 }
 
-// ValidatePin rejects a non-canonical owner mutation result.
+// ValidatePin checks the public pin identifiers.
 func ValidatePin(pin Pin) error {
 	if _, err := domain.ParseID(pin.PostID); err != nil {
 		return err

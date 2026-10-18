@@ -41,13 +41,14 @@ type AccountStore interface {
 	ListAccounts(ctx context.Context) ([]domain.User, error)
 	SearchAccounts(ctx context.Context, query string, limit int) ([]domain.User, error)
 
-	OwnerUserID(ctx context.Context) (string, error)
+	ProfileUserID(ctx context.Context) (string, error)
 	RegistrationMode(ctx context.Context) (domain.RegistrationMode, error)
 
 	// The two media operations an account write needs, and no more. Widening
 	// this to the whole reference store would make every implementation carry
 	// methods it never calls.
 	MediaExists(ctx context.Context, id domain.ID) (bool, error)
+	MediaAvailableForAccount(context.Context, string, domain.ID) (bool, error)
 	ReconcileMediaReferences(ctx context.Context, ids []domain.ID, now time.Time) error
 }
 
@@ -253,13 +254,7 @@ func (service *AccountService) SignIn(ctx context.Context, external ExternalIden
 	return outcome, nil
 }
 
-// LinkIdentity attaches a provider identity to an account that is already
-// signed in.
-//
-// This is the path that exists so a person can add a second way to sign in
-// without becoming a second person. It refuses an identity already claimed
-// elsewhere rather than moving it, because moving it would sign the previous
-// owner out of their own account.
+// LinkIdentity links a verified external identity to an existing account.
 func (service *AccountService) LinkIdentity(ctx context.Context, userID string, external ExternalIdentity) error {
 	if external.Provider == "" || external.ProviderUserID == "" {
 		return domain.NewError(domain.CodeOAuthIdentityUnusable, "the provider returned no stable account identifier", nil)
@@ -347,10 +342,25 @@ func (service *AccountService) UnlinkIdentity(ctx context.Context, user domain.U
 			// it would end the session over a row that was already gone.
 			return domain.NewError(domain.CodeIdentityNotLinked, "that provider is not linked to this account", map[string]any{"provider": provider})
 		}
-		// The owner keeps a password and a bearer token in secrets.json, so
-		// unlinking every provider still leaves a way in. Nobody else has one.
-		if remaining == 0 && !user.IsOwner() {
-			return domain.NewError(domain.CodeLastCredential, "this is the only way to sign in to this account", map[string]any{"provider": provider})
+		if remaining == 0 {
+			hasLocal := false
+			if credentials, ok := accounts.(AccountCredentialStore); ok {
+				_, found, err := credentials.PasswordHash(ctx, user.ID)
+				if err != nil {
+					return err
+				}
+				hasLocal = found
+				tokens, err := credentials.ListAPITokens(ctx, user.ID)
+				if err != nil {
+					return err
+				}
+				for _, token := range tokens {
+					hasLocal = hasLocal || token.Live()
+				}
+			}
+			if !hasLocal {
+				return domain.NewError(domain.CodeLastCredential, "this is the only way to sign in to this account", map[string]any{"provider": provider})
+			}
 		}
 		return accounts.UnlinkIdentity(ctx, target)
 	})
@@ -530,7 +540,7 @@ func (service *AccountService) Identities(ctx context.Context, userID string) ([
 	return identities, err
 }
 
-// List reports every account, for the owner's review screens.
+// List returns private account facts for administration.
 func (service *AccountService) List(ctx context.Context) ([]domain.User, error) {
 	var users []domain.User
 	err := service.transactions.ReadAccounts(ctx, func(accounts AccountStore, _ SessionStore) error {
@@ -553,11 +563,7 @@ type ProfileUpdate struct {
 	CoverMediaID  *NullableString
 }
 
-// UpdateProfile applies an account's edit to itself.
-//
-// Every field here is one the account owns. Role and status are absent by
-// construction rather than by filtering: a struct that cannot express "make me
-// an owner" cannot be tricked into carrying it.
+// UpdateProfile changes personal profile fields and validates account media grants.
 func (service *AccountService) UpdateProfile(ctx context.Context, userID string, update ProfileUpdate) (domain.User, error) {
 	nowMS := domain.TimeToMillis(domain.NormalizeTime(service.clock()))
 	var result domain.User
@@ -616,7 +622,7 @@ func (service *AccountService) UpdateProfile(ctx context.Context, userID string,
 			if parseErr != nil {
 				return domain.NewError(domain.CodeInvalidArgument, field+" must be a valid managed media ID", map[string]any{"field": field})
 			}
-			exists, lookupErr := accounts.MediaExists(ctx, mediaID)
+			exists, lookupErr := accounts.MediaAvailableForAccount(ctx, user.ID, mediaID)
 			if lookupErr != nil {
 				return lookupErr
 			}
@@ -647,10 +653,7 @@ func (service *AccountService) UpdateProfile(ctx context.Context, userID string,
 	return result, err
 }
 
-// SetStatus is the owner's decision about another account.
-//
-// It refuses to touch the owner's own row. Suspending the only account that can
-// administer the site is not a decision worth being able to make by accident.
+// SetStatus changes account status and revokes credentials when access is suspended.
 func (service *AccountService) SetStatus(ctx context.Context, userID string, status domain.AccountStatus) (domain.User, error) {
 	if err := domain.ValidateAccountStatus(status); err != nil {
 		return domain.User{}, err
@@ -662,8 +665,17 @@ func (service *AccountService) SetStatus(ctx context.Context, userID string, sta
 		if err != nil {
 			return err
 		}
-		if user.IsOwner() {
-			return domain.NewError(domain.CodeInvalidArgument, "the owner account's status cannot be changed", map[string]any{"field": "status"})
+		if err := retainActiveAdministrator(ctx, accounts, user, user.Role, status); err != nil {
+			return err
+		}
+		if status != domain.AccountActive {
+			profileID, err := accounts.ProfileUserID(ctx)
+			if err != nil {
+				return err
+			}
+			if profileID == user.ID {
+				return domain.NewError(domain.CodeAccountInUse, "select another active site profile before changing this account's status", nil)
+			}
 		}
 		if err := accounts.SetStatus(ctx, userID, status, nowMS); err != nil {
 			return err
@@ -672,6 +684,11 @@ func (service *AccountService) SetStatus(ctx context.Context, userID string, sta
 			// Suspension that leaves live sessions behind is not suspension.
 			if _, err := sessions.RevokeUserSessions(ctx, userID, nowMS); err != nil {
 				return err
+			}
+			if credentials, ok := accounts.(AccountCredentialStore); ok {
+				if err := credentials.RevokeUserAPITokens(ctx, userID, nowMS); err != nil {
+					return err
+				}
 			}
 		}
 		user.Status = status
@@ -737,15 +754,15 @@ func (service *AccountService) TouchSession(ctx context.Context, session domain.
 	})
 }
 
-// OwnerAccount reads the account that owns the site.
-func (service *AccountService) OwnerAccount(ctx context.Context) (domain.User, error) {
+// ProfileAccount reads the account selected for the public site profile.
+func (service *AccountService) ProfileAccount(ctx context.Context) (domain.User, error) {
 	var user domain.User
 	err := service.transactions.ReadAccounts(ctx, func(accounts AccountStore, _ SessionStore) error {
-		ownerID, err := accounts.OwnerUserID(ctx)
+		profileID, err := accounts.ProfileUserID(ctx)
 		if err != nil {
 			return err
 		}
-		value, err := accounts.UserByID(ctx, ownerID)
+		value, err := accounts.UserByID(ctx, profileID)
 		if err != nil {
 			return err
 		}
@@ -920,16 +937,7 @@ func (service *AccountService) SweepExpiredSessions(ctx context.Context) (int, e
 	return removed, err
 }
 
-// Delete removes an account and everything that only existed to describe it.
-//
-// Its identities and sessions go with it by cascade. Its comments do not: the
-// text is the site's content rather than the account's property, and
-// author_user_id carries no foreign key, so those rows keep pointing at an id
-// that no longer resolves and render as the stored name in plain text -- the
-// same treatment a legacy guest row gets. doctor reports the count.
-//
-// The owner cannot be removed. The database would refuse it anyway, because the
-// site row references it, but a message beats a constraint error.
+// Delete removes an account only when site and authored-content references allow it.
 func (service *AccountService) Delete(ctx context.Context, userID string) (domain.User, error) {
 	var removed domain.User
 	err := service.transactions.WriteAccounts(ctx, func(accounts AccountStore, _ SessionStore) error {
@@ -937,8 +945,26 @@ func (service *AccountService) Delete(ctx context.Context, userID string) (domai
 		if err != nil {
 			return err
 		}
-		if user.IsOwner() {
-			return domain.NewError(domain.CodeInvalidArgument, "the owner account cannot be removed", map[string]any{"field": "username"})
+		if err := retainActiveAdministrator(ctx, accounts, user, domain.UserRoleMember, domain.AccountSuspended); err != nil {
+			return err
+		}
+		profileID, err := accounts.ProfileUserID(ctx)
+		if err != nil {
+			return err
+		}
+		if profileID == user.ID {
+			return domain.NewError(domain.CodeAccountInUse, "select another site profile before deleting this account", nil)
+		}
+		admin, ok := accounts.(AccountAdministrationStore)
+		if !ok {
+			return domain.NewError(domain.CodeDataIntegrityFailed, "account administration storage is unavailable", nil)
+		}
+		hasContent, err := admin.HasAuthoredContent(ctx, user.ID)
+		if err != nil {
+			return err
+		}
+		if hasContent {
+			return domain.NewError(domain.CodeAccountInUse, "remove this account's posts and drafts before deleting it", nil)
 		}
 		if err := accounts.DeleteAccount(ctx, userID); err != nil {
 			return err
@@ -987,7 +1013,7 @@ func (service *AccountService) SuggestMentions(ctx context.Context, query string
 	suggestions := make([]MentionSuggestion, 0, len(found))
 	for _, user := range found {
 		suggestions = append(suggestions, MentionSuggestion{
-			OwnerID:       user.ID,
+			UserID:        user.ID,
 			Username:      user.Username,
 			DisplayName:   user.DisplayName,
 			AvatarMediaID: cloneString(user.AvatarMediaID),

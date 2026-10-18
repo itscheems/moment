@@ -34,7 +34,7 @@ func registerArticles(application *Application) {
 		Inputs:     "None.",
 		Output:     "data is an array of summaries without bodies; article draft reads the selected document.",
 		Errors:     "Authentication failures use stable machine codes.",
-		Example:    "moment article drafts --data-dir ./moment-data --json",
+		Example:    "moment --as writer article drafts --data-dir ./moment-data --json",
 		Capability: CapabilityBoth,
 		Run:        runArticleDraftList,
 	})
@@ -46,7 +46,7 @@ func registerArticles(application *Application) {
 		Inputs:     "Provide one canonical draft ULID.",
 		Output:     "The canonical draft DTO in direct and API modes.",
 		Errors:     "Absent drafts return ARTICLE_DRAFT_NOT_FOUND.",
-		Example:    "moment article draft 01ARZ3NDEKTSV4RRFFQ69G5FAV --data-dir ./moment-data --json",
+		Example:    "moment --as writer article draft 01ARZ3NDEKTSV4RRFFQ69G5FAV --data-dir ./moment-data --json",
 		Args:       cobra.ExactArgs(1),
 		Capability: CapabilityBoth,
 		Run:        runArticleDraftGet,
@@ -58,8 +58,8 @@ func registerArticles(application *Application) {
 		Inputs: "Provide --body as a file path or - for stdin, holding one canonical article document. --title and --cover are optional.",
 		Output: "The created draft, including the revision a later save must name.",
 		Errors: "Body grammar violations name the node that broke the rule.",
-		Example: "moment article new --data-dir ./moment-data --title '长安的荔枝' --body ./body.json --json\n" +
-			"echo '{\"schema_version\":1,\"type\":\"doc\",\"content\":[]}' | moment article new --data-dir ./moment-data --body - --json",
+		Example: "moment --as writer article new --data-dir ./moment-data --title '长安的荔枝' --body ./body.json --json\n" +
+			"echo '{\"schema_version\":1,\"type\":\"doc\",\"content\":[]}' | moment --as writer article new --data-dir ./moment-data --body - --json",
 		Capability: CapabilityBoth,
 		Flags: func(flags *pflag.FlagSet) {
 			flags.String("idempotency-key", "", "retry key for creating one draft")
@@ -77,7 +77,7 @@ func registerArticles(application *Application) {
 		Inputs:     "Provide --body, --expected-updated-at from the draft you read, and optionally --title and --cover.",
 		Output:     "The replaced draft with its new revision.",
 		Errors:     "A stale revision returns ARTICLE_DRAFT_STALE.",
-		Example:    "moment article save 01ARZ3NDEKTSV4RRFFQ69G5FAV --data-dir ./moment-data --body ./body.json --expected-updated-at 2026-09-25T10:00:00Z --json",
+		Example:    "moment --as writer article save 01ARZ3NDEKTSV4RRFFQ69G5FAV --data-dir ./moment-data --body ./body.json --expected-updated-at 2026-09-25T10:00:00Z --json",
 		Args:       cobra.ExactArgs(1),
 		Capability: CapabilityBoth,
 		Flags: func(flags *pflag.FlagSet) {
@@ -101,7 +101,7 @@ func registerArticles(application *Application) {
 		Inputs:     "Provide one canonical draft ULID.",
 		Output:     "The discarded id.",
 		Errors:     "Absent drafts return ARTICLE_DRAFT_NOT_FOUND.",
-		Example:    "moment article discard 01ARZ3NDEKTSV4RRFFQ69G5FAV --data-dir ./moment-data --json",
+		Example:    "moment --as writer article discard 01ARZ3NDEKTSV4RRFFQ69G5FAV --data-dir ./moment-data --json",
 		Args:       cobra.ExactArgs(1),
 		Capability: CapabilityBoth,
 		Run:        runArticleDraftDelete,
@@ -114,7 +114,7 @@ func registerArticles(application *Application) {
 		Inputs:     "Provide one canonical draft ULID. --visibility everyone|only_me chooses who may read it; --idempotency-key makes a retry safe.",
 		Output:     "The published post, body and rendering included.",
 		Errors:     "An empty or untitled draft is refused; a reused key for a different draft returns IDEMPOTENCY_KEY_REUSED.",
-		Example:    "moment article publish 01ARZ3NDEKTSV4RRFFQ69G5FAV --data-dir ./moment-data --idempotency-key article-001 --json",
+		Example:    "moment --as writer article publish 01ARZ3NDEKTSV4RRFFQ69G5FAV --data-dir ./moment-data --idempotency-key article-001 --json",
 		Args:       cobra.ExactArgs(1),
 		Capability: CapabilityBoth,
 		Flags: func(flags *pflag.FlagSet) {
@@ -144,7 +144,7 @@ func registerArticles(application *Application) {
 		Inputs:     "Provide the canonical post ULID of a published article.",
 		Output:     "The working copy, which names the article it belongs to.",
 		Errors:     "A post that is not an article returns INVALID_ARGUMENT; an absent one returns POST_NOT_FOUND.",
-		Example:    "moment article edit 01ARZ3NDEKTSV4RRFFQ69G5FAV --data-dir ./moment-data --json",
+		Example:    "moment --as writer article edit 01ARZ3NDEKTSV4RRFFQ69G5FAV --data-dir ./moment-data --json",
 		Args:       cobra.ExactArgs(1),
 		Capability: CapabilityBoth,
 		Run:        runArticleEdit,
@@ -615,7 +615,7 @@ func runArticleRebuild(ctx context.Context, invocation Invocation, _ CommandInpu
 		}
 		return articleRebuildResult(result), nil
 	}
-	runtime, err := openDirectPostWrite(ctx, invocation)
+	runtime, err := openDirectPostMaintenance(ctx, invocation)
 	if err != nil {
 		return Result{}, err
 	}

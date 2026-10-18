@@ -1,6 +1,12 @@
-import { useCallback, useEffect, useState } from "react";
+import { TimelinePage } from "../timeline/TimelinePage";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
-import { PublicApi, PublicApiError, type Account } from "../../api/public";
+import {
+  PublicApi,
+  PublicApiError,
+  type PublicAccount,
+  type SiteIdentity,
+} from "../../api/public";
 import { useNavigation } from "../../app/navigation";
 import { ShellState } from "../../components/ShellState";
 import {
@@ -21,29 +27,18 @@ const missingRoute = {
   href: "/",
 } as const;
 
-/**
- * Somebody else's profile.
- *
- * The site timeline belongs to the owner, so a member's page is an identity
- * and nothing else -- there is no per-account stream behind it to page
- * through. An account that does not exist and one that is not active are the
- * same answer here, deliberately: the server will not say which.
- *
- * It is also the only place a member can edit that identity. The owner edits
- * theirs from the site profile, and settings is about the account rather than
- * the face on it -- so without the editor here, a member had a page bearing
- * their name and no way to change what it said.
- */
 export function MemberProfilePage({
   api,
   username,
+  site,
 }: {
   api: PublicApi;
   username: string;
+  site: SiteIdentity;
 }) {
   const { account: viewer } = useSession();
   const navigation = useNavigation();
-  const [account, setAccount] = useState<Account | null>(null);
+  const [account, setAccount] = useState<PublicAccount | null>(null);
   const [state, setState] = useState<
     "loading" | "ready" | "missing" | "failed"
   >("loading");
@@ -70,6 +65,10 @@ export function MemberProfilePage({
     return () => controller.abort();
   }, [api, attempt, username]);
 
+  const feedApi = useMemo(
+    () => api.forAuthor(account?.userId ?? ""),
+    [api, account?.userId],
+  );
   const retry = useCallback(() => setAttempt((value) => value + 1), []);
 
   /**
@@ -81,7 +80,7 @@ export function MemberProfilePage({
    * saved copy by the time the refetch confirms it.
    */
   const adopt = useCallback(
-    (saved: Account) => {
+    (saved: PublicAccount) => {
       setAccount(saved);
       if (saved.username !== username) navigation.navigate(saved.profileUrl);
     },
@@ -117,11 +116,16 @@ export function MemberProfilePage({
         {account.bio.trim() ? <p>{account.bio.trim()}</p> : null}
         <header className={styles.contentHeading}>
           <h3>成员</h3>
-          <span>
-            {account.role === "owner" ? "本站站长" : "参与本站的对话"}
-          </span>
+          <span>参与本站的对话</span>
         </header>
       </div>
+      <TimelinePage
+        api={feedApi}
+        site={site}
+        initialSearch=""
+        canPublish={viewer?.status === "active"}
+        key={account.userId}
+      />
     </section>
   );
 }

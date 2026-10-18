@@ -1,3 +1,5 @@
+import { accountCacheScope } from "./accountScope";
+import { authApi, type AccountLimits, type AuthSession } from "../../api/auth";
 import {
   createContext,
   type ReactNode,
@@ -9,23 +11,19 @@ import {
   useState,
 } from "react";
 
-import {
-  OwnerApi,
-  type AccountLimits,
-  type OwnerSession,
-} from "../../api/owner";
+import { type AuthApi } from "../../api/auth";
 import { PublicApiError, type Account } from "../../api/public";
 import { notify } from "../../components/Feedback";
-import { clearComposeDraft } from "../owner/draft";
-import { clearKeptDrafts } from "../owner/drafts";
-import { providerLabel, PROVIDER_NAME_PATTERN } from "../owner/providers";
+import { clearComposeDraft } from "../compose/draft";
+import { clearKeptDrafts } from "../compose/drafts";
+import { providerLabel, PROVIDER_NAME_PATTERN } from "./providers";
 
-const SESSION_KEY = "moment.owner.session.v1";
-const SESSION_CHANNEL = "moment.owner.session.sync.v1";
+const SESSION_KEY = "moment.auth.session.v2";
+const SESSION_CHANNEL = "moment.auth.session.sync.v2";
 const VERSION_PATTERN = /^[a-z0-9-]{8,80}$/;
 const REQUEST_PATTERN = /^[a-z0-9-]{8,80}$/;
 
-export interface BrowserSession extends OwnerSession {
+export interface BrowserSession extends AuthSession {
   issuedAt: number;
   version: string;
 }
@@ -48,25 +46,16 @@ type SyncMessage =
 export type SessionState =
   "checking" | "guest" | "signed-in" | "expired" | "unavailable";
 
-type ExpiryReason = "invalid-session" | "credential-rotation";
-
 interface AuthOutcome {
   kind: "ok" | "linked";
   provider: string | null;
 }
 
 interface SessionContextValue {
-  api: OwnerApi;
+  api: AuthApi;
   state: SessionState;
-  /** Rotation must first let the owner save its one-time credential receipt. */
-  expiryReason: ExpiryReason | null;
   session: BrowserSession | null;
-  /**
-   * Who this browser is signed in as, once the server has said so. Null while
-   * signed out, and also on an instance that cannot answer for accounts -- so
-   * "not the owner" has to be read as `account?.role === "member"`, never as
-   * the absence of an owner role.
-   */
+
   account: Account | null;
   /**
    * The bounds the server enforces on this account, as it published them.
@@ -89,7 +78,6 @@ interface SessionContextValue {
   forgetSession: (instanceId: string | null) => void;
   applyAccount: (account: Account) => void;
   expireIfInvalidSession: (error: unknown) => boolean;
-  expireAfterTokenRotation: () => void;
   retryStatus: () => void;
 }
 
@@ -333,10 +321,9 @@ function isInvalidSessionError(error: unknown): boolean {
 }
 
 export function SessionProvider({ children }: { children: ReactNode }) {
-  const api = useMemo(() => new OwnerApi(), []);
+  const api = authApi;
   const [session, setSession] = useState<BrowserSession | null>(readSession);
   const [state, setState] = useState<SessionState>("checking");
-  const [expiryReason, setExpiryReason] = useState<ExpiryReason | null>(null);
   const [account, setAccount] = useState<Account | null>(null);
   const [limits, setLimits] = useState<AccountLimits | null>(null);
   const [statusAttempt, setStatusAttempt] = useState(0);
@@ -354,23 +341,17 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     writeSession(next);
     setSession(next);
     setState("signed-in");
-    setExpiryReason(null);
     return true;
   }, []);
 
   const clearSession = useCallback(
-    (
-      nextState: "guest" | "expired",
-      marker?: SessionMarker,
-      reason: ExpiryReason = "invalid-session",
-    ) => {
+    (nextState: "guest" | "expired", marker?: SessionMarker) => {
       if (marker && compareMarker(marker, markerRef.current) <= 0) return false;
       if (marker) markerRef.current = marker;
       sessionRef.current = null;
       writeSession(null);
       setSession(null);
       setState(nextState);
-      setExpiryReason(nextState === "expired" ? reason : null);
       // Preserve the account while its editing surfaces wait behind
       // reauthentication. Only an explicit sign-out forgets that identity.
       if (nextState === "guest") {
@@ -402,7 +383,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
    * a sibling's older session win the next exchange and sign this one out.
    */
   const adoptSession = useCallback(
-    (granted: OwnerSession) => {
+    (granted: AuthSession) => {
       const marker = nextMarker(markerRef.current);
       const next = { ...granted, ...marker };
       acceptSession(next);
@@ -433,7 +414,10 @@ export function SessionProvider({ children }: { children: ReactNode }) {
           });
         }
       } else if (message.type === "offer-session") {
-        acceptSession(message.session);
+        if (acceptSession(message.session)) {
+          setAccount(null);
+          setLimits(null);
+        }
       } else {
         clearSession("guest", message.marker);
       }
@@ -450,7 +434,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   /**
    * Work out what this browser already is, from the cookie it may be carrying.
    *
-   * It has to be this endpoint. `/api/v1/owner/status` answers 401 for a
+   * It has to be this endpoint. `/api/v1/status` answers 401 for a
    * member, so probing with that would sign every member out on every refresh.
    * It is also how a provider callback's cookie becomes a session the SPA can
    * see: the callback can set a cookie but cannot reach into session storage,
@@ -465,7 +449,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     const overtaken = () =>
       compareMarker(markerRef.current, markerAtStart) !== 0;
     setState("checking");
-    void api
+    void authApi
       .accountSession(controller.signal)
       .then((restored) => {
         if (controller.signal.aborted || overtaken()) return;
@@ -486,9 +470,6 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       })
       .catch((error: unknown) => {
         if (controller.signal.aborted || overtaken()) return;
-        // 401 is an answer -- nobody is signed in. Anything else is the
-        // question going unanswered, and guessing at it either strands the
-        // owner or hands their controls to a visitor.
         if (error instanceof PublicApiError && error.status === 401) {
           clearSession("guest");
         } else {
@@ -509,7 +490,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (state !== "signed-in" || account !== null || session === null) return;
     const controller = new AbortController();
-    void api
+    void authApi
       .accountSession(controller.signal)
       .then((restored) => {
         if (!controller.signal.aborted) {
@@ -561,17 +542,16 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       method: "password" | "token" = "password",
       username?: string,
     ) => {
-      const exchanged = await api.exchange(credential, method, username);
-      // Read whose session this is before announcing it. Announcing first
-      // would put every tab through a frame of "signed in, role unknown", and
-      // that frame decides whether owner controls are on screen.
+      const exchanged = await authApi.exchange(credential, method, username);
       try {
-        const restored = await api.accountSession();
+        const restored = await authApi.accountSession();
         setAccount(restored.account);
         setLimits(restored.limits);
-      } catch {
-        // The session is real either way. The restore effect above notices the
-        // missing account and reports it rather than stranding the sign-in.
+      } catch (error) {
+        setAccount(null);
+        setLimits(null);
+        setState("unavailable");
+        throw error;
       }
       adoptSession(exchanged);
     },
@@ -582,13 +562,14 @@ export function SessionProvider({ children }: { children: ReactNode }) {
 
   const forgetSession = useCallback(
     (instanceId: string | null) => {
+      const scope = accountCacheScope(instanceId, account?.userId ?? null);
       const marker = nextMarker(markerRef.current);
       clearSession("guest", marker);
       broadcast({ type: "clear-session", marker });
-      clearComposeDraft(instanceId, { reason: "logout" });
-      clearKeptDrafts(instanceId);
+      clearComposeDraft(scope, { reason: "logout" });
+      clearKeptDrafts(scope);
     },
-    [broadcast, clearSession],
+    [account, broadcast, clearSession],
   );
 
   const logout = useCallback(
@@ -596,7 +577,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       const current = sessionRef.current;
       if (current) {
         try {
-          await api.logout(current.csrfToken);
+          await authApi.logout(current.csrfToken);
         } catch (error) {
           if (!(error instanceof PublicApiError && error.status === 401)) {
             throw error;
@@ -618,12 +599,6 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     [clearSession, requestSyncedSession],
   );
 
-  const expireAfterTokenRotation = useCallback(() => {
-    const marker = nextMarker(markerRef.current);
-    clearSession("expired", marker, "credential-rotation");
-    broadcast({ type: "clear-session", marker });
-  }, [broadcast, clearSession]);
-
   const retryStatus = useCallback(
     () => setStatusAttempt((value) => value + 1),
     [],
@@ -633,7 +608,6 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     () => ({
       api,
       state,
-      expiryReason,
       session,
       account,
       limits,
@@ -642,16 +616,13 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       forgetSession,
       applyAccount,
       expireIfInvalidSession,
-      expireAfterTokenRotation,
       retryStatus,
     }),
     [
       account,
       api,
       applyAccount,
-      expireAfterTokenRotation,
       expireIfInvalidSession,
-      expiryReason,
       forgetSession,
       limits,
       login,
@@ -667,17 +638,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   );
 }
 
-/**
- * Whether these account facts belong to the account that owns this site.
- *
- * An unknown account is not the owner. Nothing here guesses: a lookup that has
- * not answered leaves the session `checking` or `unavailable`, so the only way
- * to reach an owner-only control is for the server to have said so. Briefly
- * withholding it from the owner costs one reload; the other mistake renders
- * their controls to whoever happens to be reading.
- */
-export function ownsSite(account: Account | null): boolean {
-  return account?.role === "owner";
+export function isAdministrator(account: Account | null): boolean {
+  return account?.role === "admin" && account.status === "active";
 }
 
 export function useSession(): SessionContextValue {

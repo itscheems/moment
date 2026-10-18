@@ -140,7 +140,7 @@ it("keeps the destination mounted and emphasized while a mention finishes loadin
             bio: "沿河散步",
             avatar_media_id: null,
             cover_media_id: null,
-            role: "member",
+
             profile_url: "/linlin",
           },
           meta: {},

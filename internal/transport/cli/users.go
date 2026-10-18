@@ -19,7 +19,7 @@ func registerUsers(application *Application) {
 		Path: []string{"user", "suggest"}, Short: "Search users for an @mention",
 		Long:       "Return bounded public identities ranked by the same lightweight service used by the browser composer.",
 		Inputs:     "An optional --query username or display-name fragment and --limit from 1 to 20. API mode authenticates through MOMENT_TOKEN or --token-file.",
-		Output:     "A stable JSON list containing immutable owner_id, username, display_name, avatar_media_id, and profile_url.",
+		Output:     "A stable JSON list containing immutable user_id, username, display_name, avatar_media_id, and profile_url.",
 		Errors:     "Invalid limits return INVALID_ARGUMENT; API authentication failures return UNAUTHORIZED; unavailable APIs use dependency exit codes.",
 		Example:    "moment user suggest --data-dir ./moment-data --query che --json",
 		Capability: CapabilityBoth,
@@ -62,7 +62,7 @@ func runUserSuggest(ctx context.Context, invocation Invocation, input CommandInp
 	return Result{Data: items, Meta: meta, Text: fmt.Sprintf("%d mention suggestion(s)", len(items))}, nil
 }
 
-// userAPIRequest reads one bounded account listing under the owner credential.
+// userAPIRequest reads one bounded account listing under the account credential.
 //
 // The mention endpoint answers with the account roster, which is not a public
 // fact about a site, so it no longer admits a caller who presents nothing. The
@@ -106,7 +106,7 @@ func userAPIRequest(ctx context.Context, invocation Invocation, endpoint string,
 		return nil, invalidAPIResponse()
 	}
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
-		return nil, decodeOwnerAPIFailure(response.StatusCode, body)
+		return nil, decodeAPIFailure(response.StatusCode, body)
 	}
 	data, meta, err := decodeStrictAPIEnvelope(body)
 	if err != nil {

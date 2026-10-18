@@ -17,9 +17,9 @@ type DoctorReporter interface {
 // RegisterDoctorRoutes exposes only the explicitly allowlisted summary mode.
 // Deep topology checks remain a local/direct CLI capability.
 func RegisterDoctorRoutes(engine *gin.Engine, reporter DoctorReporter, gate *Gate) {
-	owner := engine.Group("/api/v1/owner")
-	owner.Use(gate.RequireOwner())
-	owner.GET("/doctor", doctorSummary(reporter))
+	diagnostics := engine.Group("/api/v1")
+	diagnostics.Use(gate.RequireAdmin())
+	diagnostics.GET("/diagnostics", doctorSummary(reporter))
 }
 
 func doctorSummary(reporter DoctorReporter) gin.HandlerFunc {

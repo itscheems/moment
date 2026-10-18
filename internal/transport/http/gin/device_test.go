@@ -76,7 +76,7 @@ func (provider *stubDeviceProvider) PollDevice(_ context.Context, deviceCode str
 
 // deviceFixture wires a real engine to a device-capable provider.
 type deviceFixture struct {
-	ownerTestFixture
+	authenticationTestFixture
 	provider *stubDeviceProvider
 	engine   http.Handler
 	events   *deviceEventLog
@@ -112,7 +112,7 @@ func (log *deviceEventLog) find(event string) (deviceEvent, bool) {
 
 func newDeviceFixture(t *testing.T) deviceFixture {
 	t.Helper()
-	base := newOwnerTestFixture(t, false)
+	base := newAuthenticationTestFixture(t, false)
 	provider := newStubDeviceProvider()
 	// A browser-only provider sits beside it so "this provider cannot sign
 	// anyone in without a browser" is a case these tests can actually reach.
@@ -120,7 +120,7 @@ func newDeviceFixture(t *testing.T) deviceFixture {
 	events := &deviceEventLog{}
 	engine, err := New(Config{
 		Assets:         testAssets(),
-		OwnerAuth:      base.manager,
+		SessionSigner:  base.manager,
 		Accounts:       base.accounts,
 		OAuthProviders: oauth.NewRegistry(provider, browserOnly),
 		RequestID:      func() string { return "req_device" },
@@ -129,7 +129,7 @@ func newDeviceFixture(t *testing.T) deviceFixture {
 	if err != nil {
 		t.Fatal(err)
 	}
-	return deviceFixture{ownerTestFixture: base, provider: provider, engine: engine, events: events}
+	return deviceFixture{authenticationTestFixture: base, provider: provider, engine: engine, events: events}
 }
 
 func (fixture deviceFixture) start(t *testing.T, provider string) *httptest.ResponseRecorder {
@@ -344,9 +344,9 @@ func TestDeviceLoginCannotBypassApproval(t *testing.T) {
 		method string
 		path   string
 	}{
-		{http.MethodGet, "/api/v1/owner/accounts"},
-		{http.MethodGet, "/api/v1/owner/status"},
-		{http.MethodPost, "/api/v1/owner/token/rotate"},
+		{http.MethodGet, "/api/v1/accounts"},
+		{http.MethodGet, "/api/v1/accounts"},
+		{http.MethodPost, "/api/v1/account/tokens"},
 	} {
 		request := httptest.NewRequest(probe.method, probe.path, nil)
 		request.AddCookie(&http.Cookie{Name: SessionCookieName, Value: authorized.Session.Value})
