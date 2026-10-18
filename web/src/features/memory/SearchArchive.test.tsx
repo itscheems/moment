@@ -524,7 +524,7 @@ describe("search and archive memory layer", () => {
     fail = true;
     render(<App />);
     expect(
-      await screen.findByRole("heading", { name: "搜索失败" }),
+      await screen.findByText("正在重新获取搜索结果…"),
     ).toBeInTheDocument();
     expect(screen.getByRole("searchbox")).toHaveValue("a");
     expect(window.location.search).toBe("?q=a");
@@ -565,10 +565,10 @@ describe("search and archive memory layer", () => {
 
     await screen.findByText(paragraphText("旧城雨落在街口"));
     fireEvent.click(screen.getByRole("button", { name: "加载更早的结果" }));
-    const reset = await screen.findByRole("button", {
-      name: "从第一页重新加载",
-    });
-    fireEvent.click(reset);
+    await screen.findByText("正在重新获取后续结果…");
+    expect(
+      screen.queryByRole("button", { name: "从第一页重新加载" }),
+    ).toBeNull();
 
     await waitFor(() => expect(firstPageRequests).toBe(2));
     expect(window.location.search).toContain("q=%E9%9B%A8");
@@ -596,10 +596,6 @@ describe("search and archive memory layer", () => {
     });
     render(<App />);
 
-    expect(
-      await screen.findByRole("heading", { name: "搜索失败" }),
-    ).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "从第一页重新加载" }));
     await waitFor(() =>
       expect(
         screen.getByText(paragraphText("旧城雨落在街口")),
@@ -608,6 +604,34 @@ describe("search and archive memory layer", () => {
     expect(window.location.search).not.toContain("loaded_through");
     expect(window.location.search).toContain("from=2026-01-01");
     expect(window.location.search).toContain("to=2027-01-01");
+  });
+
+  it("accepts changing search totals while merging valid cursor pages", async () => {
+    window.history.replaceState({}, "", "/search?q=%E9%9B%A8");
+    install((url) => {
+      if (!url.startsWith("/api/v1/search?")) return json({}, 404);
+      const continued = url.includes("cursor=next");
+      return json({
+        data: {
+          items: [{ ...(continued ? second : first), snippet: "雨" }],
+          year_counts: [{ year: 2026, count: continued ? 3 : 2 }],
+        },
+        meta: {
+          next_cursor: continued ? null : "next",
+          request_id: "changed-total",
+        },
+      });
+    });
+    render(<App />);
+    await screen.findByText(paragraphText("旧城雨落在街口"));
+    fireEvent.click(screen.getByRole("button", { name: "加载更早的结果" }));
+    expect(
+      await screen.findByText(paragraphText("旧城雨后的第二页")),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("region", { name: "搜索概览" })).toHaveTextContent(
+      /找到\s*3\s*条/,
+    );
+    expect(screen.queryByText("搜索失败")).toBeNull();
   });
 
   it.each([
@@ -640,7 +664,7 @@ describe("search and archive memory layer", () => {
       fireEvent.click(screen.getByRole("button", { name: "加载更早的结果" }));
 
       expect(
-        await screen.findByRole("button", { name: "从第一页重新加载" }),
+        await screen.findByText("正在重新获取后续结果…"),
       ).toBeInTheDocument();
       expect(
         screen.queryByText(paragraphText("旧城雨后的第二页")),
@@ -681,7 +705,7 @@ describe("search and archive memory layer", () => {
     fireEvent.click(screen.getByRole("button", { name: "加载更早的结果" }));
 
     expect(
-      await screen.findByRole("button", { name: "从第一页重新加载" }),
+      await screen.findByText("正在重新获取后续结果…"),
     ).toBeInTheDocument();
     expect(
       screen.queryByText(paragraphText("不应追加的循环页")),
@@ -819,6 +843,38 @@ describe("search and archive memory layer", () => {
       .map(([input]) => String(input))
       .filter((url) => url.startsWith("/api/v1/posts?"));
   }
+
+  it("recovers archive month and day counts while preserving the visible list", async () => {
+    pinToday();
+    window.history.replaceState({}, "", "/archive");
+    let months = 0;
+    let days = 0;
+    install((url) => {
+      if (url === "/api/v1/archive/months") {
+        months += 1;
+        return months === 1 ? json({}, 503) : json(archiveMonths);
+      }
+      if (url === "/api/v1/archive/month?month=2026-08") {
+        days += 1;
+        return days === 1 ? json({}, 503) : json(august);
+      }
+      if (url.startsWith("/api/v1/posts?")) return timelinePage([first]);
+      return json({}, 404);
+    });
+    render(<App />);
+    expect(await screen.findByText("旧城雨落在街口")).toBeInTheDocument();
+    expect(
+      await screen.findByRole(
+        "link",
+        { name: "8月10日，2 条 Moment" },
+        { timeout: 2500 },
+      ),
+    ).toHaveAttribute("href", "/archive?day=2026-08-10");
+    expect(screen.getByText("旧城雨落在街口")).toBeInTheDocument();
+    expect(months).toBe(2);
+    expect(days).toBe(2);
+    expect(window.location.pathname).toBe("/archive");
+  });
 
   it("opens the archive on the list, dated by site days, with the calendar on the newest month that holds posts", async () => {
     pinToday();

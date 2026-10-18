@@ -1,3 +1,5 @@
+import { loadedThroughFromSearch } from "../timeline/cursorContinuity";
+
 const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 const MONTH_PATTERN = /^\d{4}-\d{2}$/;
 const YEAR_PATTERN = /^\d{4}$/;
@@ -48,10 +50,6 @@ export function isCanonicalDate(value: string): boolean {
   );
 }
 
-function validCursor(value: string | null): boolean {
-  return value === null || (value.length > 0 && value.length <= 4_096);
-}
-
 function validDateRange(from: string | null, to: string | null): boolean {
   return (
     (from === null || isCanonicalDate(from)) &&
@@ -90,23 +88,20 @@ export function parseSearchLocation(search: string): SearchLocationState {
   const q = single(params, "q");
   const from = single(params, "from");
   const to = single(params, "to");
-  const loaded = single(params, "loaded_through");
+  const loaded = loadedThroughFromSearch(search);
   const query = q.value;
   const invalid =
     q.error ||
     from.error ||
     to.error ||
-    loaded.error ||
     unsupported(params, new Set(["q", "from", "to", "loaded_through"])) ||
     (query !== null && (!query.trim() || Array.from(query).length > 1_000)) ||
-    !validDateRange(from.value, to.value) ||
-    !validCursor(loaded.value) ||
-    (loaded.value !== null && query === null);
+    !validDateRange(from.value, to.value);
   return {
     query,
     from: from.value,
     to: to.value,
-    loadedThrough: loaded.value,
+    loadedThrough: query === null ? null : loaded,
     error: invalid ? SEARCH_LOCATION_ERROR : null,
   };
 }
@@ -142,16 +137,14 @@ export function parseArchiveLocation(search: string): ArchiveLocationState {
   const dayValue = single(params, "day");
   const from = single(params, "from");
   const to = single(params, "to");
-  const loaded = single(params, "loaded_through");
-  const loadedNewer = single(params, "loaded_newer");
+  const loaded = loadedThroughFromSearch(search);
+  const loadedNewer = loadedThroughFromSearch(search, "loaded_newer");
   if (
     yearValue.error ||
     monthValue.error ||
     dayValue.error ||
     from.error ||
     to.error ||
-    loaded.error ||
-    loadedNewer.error ||
     unsupported(
       params,
       new Set([
@@ -163,9 +156,7 @@ export function parseArchiveLocation(search: string): ArchiveLocationState {
         "loaded_through",
         "loaded_newer",
       ]),
-    ) ||
-    !validCursor(loaded.value) ||
-    !validCursor(loadedNewer.value)
+    )
   ) {
     return INVALID_ARCHIVE_LOCATION;
   }
@@ -217,8 +208,8 @@ export function parseArchiveLocation(search: string): ArchiveLocationState {
     day,
     month: day === null ? month : null,
     year: day === null && month === null ? year : null,
-    loadedThrough: loaded.value,
-    loadedNewer: loadedNewer.value,
+    loadedThrough: loaded,
+    loadedNewer,
     error: null,
   };
 }

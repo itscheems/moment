@@ -35,6 +35,7 @@ import { ThemeProvider } from "../theme/ThemeProvider";
 import { ReadingLayoutProvider } from "../features/article/ReadingLayout";
 import { FeedbackProvider } from "../components/Feedback";
 import { useDocumentScrollLock } from "../components/useDocumentScrollLock";
+import { useReadRecovery } from "../components/useReadRecovery";
 import {
   COMPOSE_DIALOG_VIEWPORT_QUERY,
   MOBILE_VIEWPORT_QUERY,
@@ -106,7 +107,9 @@ function routeSearchKey(search: string): string {
   if (!hasValidRawQueryEncoding(search)) return search;
   const params = new URLSearchParams(search);
   return JSON.stringify(
-    Array.from(params.entries()).filter(([name]) => name !== "loaded_through"),
+    Array.from(params.entries()).filter(
+      ([name]) => name !== "loaded_through" && name !== "loaded_newer",
+    ),
   );
 }
 
@@ -167,7 +170,7 @@ function PublicApp() {
     auth.account?.userId ?? null,
   );
   const [siteLoading, setSiteLoading] = useState(true);
-  const [siteError, setSiteError] = useState(false);
+  const [siteError, setSiteError] = useState<unknown>(null);
   const [siteAttempt, setSiteAttempt] = useState(0);
   const [homeVisited, setHomeVisited] = useState(route.id === "home");
   const initialHomeSearch = useRef(
@@ -184,7 +187,12 @@ function PublicApp() {
   // Selection is a mode inside the drafts list, so it stays out of the URL.
   const [draftsEditing, setDraftsEditing] = useState(false);
   const [keptDrafts, setKeptDrafts] = useState(0);
-  const siteIdentityReady = !siteLoading && !siteError;
+  const siteIdentityReady = site.profileUserId !== "";
+  const siteRecovering = useReadRecovery({
+    error: siteError,
+    loading: siteLoading,
+    onRetry: () => setSiteAttempt((value) => value + 1),
+  });
   const canPublish =
     auth.state === "signed-in" && auth.account?.status === "active";
   // Retain the expired account's editing surfaces behind reauthentication so
@@ -284,12 +292,14 @@ function PublicApp() {
   useEffect(() => {
     const controller = new AbortController();
     setSiteLoading(true);
-    setSiteError(false);
+    setSiteError(null);
     void api
       .site(controller.signal)
-      .then(setSite)
-      .catch(() => {
-        if (!controller.signal.aborted) setSiteError(true);
+      .then((next) => {
+        if (!controller.signal.aborted) setSite(next);
+      })
+      .catch((error: unknown) => {
+        if (!controller.signal.aborted) setSiteError(error);
       })
       .finally(() => {
         if (!controller.signal.aborted) setSiteLoading(false);
@@ -503,14 +513,12 @@ function PublicApp() {
         state={state}
       >
         {siteError ? (
-          <div className={styles.siteError} role="alert">
-            <span>站点资料没有加载完成，暂时使用默认身份。</span>
-            <button
-              onClick={() => setSiteAttempt((value) => value + 1)}
-              type="button"
-            >
-              重试资料
-            </button>
+          <div className={styles.siteError} role="status">
+            <span>
+              {siteRecovering
+                ? "正在自动重新获取站点资料…"
+                : "站点资料暂时无法获取。"}
+            </span>
           </div>
         ) : null}
         {hasTimeline ? (

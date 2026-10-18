@@ -1,23 +1,32 @@
 import { PublicApiError } from "../../api/public";
 
+export class CursorProgressError extends PublicApiError {
+  constructor(message: string) {
+    super(message, { code: "API_RESPONSE_INVALID", status: 0 });
+  }
+}
+
 export function invalidCursorProgress(message: string): PublicApiError {
-  return new PublicApiError(message, {
-    code: "API_RESPONSE_INVALID",
-    status: 0,
-  });
+  return new CursorProgressError(message);
+}
+
+export function isCursorProgressError(error: unknown): boolean {
+  return (
+    error instanceof CursorProgressError ||
+    (error instanceof PublicApiError &&
+      error.code === "INVALID_ARGUMENT" &&
+      error.details.field === "cursor")
+  );
 }
 
 export function appendUnique<T>(
   current: T[],
   incoming: T[],
   key: (item: T) => string,
-  label: string,
 ): T[] {
-  const existing = new Set(current.map(key));
-  if (incoming.some((item) => existing.has(key(item)))) {
-    throw invalidCursorProgress(`continued ${label} page contains a duplicate`);
-  }
-  return [...current, ...incoming];
+  const merged = new Map(current.map((item) => [key(item), item]));
+  for (const item of incoming) merged.set(key(item), item);
+  return [...merged.values()];
 }
 
 export function validateCursorPage<T>(
@@ -51,7 +60,7 @@ export function loadedThroughFromSearch(
     (progress.length === 1 &&
       (progress[0].length === 0 || progress[0].length > 4_096))
   ) {
-    throw invalidCursorProgress("loaded cursor is invalid");
+    return null;
   }
   return progress[0] ?? null;
 }
@@ -69,13 +78,11 @@ export function prependUnique<T>(
   current: T[],
   incoming: T[],
   key: (item: T) => string,
-  label: string,
 ): T[] {
-  const existing = new Set(current.map(key));
-  if (incoming.some((item) => existing.has(key(item)))) {
-    throw invalidCursorProgress(`continued ${label} page contains a duplicate`);
-  }
-  return [...incoming, ...current];
+  const merged = new Map(incoming.map((item) => [key(item), item]));
+  for (const item of current)
+    if (!merged.has(key(item))) merged.set(key(item), item);
+  return [...merged.values()];
 }
 
 /**

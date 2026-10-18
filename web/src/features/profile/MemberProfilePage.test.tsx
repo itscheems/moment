@@ -161,14 +161,33 @@ describe("member profile", () => {
     expect(container.querySelector('[class*="coverFallback"]')).not.toBeNull();
     expect(container.querySelector("img[alt='']")).toBeNull();
     expect(requested[0]).toBe("/api/v1/users/linlin");
-    expect(
-      requested.some(
-        (url) =>
-          url.startsWith("/api/v1/posts?") && url.includes("author_user_id="),
-      ),
-    ).toBe(true);
+    await waitFor(() =>
+      expect(
+        requested.some(
+          (url) =>
+            url.startsWith("/api/v1/posts?") && url.includes("author_user_id="),
+        ),
+      ).toBe(true),
+    );
     // A reader who is not this account gets an identity and nothing to press.
     expect(screen.queryByRole("button", { name: "编辑资料" })).toBeNull();
+  });
+
+  it("automatically restores a member identity after a temporary read failure", async () => {
+    let reads = 0;
+    const fetcher = vi.fn(async (input: RequestInfo | URL) => {
+      if (String(input) === "/api/v1/users/linlin") {
+        reads += 1;
+        if (reads === 1) return json({}, 503);
+      }
+      return json(memberEnvelope());
+    });
+    vi.stubGlobal("fetch", signedIn(null));
+    mount(new PublicApi(fetcher as unknown as typeof fetch), "linlin");
+    await screen.findByText("正在重新获取内容…");
+    expect(await screen.findByRole("heading", { name: "林林" })).toBeVisible();
+    expect(reads).toBe(2);
+    expect(screen.queryByRole("button", { name: "重试" })).toBeNull();
   });
 
   it("reads an account that is not there as a page that is not there", async () => {

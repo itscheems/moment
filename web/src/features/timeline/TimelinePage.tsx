@@ -8,7 +8,6 @@ import {
 
 import {
   PublicApi,
-  PublicApiError,
   type PublicComment,
   type PublicPost,
   type SiteIdentity,
@@ -16,18 +15,25 @@ import {
   type TimelineRequest,
 } from "../../api/public";
 import { useNavigation } from "../../app/navigation";
+import { useReadRecovery } from "../../components/useReadRecovery";
 import {
   LoadMoreSentinel,
   type LoadSource,
 } from "../../components/LoadMoreSentinel";
 import { usePostReplyDialog } from "../comments/usePostReplyDialog";
 import { PostPresentation } from "../posts/PostPresentation";
-import { PublicEmpty, PublicError, TimelineLoading } from "./PublicStates";
+import {
+  PublicEmpty,
+  PublicError,
+  ReadRecoveryNotice,
+  TimelineLoading,
+} from "./PublicStates";
 import { listenForPostChanges } from "../posts/postEvents";
 import type { PostChangeEvent } from "../posts/postEvents";
 import {
   appendUnique,
   invalidCursorProgress,
+  isCursorProgressError,
   loadedThroughFromSearch,
   prependUnique,
   validateCursorPage,
@@ -63,20 +69,6 @@ function requestFromSearch(search: string): TimelineRestoreRequest {
 function hasLoadedProgress(search: string): boolean {
   const query = new URLSearchParams(search);
   return query.has("loaded_through") || query.has("loaded_newer");
-}
-
-function recoverableCursorError(error: unknown): boolean {
-  return (
-    error instanceof PublicApiError &&
-    (error.code === "INVALID_ARGUMENT" || error.code === "API_RESPONSE_INVALID")
-  );
-}
-
-function errorKind(error: unknown): "timeline" | "malformed" {
-  return error instanceof PublicApiError &&
-    error.code === "API_RESPONSE_INVALID"
-    ? "malformed"
-    : "timeline";
 }
 
 /**
@@ -120,10 +112,9 @@ export function TimelinePage({
   canPublish?: boolean;
 }) {
   const {
-    navigate,
     pathname,
-    search: liveSearch,
     replaceTimelineProgress,
+    replaceWithinPage,
     restoreCurrentEntry,
   } = useNavigation();
   const [posts, setPosts] = useState<PublicPost[]>([]);
@@ -141,6 +132,7 @@ export function TimelinePage({
   const [settled, setSettled] = useState(false);
   const [freshId, setFreshId] = useState<string | null>(null);
   const initialSearchRef = useRef(initialSearch);
+  const surfacePath = useRef(pathname);
   const activeInitial = useRef<AbortController | null>(null);
   const activeMore = useRef<AbortController | null>(null);
   const activeNewer = useRef<AbortController | null>(null);
@@ -149,6 +141,7 @@ export function TimelinePage({
   const initialEntryRestored = useRef(false);
   const postChanges = useRef(new Map<string, PostChangeEvent>());
   const visitedCursors = useRef(new Set<string>());
+  const recoveredCursors = useRef(new Set<string>());
   /** The row the list opened at: the newest on or before the anchor. */
   const anchorKey = useRef<string | null>(null);
   /** The top row and where it was, measured just before a page is prepended. */
@@ -178,8 +171,30 @@ export function TimelinePage({
     [handlePostChange],
   );
 
-  const loadInitial = useCallback(async () => {
+  const forgetProgress = useCallback(
+    (dropCursor = false) => {
+      const clean = (search: string) => {
+        const query = new URLSearchParams(withoutLoadedProgress(search));
+        if (dropCursor) query.delete("cursor");
+        const value = query.toString();
+        return value ? `?${value}` : "";
+      };
+      initialSearchRef.current = clean(initialSearchRef.current);
+      const ownPath = surfacePath.current;
+      if (window.location.pathname === ownPath)
+        replaceWithinPage(`${ownPath}${clean(window.location.search)}`);
+    },
+    [replaceWithinPage],
+  );
+
+  const loadInitial: () => Promise<void> = useCallback(async () => {
     activeInitial.current?.abort();
+    activeMore.current?.abort();
+    activeNewer.current?.abort();
+    loadingMoreRef.current = false;
+    loadingNewerRef.current = false;
+    setLoadingMore(false);
+    setLoadingNewer(false);
     const controller = new AbortController();
     activeInitial.current = controller;
     setLoadingInitial(true);
@@ -190,6 +205,11 @@ export function TimelinePage({
       const { loadedThrough, loadedNewer, request } = requestFromSearch(
         initialSearchRef.current,
       );
+      const savedQuery = new URLSearchParams(initialSearchRef.current);
+      let discardedProgress =
+        (savedQuery.has("loaded_through") && loadedThrough === null) ||
+        (savedQuery.has("loaded_newer") &&
+          (loadedNewer === null || !request.anchor));
       let page = await api.timeline({
         ...request,
         signal: controller.signal,
@@ -209,11 +229,13 @@ export function TimelinePage({
         replayed += 1
       ) {
         if (replayed >= MAX_REPLAY_PAGES) {
-          throw invalidCursorProgress("loaded timeline cursor is too deep");
+          discardedProgress = true;
+          break;
         }
         const continuation = page.nextCursor;
         if (!continuation) {
-          throw invalidCursorProgress("loaded timeline cursor is unreachable");
+          discardedProgress = true;
+          break;
         }
         if (visited.has(continuation)) {
           throw invalidCursorProgress("timeline cursor cycle detected");
@@ -227,12 +249,7 @@ export function TimelinePage({
         });
         if (controller.signal.aborted) return;
         validateCursorPage(page, requestedCursor, visited, "timeline");
-        combined = appendUnique(
-          combined,
-          page.items,
-          timelineItemKey,
-          "timeline",
-        );
+        combined = appendUnique(combined, page.items, timelineItemKey);
       }
 
       // Anchored, the list also reads forward: the first page after the
@@ -252,7 +269,8 @@ export function TimelinePage({
           replayed += 1
         ) {
           if (replayed >= MAX_REPLAY_PAGES) {
-            throw invalidCursorProgress("loaded timeline cursor is too deep");
+            discardedProgress = true;
+            break;
           }
           if (visited.has(newerCursor)) {
             throw invalidCursorProgress("timeline cursor cycle detected");
@@ -265,20 +283,16 @@ export function TimelinePage({
           });
           if (controller.signal.aborted) return;
           validateNewerPage(newerPage, visited, "timeline");
-          newer = prependUnique(
-            newer,
-            newerPage.items,
-            timelineItemKey,
-            "timeline",
-          );
+          newer = prependUnique(newer, newerPage.items, timelineItemKey);
           newerCursor = newerPage.prevCursor;
         }
         if (loadedNewer !== null && requestedNewer !== loadedNewer) {
-          throw invalidCursorProgress("loaded timeline cursor is unreachable");
+          discardedProgress = true;
         }
-        combined = prependUnique(combined, newer, timelineItemKey, "timeline");
+        combined = prependUnique(combined, newer, timelineItemKey);
       }
 
+      if (discardedProgress) forgetProgress();
       combined = reconcilePostChanges(combined);
       visitedCursors.current = visited;
       anchorKey.current =
@@ -289,11 +303,19 @@ export function TimelinePage({
       setNextCursor(page.nextCursor);
       setPrevCursor(newerCursor);
     } catch (error) {
-      if (!controller.signal.aborted) setInitialError(error);
+      if (controller.signal.aborted) return;
+      const query = new URLSearchParams(initialSearchRef.current);
+      if (
+        isCursorProgressError(error) &&
+        (hasLoadedProgress(initialSearchRef.current) || query.has("cursor"))
+      ) {
+        forgetProgress(true);
+        await loadInitial();
+      } else setInitialError(error);
     } finally {
       if (!controller.signal.aborted) setLoadingInitial(false);
     }
-  }, [api, reconcilePostChanges]);
+  }, [api, forgetProgress, reconcilePostChanges]);
 
   useEffect(() => {
     void loadInitial();
@@ -371,7 +393,7 @@ export function TimelinePage({
   }, [posts]);
 
   const loadMore = async (source: LoadSource = "manual") => {
-    if (!nextCursor || loadingMoreRef.current) return;
+    if (!nextCursor || loadingMoreRef.current || loadingInitial) return;
     const controller = new AbortController();
     activeMore.current = controller;
     loadingMoreRef.current = true;
@@ -395,12 +417,7 @@ export function TimelinePage({
       const firstNew = page.items[0]
         ? timelineItemKey(page.items[0])
         : undefined;
-      const combined = appendUnique(
-        posts,
-        page.items,
-        timelineItemKey,
-        "timeline",
-      );
+      const combined = appendUnique(posts, page.items, timelineItemKey);
       visitedCursors.current = visited;
       setPosts(combined);
       setNextCursor(page.nextCursor);
@@ -414,12 +431,12 @@ export function TimelinePage({
       if (!controller.signal.aborted) setMoreError(error);
     } finally {
       if (!controller.signal.aborted) setLoadingMore(false);
-      loadingMoreRef.current = false;
+      if (activeMore.current === controller) loadingMoreRef.current = false;
     }
   };
 
   const loadNewer = async (source: LoadSource = "manual") => {
-    if (!prevCursor || loadingNewerRef.current) return;
+    if (!prevCursor || loadingNewerRef.current || loadingInitial) return;
     const controller = new AbortController();
     activeNewer.current = controller;
     loadingNewerRef.current = true;
@@ -442,12 +459,7 @@ export function TimelinePage({
       const nearestNew = page.items[page.items.length - 1]
         ? timelineItemKey(page.items[page.items.length - 1])
         : undefined;
-      const combined = prependUnique(
-        posts,
-        page.items,
-        timelineItemKey,
-        "timeline",
-      );
+      const combined = prependUnique(posts, page.items, timelineItemKey);
       const top = posts[0] ? rowElement(timelineItemKey(posts[0])) : undefined;
       if (top && page.items.length > 0) {
         compensation.current = {
@@ -468,36 +480,60 @@ export function TimelinePage({
       if (!controller.signal.aborted) setNewerError(error);
     } finally {
       if (!controller.signal.aborted) setLoadingNewer(false);
-      loadingNewerRef.current = false;
+      if (activeNewer.current === controller) loadingNewerRef.current = false;
     }
   };
 
-  const resetFromFirstPage = () => {
-    initialSearchRef.current = withoutLoadedProgress(initialSearchRef.current);
-    visitedCursors.current = new Set();
-    setMoreError(null);
-    setNewerError(null);
-    // The page's own address minus the progress, not the window the list was
-    // read with: on the archive the two differ, and navigating to the window
-    // would be a link to nowhere.
-    navigate(`${pathname}${withoutLoadedProgress(liveSearch)}`);
-    void loadInitial();
+  const recoverContinuation = async (
+    error: unknown,
+    cursor: string | null,
+    newer = false,
+  ) => {
+    if (
+      cursor &&
+      isCursorProgressError(error) &&
+      !recoveredCursors.current.has(cursor)
+    ) {
+      recoveredCursors.current.add(cursor);
+      const visible = posts.find((post) => {
+        const box = rowElement(timelineItemKey(post))?.getBoundingClientRect();
+        return box && box.bottom > 0 && box.top < window.innerHeight;
+      });
+      if (visible) {
+        const key = timelineItemKey(visible);
+        const row = rowElement(key);
+        if (row)
+          compensation.current = { key, top: row.getBoundingClientRect().top };
+      }
+      forgetProgress(true);
+      await loadInitial();
+    } else if (newer) await loadNewer("automatic");
+    else await loadMore("automatic");
   };
 
-  if (loadingInitial) return <TimelineLoading />;
-  if (initialError) {
-    return (
-      <PublicError
-        kind={errorKind(initialError)}
-        onResetProgress={
-          hasLoadedProgress(initialSearchRef.current) &&
-          recoverableCursorError(initialError)
-            ? resetFromFirstPage
-            : undefined
-        }
-        onRetry={loadInitial}
-      />
-    );
+  const enabled = pathname === surfacePath.current;
+  const recoveringInitial = useReadRecovery({
+    error: initialError,
+    loading: loadingInitial,
+    onRetry: loadInitial,
+    enabled,
+  });
+  useReadRecovery({
+    error: moreError,
+    loading: loadingMore || loadingInitial,
+    onRetry: () => recoverContinuation(moreError, nextCursor),
+    enabled,
+  });
+  useReadRecovery({
+    error: newerError,
+    loading: loadingNewer || loadingInitial,
+    onRetry: () => recoverContinuation(newerError, prevCursor, true),
+    enabled,
+  });
+
+  if (loadingInitial && posts.length === 0) return <TimelineLoading />;
+  if (initialError && (!recoveringInitial || posts.length === 0)) {
+    return <PublicError recovering={recoveringInitial} />;
   }
   if (posts.length === 0 && !nextCursor && !prevCursor) {
     return <PublicEmpty context={emptyContext} canPublish={canPublish} />;
@@ -506,33 +542,23 @@ export function TimelinePage({
   return (
     <>
       <section aria-label="公开时间流" className={styles.timelineList}>
+        {posts.length > 0 && (initialError || loadingInitial) ? (
+          <ReadRecoveryNotice />
+        ) : null}
         <p aria-live="polite" className={styles.srOnly}>
           已加载 {posts.length} 条 Moment
         </p>
         {newerError ? (
-          <div className={styles.moreError} role="alert">
-            <span>
-              {errorKind(newerError) === "malformed"
-                ? "更新的一页数据不完整，没有加入时间流。"
-                : "更新的一页没有加载完成。"}
-            </span>
-            {recoverableCursorError(newerError) ? (
-              <button onClick={resetFromFirstPage} type="button">
-                从这一天重新加载
-              </button>
-            ) : (
-              <button onClick={() => void loadNewer("manual")} type="button">
-                重试加载
-              </button>
-            )}
-          </div>
+          <ReadRecoveryNotice error={newerError}>
+            正在重新获取更新的内容…
+          </ReadRecoveryNotice>
         ) : null}
         {prevCursor && settled && !newerError ? (
           <LoadMoreSentinel
             className={styles.moreRow}
             cursor={prevCursor}
             label="加载更新的 Moment"
-            loading={loadingNewer}
+            loading={loadingNewer || loadingInitial}
             onLoad={(source) => void loadNewer(source)}
           />
         ) : null}
@@ -551,34 +577,21 @@ export function TimelinePage({
           />
         ))}
         {moreError ? (
-          <div className={styles.moreError} role="alert">
-            <span>
-              {errorKind(moreError) === "malformed"
-                ? "下一页数据不完整，没有追加到时间流。"
-                : "下一页没有加载完成。"}
-            </span>
-            {recoverableCursorError(moreError) ? (
-              <button onClick={resetFromFirstPage} type="button">
-                从第一页重新加载
-              </button>
-            ) : (
-              <button onClick={() => void loadMore("manual")} type="button">
-                重试加载
-              </button>
-            )}
-          </div>
+          <ReadRecoveryNotice error={moreError}>
+            正在重新获取后续内容…
+          </ReadRecoveryNotice>
         ) : null}
         {nextCursor && !moreError ? (
           <LoadMoreSentinel
             className={styles.moreRow}
             cursor={nextCursor}
             label="加载更早的 Moment"
-            loading={loadingMore}
+            loading={loadingMore || loadingInitial}
             onLoad={(source) => void loadMore(source)}
           />
-        ) : (
+        ) : !nextCursor && !moreError ? (
           <p className={styles.endMark}>已经走到这段时间流的起点</p>
-        )}
+        ) : null}
       </section>
       {replyDialog}
     </>

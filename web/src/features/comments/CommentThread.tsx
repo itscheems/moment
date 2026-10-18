@@ -28,8 +28,16 @@ import {
   reconcileCreatedComment,
   reconcileDeletedComment,
 } from "./commentOrdering";
-import { LoadMoreSentinel } from "../../components/LoadMoreSentinel";
-import { validateCursorPage } from "../timeline/cursorContinuity";
+import {
+  LoadMoreSentinel,
+  type LoadSource,
+} from "../../components/LoadMoreSentinel";
+import { useReadRecovery } from "../../components/useReadRecovery";
+import { ReadRecoveryNotice } from "../timeline/PublicStates";
+import {
+  isCursorProgressError,
+  validateCursorPage,
+} from "../timeline/cursorContinuity";
 import styles from "./Comments.module.css";
 
 /**
@@ -145,6 +153,9 @@ export function CommentThread({
     attempt: number;
   } | null>(null);
   const [loadError, setLoadError] = useState<unknown>(null);
+  const [threadLoading, setThreadLoading] = useState(true);
+  const continuations = useRef(new Map<string, AbortController>());
+  const recoveredCursors = useRef(new Set<string>());
   const [attempt, setAttempt] = useState(0);
   const [topContent, setTopContent] = useState("");
   const [dialogContent, setDialogContent] = useState("");
@@ -158,6 +169,39 @@ export function CommentThread({
   const canCompose = replyBlock === null;
 
   const load = useCallback(() => setAttempt((value) => value + 1), []);
+  const recoveringThread = useReadRecovery({
+    error: loadError,
+    loading: threadLoading,
+    onRetry: load,
+    enabled: active,
+    scope: postId,
+  });
+  const recoverRoots = () => {
+    const key = `roots:${nextCursor}`;
+    if (
+      nextCursor &&
+      isCursorProgressError(moreError) &&
+      !recoveredCursors.current.has(key)
+    ) {
+      recoveredCursors.current.add(key);
+      load();
+    } else loadMoreRoots("automatic");
+  };
+  useReadRecovery({
+    error: moreError,
+    loading: loadingMore || threadLoading,
+    onRetry: recoverRoots,
+    enabled: active,
+    scope: postId,
+  });
+  useEffect(
+    () => () => {
+      for (const controller of continuations.current.values())
+        controller.abort();
+      continuations.current.clear();
+    },
+    [],
+  );
 
   useEffect(() => {
     if (!active) return;
@@ -169,6 +213,10 @@ export function CommentThread({
     )
       return;
     const controller = new AbortController();
+    for (const pending of continuations.current.values()) pending.abort();
+    continuations.current.clear();
+    setLoadingMore(false);
+    setThreadLoading(true);
     setLoadError(null);
     setMoreError(null);
     visitedCursors.current = new Set();
@@ -190,6 +238,9 @@ export function CommentThread({
       })
       .catch((error: unknown) => {
         if (!controller.signal.aborted) setLoadError(error);
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setThreadLoading(false);
       });
     return () => controller.abort();
   }, [active, api, attempt, postId]);
@@ -197,7 +248,16 @@ export function CommentThread({
   const loadMoreRoots = useCallback(
     (source: "automatic" | "manual") => {
       const cursor = nextCursor;
-      if (!active || !cursor || loadingMore) return;
+      if (
+        !active ||
+        !cursor ||
+        loadingMore ||
+        threadLoading ||
+        continuations.current.has("roots")
+      )
+        return;
+      const controller = new AbortController();
+      continuations.current.set("roots", controller);
       // A cursor counts as spent only once a page actually comes back for it.
       // Marking it before the request would turn an ordinary network failure
       // into a permanent "cycle detected", with the retry button unable to do
@@ -207,8 +267,9 @@ export function CommentThread({
       setLoadingMore(true);
       setMoreError(null);
       void api
-        .comments(postId, { cursor })
+        .comments(postId, { cursor, signal: controller.signal })
         .then((page) => {
+          if (controller.signal.aborted) return;
           validateCursorPage(page, cursor, visited, "comment");
           visitedCursors.current = visited;
           const firstNewId = page.items[0]?.id;
@@ -226,16 +287,33 @@ export function CommentThread({
             );
           }
         })
-        .catch((error: unknown) => setMoreError(error))
-        .finally(() => setLoadingMore(false));
+        .catch((error: unknown) => {
+          if (!controller.signal.aborted) setMoreError(error);
+        })
+        .finally(() => {
+          if (continuations.current.get("roots") === controller) {
+            continuations.current.delete("roots");
+            if (!controller.signal.aborted) setLoadingMore(false);
+          }
+        });
     },
-    [active, api, loadingMore, nextCursor, postId],
+    [active, api, loadingMore, nextCursor, postId, threadLoading],
   );
 
   const loadMoreReplies = useCallback(
-    (rootId: string) => {
+    (rootId: string, source: LoadSource = "manual") => {
       const paging = replyPaging.get(rootId);
-      if (!active || !paging || paging.loading || !paging.cursor) return;
+      if (
+        !active ||
+        !paging ||
+        paging.loading ||
+        !paging.cursor ||
+        threadLoading ||
+        continuations.current.has(rootId)
+      )
+        return;
+      const controller = new AbortController();
+      continuations.current.set(rootId, controller);
       const cursor = paging.cursor;
       const visited = new Set(paging.visited);
       visited.add(cursor);
@@ -243,8 +321,9 @@ export function CommentThread({
         withReplyPaging(current, rootId, { loading: true, error: null }),
       );
       void api
-        .commentReplies(postId, rootId, { cursor })
+        .commentReplies(postId, rootId, { cursor, signal: controller.signal })
         .then((page) => {
+          if (controller.signal.aborted) return;
           validateCursorPage(page, cursor, visited, "comment reply");
           const firstNewId = page.items[0]?.id;
           setItems((current) =>
@@ -264,7 +343,7 @@ export function CommentThread({
           // fall to the document body. Land on the first reply that arrived —
           // the thing the reader asked for — matching how the root sentinel
           // treats a deliberate press.
-          if (firstNewId) {
+          if (source === "manual" && firstNewId) {
             window.requestAnimationFrame(() =>
               document
                 .querySelector<HTMLElement>(`[data-comment-id="${firstNewId}"]`)
@@ -272,14 +351,31 @@ export function CommentThread({
             );
           }
         })
-        .catch((error: unknown) =>
-          setReplyPaging((current) =>
-            withReplyPaging(current, rootId, { loading: false, error }),
-          ),
-        );
+        .catch((error: unknown) => {
+          if (!controller.signal.aborted)
+            setReplyPaging((current) =>
+              withReplyPaging(current, rootId, { loading: false, error }),
+            );
+        })
+        .finally(() => {
+          if (continuations.current.get(rootId) === controller)
+            continuations.current.delete(rootId);
+        });
     },
-    [active, api, postId, replyPaging],
+    [active, api, postId, replyPaging, threadLoading],
   );
+
+  const recoverReplies = (rootId: string, source: LoadSource) => {
+    const paging = replyPaging.get(rootId);
+    const key = `replies:${rootId}:${paging?.cursor}`;
+    if (
+      isCursorProgressError(paging?.error) &&
+      !recoveredCursors.current.has(key)
+    ) {
+      recoveredCursors.current.add(key);
+      load();
+    } else loadMoreReplies(rootId, source);
+  };
 
   useEffect(() => {
     if (!active) {
@@ -412,14 +508,17 @@ export function CommentThread({
         />
       ) : null}
 
-      {items === null && !loadError ? (
+      {items === null && (!loadError || recoveringThread) ? (
         <div aria-busy="true" className={styles.threadState}>
           <span className={styles.loadingDot} />
-          <span>正在读取回复…</span>
+          <span>{loadError ? "正在重新读取回复…" : "正在读取回复…"}</span>
         </div>
       ) : null}
 
-      {loadError ? (
+      {items !== null && loadError && recoveringThread ? (
+        <ReadRecoveryNotice>正在重新读取回复…</ReadRecoveryNotice>
+      ) : null}
+      {loadError && !recoveringThread ? (
         <div className={styles.threadError} role="alert">
           <strong>
             {loadError instanceof PublicApiError &&
@@ -427,10 +526,7 @@ export function CommentThread({
               ? "回复数据无法安全显示"
               : "这次没有取到回复"}
           </strong>
-          <span>Moment 正文仍可阅读；重试不会重复发表任何内容。</span>
-          <button onClick={load} type="button">
-            重新加载回复
-          </button>
+          <span>Moment 正文仍可阅读，请确认登录状态和访问链接。</span>
         </div>
       ) : null}
 
@@ -562,13 +658,17 @@ export function CommentThread({
                   {branchEnds.has(comment.id) &&
                   hiddenReplies.has(branchEnds.get(comment.id) as string) ? (
                     <ReplyBranch
+                      active={active}
                       hidden={
                         hiddenReplies.get(
                           branchEnds.get(comment.id) as string,
                         ) as number
                       }
-                      onLoad={() =>
-                        loadMoreReplies(branchEnds.get(comment.id) as string)
+                      onLoad={(source) =>
+                        recoverReplies(
+                          branchEnds.get(comment.id) as string,
+                          source,
+                        )
                       }
                       paging={replyPaging.get(
                         branchEnds.get(comment.id) as string,
@@ -581,36 +681,16 @@ export function CommentThread({
           ) : null}
 
           {moreError ? (
-            <div className={styles.threadError} role="alert">
-              <strong>
-                {moreError instanceof PublicApiError &&
-                moreError.code === "API_RESPONSE_INVALID"
-                  ? "后续回复无法安全显示"
-                  : "这次没有取到更多回复"}
-              </strong>
-              <span>已经读到的回复仍在，重试不会重复发表任何内容。</span>
-              <button
-                onClick={() =>
-                  moreError instanceof PublicApiError &&
-                  moreError.code === "API_RESPONSE_INVALID"
-                    ? load()
-                    : loadMoreRoots("manual")
-                }
-                type="button"
-              >
-                {moreError instanceof PublicApiError &&
-                moreError.code === "API_RESPONSE_INVALID"
-                  ? "从头重新加载"
-                  : "重试"}
-              </button>
-            </div>
+            <ReadRecoveryNotice error={moreError}>
+              正在重新获取更多回复…
+            </ReadRecoveryNotice>
           ) : null}
 
           {nextCursor && !moreError ? (
             <LoadMoreSentinel
               cursor={nextCursor}
               label="加载更多回复"
-              loading={loadingMore}
+              loading={loadingMore || threadLoading}
               onLoad={loadMoreRoots}
             />
           ) : null}
@@ -627,21 +707,37 @@ export function CommentThread({
  * are visible, so what the reader needs to know is how many they have not seen.
  */
 function ReplyBranch({
+  active,
   hidden,
   onLoad,
   paging,
 }: {
+  active: boolean;
   hidden: number;
-  onLoad: () => void;
+  onLoad: (source: LoadSource) => void;
   paging?: ReplyPaging;
 }) {
+  useReadRecovery({
+    error: paging?.error,
+    loading: Boolean(paging?.loading),
+    onRetry: () => onLoad("automatic"),
+    enabled: active,
+  });
   return (
     <li className={styles.replyBranch}>
-      <button disabled={paging?.loading} onClick={onLoad} type="button">
-        {paging?.loading ? "正在加载…" : `展开其余 ${hidden} 条回复`}
-      </button>
+      {!paging?.error ? (
+        <button
+          disabled={paging?.loading}
+          onClick={() => onLoad("manual")}
+          type="button"
+        >
+          {paging?.loading ? "正在加载…" : `展开其余 ${hidden} 条回复`}
+        </button>
+      ) : null}
       {paging?.error ? (
-        <span role="alert">没有取到更多回复，可以再试一次。</span>
+        <ReadRecoveryNotice error={paging.error}>
+          正在重新获取回复…
+        </ReadRecoveryNotice>
       ) : null}
     </li>
   );

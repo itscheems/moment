@@ -3,6 +3,8 @@ import {
   appendUnique,
   invalidCursorProgress,
   loadedThroughFromSearch,
+  withoutLoadedProgress,
+  isCursorProgressError,
   validateCursorPage,
   validateNewerPage,
 } from "../timeline/cursorContinuity";
@@ -38,6 +40,7 @@ export interface ProfileFeed {
   initialized: boolean;
   loading: boolean;
   loadingMore: boolean;
+  refreshing: boolean;
   nextCursor: string | null;
   refreshCursor: string | null;
   continuation: string | null;
@@ -51,6 +54,7 @@ function emptyFeed(): ProfileFeed {
     initialized: false,
     loading: false,
     loadingMore: false,
+    refreshing: false,
     nextCursor: null,
     refreshCursor: null,
     continuation: null,
@@ -80,9 +84,11 @@ export class ProfileTimeline {
     article: new Set(),
   };
   private events = new Map<string, PostChangeEvent>();
+  private recoveredCursors = new Set<string>();
   private disposed = false;
   active: ProfileFilter = "all";
   beforeMerge?: () => void;
+  onProgressDiscarded?: () => void;
   constructor(
     private api: PublicApi,
     private initialSearch: string,
@@ -150,10 +156,23 @@ export class ProfileTimeline {
   async load(filter: ProfileFilter, reset = false): Promise<void> {
     const key = `initial:${filter}`;
     if (this.requests.has(key) || this.disposed) return;
+    if (reset) {
+      for (const direction of ["older", "newer"]) {
+        const pending = `${direction}:${filter}`;
+        this.requests.get(pending)?.abort();
+        this.requests.delete(pending);
+      }
+    }
     const controller = new AbortController();
     this.requests.set(key, controller);
     const generation = this.generations[filter];
-    this.set(filter, { loading: true, error: null, moreError: null });
+    this.set(filter, {
+      loading: true,
+      error: null,
+      moreError: null,
+      loadingMore: false,
+      refreshing: false,
+    });
     try {
       let page = await this.api.timeline({
         kind: filter === "all" ? null : filter,
@@ -165,6 +184,15 @@ export class ProfileTimeline {
         filter === "all" && !reset
           ? loadedThroughFromSearch(this.initialSearch)
           : null;
+      if (
+        !reset &&
+        filter === "all" &&
+        loadedThrough === null &&
+        new URLSearchParams(this.initialSearch).has("loaded_through")
+      ) {
+        this.initialSearch = withoutLoadedProgress(this.initialSearch);
+        this.onProgressDiscarded?.();
+      }
       let cursor: string | null = null;
       const visited = new Set<string>();
       validateCursorPage(page, cursor, visited, "profile");
@@ -173,13 +201,18 @@ export class ProfileTimeline {
         loadedThrough !== null && cursor !== loadedThrough;
         count++
       ) {
-        if (count >= 1000 || !page.nextCursor || visited.has(page.nextCursor))
-          throw invalidCursorProgress("saved profile position is unreachable");
+        if (count >= 1000 || !page.nextCursor) {
+          this.initialSearch = withoutLoadedProgress(this.initialSearch);
+          this.onProgressDiscarded?.();
+          break;
+        }
+        if (visited.has(page.nextCursor))
+          throw invalidCursorProgress("profile cursor cycle detected");
         cursor = page.nextCursor;
         visited.add(cursor);
         page = await this.api.timeline({ cursor, signal: controller.signal });
         validateCursorPage(page, cursor, visited, "profile");
-        items = appendUnique(items, page.items, timelineItemKey, "profile");
+        items = appendUnique(items, page.items, timelineItemKey);
       }
       if (controller.signal.aborted) return;
       this.visited[filter] = visited;
@@ -192,17 +225,30 @@ export class ProfileTimeline {
         refreshError: null,
       });
     } catch (error) {
-      if (!controller.signal.aborted) this.set(filter, { error });
-    } finally {
-      this.requests.delete(key);
       if (!controller.signal.aborted) {
-        this.set(filter, { loading: false });
         if (
-          generation !== this.generations[filter] &&
-          this.feeds[filter].initialized &&
-          pageVisible()
-        )
-          void this.refresh(filter);
+          !reset &&
+          new URLSearchParams(this.initialSearch).has("loaded_through") &&
+          isCursorProgressError(error)
+        ) {
+          this.initialSearch = withoutLoadedProgress(this.initialSearch);
+          this.onProgressDiscarded?.();
+          this.requests.delete(key);
+          await this.load(filter, true);
+        } else this.set(filter, { error });
+      }
+    } finally {
+      if (this.requests.get(key) === controller) {
+        this.requests.delete(key);
+        if (!controller.signal.aborted) {
+          this.set(filter, { loading: false });
+          if (
+            generation !== this.generations[filter] &&
+            this.feeds[filter].initialized &&
+            pageVisible()
+          )
+            void this.refresh(filter);
+        }
       }
     }
   }
@@ -239,10 +285,49 @@ export class ProfileTimeline {
       if (!controller.signal.aborted) this.set(filter, { moreError });
       return null;
     } finally {
-      this.requests.delete(key);
-      if (!controller.signal.aborted) this.set(filter, { loadingMore: false });
+      if (this.requests.get(key) === controller) {
+        this.requests.delete(key);
+        if (!controller.signal.aborted)
+          this.set(filter, { loadingMore: false });
+      }
     }
   }
+
+  private async recoverCursor(
+    filter: ProfileFilter,
+    direction: "older" | "newer",
+  ): Promise<boolean> {
+    const feed = this.feeds[filter];
+    const error = direction === "older" ? feed.moreError : feed.refreshError;
+    const cursor =
+      direction === "older"
+        ? feed.nextCursor
+        : (feed.continuation ?? feed.refreshCursor);
+    const key = `${direction}:${filter}:${cursor}`;
+    if (
+      !cursor ||
+      !isCursorProgressError(error) ||
+      this.recoveredCursors.has(key)
+    )
+      return false;
+    this.recoveredCursors.add(key);
+    this.initialSearch = withoutLoadedProgress(this.initialSearch);
+    this.onProgressDiscarded?.();
+    await this.load(filter, true);
+    return true;
+  }
+
+  async recoverOlder(filter: ProfileFilter): Promise<string | null> {
+    return (await this.recoverCursor(filter, "older"))
+      ? null
+      : this.more(filter);
+  }
+
+  async recoverNewer(filter: ProfileFilter): Promise<void> {
+    if (!(await this.recoverCursor(filter, "newer")))
+      await this.refresh(filter);
+  }
+
   async refresh(filter: ProfileFilter): Promise<void> {
     const feed = this.feeds[filter],
       key = `newer:${filter}`;
@@ -256,8 +341,8 @@ export class ProfileTimeline {
       return;
     const controller = new AbortController();
     this.requests.set(key, controller);
+    this.set(filter, { refreshing: true, refreshError: null });
     const generation = this.generations[filter];
-    this.set(filter, { refreshError: null });
     let cursor = feed.continuation ?? feed.refreshCursor;
     const visited = new Set<string>();
     try {
@@ -307,13 +392,16 @@ export class ProfileTimeline {
     } catch (refreshError) {
       if (!controller.signal.aborted) this.set(filter, { refreshError });
     } finally {
-      this.requests.delete(key);
-      if (
-        !controller.signal.aborted &&
-        generation !== this.generations[filter] &&
-        pageVisible()
-      )
-        void this.refresh(filter);
+      if (this.requests.get(key) === controller) {
+        this.requests.delete(key);
+        if (!controller.signal.aborted) this.set(filter, { refreshing: false });
+        if (
+          !controller.signal.aborted &&
+          generation !== this.generations[filter] &&
+          pageVisible()
+        )
+          void this.refresh(filter);
+      }
     }
   }
 }

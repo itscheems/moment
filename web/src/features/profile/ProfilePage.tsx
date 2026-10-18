@@ -5,7 +5,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import {
   PublicApi,
-  PublicApiError,
   type PublicComment,
   type PublicPost,
   type SiteIdentity,
@@ -14,6 +13,10 @@ import {
 import { useNavigation } from "../../app/navigation";
 import { profileFeedPath, profileFromPath } from "../../app/routes";
 import { Icon } from "../../components/icons";
+import {
+  canRecoverRead,
+  useReadRecovery,
+} from "../../components/useReadRecovery";
 import {
   LoadMoreSentinel,
   type LoadSource,
@@ -41,9 +44,9 @@ import { formatMomentDate } from "../posts/dates";
 import {
   PublicEmpty,
   PublicError,
+  ReadRecoveryNotice,
   TimelineLoading,
 } from "../timeline/PublicStates";
-import { withoutLoadedProgress } from "../timeline/cursorContinuity";
 import { timelineItemKey } from "../timeline/timelineItems";
 import {
   matchesFilter,
@@ -69,20 +72,6 @@ function timezoneLabel(timeZone: string, date: Date): string {
     return offset ? `${name} · ${offset}` : name;
   }
   return offset ?? name ?? timeZone;
-}
-
-function recoverableCursorError(error: unknown): boolean {
-  return (
-    error instanceof PublicApiError &&
-    (error.code === "INVALID_ARGUMENT" || error.code === "API_RESPONSE_INVALID")
-  );
-}
-
-function errorKind(error: unknown): "timeline" | "malformed" {
-  return error instanceof PublicApiError &&
-    error.code === "API_RESPONSE_INVALID"
-    ? "malformed"
-    : "timeline";
 }
 
 export function ProfilePage({
@@ -126,12 +115,23 @@ export function ProfilePage({
     () => api.forAuthor(site.profileUserId),
     [api, site.profileUserId],
   );
-  const { store, feeds, initialSearch } = useProfileTimeline(
+  const { store, feeds } = useProfileTimeline(
     authorApi,
     `${site.instanceId}:${site.profileUserId}:${auth.account?.userId ?? "guest"}`,
     filter,
+    profileFromPath(navigation.pathname)?.username === site.username,
   );
   const [pinnedPost, setPinnedPost] = useState<PublicPost | null>(null);
+  const [pinError, setPinError] = useState<unknown>(null);
+  const [pinLoading, setPinLoading] = useState(false);
+  const [pinAttempt, setPinAttempt] = useState(0);
+  useReadRecovery({
+    error: pinError,
+    loading: pinLoading,
+    onRetry: () => setPinAttempt((value) => value + 1),
+    scope: site.pinnedPostId ?? "",
+    enabled: profileFromPath(navigation.pathname)?.username === site.username,
+  });
   const entryRestored = useRef(false);
   const leftTabSlot = useRef<HTMLDivElement>(null);
   const reducedMotion = useReducedMotion();
@@ -239,18 +239,26 @@ export function ProfilePage({
 
   useEffect(() => {
     const controller = new AbortController();
+    setPinError(null);
+    setPinLoading(Boolean(site.pinnedPostId));
     if (site.pinnedPostId) {
       void api
         .post(site.pinnedPostId, controller.signal)
         .then((post) => {
           if (!controller.signal.aborted) setPinnedPost(post);
         })
-        .catch(() => {
-          if (!controller.signal.aborted) setPinnedPost(null);
+        .catch((error: unknown) => {
+          if (!controller.signal.aborted) {
+            setPinError(error);
+            if (!canRecoverRead(error)) setPinnedPost(null);
+          }
+        })
+        .finally(() => {
+          if (!controller.signal.aborted) setPinLoading(false);
         });
     } else setPinnedPost(null);
     return () => controller.abort();
-  }, [api, site.pinnedPostId]);
+  }, [api, site.pinnedPostId, pinAttempt]);
   useEffect(() => listenForPostChanges(handlePostChange), [handlePostChange]);
   useEffect(() => listenForPublishedPosts(() => store.invalidate()), [store]);
   const activeFeed = feeds[filter];
@@ -276,44 +284,34 @@ export function ProfilePage({
           ?.focus({ preventScroll: true });
       });
   };
-  const resetFromFirstPage = (kind: ProfileFilter) => {
-    if (kind === "all") {
-      const search = withoutLoadedProgress(initialSearch.current);
-      initialSearch.current = search;
-      navigation.navigate(`${navigation.pathname}${search}`);
-    }
-    void store.load(kind, true);
-  };
-
   const renderFeed = (kind: ProfileFilter) => {
     const feed = feeds[kind];
     const pinned =
-      pinnedPost && matchesFilter(pinnedPost, kind) ? pinnedPost : null;
+      pinnedPost?.id === site.pinnedPostId && matchesFilter(pinnedPost, kind)
+        ? pinnedPost
+        : null;
     return (
       <>
-        {feed.loading || (!feed.initialized && !feed.error) ? (
+        {(feed.loading && feed.items.length === 0) ||
+        (!feed.initialized && !feed.error) ? (
           <TimelineLoading />
         ) : null}
-        {feed.error ? (
-          <PublicError
-            kind={errorKind(feed.error)}
-            onRetry={() => void store.load(kind)}
-            onResetProgress={
-              recoverableCursorError(feed.error)
-                ? () => resetFromFirstPage(kind)
-                : undefined
-            }
-          />
+        {feed.error &&
+        (!canRecoverRead(feed.error) || feed.items.length === 0) ? (
+          <PublicError recovering={canRecoverRead(feed.error)} />
         ) : null}
-        {feed.initialized && !feed.error ? (
+        {feed.items.length > 0 &&
+        (feed.loading || canRecoverRead(feed.error)) ? (
+          <ReadRecoveryNotice />
+        ) : null}
+        {feed.initialized &&
+        (!feed.error ||
+          (canRecoverRead(feed.error) && feed.items.length > 0)) ? (
           <>
             {feed.refreshError ? (
-              <div className={styles.moreError} role="alert">
-                <span>新内容没有加载完成，已保留当前 Moment。</span>
-                <button type="button" onClick={() => void store.refresh(kind)}>
-                  重试更新
-                </button>
-              </div>
+              <ReadRecoveryNotice error={feed.refreshError}>
+                正在重新获取更新的内容…
+              </ReadRecoveryNotice>
             ) : null}
             {pinned ? (
               <PostPresentation
@@ -349,31 +347,15 @@ export function ProfilePage({
               <PublicEmpty context="profile" canPublish={canPublish} />
             ) : null}
             {feed.moreError ? (
-              <div className={styles.moreError} role="alert">
-                <span>
-                  {errorKind(feed.moreError) === "malformed"
-                    ? "下一页数据不完整，已保留当前 Moment。"
-                    : "下一页没有加载完成，已保留当前 Moment。"}
-                </span>
-                {recoverableCursorError(feed.moreError) ? (
-                  <button
-                    onClick={() => resetFromFirstPage(kind)}
-                    type="button"
-                  >
-                    从第一页重新加载
-                  </button>
-                ) : (
-                  <button onClick={() => void more(kind)} type="button">
-                    重试加载
-                  </button>
-                )}
-              </div>
+              <ReadRecoveryNotice error={feed.moreError}>
+                正在重新获取后续内容…
+              </ReadRecoveryNotice>
             ) : feed.nextCursor && kind === filter ? (
               <LoadMoreSentinel
                 className={styles.moreRow}
                 cursor={feed.nextCursor}
                 label="加载更早的 Moment"
-                loading={feed.loadingMore}
+                loading={feed.loadingMore || feed.loading}
                 onLoad={(source) => void more(kind, source)}
               />
             ) : null}

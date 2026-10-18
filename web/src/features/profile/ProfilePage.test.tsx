@@ -493,12 +493,12 @@ describe("profile page", () => {
 
     expect(await screen.findByText("已经读到这里")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "加载更早的 Moment" }));
-    expect(await screen.findByRole("alert")).toHaveTextContent(
-      "已保留当前 Moment",
-    );
+    expect(
+      await screen.findByText("正在重新获取后续内容…"),
+    ).toBeInTheDocument();
     expect(screen.getByText("已经读到这里")).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: "重试加载" }));
+    expect(screen.queryByRole("button", { name: "重试加载" })).toBeNull();
     expect(await screen.findByText("重试后接上的内容")).toBeInTheDocument();
     expect(screen.getByText("已经读到这里")).toBeInTheDocument();
     expect(window.location.search).toContain("loaded_through=cursor-one");

@@ -660,7 +660,8 @@ describe("public comment thread", () => {
   // A cursor is spent only when a page comes back for it. Marking it as used
   // before the request would turn an ordinary network failure into a permanent
   // "cycle detected", leaving the retry button unable to retry.
-  it("retries the same cursor after a failed page instead of reporting a cycle", async () => {
+  it("automatically retries a failed page while keeping an unsent reply intact", async () => {
+    preauthenticate();
     const secondRootId = "01K2ABCDEF0123456789ABCDF3";
     let attempts = 0;
     installApi((url, init) => {
@@ -691,14 +692,19 @@ describe("public comment thread", () => {
     renderThread();
 
     await screen.findByText("第一页");
+    const draft = screen.getByLabelText("回复内容");
+    fireEvent.focus(draft);
+    fireEvent.change(draft, { target: { value: "这段还没发出去" } });
     fireEvent.click(screen.getByRole("button", { name: "加载更多回复" }));
 
-    const retry = await screen.findByRole("button", { name: "重试" });
+    await screen.findByText("正在重新获取更多回复…");
     // The already-loaded page is never discarded by a failed continuation.
     expect(screen.getByText("第一页")).toBeInTheDocument();
 
-    fireEvent.click(retry);
     await screen.findByText("终于来了");
+    expect(draft).toBeInTheDocument();
+    expect(draft).toHaveValue("这段还没发出去");
+    expect(screen.queryByText("这段还没发出去")).toBe(draft);
     expect(attempts).toBe(2);
     expect(
       screen.queryByRole("button", { name: "重试" }),
@@ -752,6 +758,85 @@ describe("public comment thread", () => {
     fireEvent.click(branch);
 
     await screen.findByText("第二条回复");
+    expect(
+      fetcher.mock.calls.some(([url]) =>
+        String(url).includes(`/comments/${rootId}/replies?cursor=replies2`),
+      ),
+    ).toBe(true);
+    // Nothing left to offer once the counted replies are all present.
+    await waitFor(() =>
+      expect(
+        screen.queryByRole("button", { name: /展开其余/ }),
+      ).not.toBeInTheDocument(),
+    );
+    // The newly loaded reply lands behind the one already shown, keeping the
+    // root immediately followed by its own replies in creation order.
+    const ordered = Array.from(
+      document.querySelectorAll<HTMLElement>("[data-comment-id]"),
+    ).map((node) => node.dataset.commentId);
+    expect(ordered).toEqual([rootId, replyId, laterReplyId]);
+  });
+
+  it("recovers a nested reply page automatically without reloading its root", async () => {
+    preauthenticate();
+    let replyAttempts = 0;
+    let rootRequests = 0;
+    const laterReplyId = "01K2ABCDEF0123456789ABCDF2";
+    const root = {
+      ...comment(rootId, "有很多回复", { canPublish: true }),
+      reply_count: 2,
+    };
+    const firstReply = comment(replyId, "第一条回复", {
+      parentId: rootId,
+      canPublish: true,
+    });
+    const fetcher = installApi((url, init) => {
+      if (init?.method === "POST") return undefined;
+      if (url.includes("/replies")) {
+        replyAttempts += 1;
+        if (replyAttempts === 1) return json({}, 503);
+        // A reply page is its own shape: items and nothing else. Routing it
+        // through success() would attach the thread-only pinned fields.
+        return json({
+          data: {
+            items: [
+              comment(laterReplyId, "第二条回复", {
+                parentId: rootId,
+                canPublish: true,
+              }),
+            ],
+          },
+          meta: { request_id: "req_test", next_cursor: null },
+        });
+      }
+      if (url.includes("/comments")) {
+        rootRequests += 1;
+        return success({
+          items: [{ ...root, replies_next_cursor: "replies2" }, firstReply],
+          pinned_comment_id: null,
+          pinned: null,
+        });
+      }
+      return undefined;
+    });
+
+    renderThread();
+
+    const branch = await screen.findByRole("button", {
+      name: "展开其余 1 条回复",
+    });
+    fireEvent.click(branch);
+
+    await screen.findByText("正在重新获取回复…");
+    const draft = screen.getByLabelText("回复内容");
+    draft.focus();
+    fireEvent.change(draft, { target: { value: "继续写我的回复" } });
+    expect(screen.getByText("第一条回复")).toBeInTheDocument();
+    await screen.findByText("第二条回复");
+    expect(draft).toHaveFocus();
+    expect(draft).toHaveValue("继续写我的回复");
+    expect(replyAttempts).toBe(2);
+    expect(rootRequests).toBe(1);
     expect(
       fetcher.mock.calls.some(([url]) =>
         String(url).includes(`/comments/${rootId}/replies?cursor=replies2`),

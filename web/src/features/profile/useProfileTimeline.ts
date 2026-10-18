@@ -6,6 +6,9 @@ import {
   useSyncExternalStore,
 } from "react";
 import type { PublicApi } from "../../api/public";
+import { useReadRecovery } from "../../components/useReadRecovery";
+import { useNavigation } from "../../app/navigation";
+import { withoutLoadedProgress } from "../timeline/cursorContinuity";
 import { rowElement, withRowsRendered } from "../timeline/scrollAnchor";
 import { ProfileTimeline, type ProfileFilter } from "./profileTimeline";
 
@@ -13,15 +16,50 @@ export function useProfileTimeline(
   api: PublicApi,
   scope: string,
   filter: ProfileFilter,
+  enabled = true,
 ) {
+  const { replaceWithinPage, replaceTimelineProgress } = useNavigation();
+  const path = useRef(window.location.pathname);
   const initialSearch = useRef(window.location.search);
   const store = useMemo(
     () => new ProfileTimeline(api, initialSearch.current),
     [api, scope],
   );
   const feeds = useSyncExternalStore(store.subscribe, store.snapshot);
+  const feed = feeds[filter];
+  useReadRecovery({
+    error: feed.error,
+    loading: feed.loading,
+    onRetry: () => store.load(filter),
+    enabled,
+    scope: `${scope}:${filter}`,
+  });
+  useReadRecovery({
+    error: feed.moreError,
+    loading: feed.loadingMore || feed.loading,
+    onRetry: async () => {
+      const cursor = await store.recoverOlder(filter);
+      if (cursor) replaceTimelineProgress(cursor);
+    },
+    enabled,
+    scope: `${scope}:${filter}`,
+  });
+  useReadRecovery({
+    error: feed.refreshError,
+    loading: feed.refreshing || feed.loading,
+    onRetry: () => store.recoverNewer(filter),
+    enabled,
+    scope: `${scope}:${filter}`,
+  });
   const compensation = useRef<{ key: string; top: number } | null>(null);
   useEffect(() => {
+    store.onProgressDiscarded = () => {
+      initialSearch.current = withoutLoadedProgress(initialSearch.current);
+      if (window.location.pathname === path.current)
+        replaceWithinPage(
+          `${path.current}${withoutLoadedProgress(window.location.search)}`,
+        );
+    };
     store.beforeMerge = () => {
       const rows = Array.from(
         document.querySelectorAll<HTMLElement>(
@@ -42,15 +80,16 @@ export function useProfileTimeline(
         };
     };
     return () => {
+      store.onProgressDiscarded = undefined;
       queueMicrotask(() => store.disposeIfUnused());
     };
-  }, [store]);
+  }, [store, replaceWithinPage]);
   useEffect(() => {
     void store.activate(filter);
   }, [filter, store]);
   useEffect(() => {
     const refresh = () => {
-      if (document.visibilityState !== "hidden") store.invalidate();
+      if (enabled && document.visibilityState !== "hidden") store.invalidate();
     };
     window.addEventListener("focus", refresh);
     document.addEventListener("visibilitychange", refresh);
@@ -58,7 +97,7 @@ export function useProfileTimeline(
       window.removeEventListener("focus", refresh);
       document.removeEventListener("visibilitychange", refresh);
     };
-  }, [store]);
+  }, [store, enabled]);
   useLayoutEffect(() => {
     const anchor = compensation.current;
     compensation.current = null;
