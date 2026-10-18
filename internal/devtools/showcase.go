@@ -130,6 +130,7 @@ type showcasePost struct {
 	images     []showcaseImage
 	alt        func(index int) *string
 	location   *domain.Location
+	mapCard    *domain.MapCard
 	link       *showcaseLink
 	quotes     string
 	edit       string
@@ -201,7 +202,15 @@ func showcasePosts() []showcasePost {
 	duration := func(seconds int) *int { return &seconds }
 	count := func(value int64) *int64 { return &value }
 
+	ginza := domain.MapPlace{Name: "银座", DisplayName: "日本东京都中央区银座", Point: domain.GeoPoint{LatitudeE7: 356717000, LongitudeE7: 1397650000, System: domain.CoordinateWGS84}}
+	kyoto := domain.MapPlace{Name: "京都", DisplayName: "日本京都府京都市", Point: domain.GeoPoint{LatitudeE7: 350116000, LongitudeE7: 1357681000, System: domain.CoordinateWGS84}}
+	shanghaiPoint := domain.MapPlace{Name: shanghai.Name, DisplayName: shanghai.DisplayName, Point: *shanghai.Point}
 	return []showcasePost{
+		{key: "recent.map-only", when: ago(4 * time.Minute), note: "只有地图的帖子；银座单地点", mapCard: &domain.MapCard{Places: []domain.MapPlace{ginza}}},
+		{key: "recent.map-multiple", when: ago(8 * time.Minute), note: "跨城市地点标记；原始 WGS84 和 GCJ02 坐标并存", content: "把这几座城市放在一张地图上。", mapCard: &domain.MapCard{Places: []domain.MapPlace{ginza, kyoto, shanghaiPoint}}},
+		{key: "recent.map-connected", when: ago(12 * time.Minute), note: "作者开启连接地点；沿列表顺序", content: "这次旅行，走过的几个地方。", mapCard: &domain.MapCard{Places: []domain.MapPlace{ginza, kyoto, shanghaiPoint}, ConnectPoints: true}},
+		{key: "recent.map-private", when: ago(16 * time.Minute), note: "作者私密地图；访客不可见", visibility: domain.VisibilityOnlyMe, mapCard: &domain.MapCard{Places: []domain.MapPlace{ginza}}},
+		{key: "recent.map-date-line", when: ago(20 * time.Minute), note: "日期变更线两侧地点；最短经度范围", content: "太平洋的两边。", mapCard: &domain.MapCard{Places: []domain.MapPlace{{Name: "斐济", DisplayName: "斐济", Point: domain.GeoPoint{LatitudeE7: -177134000, LongitudeE7: 1780650000, System: domain.CoordinateWGS84}}, {Name: "萨摩亚", DisplayName: "萨摩亚", Point: domain.GeoPoint{LatitudeE7: -137592000, LongitudeE7: -1721046000, System: domain.CoordinateWGS84}}}, ConnectPoints: true}},
 		{key: "member.author", author: "aming", when: ago(18 * time.Minute), note: "普通成员发布；作者回复有作者标识，管理员回复没有角色徽标", content: "账号相同，角色不同，也都能记录自己的生活。", comments: []showcaseComment{root("aming", time.Minute, "我是这条帖子的作者。"), root("profile", 2*time.Minute, "来回复一条，管理权限不会改变帖子作者。")}},
 		{key: "recent.text", when: ago(3 * time.Minute), note: "几分钟前的纯文字", content: "刚把发布按钮对齐到 X 的尺寸：36px 高、左右 16px、15/20 加粗，一像素都不差。"},
 		{key: "recent.mention", when: ago(38 * time.Minute), note: "提及一位成员", content: "谢谢 @aming 昨天帮忙看那个焦点问题——Safari 里按钮真的不拿焦点，不是我眼花。"},
@@ -565,7 +574,7 @@ func (builder *fixtureBuilder) buildShowcase(ctx context.Context) (Counts, error
 			return Counts{}, err
 		}
 		input := app.CreatePostInput{
-			ContentMD: post.content, Visibility: post.visibility, Media: usages, Location: post.location,
+			ContentMD: post.content, Visibility: post.visibility, Media: usages, Location: post.location, MapCard: post.mapCard,
 			IdempotencyKey: fmt.Sprintf("dev-%s-%d-%s", builder.recipe.Name, builder.seed, post.key),
 		}
 		if post.link != nil {

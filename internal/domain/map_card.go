@@ -7,7 +7,10 @@ import (
 	"strings"
 )
 
+// MaxMapPlaces bounds the ordered places in one map snapshot.
 const MaxMapPlaces = 20
+
+// MaxMapCardBytes limits a map snapshot's encoded JSON size.
 const MaxMapCardBytes = 64 << 10
 
 // MapPlace is an explicitly published point. Ordinary location labels remain
@@ -27,11 +30,13 @@ type mapPlaceJSON struct {
 	CoordinateSystem CoordinateSystem `json:"coordinate_system"`
 }
 
+// MarshalJSON exposes source coordinates in the portable map format.
 func (place MapPlace) MarshalJSON() ([]byte, error) {
 	lat, lng := place.Point.Latitude(), place.Point.Longitude()
 	return json.Marshal(mapPlaceJSON{place.Name, place.DisplayName, &lat, &lng, place.Point.System})
 }
 
+// UnmarshalJSON validates a portable place and retains its coordinate system.
 func (place *MapPlace) UnmarshalJSON(data []byte) error {
 	var wire mapPlaceJSON
 	if err := decodeMapJSON(data, &wire); err != nil {
@@ -48,6 +53,7 @@ func (place *MapPlace) UnmarshalJSON(data []byte) error {
 	return place.Validate()
 }
 
+// Validate checks the place labels and source coordinates.
 func (place MapPlace) Validate() error {
 	if err := validateLocationText("name", place.Name, MaxLocationNameCodePoints, true); err != nil {
 		return err
@@ -65,6 +71,7 @@ type MapCard struct {
 	ConnectPoints bool       `json:"connect_points"`
 }
 
+// Validate checks the snapshot's place count, order settings and places.
 func (card MapCard) Validate() error {
 	if len(card.Places) < 1 || len(card.Places) > MaxMapPlaces {
 		return mapCardError("a map must contain between 1 and 20 places")
@@ -80,6 +87,7 @@ func (card MapCard) Validate() error {
 	return nil
 }
 
+// UnmarshalJSON decodes a bounded, validated map snapshot.
 func (card *MapCard) UnmarshalJSON(data []byte) error {
 	type value MapCard
 	var decoded value
@@ -90,6 +98,7 @@ func (card *MapCard) UnmarshalJSON(data []byte) error {
 	return card.Validate()
 }
 
+// ParseMapCard reads one complete portable map snapshot.
 func ParseMapCard(data []byte) (*MapCard, error) {
 	var card MapCard
 	if err := json.Unmarshal(data, &card); err != nil {
@@ -98,6 +107,7 @@ func ParseMapCard(data []byte) (*MapCard, error) {
 	return &card, nil
 }
 
+// CloneMapCard copies a snapshot without sharing its places slice.
 func CloneMapCard(card *MapCard) *MapCard {
 	if card == nil {
 		return nil
@@ -105,6 +115,7 @@ func CloneMapCard(card *MapCard) *MapCard {
 	return &MapCard{Places: append([]MapPlace(nil), card.Places...), ConnectPoints: card.ConnectPoints}
 }
 
+// Text projects place labels for summaries and search indexing.
 func (card MapCard) Text() string {
 	var names []string
 	for _, place := range card.Places {

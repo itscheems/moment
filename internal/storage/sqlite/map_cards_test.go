@@ -82,8 +82,8 @@ func TestMapOnlyPostLifecyclePrivacyRetryAndSearch(t *testing.T) {
 	if _, err := service.Get(other, id, app.AccountViewer("fedcba9876543210fedcba9876543210")); !domain.HasCode(err, domain.CodePostNotFound) {
 		t.Fatalf("non-author map read=%v", err)
 	}
-	var clear *domain.MapCard
-	if _, err := service.Update(ctx, app.UpdatePostInput{ID: id, PreserveContent: true, MapCard: &clear}); !domain.HasCode(err, domain.CodeContentEmpty) {
+	var clearedMap *domain.MapCard
+	if _, err := service.Update(ctx, app.UpdatePostInput{ID: id, PreserveContent: true, MapCard: &clearedMap}); !domain.HasCode(err, domain.CodeContentEmpty) {
 		t.Fatalf("empty clear=%v", err)
 	}
 	updated, err := service.Update(ctx, app.UpdatePostInput{ID: id, ContentMD: "words"})
@@ -102,7 +102,7 @@ func TestMapOnlyPostLifecyclePrivacyRetryAndSearch(t *testing.T) {
 	if err != nil || publicQuote.Quoted == nil || !publicQuote.Quoted.Unavailable || publicQuote.Quoted.Entry.MapCard != nil {
 		t.Fatalf("hidden quote=%+v %v", publicQuote, err)
 	}
-	updated, err = service.Update(ctx, app.UpdatePostInput{ID: id, PreserveContent: true, MapCard: &clear})
+	updated, err = service.Update(ctx, app.UpdatePostInput{ID: id, PreserveContent: true, MapCard: &clearedMap})
 	if err != nil || updated.Entry.MapCard != nil {
 		t.Fatalf("clear=%+v %v", updated, err)
 	}

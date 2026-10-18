@@ -94,16 +94,23 @@
   --tracking-body: -0.006em;
   --tracking-utility: 0.006em;
 
-  --canvas: #ffffff;
-  --surface: #ffffff;
+  --site-canvas: #ffffff;
+  --canvas: var(--site-canvas);
+  --site-surface: #ffffff;
+  --surface: var(--site-surface);
   --surface-elevated: #ffffff;
-  --surface-hover: #f7f9f9;
+  --site-surface-hover: #f7f9f9;
+  --surface-hover: var(--site-surface-hover);
   --surface-hover-strong: #e7e7e7;
-  --surface-muted: #eff3f4;
-  --text-primary: #0f1419;
-  --text-secondary: #536471;
+  --site-surface-muted: #eff3f4;
+  --surface-muted: var(--site-surface-muted);
+  --site-text-primary: #0f1419;
+  --text-primary: var(--site-text-primary);
+  --site-text-secondary: #536471;
+  --text-secondary: var(--site-text-secondary);
   --text-tertiary: #536471;
-  --border-subtle: #eff3f4;
+  --site-border-subtle: #eff3f4;
+  --border-subtle: var(--site-border-subtle);
   --border-strong: #cfd9de;
   --accent: #1d9bf0;
   --accent-hover: #1a8cd8;
@@ -197,10 +204,13 @@
 
 :root[data-theme="dim"] {
   color-scheme: dark;
-  --canvas: #15202b;
-  --surface: #15202b;
+  --site-canvas: #15202b;
+  --canvas: var(--site-canvas);
+  --site-surface: #15202b;
+  --surface: var(--site-surface);
   --surface-elevated: #1e2732;
-  --surface-hover: #1c2732;
+  --site-surface-hover: #1c2732;
+  --surface-hover: var(--site-surface-hover);
   --compose-scrim: rgb(91 112 131 / 40%);
   --ink-button: var(--text-primary);
   --ink-button-hover: color-mix(
@@ -250,11 +260,15 @@
     var(--surface)
   );
   --surface-hover-strong: #26313d;
-  --surface-muted: #273340;
-  --text-primary: #f7f9f9;
-  --text-secondary: #8b98a5;
+  --site-surface-muted: #273340;
+  --surface-muted: var(--site-surface-muted);
+  --site-text-primary: #f7f9f9;
+  --text-primary: var(--site-text-primary);
+  --site-text-secondary: #8b98a5;
+  --text-secondary: var(--site-text-secondary);
   --text-tertiary: #8b98a5;
-  --border-subtle: #38444d;
+  --site-border-subtle: #38444d;
+  --border-subtle: var(--site-border-subtle);
   --border-strong: #536471;
   --accent-soft: color-mix(in srgb, var(--accent) 14%, transparent);
   --button-primary: var(--accent);
@@ -265,10 +279,13 @@
 
 :root[data-theme="lights-out"] {
   color-scheme: dark;
-  --canvas: #000000;
-  --surface: #000000;
+  --site-canvas: #000000;
+  --canvas: var(--site-canvas);
+  --site-surface: #000000;
+  --surface: var(--site-surface);
   --surface-elevated: #16181c;
-  --surface-hover: #181818;
+  --site-surface-hover: #181818;
+  --surface-hover: var(--site-surface-hover);
   --compose-scrim: rgb(91 112 131 / 40%);
   --ink-button: var(--text-primary);
   --ink-button-hover: color-mix(
@@ -318,11 +335,15 @@
     var(--surface)
   );
   --surface-hover-strong: #272727;
-  --surface-muted: #202327;
-  --text-primary: #e7e9ea;
-  --text-secondary: #8b98a5;
+  --site-surface-muted: #202327;
+  --surface-muted: var(--site-surface-muted);
+  --site-text-primary: #e7e9ea;
+  --text-primary: var(--site-text-primary);
+  --site-text-secondary: #8b98a5;
+  --text-secondary: var(--site-text-secondary);
   --text-tertiary: #71767b;
-  --border-subtle: #2f3336;
+  --site-border-subtle: #2f3336;
+  --border-subtle: var(--site-border-subtle);
   --border-strong: #536471;
   --accent: #1d9bf0;
   --accent-hover: #1a8cd8;
@@ -469,10 +490,13 @@ a {
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
     color-scheme: dark;
-    --canvas: #000000;
-    --surface: #000000;
+    --site-canvas: #000000;
+    --canvas: var(--site-canvas);
+    --site-surface: #000000;
+    --surface: var(--site-surface);
     --surface-elevated: #16181c;
-    --surface-hover: #181818;
+    --site-surface-hover: #181818;
+    --surface-hover: var(--site-surface-hover);
     --compose-scrim: rgb(91 112 131 / 40%);
     --ink-button: var(--text-primary);
     --ink-button-hover: color-mix(
@@ -526,11 +550,15 @@ a {
       var(--surface)
     );
     --surface-hover-strong: #272727;
-    --surface-muted: #202327;
-    --text-primary: #e7e9ea;
-    --text-secondary: #8b98a5;
+    --site-surface-muted: #202327;
+    --surface-muted: var(--site-surface-muted);
+    --site-text-primary: #e7e9ea;
+    --text-primary: var(--site-text-primary);
+    --site-text-secondary: #8b98a5;
+    --text-secondary: var(--site-text-secondary);
     --text-tertiary: #71767b;
-    --border-subtle: #2f3336;
+    --site-border-subtle: #2f3336;
+    --border-subtle: var(--site-border-subtle);
     --border-strong: #536471;
     --accent-soft: color-mix(in srgb, var(--accent) 14%, transparent);
     --button-primary: var(--accent);

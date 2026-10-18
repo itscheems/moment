@@ -1798,17 +1798,17 @@ func postMapInputFromFlags(ctx context.Context, input CommandInput, allowClear b
 	if err != nil {
 		return postMapInput{}, err
 	}
-	clear := false
+	clearMap := false
 	if allowClear {
-		clear, err = input.Bool("clear-map")
+		clearMap, err = input.Bool("clear-map")
 		if err != nil {
 			return postMapInput{}, err
 		}
 	}
-	if clear && input.Changed("map-json") {
+	if clearMap && input.Changed("map-json") {
 		return postMapInput{}, invalidArgument("map flags are mutually exclusive", "choose --map-json or --clear-map")
 	}
-	if clear {
+	if clearMap {
 		return postMapInput{Present: true}, nil
 	}
 	if !input.Changed("map-json") {

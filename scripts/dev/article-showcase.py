@@ -64,7 +64,7 @@ def main():
                 retained.append(case)
             cached["cases"] = retained
             manifest = cached
-            if {"article.cover", "article.no-cover", "article.private", "article.draft", "article.empty-draft", "article.withdrawn"} <= {case["key"] for case in cached["cases"]}:
+            if {"article.cover", "article.no-cover", "article.private", "article.draft", "article.empty-draft", "article.withdrawn", "article.map"} <= {case["key"] for case in cached["cases"]}:
                 print(json.dumps(cached, ensure_ascii=False, indent=2))
                 return
 
@@ -100,15 +100,25 @@ def main():
         ("article.no-cover", "没有封面，也值得记下来", False, "everyone"),
         ("article.private", "只留给自己的河边笔记", False, "only_me"),
         ("article.draft", "写到一半的文章：很长的中文标题在手机上也应该完整显示，继续写下去", False, None),
+        ("article.map", "旅行的地图，也是一段生活", False, "everyone"),
     ]:
         if any(c["key"] == key for c in manifest["cases"]):
             continue
+        document = body
+        if key == "article.map":
+            document = {"schema_version": 3, "type": "doc", "content": [
+                paragraph("在银座走到天黑，第二天再去京都。"),
+                {"type": "image", "attrs": {"media_id": media_id, "alt": "旅行里的一张照片"}},
+                {"type": "mapCard", "attrs": {"id": "showcase-map", "map_card": {"places": [
+                    {"name": "银座", "display_name": "日本东京都中央区银座", "latitude": 35.6717, "longitude": 139.765, "coordinate_system": "wgs84"},
+                    {"name": "京都", "display_name": "日本京都府京都市", "latitude": 35.0116, "longitude": 135.7681, "coordinate_system": "wgs84"}], "connect_points": False}}},
+                paragraph("地图下面，继续写这一天的故事。") ]}
         args = ["article", "new", "--title", title, "--body", "-"]
         if cover:
             args += ["--cover", media_id]
-        draft = next((d for d in existing_drafts if d["title"] == title and cli("article", "draft", d["id"])["body"] == body), None)
+        draft = next((d for d in existing_drafts if d["title"] == title and cli("article", "draft", d["id"])["body"] == document), None)
         if draft is None:
-            draft = cli(*args, body=body)
+            draft = cli(*args, body=document)
         item = draft if visibility is None else cli("article", "publish", draft["id"], "--visibility", visibility, "--idempotency-key", key)
         kind = "draft" if visibility is None else "article"
         path = ("/compose/articles/drafts/" if kind == "draft" else "/m/") + item["id"]

@@ -198,7 +198,7 @@ export function MapCardEditor({
         </ActionTooltip>
       ) : (
         value && (
-          <div data-map-editor="">
+          <div data-map-editor="" className={styles.editor}>
             <MapCard card={value} />
             <div className={styles.editActions}>
               <ol>

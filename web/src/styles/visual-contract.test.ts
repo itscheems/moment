@@ -280,8 +280,8 @@ describe("visual foundation contract", () => {
 
   it("keeps lights-out elevated surfaces and secondary actions visible", () => {
     expect(globalCss).toContain("--surface-elevated: #16181c");
-    expect(globalCss).toContain("--surface-hover: #181818");
-    expect(globalCss).toContain("--text-secondary: #8b98a5");
+    expect(globalCss).toContain("--site-surface-hover: #181818");
+    expect(globalCss).toContain("--site-text-secondary: #8b98a5");
     expect(contrast("#8b98a5", "#000000")).toBeGreaterThanOrEqual(4.5);
   });
 

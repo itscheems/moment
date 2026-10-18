@@ -107,28 +107,19 @@ export default function MapCanvas({
       cooperativeGestures={!globe}
       reuseMaps={false}
       attributionControl={{ compact: true }}
-      maxPitch={0}
-      onLoad={(event) => {
-        setLoaded(true);
-        const map = event.target;
-        // Existing vector labels carry localized names. Keep the native name
-        // when a Chinese label is absent, and leave non-name symbol layers alone.
-        for (const layer of map.getStyle().layers) {
-          if (layer.type === "symbol" && layer.layout?.["text-field"]) {
-            const field = layer.layout["text-field"];
-            if (
-              (typeof field === "string" || Array.isArray(field)) &&
-              JSON.stringify(field).includes("name")
-            ) {
-              map.setLayoutProperty(layer.id, "text-field", [
-                "coalesce",
-                ["get", "name:zh"],
-                typeof field === "string" ? ["get", "name"] : field,
-              ]);
-            }
-          }
-        }
+      locale={{
+        "Map.Title": "地图",
+        "NavigationControl.ZoomIn": "放大地图",
+        "NavigationControl.ZoomOut": "缩小地图",
+        "AttributionControl.ToggleAttribution": "地图来源",
+        "Popup.Close": "关闭地点信息",
+        "CooperativeGesturesHandler.WindowsHelpText":
+          "按住 Ctrl 并滚动以缩放地图",
+        "CooperativeGesturesHandler.MacHelpText": "按住 ⌘ 并滚动以缩放地图",
+        "CooperativeGesturesHandler.MobileHelpText": "使用双指移动地图",
       }}
+      maxPitch={0}
+      onLoad={() => setLoaded(true)}
       onError={onFailure}
       onMoveEnd={(event) => onCamera?.(event.viewState)}
       onClick={
