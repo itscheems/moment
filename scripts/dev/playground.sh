@@ -2,6 +2,7 @@
 # The playground: a second, disposable Moment instance beside the real one.
 #
 #   task playground                # build, seed once, serve on 127.0.0.1:18080
+#   task playground -- serve       # same instance and settings, foreground
 #   task playground -- reset       # throw the data away and seed again
 #   task playground -- status      # running? which anchor? how many cases?
 #   task playground -- case post.hidden   # the page for one showcase case
@@ -43,6 +44,7 @@ usage() {
     '' \
     'Commands:' \
     '  up        Build, seed the site-showcase scenario if needed, and (re)serve (default)' \
+    '  serve     Build, seed if needed, and serve in the foreground (Ctrl+C to stop)' \
     '  reset     Stop, discard the playground data, seed again, and serve' \
     '  stop      Stop the playground server' \
     '  status    Report whether it runs, what it was seeded with, and where things are' \
@@ -55,9 +57,12 @@ usage() {
     '' \
     'Environment:' \
     '  PLAYGROUND_PORT  Listen port (default 18080)' \
-    '  PLAYGROUND_DIR   Playground playground_home (default ./.moment-local/playground)' \
+    '  PLAYGROUND_DIR   Playground directory (default ./.moment-local/playground)' \
     '  PLAYGROUND_SEED  Scenario seed (default 1)' \
-    '  SKIP_BUILD=1     Serve the binary already in the playground without rebuilding'
+    '  SKIP_BUILD=1     Serve the binary already in the playground without rebuilding' \
+    '' \
+    'Both up and serve load provider keys from .env.local, then .env.' \
+    'Existing process environment values take precedence.'
 }
 
 read_local_setting() {
@@ -153,8 +158,7 @@ start_server() {
   load_provider_keys
   say "启动 → ${base_url}（数据 ${data_dir}，日志 ${serve_log}）"
   nohup "$binary" serve --data-dir "$data_dir" --listen "127.0.0.1:${port}" >"$serve_log" 2>&1 &
-  local attempt
-  for attempt in $(seq 1 60); do
+  for _ in $(seq 1 60); do
     curl -sf -m 1 "${base_url}/api/v1/site" >/dev/null 2>&1 && break
     sleep 0.25
   done
@@ -175,8 +179,7 @@ stop_server() {
     die "端口 ${port} 上的进程 ${pid} 不是这个 playground 的（${command}），不动它"
   fi
   kill "$pid"
-  local attempt
-  for attempt in $(seq 1 40); do
+  for _ in $(seq 1 40); do
     running || break
     sleep 0.25
   done
@@ -199,6 +202,16 @@ cmd_up() {
   seeded || seed_playground
   start_server
   print_summary
+}
+
+cmd_serve() {
+  mkdir -p -- "$playground_home"
+  build
+  stop_server
+  seeded || seed_playground
+  load_provider_keys
+  say "前台启动 → ${base_url}（Ctrl+C 停止）"
+  exec "$binary" serve --data-dir "$data_dir" --listen "127.0.0.1:${port}"
 }
 
 cmd_reset() {
@@ -246,6 +259,7 @@ cmd_cookie() {
 
 cmd_cases() {
   seeded || die "还没灌种子：task playground"
+  # shellcheck disable=SC2016 # Template literals belong to the Node program.
   mise exec -- node -e '
     const fs = require("node:fs");
     const document = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
@@ -261,6 +275,7 @@ cmd_case() {
   local key="${1:-}"
   [[ -n "$key" ]] || die "用法：task playground -- case <key>"
   seeded || die "还没灌种子：task playground"
+  # shellcheck disable=SC2016 # Template literals belong to the Node program.
   mise exec -- node -e '
     const fs = require("node:fs");
     const document = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
@@ -276,6 +291,7 @@ cmd_case() {
 case "${1:-up}" in
   -h | --help | help) usage ;;
   up) cmd_up ;;
+  serve) cmd_serve ;;
   reset) cmd_reset ;;
   stop) stop_server ;;
   status) cmd_status ;;
