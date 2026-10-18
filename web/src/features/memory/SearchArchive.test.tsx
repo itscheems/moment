@@ -596,10 +596,6 @@ describe("search and archive memory layer", () => {
     });
     render(<App />);
 
-    expect(
-      await screen.findByRole("heading", { name: "搜索失败" }),
-    ).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "从第一页重新加载" }));
     await waitFor(() =>
       expect(
         screen.getByText(paragraphText("旧城雨落在街口")),
@@ -608,6 +604,34 @@ describe("search and archive memory layer", () => {
     expect(window.location.search).not.toContain("loaded_through");
     expect(window.location.search).toContain("from=2026-01-01");
     expect(window.location.search).toContain("to=2027-01-01");
+  });
+
+  it("accepts changing search totals while merging valid cursor pages", async () => {
+    window.history.replaceState({}, "", "/search?q=%E9%9B%A8");
+    install((url) => {
+      if (!url.startsWith("/api/v1/search?")) return json({}, 404);
+      const continued = url.includes("cursor=next");
+      return json({
+        data: {
+          items: [{ ...(continued ? second : first), snippet: "雨" }],
+          year_counts: [{ year: 2026, count: continued ? 3 : 2 }],
+        },
+        meta: {
+          next_cursor: continued ? null : "next",
+          request_id: "changed-total",
+        },
+      });
+    });
+    render(<App />);
+    await screen.findByText(paragraphText("旧城雨落在街口"));
+    fireEvent.click(screen.getByRole("button", { name: "加载更早的结果" }));
+    expect(
+      await screen.findByText(paragraphText("旧城雨后的第二页")),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("region", { name: "搜索概览" })).toHaveTextContent(
+      /找到\s*3\s*条/,
+    );
+    expect(screen.queryByText("搜索失败")).toBeNull();
   });
 
   it.each([

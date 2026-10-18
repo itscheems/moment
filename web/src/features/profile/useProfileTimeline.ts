@@ -6,6 +6,8 @@ import {
   useSyncExternalStore,
 } from "react";
 import type { PublicApi } from "../../api/public";
+import { useNavigation } from "../../app/navigation";
+import { withoutLoadedProgress } from "../timeline/cursorContinuity";
 import { rowElement, withRowsRendered } from "../timeline/scrollAnchor";
 import { ProfileTimeline, type ProfileFilter } from "./profileTimeline";
 
@@ -14,6 +16,8 @@ export function useProfileTimeline(
   scope: string,
   filter: ProfileFilter,
 ) {
+  const { replaceWithinPage } = useNavigation();
+  const path = useRef(window.location.pathname);
   const initialSearch = useRef(window.location.search);
   const store = useMemo(
     () => new ProfileTimeline(api, initialSearch.current),
@@ -22,6 +26,13 @@ export function useProfileTimeline(
   const feeds = useSyncExternalStore(store.subscribe, store.snapshot);
   const compensation = useRef<{ key: string; top: number } | null>(null);
   useEffect(() => {
+    store.onProgressDiscarded = () => {
+      initialSearch.current = withoutLoadedProgress(initialSearch.current);
+      if (window.location.pathname === path.current)
+        replaceWithinPage(
+          `${path.current}${withoutLoadedProgress(window.location.search)}`,
+        );
+    };
     store.beforeMerge = () => {
       const rows = Array.from(
         document.querySelectorAll<HTMLElement>(
@@ -42,9 +53,10 @@ export function useProfileTimeline(
         };
     };
     return () => {
+      store.onProgressDiscarded = undefined;
       queueMicrotask(() => store.disposeIfUnused());
     };
-  }, [store]);
+  }, [store, replaceWithinPage]);
   useEffect(() => {
     void store.activate(filter);
   }, [filter, store]);

@@ -512,17 +512,45 @@ describe("public timeline", () => {
     );
   });
 
-  it("rejects an unreachable, duplicate, or cyclic restoration cursor", async () => {
+  it("shows valid content and clears a saved position that no longer matches page boundaries", async () => {
+    window.history.replaceState({}, "", "/?loaded_through=old-boundary");
+    const item = post("01K2ABCDEF0123456789ABCDE0", "内容仍然有效");
+    const fetcher = vi.fn(async () => page([item], null));
+    renderTimeline(
+      new PublicApi(fetcher as typeof fetch),
+      window.location.search,
+    );
+    expect(await screen.findByText("内容仍然有效")).toBeInTheDocument();
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(window.location.search).not.toContain("loaded_through");
+    expect(fetcher).toHaveBeenCalledTimes(1);
+  });
+
+  it("merges an overlapping continued page without hiding the existing timeline", async () => {
+    const first = post("01K2ABCDEF0123456789ABCDE0", "重叠的记录");
+    const second = post("01K2ABCDEF0123456789ABCDE1", "更早的记录");
+    const fetcher = vi.fn(async (input: RequestInfo | URL) =>
+      String(input).includes("cursor=")
+        ? page([first, second], null)
+        : page([first], "next"),
+    );
+    renderTimeline(new PublicApi(fetcher as typeof fetch));
+    await screen.findByText("重叠的记录");
+    fireEvent.click(screen.getByRole("button", { name: "加载更早的 Moment" }));
+    expect(await screen.findByText("更早的记录")).toBeInTheDocument();
+    expect(screen.getAllByText("重叠的记录")).toHaveLength(1);
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
+  it("drops unusable saved progress and restarts a cyclic restoration without looping", async () => {
     const item = post("01K2ABCDEF0123456789ABCDE0", "不会部分显示");
     const unreachable = vi.fn(async () => page([item], null));
     const { unmount } = renderTimeline(
       new PublicApi(unreachable as typeof fetch),
       "?loaded_through=missing",
     );
-    expect(await screen.findByRole("alert")).toHaveTextContent(
-      "这次收到的内容无法显示",
-    );
-    expect(screen.queryByText("不会部分显示")).not.toBeInTheDocument();
+    expect(await screen.findByText("不会部分显示")).toBeInTheDocument();
+    expect(screen.queryByRole("alert")).toBeNull();
 
     unmount();
     const duplicateParameter = vi.fn(async () => page([item], null));
@@ -530,18 +558,14 @@ describe("public timeline", () => {
       new PublicApi(duplicateParameter as typeof fetch),
       "?loaded_through=one&loaded_through=two",
     );
-    expect(await screen.findByRole("alert")).toHaveTextContent(
-      "这次收到的内容无法显示",
-    );
-    expect(duplicateParameter).not.toHaveBeenCalled();
+    expect(await screen.findByText("不会部分显示")).toBeInTheDocument();
+    expect(duplicateParameter).toHaveBeenCalledTimes(1);
 
     duplicateView.unmount();
-    let cyclicRequest = 0;
-    const cyclic = vi.fn(async () => {
-      cyclicRequest += 1;
+    const cyclic = vi.fn(async (input: RequestInfo | URL) => {
       return page(
         [
-          cyclicRequest === 1
+          !String(input).includes("cursor=loop")
             ? item
             : post("01K2ABCDEF0123456789ABCDE1", "循环中的下一条"),
         ],
@@ -552,10 +576,9 @@ describe("public timeline", () => {
       new PublicApi(cyclic as typeof fetch),
       "?loaded_through=missing",
     );
-    expect(await screen.findByRole("alert")).toHaveTextContent(
-      "这次收到的内容无法显示",
-    );
-    expect(cyclic).toHaveBeenCalledTimes(2);
+    expect(await screen.findByText("不会部分显示")).toBeInTheDocument();
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(cyclic).toHaveBeenCalledTimes(3);
   });
 
   it("retries an initial failure without losing the deliberate error state", async () => {
@@ -574,7 +597,7 @@ describe("public timeline", () => {
     expect(await screen.findByText("重新取回")).toBeInTheDocument();
   });
 
-  it("does not append a duplicate returned by a continued page", async () => {
+  it("deduplicates a row that overlaps with a continued page", async () => {
     const original = post("01K2ABCDEF0123456789ABCDE0", "只出现一次");
     let attempt = 0;
     const fetcher = vi.fn(async () => {
@@ -584,9 +607,8 @@ describe("public timeline", () => {
     renderTimeline(new PublicApi(fetcher as typeof fetch));
     await screen.findByText("只出现一次");
     fireEvent.click(screen.getByRole("button", { name: "加载更早的 Moment" }));
-    expect(await screen.findByRole("alert")).toHaveTextContent(
-      "下一页数据不完整",
-    );
+    await waitFor(() => expect(fetcher).toHaveBeenCalledTimes(2));
+    expect(screen.queryByRole("alert")).toBeNull();
     expect(screen.getAllByText("只出现一次")).toHaveLength(1);
   });
 
@@ -608,10 +630,6 @@ describe("public timeline", () => {
       window.location.search,
     );
 
-    const reset = await screen.findByRole("button", {
-      name: "从第一页重新加载",
-    });
-    fireEvent.click(reset);
     expect(await screen.findByText("当天第一条")).toBeInTheDocument();
     expect(firstPageRequests).toBe(2);
     expect(window.location.pathname).toBe("/archive");

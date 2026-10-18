@@ -22,7 +22,11 @@ import {
 } from "../../components/LoadMoreSentinel";
 import { usePostReplyDialog } from "../comments/usePostReplyDialog";
 import { PostPresentation } from "../posts/PostPresentation";
-import { appendUnique, validateCursorPage } from "../timeline/cursorContinuity";
+import {
+  appendUnique,
+  isCursorProgressError,
+  validateCursorPage,
+} from "../timeline/cursorContinuity";
 import { DatePicker } from "./DatePicker";
 import {
   activeSearchYear,
@@ -40,19 +44,6 @@ function malformed(message: string): PublicApiError {
     code: "API_RESPONSE_INVALID",
     status: 0,
   });
-}
-
-function sameYearCounts(
-  left: Array<{ year: number; count: number }>,
-  right: Array<{ year: number; count: number }>,
-): boolean {
-  return (
-    left.length === right.length &&
-    left.every(
-      (item, index) =>
-        item.year === right[index]?.year && item.count === right[index]?.count,
-    )
-  );
 }
 
 function naturalDate(value: string | null, fallback: string): string {
@@ -97,6 +88,8 @@ export function SearchPage({
   const location = useNavigation();
   const stateRef = useRef(parseSearchLocation(search));
   const state = stateRef.current;
+  const savedProgress = useRef(state.loadedThrough);
+  const { replaceWithinPage } = location;
   const [queryInput, setQueryInput] = useState(state.query ?? "");
   const [fromInput, setFromInput] = useState(state.from ?? "");
   const [toInput, setToInput] = useState(
@@ -141,7 +134,19 @@ export function SearchPage({
     site,
   });
 
-  const load = useCallback(async () => {
+  const forgetProgress = useCallback(() => {
+    savedProgress.current = null;
+    if (window.location.pathname === "/search")
+      replaceWithinPage(
+        searchHref({
+          query: state.query ?? "",
+          from: state.from,
+          to: state.to,
+        }),
+      );
+  }, [replaceWithinPage, state]);
+
+  const load: () => Promise<void> = useCallback(async () => {
     if (!state.query || state.error) return;
     activeRequest.current?.abort();
     activeMore.current?.abort();
@@ -159,21 +164,26 @@ export function SearchPage({
       });
       if (controller.signal.aborted) return;
       let combined = page.items;
-      const aggregate = page.yearCounts;
       let requestedCursor: string | null = null;
       const visited = new Set<string>();
       validateCursorPage(page, requestedCursor, visited, "search");
       for (
         let replayed = 0;
-        state.loadedThrough !== null && requestedCursor !== state.loadedThrough;
+        savedProgress.current !== null &&
+        requestedCursor !== savedProgress.current;
         replayed += 1
       ) {
         if (replayed >= MAX_REPLAY_PAGES) {
-          throw malformed("saved search position is too deep");
+          forgetProgress();
+          break;
         }
         const continuation = page.nextCursor;
-        if (!continuation || visited.has(continuation)) {
-          throw malformed("saved search position is unreachable");
+        if (!continuation) {
+          forgetProgress();
+          break;
+        }
+        if (visited.has(continuation)) {
+          throw malformed("search cursor cycle detected");
         }
         visited.add(continuation);
         requestedCursor = continuation;
@@ -185,27 +195,26 @@ export function SearchPage({
           signal: controller.signal,
         });
         if (controller.signal.aborted) return;
-        if (!sameYearCounts(aggregate, page.yearCounts)) {
-          throw malformed("search aggregate changed between cursor pages");
-        }
         validateCursorPage(page, requestedCursor, visited, "search");
-        combined = appendUnique(
-          combined,
-          page.items,
-          (item) => item.post.id,
-          "search",
-        );
+        combined = appendUnique(combined, page.items, (item) => item.post.id);
       }
       visitedCursors.current = visited;
       setHits(combined);
-      setYearCounts(aggregate);
+      setYearCounts(page.yearCounts);
       setNextCursor(page.nextCursor);
     } catch (requestError) {
-      if (!controller.signal.aborted) setError(requestError);
+      if (controller.signal.aborted) return;
+      if (
+        savedProgress.current !== null &&
+        isCursorProgressError(requestError)
+      ) {
+        forgetProgress();
+        await load();
+      } else setError(requestError);
     } finally {
       if (!controller.signal.aborted) setLoading(false);
     }
-  }, [api, state]);
+  }, [api, state, forgetProgress]);
 
   useEffect(() => {
     void load();
@@ -268,21 +277,14 @@ export function SearchPage({
         signal: controller.signal,
       });
       if (controller.signal.aborted) return;
-      if (!sameYearCounts(yearCounts, page.yearCounts)) {
-        throw malformed("search aggregate changed between cursor pages");
-      }
       const visited = new Set(visitedCursors.current);
       visited.add(requestedCursor);
       validateCursorPage(page, requestedCursor, visited, "search");
       const firstNew = page.items[0]?.post.id;
-      const combined = appendUnique(
-        hits,
-        page.items,
-        (item) => item.post.id,
-        "search",
-      );
+      const combined = appendUnique(hits, page.items, (item) => item.post.id);
       visitedCursors.current = visited;
       setHits(combined);
+      setYearCounts(page.yearCounts);
       setNextCursor(page.nextCursor);
       location.replaceTimelineProgress(requestedCursor);
       if (source === "manual" && firstNew) {
@@ -306,6 +308,7 @@ export function SearchPage({
     ? searchHref({ query: state.query, from: state.from, to: state.to })
     : "/search";
   const resetFromFirstPage = () => {
+    savedProgress.current = null;
     stateRef.current = { ...state, loadedThrough: null, error: null };
     visitedCursors.current = new Set();
     location.navigate(clearProgressHref);

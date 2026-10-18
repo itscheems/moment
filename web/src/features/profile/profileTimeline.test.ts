@@ -36,10 +36,13 @@ function page(
 ): TimelinePage {
   return { items, refreshCursor, prevCursor, nextCursor };
 }
-function setup(handler: (request: TimelineRequest) => Promise<TimelinePage>) {
+function setup(
+  handler: (request: TimelineRequest) => Promise<TimelinePage>,
+  initialSearch = "",
+) {
   const timeline = vi.fn(handler);
   const api = { timeline } as unknown as PublicApi;
-  return { timeline, store: new ProfileTimeline(api, "") };
+  return { timeline, store: new ProfileTimeline(api, initialSearch) };
 }
 function deferred<T>() {
   let resolve!: (value: T) => void;
@@ -51,6 +54,23 @@ function deferred<T>() {
 afterEach(() => vi.restoreAllMocks());
 
 describe("profile incremental feeds", () => {
+  it("keeps valid profile rows when saved pagination is no longer reachable", async () => {
+    const { store, timeline } = setup(
+      async () => page([post("retained")]),
+      "?loaded_through=old-boundary",
+    );
+    const discarded = vi.fn();
+    store.onProgressDiscarded = discarded;
+    await store.activate("all");
+    expect(store.snapshot().all.items.map((item) => item.id)).toEqual([
+      "retained",
+    ]);
+    expect(store.snapshot().all.error).toBeNull();
+    expect(store.snapshot().all.initialized).toBe(true);
+    expect(discarded).toHaveBeenCalledTimes(1);
+    expect(timeline).toHaveBeenCalledTimes(1);
+  });
+
   it("checks an empty filter with its durable cursor, preserving older pagination", async () => {
     const { store, timeline } = setup(async (request) =>
       request.cursor

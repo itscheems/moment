@@ -3,6 +3,8 @@ import {
   appendUnique,
   invalidCursorProgress,
   loadedThroughFromSearch,
+  withoutLoadedProgress,
+  isCursorProgressError,
   validateCursorPage,
   validateNewerPage,
 } from "../timeline/cursorContinuity";
@@ -83,6 +85,7 @@ export class ProfileTimeline {
   private disposed = false;
   active: ProfileFilter = "all";
   beforeMerge?: () => void;
+  onProgressDiscarded?: () => void;
   constructor(
     private api: PublicApi,
     private initialSearch: string,
@@ -165,6 +168,15 @@ export class ProfileTimeline {
         filter === "all" && !reset
           ? loadedThroughFromSearch(this.initialSearch)
           : null;
+      if (
+        !reset &&
+        filter === "all" &&
+        loadedThrough === null &&
+        new URLSearchParams(this.initialSearch).has("loaded_through")
+      ) {
+        this.initialSearch = withoutLoadedProgress(this.initialSearch);
+        this.onProgressDiscarded?.();
+      }
       let cursor: string | null = null;
       const visited = new Set<string>();
       validateCursorPage(page, cursor, visited, "profile");
@@ -173,13 +185,18 @@ export class ProfileTimeline {
         loadedThrough !== null && cursor !== loadedThrough;
         count++
       ) {
-        if (count >= 1000 || !page.nextCursor || visited.has(page.nextCursor))
-          throw invalidCursorProgress("saved profile position is unreachable");
+        if (count >= 1000 || !page.nextCursor) {
+          this.initialSearch = withoutLoadedProgress(this.initialSearch);
+          this.onProgressDiscarded?.();
+          break;
+        }
+        if (visited.has(page.nextCursor))
+          throw invalidCursorProgress("profile cursor cycle detected");
         cursor = page.nextCursor;
         visited.add(cursor);
         page = await this.api.timeline({ cursor, signal: controller.signal });
         validateCursorPage(page, cursor, visited, "profile");
-        items = appendUnique(items, page.items, timelineItemKey, "profile");
+        items = appendUnique(items, page.items, timelineItemKey);
       }
       if (controller.signal.aborted) return;
       this.visited[filter] = visited;
@@ -192,17 +209,30 @@ export class ProfileTimeline {
         refreshError: null,
       });
     } catch (error) {
-      if (!controller.signal.aborted) this.set(filter, { error });
-    } finally {
-      this.requests.delete(key);
       if (!controller.signal.aborted) {
-        this.set(filter, { loading: false });
         if (
-          generation !== this.generations[filter] &&
-          this.feeds[filter].initialized &&
-          pageVisible()
-        )
-          void this.refresh(filter);
+          !reset &&
+          new URLSearchParams(this.initialSearch).has("loaded_through") &&
+          isCursorProgressError(error)
+        ) {
+          this.initialSearch = withoutLoadedProgress(this.initialSearch);
+          this.onProgressDiscarded?.();
+          this.requests.delete(key);
+          await this.load(filter, true);
+        } else this.set(filter, { error });
+      }
+    } finally {
+      if (this.requests.get(key) === controller) {
+        this.requests.delete(key);
+        if (!controller.signal.aborted) {
+          this.set(filter, { loading: false });
+          if (
+            generation !== this.generations[filter] &&
+            this.feeds[filter].initialized &&
+            pageVisible()
+          )
+            void this.refresh(filter);
+        }
       }
     }
   }

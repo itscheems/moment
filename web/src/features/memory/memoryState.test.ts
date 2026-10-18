@@ -28,13 +28,12 @@ describe("memory-layer URL state", () => {
     });
   });
 
-  it("rejects duplicate, blank, impossible, reversed, and orphan cursor state", () => {
+  it("rejects duplicate, blank, impossible, and reversed search conditions", () => {
     for (const search of [
       "?q=a&q=b",
       "?q=%20%20",
       "?q=a&from=2026-02-30",
       "?q=a&from=2026-02-02&to=2026-02-01",
-      "?loaded_through=cursor",
       "?q=a&unknown=1",
     ]) {
       expect(parseSearchLocation(search).error, search).not.toBeNull();
@@ -126,11 +125,34 @@ describe("memory-layer URL state", () => {
       "?year=2026&month=2026-02&from=2026-02-28&to=2026-03-02",
       "?from=2026-01-01",
       "?day=2026-01-02&from=2026-01-01&to=2026-01-02",
-      "?loaded_through=",
       "?year=2026&year=2025",
       "?state=error",
     ]) {
       expect(parseArchiveLocation(search).error, search).not.toBeNull();
     }
+  });
+
+  it("ignores damaged saved pagination without discarding search or archive filters", () => {
+    for (const progress of ["", "one&loaded_through=two", "x".repeat(4097)]) {
+      expect(
+        parseSearchLocation(
+          `?q=雨&from=2026-01-01&to=2027-01-01&loaded_through=${progress}`,
+        ),
+      ).toEqual({
+        query: "雨",
+        from: "2026-01-01",
+        to: "2027-01-01",
+        loadedThrough: null,
+        error: null,
+      });
+      expect(
+        parseArchiveLocation(`?day=2026-01-01&loaded_through=${progress}`),
+      ).toMatchObject({ day: "2026-01-01", loadedThrough: null, error: null });
+    }
+    expect(parseSearchLocation("?loaded_through=orphan")).toMatchObject({
+      query: null,
+      loadedThrough: null,
+      error: null,
+    });
   });
 });

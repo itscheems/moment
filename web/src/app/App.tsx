@@ -106,7 +106,9 @@ function routeSearchKey(search: string): string {
   if (!hasValidRawQueryEncoding(search)) return search;
   const params = new URLSearchParams(search);
   return JSON.stringify(
-    Array.from(params.entries()).filter(([name]) => name !== "loaded_through"),
+    Array.from(params.entries()).filter(
+      ([name]) => name !== "loaded_through" && name !== "loaded_newer",
+    ),
   );
 }
 

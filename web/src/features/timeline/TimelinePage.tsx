@@ -28,6 +28,7 @@ import type { PostChangeEvent } from "../posts/postEvents";
 import {
   appendUnique,
   invalidCursorProgress,
+  isCursorProgressError,
   loadedThroughFromSearch,
   prependUnique,
   validateCursorPage,
@@ -124,6 +125,7 @@ export function TimelinePage({
     pathname,
     search: liveSearch,
     replaceTimelineProgress,
+    replaceWithinPage,
     restoreCurrentEntry,
   } = useNavigation();
   const [posts, setPosts] = useState<PublicPost[]>([]);
@@ -141,6 +143,7 @@ export function TimelinePage({
   const [settled, setSettled] = useState(false);
   const [freshId, setFreshId] = useState<string | null>(null);
   const initialSearchRef = useRef(initialSearch);
+  const surfacePath = useRef(pathname);
   const activeInitial = useRef<AbortController | null>(null);
   const activeMore = useRef<AbortController | null>(null);
   const activeNewer = useRef<AbortController | null>(null);
@@ -178,7 +181,23 @@ export function TimelinePage({
     [handlePostChange],
   );
 
-  const loadInitial = useCallback(async () => {
+  const forgetProgress = useCallback(
+    (dropCursor = false) => {
+      const clean = (search: string) => {
+        const query = new URLSearchParams(withoutLoadedProgress(search));
+        if (dropCursor) query.delete("cursor");
+        const value = query.toString();
+        return value ? `?${value}` : "";
+      };
+      initialSearchRef.current = clean(initialSearchRef.current);
+      const ownPath = surfacePath.current;
+      if (window.location.pathname === ownPath)
+        replaceWithinPage(`${ownPath}${clean(window.location.search)}`);
+    },
+    [replaceWithinPage],
+  );
+
+  const loadInitial: () => Promise<void> = useCallback(async () => {
     activeInitial.current?.abort();
     const controller = new AbortController();
     activeInitial.current = controller;
@@ -190,6 +209,11 @@ export function TimelinePage({
       const { loadedThrough, loadedNewer, request } = requestFromSearch(
         initialSearchRef.current,
       );
+      const savedQuery = new URLSearchParams(initialSearchRef.current);
+      let discardedProgress =
+        (savedQuery.has("loaded_through") && loadedThrough === null) ||
+        (savedQuery.has("loaded_newer") &&
+          (loadedNewer === null || !request.anchor));
       let page = await api.timeline({
         ...request,
         signal: controller.signal,
@@ -209,11 +233,13 @@ export function TimelinePage({
         replayed += 1
       ) {
         if (replayed >= MAX_REPLAY_PAGES) {
-          throw invalidCursorProgress("loaded timeline cursor is too deep");
+          discardedProgress = true;
+          break;
         }
         const continuation = page.nextCursor;
         if (!continuation) {
-          throw invalidCursorProgress("loaded timeline cursor is unreachable");
+          discardedProgress = true;
+          break;
         }
         if (visited.has(continuation)) {
           throw invalidCursorProgress("timeline cursor cycle detected");
@@ -227,12 +253,7 @@ export function TimelinePage({
         });
         if (controller.signal.aborted) return;
         validateCursorPage(page, requestedCursor, visited, "timeline");
-        combined = appendUnique(
-          combined,
-          page.items,
-          timelineItemKey,
-          "timeline",
-        );
+        combined = appendUnique(combined, page.items, timelineItemKey);
       }
 
       // Anchored, the list also reads forward: the first page after the
@@ -252,7 +273,8 @@ export function TimelinePage({
           replayed += 1
         ) {
           if (replayed >= MAX_REPLAY_PAGES) {
-            throw invalidCursorProgress("loaded timeline cursor is too deep");
+            discardedProgress = true;
+            break;
           }
           if (visited.has(newerCursor)) {
             throw invalidCursorProgress("timeline cursor cycle detected");
@@ -265,20 +287,16 @@ export function TimelinePage({
           });
           if (controller.signal.aborted) return;
           validateNewerPage(newerPage, visited, "timeline");
-          newer = prependUnique(
-            newer,
-            newerPage.items,
-            timelineItemKey,
-            "timeline",
-          );
+          newer = prependUnique(newer, newerPage.items, timelineItemKey);
           newerCursor = newerPage.prevCursor;
         }
         if (loadedNewer !== null && requestedNewer !== loadedNewer) {
-          throw invalidCursorProgress("loaded timeline cursor is unreachable");
+          discardedProgress = true;
         }
-        combined = prependUnique(combined, newer, timelineItemKey, "timeline");
+        combined = prependUnique(combined, newer, timelineItemKey);
       }
 
+      if (discardedProgress) forgetProgress();
       combined = reconcilePostChanges(combined);
       visitedCursors.current = visited;
       anchorKey.current =
@@ -289,11 +307,19 @@ export function TimelinePage({
       setNextCursor(page.nextCursor);
       setPrevCursor(newerCursor);
     } catch (error) {
-      if (!controller.signal.aborted) setInitialError(error);
+      if (controller.signal.aborted) return;
+      const query = new URLSearchParams(initialSearchRef.current);
+      if (
+        isCursorProgressError(error) &&
+        (hasLoadedProgress(initialSearchRef.current) || query.has("cursor"))
+      ) {
+        forgetProgress(true);
+        await loadInitial();
+      } else setInitialError(error);
     } finally {
       if (!controller.signal.aborted) setLoadingInitial(false);
     }
-  }, [api, reconcilePostChanges]);
+  }, [api, forgetProgress, reconcilePostChanges]);
 
   useEffect(() => {
     void loadInitial();
@@ -395,12 +421,7 @@ export function TimelinePage({
       const firstNew = page.items[0]
         ? timelineItemKey(page.items[0])
         : undefined;
-      const combined = appendUnique(
-        posts,
-        page.items,
-        timelineItemKey,
-        "timeline",
-      );
+      const combined = appendUnique(posts, page.items, timelineItemKey);
       visitedCursors.current = visited;
       setPosts(combined);
       setNextCursor(page.nextCursor);
@@ -442,12 +463,7 @@ export function TimelinePage({
       const nearestNew = page.items[page.items.length - 1]
         ? timelineItemKey(page.items[page.items.length - 1])
         : undefined;
-      const combined = prependUnique(
-        posts,
-        page.items,
-        timelineItemKey,
-        "timeline",
-      );
+      const combined = prependUnique(posts, page.items, timelineItemKey);
       const top = posts[0] ? rowElement(timelineItemKey(posts[0])) : undefined;
       if (top && page.items.length > 0) {
         compensation.current = {
