@@ -10,3 +10,11 @@ condition = "AND"
 regexTarget = "match"
 regexes = ['''token":"0123456789abcdef0123456789abcdef"''']
 paths = ['''^internal/transport/cli/owner_test\.go$''']
+
+[[allowlists]]
+targetRules = ["generic-api-key"]
+description = "CLI auth help snapshots contain SHA-256 output digests, not credentials."
+condition = "AND"
+regexTarget = "line"
+regexes = ['''^\s*"auth(?: (?:create-token|list-tokens|revoke-token|set-password|status))?": "[a-f0-9]{64}",?$''']
+paths = ['''^internal/transport/cli/testdata/help-digests\.json$''']
