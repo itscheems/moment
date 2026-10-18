@@ -11,7 +11,7 @@ export default defineConfig({
   plugins: [
     react(),
     {
-      name: "article-editor-lazy-boundary",
+      name: "interactive-editor-lazy-boundary",
       generateBundle(_options, bundle) {
         const seen = new Set<string>();
         const visit = (name: string) => {
@@ -20,6 +20,11 @@ export default defineConfig({
           const chunk = bundle[name];
           if (!chunk || chunk.type !== "chunk") return;
           for (const id of Object.keys(chunk.modules)) {
+            if (/node_modules\/@dnd-kit\//.test(id)) {
+              this.error(
+                `Map sorting runtime leaked into the reader entry: ${id}`,
+              );
+            }
             if (
               /node_modules\/@tiptap\/react\//.test(id) ||
               (/\/features\/article\/editor\//.test(id) &&

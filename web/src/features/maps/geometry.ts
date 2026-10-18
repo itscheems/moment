@@ -2,6 +2,16 @@ import gcoord from "gcoord";
 import greatCircle from "@turf/great-circle";
 import type { MapCardData, MapPlace } from "./types";
 
+/** Render identity is independent of list order and object property order. */
+export function mapPlaceIdentity(place: MapPlace): string {
+  return JSON.stringify([
+    place.name,
+    place.latitude,
+    place.longitude,
+    place.coordinateSystem,
+  ]);
+}
+
 export function mapCoordinate(place: MapPlace): [number, number] {
   const point: [number, number] = [place.longitude, place.latitude];
   return place.coordinateSystem === "gcj02"

@@ -12,28 +12,43 @@ export function ConfirmDialog({
   danger = false,
   pending = false,
   menuItem = false,
+  open: controlledOpen,
+  onOpenChange,
+  cancelLabel = "保留",
+  finalFocus,
   onConfirm,
 }: {
-  trigger: ReactElement;
+  trigger?: ReactElement;
   title: string;
   description: string;
   confirmLabel: string;
   danger?: boolean;
   pending?: boolean;
   menuItem?: boolean;
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
+  cancelLabel?: string;
+  finalFocus?: Dialog.Popup.Props["finalFocus"];
   onConfirm: () => void | Promise<void>;
 }) {
-  const [open, setOpen] = useState(false);
+  const [localOpen, setLocalOpen] = useState(false);
+  const open = controlledOpen ?? localOpen;
+  const setOpen = (next: boolean) => {
+    if (controlledOpen === undefined) setLocalOpen(next);
+    onOpenChange?.(next);
+  };
   const cancelRef = useRef<HTMLButtonElement>(null);
   useDocumentScrollLock(open);
 
   return (
     <Dialog.Root onOpenChange={setOpen} open={open}>
-      <Dialog.Trigger
-        className={styles.dialogTrigger}
-        tabIndex={menuItem ? -1 : undefined}
-        render={trigger}
-      />
+      {trigger && (
+        <Dialog.Trigger
+          className={styles.dialogTrigger}
+          tabIndex={menuItem ? -1 : undefined}
+          render={trigger}
+        />
+      )}
       <Dialog.Portal>
         <Dialog.Backdrop className={styles.dialogBackdrop} />
         <Dialog.Viewport className={styles.dialogViewport}>
@@ -43,6 +58,7 @@ export function ConfirmDialog({
             // destructive one is read first: stacking put 删除 at the top of
             // the sheet, and Base UI would otherwise focus whatever leads.
             initialFocus={cancelRef}
+            finalFocus={finalFocus}
           >
             <Dialog.Title className={styles.dialogTitle}>{title}</Dialog.Title>
             <Dialog.Description className={styles.dialogDescription}>
@@ -69,7 +85,7 @@ export function ConfirmDialog({
                 disabled={pending}
                 ref={cancelRef}
               >
-                保留
+                {cancelLabel}
               </Dialog.Close>
             </div>
           </Dialog.Popup>

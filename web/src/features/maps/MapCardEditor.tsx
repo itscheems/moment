@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Dialog } from "@base-ui/react/dialog";
+import { Switch } from "@base-ui/react/switch";
 import { locationsApi } from "../../api/locations";
 import type { LocationInput } from "../../api/client";
 import { Icon } from "../../components/icons";
@@ -31,12 +32,14 @@ export function MapCardEditor({
   disabled = false,
   triggerOnly = false,
   onOpenChange,
+  onOpenChangeComplete,
 }: {
   value: MapCardData | null;
   onChange: (card: MapCardData | null) => void;
   disabled?: boolean;
   triggerOnly?: boolean;
   onOpenChange?: (open: boolean) => void;
+  onOpenChangeComplete?: (open: boolean) => void;
 }) {
   const [open, setOpen] = useState(false);
   const lookup = useRef<AbortController | null>(null);
@@ -172,15 +175,6 @@ export function MapCardEditor({
       { timeout: 8000, maximumAge: 300000 },
     );
   };
-  const reorder = (index: number, direction: number) => {
-    if (!value) return;
-    const places = [...value.places];
-    [places[index], places[index + direction]] = [
-      places[index + direction],
-      places[index],
-    ];
-    onChange({ ...value, places });
-  };
   return (
     <>
       {triggerOnly ? (
@@ -199,92 +193,53 @@ export function MapCardEditor({
       ) : (
         value && (
           <div data-map-editor="" className={styles.editor}>
-            <MapCard card={value} />
-            <div className={styles.editActions}>
-              <ol>
-                {value.places.map((place, index) => (
-                  <li key={`${index}:${place.name}`}>
-                    <span>
-                      {index + 1}. {place.name}
-                    </span>
-                    <button
-                      type="button"
-                      disabled={disabled || index === 0}
-                      aria-label={`上移${place.name}`}
-                      onClick={() => reorder(index, -1)}
-                    >
-                      ↑
-                    </button>
-                    <button
-                      type="button"
-                      disabled={disabled || index === value.places.length - 1}
-                      aria-label={`下移${place.name}`}
-                      onClick={() => reorder(index, 1)}
-                    >
-                      ↓
-                    </button>
-                    <button
-                      type="button"
-                      disabled={disabled}
-                      aria-label={`移除${place.name}`}
-                      onClick={() => {
-                        const places = value.places.filter(
-                          (_, i) => i !== index,
-                        );
-                        onChange(
-                          places.length
-                            ? {
-                                places,
-                                connectPoints:
-                                  places.length > 1 && value.connectPoints,
-                              }
-                            : null,
-                        );
-                      }}
-                    >
-                      ×
-                    </button>
-                  </li>
-                ))}
-              </ol>
-              <button
-                className={styles.addButton}
-                type="button"
-                disabled={disabled || atLimit}
-                onClick={show}
-              >
-                ＋ 添加地点
-              </button>
-              {value.places.length > 1 && (
-                <label>
-                  <input
-                    type="checkbox"
-                    checked={value.connectPoints}
-                    disabled={disabled}
-                    onChange={(event) =>
-                      onChange({
-                        ...value,
-                        connectPoints: event.target.checked,
-                      })
-                    }
-                  />{" "}
-                  连接地点
-                </label>
-              )}
-              <button
-                type="button"
-                disabled={disabled}
-                onClick={() => onChange(null)}
-              >
-                移除地图
-              </button>
-            </div>
+            <MapCard
+              card={value}
+              onChange={onChange}
+              disabled={disabled}
+              footer={
+                <div className={styles.editActions}>
+                  <button
+                    className={styles.addButton}
+                    type="button"
+                    disabled={disabled || atLimit}
+                    onClick={show}
+                  >
+                    <Icon name="plus" /> 添加地点
+                  </button>
+                  {value.places.length > 1 && (
+                    <label className={styles.connectLabel}>
+                      <Switch.Root
+                        className={styles.connectSwitch}
+                        checked={value.connectPoints}
+                        disabled={disabled}
+                        onCheckedChange={(checked) =>
+                          onChange({
+                            ...value,
+                            connectPoints: checked,
+                          })
+                        }
+                      >
+                        <Switch.Thumb className={styles.connectThumb} />
+                      </Switch.Root>
+                      连接地点
+                    </label>
+                  )}
+                </div>
+              }
+            />
           </div>
         )
       )}
-      <Dialog.Root open={open} onOpenChange={changeOpen}>
+      <Dialog.Root
+        open={open}
+        onOpenChange={changeOpen}
+        onOpenChangeComplete={onOpenChangeComplete}
+      >
         <Dialog.Portal>
-          <Dialog.Backdrop className={styles.backdrop} />
+          <Dialog.Backdrop
+            className={`${styles.backdrop} ${styles.pickerBackdrop}`}
+          />
           <Dialog.Popup className={styles.picker}>
             <header className={styles.dialogHeader}>
               <Dialog.Title>添加地图地点</Dialog.Title>
@@ -293,9 +248,6 @@ export function MapCardEditor({
               </Dialog.Close>
             </header>
             <div className={styles.pickerBody}>
-              <p className={styles.hint}>
-                选择城市、餐馆或景点，也可以分享其他国家去过的地方。
-              </p>
               <div className={styles.search}>
                 <input
                   aria-label="搜索全球地点"

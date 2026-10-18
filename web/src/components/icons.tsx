@@ -3,6 +3,7 @@ import type { SVGProps } from "react";
 const iconSprite = "/icons/ui-symbols-v3.svg";
 
 export type IconName =
+  | "plus"
   | "article"
   | "article-unpublish"
   | "article-link"
@@ -78,6 +79,7 @@ const iconViewBoxes: Partial<Record<IconName, string>> = {
 };
 
 const paths: Record<IconName, React.ReactNode> = {
+  plus: <path d="M12 5v14M5 12h14" />,
   map: (
     <>
       <path d="m3 6 5-2 8 3 5-2v15l-5 2-8-3-5 2V6Z" />

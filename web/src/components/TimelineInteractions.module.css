@@ -1,7 +1,10 @@
-.tooltipPositioner,
 .identityPositioner,
 .sharePositioner {
   z-index: var(--layer-popover);
+}
+
+.tooltipPositioner {
+  z-index: var(--layer-tooltip);
 }
 
 .sharePositioner {

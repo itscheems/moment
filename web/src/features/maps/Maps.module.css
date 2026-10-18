@@ -1,7 +1,9 @@
 .card,
 .expanded,
 .picker,
-.editor {
+.editor,
+.placeDragOverlay,
+.placeMenu {
   /* Embedded cards retain the site's palette inside article themes. */
   --canvas: var(--site-canvas);
   --surface: var(--site-surface);
@@ -18,7 +20,7 @@
   overflow: hidden;
   width: 100%;
   min-width: 0;
-  margin-block: 12px;
+  margin-block: 8px;
   border: 1px solid var(--border-subtle);
   border-radius: 16px;
   color: var(--text-primary);
@@ -63,18 +65,31 @@
 }
 .expand {
   position: absolute;
-  top: 12px;
-  right: 12px;
+  top: 9px;
+  right: 9px;
   z-index: 2;
-  width: 40px;
-  height: 40px;
-  border: 1px solid var(--border-subtle);
+  width: 28px;
+  height: 28px;
+  border: 0;
   border-radius: 50%;
   display: grid;
   place-items: center;
   color: var(--text-primary);
-  background: var(--surface);
+  background: rgb(255 255 255 / 76%);
+  color: #536471;
+  backdrop-filter: blur(6px);
+  transition:
+    background-color 160ms ease,
+    color 160ms ease;
   cursor: pointer;
+}
+.expand:hover {
+  background: rgb(255 255 255 / 95%);
+  color: #0f1419;
+}
+.card .expand svg {
+  width: 15px;
+  height: 15px;
 }
 .card svg,
 .expanded svg,
@@ -85,77 +100,218 @@
 .places {
   list-style: none !important;
   margin: 0 !important;
-  padding: 6px 14px !important;
-  font-size: 14px;
-  line-height: 1.45;
+  padding: 4px 8px !important;
+  font: 13px/1.45 var(--font-timeline);
 }
-.places li {
-  display: flex;
-  gap: 12px;
-  align-items: center;
-  padding: 10px 0 !important;
+.places > li {
   margin: 0 !important;
+  padding: 0 !important;
+  list-style: none !important;
 }
-.places li + li {
-  border-top: 1px solid var(--border-subtle);
+.placeRow {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 52px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text-primary);
+  touch-action: pan-y;
+  transition:
+    background-color 160ms ease,
+    box-shadow 160ms ease;
 }
-.places li > div {
+.placeRow:hover,
+.placeRow:focus-visible,
+.placeRow[data-popup-open] {
+  background: color-mix(in srgb, var(--surface-muted) 65%, var(--surface));
+}
+.placeRow[data-map-place] {
+  cursor: grab;
+  user-select: none;
+}
+.placeRow[data-dragging] {
+  cursor: grabbing;
+}
+.placeText {
   display: flex;
   flex: 1;
-  flex-direction: column;
-  gap: 3px;
   min-width: 0;
-}
-.places strong {
-  font-weight: 650;
-}
-.places span:not(.placeNumber) {
-  color: var(--text-secondary);
-  font-size: 12px;
+  flex-direction: column;
+  gap: 2px;
   overflow-wrap: anywhere;
 }
+.placeText strong {
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 19px;
+}
+.placeText span {
+  color: var(--text-secondary);
+  font-size: 11px;
+  line-height: 16px;
+}
 .card .places li a,
-.expanded .places li a {
+.expanded .places li a,
+.placeDragOverlay a {
   display: grid;
   place-items: center;
-  width: 40px;
-  height: 40px;
+  flex: 0 0 30px;
+  width: 30px;
+  height: 30px;
   color: var(--text-secondary);
   border-radius: 50%;
+  opacity: 0.7;
   text-decoration: none;
+  transition:
+    opacity 160ms ease,
+    color 160ms ease,
+    background-color 160ms ease;
 }
 .card .places li a:hover,
 .expanded .places li a:hover {
-  background: var(--surface-hover);
+  opacity: 1;
   color: var(--accent);
+  background: var(--surface-hover);
   text-decoration: none;
+}
+.places a svg,
+.placeDragOverlay a svg {
+  width: 16px;
+  height: 16px;
 }
 .card :global(.maplibregl-map .maplibregl-ctrl-attrib) a,
 .expanded :global(.maplibregl-map .maplibregl-ctrl-attrib) a {
   color: inherit;
   text-decoration: none;
 }
-.placeNumber {
+.sortablePlace {
+  position: relative;
+  overflow: hidden;
+  border-radius: 8px;
+}
+.swipeDelete {
+  position: absolute;
+  inset: 0 0 0 auto;
   display: grid;
   place-items: center;
-  flex: 0 0 24px;
-  height: 24px;
-  border-radius: 50%;
-  background: var(--surface-muted);
-  font-size: 12px;
-  font-weight: 700;
+  width: 52px;
+  padding: 0;
+  border: 0;
+  color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 10%, var(--surface));
+  cursor: pointer;
+  transition: background-color 160ms ease;
+}
+.swipeDelete:hover {
+  background: color-mix(in srgb, var(--danger) 18%, var(--surface));
+}
+.swipeDelete svg {
+  width: 17px;
+  height: 17px;
+}
+.placeDragOverlay {
+  border: 1px solid var(--border-subtle);
+  box-shadow: 0 6px 24px #0f14191a;
+  cursor: grabbing;
+}
+.placeMenuPositioner {
+  z-index: calc(var(--layer-map) + 2);
+}
+.placeMenu {
+  min-width: 138px;
+  padding: 4px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 10px;
+  background: var(--surface);
+  box-shadow: 0 6px 24px #0f14191a;
+  outline: none;
+  transform-origin: var(--transform-origin);
+  transition:
+    opacity 140ms ease,
+    transform 140ms ease;
+}
+.placeMenu[data-starting-style],
+.placeMenu[data-ending-style] {
+  opacity: 0;
+  transform: translateY(-3px);
+}
+.placeMenuDelete {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 34px;
+  padding: 6px 10px;
+  border-radius: 6px;
+  color: var(--danger);
+  font-size: 13px;
+  outline: none;
+  cursor: pointer;
+}
+.placeMenuDelete[data-highlighted] {
+  background: color-mix(in srgb, var(--danger) 8%, var(--surface));
+}
+.placeMenuDelete svg {
+  width: 16px;
+  height: 16px;
 }
 .marker {
-  height: 32px;
-  min-width: 32px;
-  border: 2px solid white;
-  border-radius: 50% 50% 50% 3px;
-  background: #246bab;
-  color: white;
-  font-size: 13px;
-  font-weight: 700;
-  box-shadow: 0 2px 6px #0004;
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: 1px solid rgb(255 255 255 / 90%);
+  border-radius: 50%;
+  background: rgb(255 255 255 / 80%);
+  box-shadow: 0 1px 5px #0f14192e;
   cursor: pointer;
+  transition:
+    transform 160ms ease,
+    box-shadow 160ms ease;
+}
+.marker::after {
+  content: "";
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #327cc7;
+}
+.marker:hover,
+.marker:focus-visible {
+  transform: scale(1.16);
+  box-shadow: 0 0 0 4px #327cc726;
+}
+.card :global(.maplibregl-ctrl-group),
+.expanded :global(.maplibregl-ctrl-group) {
+  border-radius: 7px;
+  background: rgb(255 255 255 / 78%);
+  box-shadow: 0 1px 6px #0f14191a;
+  backdrop-filter: blur(6px);
+}
+.card :global(.maplibregl-ctrl-group button),
+.expanded :global(.maplibregl-ctrl-group button) {
+  width: 26px;
+  height: 26px;
+}
+.card :global(.maplibregl-ctrl-group button + button),
+.expanded :global(.maplibregl-ctrl-group button + button) {
+  border-top-color: #0f141914;
+}
+.card :global(.maplibregl-ctrl-icon),
+.expanded :global(.maplibregl-ctrl-icon) {
+  background-size: 17px;
+  opacity: 0.65;
+}
+.card :global(.maplibregl-ctrl-attrib),
+.expanded :global(.maplibregl-ctrl-attrib) {
+  font-size: 10px;
+  line-height: 15px;
+  background-color: rgb(255 255 255 / 70%);
+  border-radius: 8px;
+  color: #536471;
 }
 .popup {
   display: grid;
@@ -170,14 +326,14 @@
 .backdrop {
   position: fixed;
   inset: 0;
-  z-index: 160;
+  z-index: var(--layer-map);
   background: #0009;
 }
 .expanded,
 .picker {
   position: fixed;
   inset: 4vh max(16px, calc((100vw - 1000px) / 2));
-  z-index: 161;
+  z-index: calc(var(--layer-map) + 1);
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -287,38 +443,84 @@
 }
 .editActions {
   display: flex;
+  align-items: center;
+  justify-content: space-between;
   flex-wrap: wrap;
-  gap: 6px;
-  align-items: center;
-  margin-block: 8px;
-  font-size: 13px;
+  gap: 8px;
+  padding: 6px 12px 8px;
+  font-size: 12px;
 }
-.editActions ol {
-  width: 100%;
-  padding: 0 !important;
-  margin: 0 !important;
-  list-style: none !important;
-}
-.editActions li {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  margin-block: 4px;
-}
-.editActions li span {
-  flex: 1;
-  min-width: 0;
-  overflow-wrap: anywhere;
-}
-.editActions button {
-  padding: 6px 10px;
-  min-width: 36px;
-}
-.addButton {
-  color: var(--accent);
+.editActions .addButton {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 4px;
+  padding: 5px 7px;
+  min-height: 28px;
+  border: 0;
+  border-radius: 7px;
+  color: var(--text-secondary);
+  background: transparent;
+  font: inherit;
+  cursor: pointer;
+  transition:
+    color 160ms ease,
+    background-color 160ms ease;
+}
+.editActions .addButton:hover {
+  color: var(--accent);
+  background: var(--surface-hover);
+}
+.editActions .addButton svg {
+  width: 14px;
+  height: 14px;
+}
+.connectLabel {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 28px;
+  color: var(--text-secondary);
+  font-size: 12px;
+  cursor: pointer;
+  transition: color 160ms ease;
+}
+.connectLabel:hover {
+  color: var(--text-primary);
+}
+.connectSwitch {
+  display: inline-flex;
+  align-items: center;
+  width: 28px;
+  height: 16px;
+  padding: 2px;
+  border-radius: 10px;
+  background: var(--border-strong);
+  outline: none;
+  transition: background-color 160ms ease;
+}
+.connectSwitch[data-checked] {
+  background: var(--accent);
+}
+.connectSwitch[data-disabled] {
+  opacity: 0.4;
+  cursor: default;
+}
+.connectThumb {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: white;
+  box-shadow: 0 1px 2px #0002;
+  transition: transform 160ms ease;
+}
+.connectThumb[data-checked] {
+  transform: translateX(12px);
+}
+.pickerBackdrop {
+  z-index: calc(var(--layer-map) + 3);
+}
+.picker {
+  z-index: calc(var(--layer-map) + 4);
 }
 .manual {
   display: grid;
@@ -410,4 +612,33 @@
   .picker {
     transition: none;
   }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .placeRow,
+  .marker,
+  .places a,
+  .connectThumb,
+  .connectSwitch,
+  .placeMenu,
+  .swipeDelete,
+  .expand,
+  .addButton {
+    transition: none;
+  }
+}
+
+.card .placeRow:focus-visible,
+.expanded .placeRow:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+.marker::before,
+.expand::before {
+  content: "";
+  position: absolute;
+  inset: -8px;
+}
+.marker {
+  position: relative;
 }

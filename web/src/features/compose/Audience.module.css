@@ -89,7 +89,7 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  -webkit-text-stroke: 0.25px currentColor;
+  -webkit-text-stroke: var(--audience-label-stroke, 0.25px) currentColor;
 }
 
 .triggerChevron {

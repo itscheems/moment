@@ -2,7 +2,7 @@
 
 Posts and articles use the same interactive map card. The post composer stores one card alongside Markdown, media and the existing location label. Articles store any number of inline map blocks through Tiptap's React node views. Both surfaces share place selection, map controls, expansion and globe view.
 
-Authors can search worldwide, use their current location, or pick a point on the map. A card holds 1–20 ordered places. It displays markers by default; enabling **连接地点** joins them in list order. The list supports adding, moving and removing places. Each place also opens in Google Maps. A map can be the only content of an ordinary post.
+Authors can search worldwide, use their current location, or pick a point on the map. A card holds 1–20 ordered places. It displays markers by default; enabling **连接地点** joins them in list order. Authors hold a place row to reorder it, or use Space and the arrow keys. Right-clicking a row or swiping it left exposes deletion with confirmation; cancelling restores the row. Each place also opens in Google Maps. A map can be the only content of an ordinary post.
 
 ## Services
 
@@ -14,7 +14,7 @@ The renderer preserves OpenFreeMap, OpenMapTiles and OpenStreetMap attribution. 
 
 ## Loading and data
 
-The engine is a separate lazy chunk. Cards prefetch it near the viewport, create a map when visible, and release the instance after three seconds outside the viewport. Returning cards restore their camera. Expansion transfers the live view to the dialog instead of retaining two canvases. Readers can switch between a flat map and a globe in the expanded view. Failed map loads retain the place list and external links.
+The engine is a separate lazy chunk. Cards prefetch it near the viewport, create a map when visible, and release the instance after three seconds outside the viewport. Returning cards restore their camera. Expansion transfers the live view to the dialog instead of retaining two canvases. Readers can switch between a flat map and a globe in the expanded view. Failed map loads retain the place list and external links. Sorting loads separately for authors; the reader entry excludes its runtime.
 
 Ordinary cards are persisted with their entries; article cards are embedded value snapshots. Reading requires no geocoding request. WGS84 and GCJ-02 source coordinates round-trip unchanged; only the renderer converts them for the basemap and external links. Map labels participate in search and summaries. Author, draft and visibility rules follow the surrounding content.
 
@@ -32,6 +32,8 @@ GPS file import, recorded tracks, navigation and building models are outside thi
 | Turf great-circle | 7.4.0 | Ordered point connections across the date line |
 | gcoord | 1.0.7 | GCJ-02 to WGS84 display conversion |
 | Tiptap | 3.31.3 | Article node persistence and upstream React node-view lifecycle |
-| Base UI | 1.6.0 | Dialog focus, dismissal and keyboard behavior |
+| Base UI | 1.6.0 | Dialog focus, dismissal, context menus and switches |
+| dnd-kit core / sortable / modifiers / utilities | 6.3.1 / 10.0.0 / 9.0.0 / 3.2.2 | Mouse, touch and keyboard sorting |
+| Motion | 13.1.0 | Horizontal swipe, spring return and row transitions |
 
-Moment owns the portable snapshot, place picker, localization, viewport lifecycle and editor adapters. It uses upstream map and editor interaction lifecycles rather than adding a second pointer or selection system.
+Moment owns the portable snapshot, place picker, localization, viewport lifecycle and editor adapters. Sorting and swipe transforms use separate elements. Dialog configuration lets sorting arrow keys reach dnd-kit, while the context menu keeps touch long-press reserved for sorting.

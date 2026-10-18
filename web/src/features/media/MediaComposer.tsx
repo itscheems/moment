@@ -116,6 +116,7 @@ export function MediaComposer({
   beforeToolbar,
   toolbarAction,
   compact = false,
+  dialogToolbar = false,
   divider = false,
   pickerTooltip,
   selectionError: controlledSelectionError,
@@ -135,6 +136,7 @@ export function MediaComposer({
   beforeToolbar?: ReactNode;
   toolbarAction?: ReactNode;
   compact?: boolean;
+  dialogToolbar?: boolean;
   /** Draw the rule above the toolbar even in the compact layout. */
   divider?: boolean;
   pickerTooltip?: string;
@@ -300,7 +302,7 @@ export function MediaComposer({
   return (
     <section
       aria-label={containsVideo ? "媒体" : "图片"}
-      className={`${styles.composerMedia} ${compact ? styles.compactComposer : ""} ${divider ? styles.dividedComposer : ""} ${className ?? ""}`}
+      className={`${styles.composerMedia} ${compact ? styles.compactComposer : ""} ${dialogToolbar ? styles.dialogComposer : ""} ${divider ? styles.dividedComposer : ""} ${className ?? ""}`}
     >
       <input
         accept="image/jpeg,image/png,image/webp,image/gif,image/heic,image/heif,video/mp4,video/quicktime,.heic,.heif,.mp4,.m4v,.mov,.qt"
@@ -558,7 +560,7 @@ export function MediaComposer({
           </button>
           {toolbarAction}
           {items.length > 0 ? (
-            <span aria-live="polite">
+            <span aria-live="polite" className={styles.mediaCount}>
               {items.length} / {maximum}
             </span>
           ) : null}

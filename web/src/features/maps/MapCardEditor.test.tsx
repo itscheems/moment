@@ -6,6 +6,7 @@ import {
   render,
   screen,
   waitFor,
+  within,
 } from "@testing-library/react";
 import { locationsApi } from "../../api/locations";
 import { MapCardEditor } from "./MapCardEditor";
@@ -92,10 +93,54 @@ describe("map card editor", () => {
       expect.any(AbortSignal),
       "global",
     );
-    expect(screen.getByRole("button", { name: "＋ 添加地点" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "添加地点" })).toBeTruthy();
     expect(screen.getByText(/"connectPoints":false/)).toBeTruthy();
     expect(screen.queryByText("地点连线，非实际行驶路线")).toBeNull();
-    fireEvent.click(screen.getByRole("button", { name: "移除地图" }));
+    expect(screen.queryByRole("button", { name: "移除地图" })).toBeNull();
+    const row = await screen.findByRole("group", {
+      name: "银座，按住拖动排序",
+    });
+    fireEvent.keyDown(
+      screen.getByRole("link", { name: "在 Google Maps 打开银座" }),
+      { key: "Delete" },
+    );
+    expect(screen.queryByRole("dialog")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "展开地图" }));
+    const expanded = await screen.findByRole("dialog", { name: "地图" });
+    const expandedRow = await within(expanded).findByRole("group", {
+      name: "银座，按住拖动排序",
+    });
+    // jsdom has no scrolling; this assertion only checks key propagation.
+    Object.defineProperty(expandedRow.parentElement, "scrollIntoView", {
+      value: vi.fn(),
+    });
+    fireEvent.keyDown(expandedRow, { key: " ", code: "Space" });
+    await waitFor(() =>
+      expect(expandedRow.getAttribute("aria-pressed")).toBe("true"),
+    );
+    const sortingKey = vi.fn();
+    document.addEventListener("keydown", sortingKey, { once: true });
+    fireEvent.keyDown(expandedRow, { key: "ArrowUp", code: "ArrowUp" });
+    expect(sortingKey).toHaveBeenCalledOnce();
+    // The first Escape cancels sorting without dismissing its containing map.
+    fireEvent.keyDown(expandedRow, { key: "Escape", code: "Escape" });
+    await waitFor(() =>
+      expect(expandedRow.getAttribute("aria-pressed")).not.toBe("true"),
+    );
+    expect(screen.getByRole("dialog", { name: "地图" })).toBeTruthy();
+    fireEvent.keyDown(
+      within(expanded).getByRole("link", { name: "在 Google Maps 打开银座" }),
+      { key: "Escape" },
+    );
+    await waitFor(() =>
+      expect(screen.queryByRole("dialog", { name: "地图" })).toBeNull(),
+    );
+    fireEvent.contextMenu(row, { button: 2, clientX: 30, clientY: 30 });
+    fireEvent.click(await screen.findByRole("menuitem", { name: "删除地点" }));
+    fireEvent.click(await screen.findByRole("button", { name: "取消" }));
+    expect(screen.getByText(/"connectPoints":false/)).toBeTruthy();
+    fireEvent.keyDown(row, { key: "Delete" });
+    fireEvent.click(await screen.findByRole("button", { name: "删除" }));
     await waitFor(() => expect(screen.getByText("null")).toBeTruthy());
   });
 });
