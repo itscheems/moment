@@ -18,7 +18,7 @@ var momentGroups = []GroupSpec{
 	{Name: "search", Short: "Search and rebuild the memory index", Long: "Query Moment history and maintain its derived search index."},
 	{Name: "backup", Short: "Export, inspect, and restore portable data", Long: "Operate the versioned Moment portability protocol."},
 	{Name: "site", Short: "Inspect and update site identity", Long: "Inspect and update portable public site settings."},
-	{Name: "user", Short: "Discover public instance identities", Long: "Search the bounded public identity directory used by Moment mentions."},
+	{Name: "user", Short: "Inspect and manage accounts", Long: "Inspect accounts and sign-in methods, manage membership and administrative roles, update your profile, export account data, and find mention suggestions."},
 	{Name: "dev", Short: "Build deterministic development scenarios", Long: "Reset and seed explicitly marked development instances."},
 }
 

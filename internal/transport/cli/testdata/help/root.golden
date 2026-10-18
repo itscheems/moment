@@ -21,7 +21,7 @@ Available Commands:
   search      Search and rebuild the memory index
   serve       Run the Moment HTTP server
   site        Inspect and update site identity
-  user        Discover public instance identities
+  user        Inspect and manage accounts
   version     Show build identity
 
 Flags:
