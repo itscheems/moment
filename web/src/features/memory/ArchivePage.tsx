@@ -10,11 +10,11 @@ import { createPortal } from "react-dom";
 
 import {
   PublicApi,
-  PublicApiError,
   type ArchiveMonthCount,
   type SiteIdentity,
 } from "../../api/public";
-import { InternalLink } from "../../app/navigation";
+import { InternalLink, useNavigation } from "../../app/navigation";
+import { useReadRecovery } from "../../components/useReadRecovery";
 import { useRailSlot } from "../../components/railSlot";
 import {
   RAIL_VIEWPORT_QUERY,
@@ -22,6 +22,7 @@ import {
 } from "../../components/useMediaQuery";
 import { siteToday } from "../timeline/timelineDays";
 import { TimelinePage } from "../timeline/TimelinePage";
+import { ReadRecoveryNotice } from "../timeline/PublicStates";
 import { ArchiveCalendar } from "./ArchiveCalendar";
 import {
   monthKeyOf,
@@ -93,6 +94,7 @@ export function ArchivePage({
   site: SiteIdentity;
 }) {
   const state = useMemo(() => parseArchiveLocation(search), [search]);
+  const { pathname } = useNavigation();
   const railSlot = useRailSlot();
   const railViewport = useMediaQuery(RAIL_VIEWPORT_QUERY);
   const inRail = railViewport && railSlot !== null;
@@ -119,6 +121,12 @@ export function ArchivePage({
       if (!controller.signal.aborted) setMonthsLoading(false);
     }
   }, [api]);
+  const monthsRecovering = useReadRecovery({
+    error: monthsError,
+    loading: monthsLoading,
+    onRetry: loadMonths,
+    enabled: pathname === "/archive" && !state.error,
+  });
 
   useEffect(() => {
     if (state.error) return;
@@ -155,12 +163,36 @@ export function ArchivePage({
 
   // Per-day counts, kept for every month fetched so paging back is free, and
   // asked for a month early on either side of the visible one. A month's
-  // counts failing to arrive is not the archive failing: that month draws
-  // without links, and the reader can page away and back to ask again.
+  // counts failing to arrive is not the archive failing: the calendar stays
+  // visible while the missing counts are requested again in the background.
   const [dayCounts, setDayCounts] = useState<
     ReadonlyMap<string, ReadonlyMap<number, number>>
   >(() => new Map());
   const inFlight = useRef(new Set<string>());
+  const [dayErrors, setDayErrors] = useState<ReadonlyMap<string, unknown>>(
+    () => new Map(),
+  );
+  const [dayAttempt, setDayAttempt] = useState(0);
+  const wantedDayMonths = useMemo(
+    () =>
+      visibleMonth === null
+        ? []
+        : [
+            visibleMonth,
+            shiftMonth(visibleMonth, -1),
+            shiftMonth(visibleMonth, 1),
+          ].filter((month) => monthCounts.has(month)),
+    [visibleMonth, monthCounts],
+  );
+  const dayError =
+    wantedDayMonths.map((month) => dayErrors.get(month)).find(Boolean) ?? null;
+  useReadRecovery({
+    error: dayError,
+    loading: false,
+    onRetry: () => setDayAttempt((value) => value + 1),
+    enabled: pathname === "/archive",
+    scope: visibleMonth ?? "",
+  });
   const mounted = useRef(true);
   useEffect(() => {
     mounted.current = true;
@@ -170,11 +202,7 @@ export function ArchivePage({
   }, []);
   useEffect(() => {
     if (visibleMonth === null) return;
-    for (const target of [
-      visibleMonth,
-      shiftMonth(visibleMonth, -1),
-      shiftMonth(visibleMonth, 1),
-    ]) {
+    for (const target of wantedDayMonths) {
       if (
         !monthCounts.has(target) ||
         dayCounts.has(target) ||
@@ -187,6 +215,11 @@ export function ArchivePage({
         .archiveMonth(target)
         .then((result) => {
           if (!mounted.current) return;
+          setDayErrors((current) => {
+            const next = new Map(current);
+            next.delete(target);
+            return next;
+          });
           setDayCounts((current) =>
             new Map(current).set(
               target,
@@ -194,10 +227,13 @@ export function ArchivePage({
             ),
           );
         })
-        .catch(() => undefined)
+        .catch((error: unknown) => {
+          if (mounted.current)
+            setDayErrors((current) => new Map(current).set(target, error));
+        })
         .finally(() => inFlight.current.delete(target));
     }
-  }, [api, dayCounts, monthCounts, visibleMonth]);
+  }, [api, dayCounts, monthCounts, visibleMonth, wantedDayMonths, dayAttempt]);
 
   // The list is read with the anchor and whatever progress the URL carries in
   // either direction; the timeline puts the anchored row under the header
@@ -215,7 +251,7 @@ export function ArchivePage({
   const monthsEmpty = months !== null && months.length === 0;
   let calendar: ReactNode = null;
   if (!state.error && !monthsEmpty) {
-    if (monthsLoading) {
+    if (monthsLoading && months === null) {
       calendar = (
         <section
           aria-busy="true"
@@ -227,22 +263,14 @@ export function ArchivePage({
           <span>正在加载归档…</span>
         </section>
       );
-    } else if (monthsError) {
+    } else if (monthsError && months === null && monthsRecovering) {
+      calendar = <ReadRecoveryNotice>正在重新获取归档…</ReadRecoveryNotice>;
+    } else if (monthsError && months === null) {
       calendar = (
         <ArchiveMessage
-          action={
-            <button onClick={() => void loadMonths()} type="button">
-              重试归档
-            </button>
-          }
           alert
-          detail={
-            monthsError instanceof PublicApiError &&
-            monthsError.code === "API_RESPONSE_INVALID"
-              ? "返回的归档不完整，请重试。"
-              : "请检查网络后重试。"
-          }
-          title="归档加载失败"
+          detail="请确认登录状态和访问链接。"
+          title="暂时无法查看归档"
         />
       );
     } else if (months && range && visibleMonth) {

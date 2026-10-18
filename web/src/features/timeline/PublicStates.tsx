@@ -1,5 +1,33 @@
 import { InternalLink } from "../../app/navigation";
+import type { ReactNode } from "react";
+import { canRecoverRead } from "../../components/useReadRecovery";
 import styles from "./PublicStates.module.css";
+
+export function ReadRecoveryNotice({
+  children = "正在重新获取内容…",
+  error,
+}: {
+  children?: ReactNode;
+  error?: unknown;
+}) {
+  if (error && !canRecoverRead(error))
+    return (
+      <p className={styles.recovery} role="alert">
+        这部分内容暂时无法访问。
+      </p>
+    );
+  return (
+    <div
+      aria-live="polite"
+      aria-busy="true"
+      className={styles.recovery}
+      role="status"
+    >
+      <span aria-hidden="true" className={styles.recoveryDot} />
+      <span>{children}</span>
+    </div>
+  );
+}
 
 export function TimelineLoading() {
   return (
@@ -72,33 +100,27 @@ export function PublicEmpty({
 
 export function PublicError({
   kind = "timeline",
-  onRetry,
-  onResetProgress,
+  recovering = false,
 }: {
-  kind?: "timeline" | "detail" | "missing" | "malformed";
-  onRetry: () => void;
-  onResetProgress?: () => void;
+  kind?: "timeline" | "detail" | "missing";
+  recovering?: boolean;
 }) {
+  if (recovering) return <ReadRecoveryNotice />;
   const content = {
     timeline: {
-      marker: "暂时中断",
+      marker: "无法访问",
       title: "无法加载时间流",
-      detail: "检查网络后再试；已经发布的内容不会受到影响。",
+      detail: "请确认登录状态和访问链接。",
     },
     detail: {
-      marker: "暂时中断",
-      title: "这个 Moment 没有加载完成",
-      detail: "检查网络后重试，或回到时间流继续浏览。",
+      marker: "无法访问",
+      title: "暂时无法查看这个 Moment",
+      detail: "请确认登录状态，或回到时间流继续浏览。",
     },
     missing: {
       marker: "404",
       title: "这个 Moment 不在这里",
       detail: "它可能已被删除，或者链接不完整。",
-    },
-    malformed: {
-      marker: "数据异常",
-      title: "这次收到的内容无法显示",
-      detail: "服务器返回了不完整的数据。重试后仍有问题，请检查站点诊断。",
     },
   }[kind];
 
@@ -110,18 +132,9 @@ export function PublicError({
         <h2>{content.title}</h2>
         <p>{content.detail}</p>
         <div className={styles.actions}>
-          <button className={styles.action} onClick={onRetry} type="button">
-            重试
-          </button>
-          {onResetProgress ? (
-            <button
-              className={styles.secondaryAction}
-              onClick={onResetProgress}
-              type="button"
-            >
-              从第一页重新加载
-            </button>
-          ) : null}
+          <InternalLink className={styles.action} href="/">
+            回到时间流
+          </InternalLink>
         </div>
       </div>
     </section>

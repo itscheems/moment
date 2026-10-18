@@ -388,18 +388,13 @@ describe("App shell and public routes", () => {
     await waitFor(() =>
       expect(screen.getByText("资料失败也能阅读")).toBeInTheDocument(),
     );
-    const identityError = await screen.findByRole("alert");
-    expect(identityError).toHaveTextContent(
-      "站点资料没有加载完成，暂时使用默认身份。",
-    );
+    expect(
+      await screen.findByText("正在自动重新获取站点资料…"),
+    ).toBeInTheDocument();
     expect(
       document.querySelector('section[aria-label="发布 Moment"]'),
     ).not.toBeInTheDocument();
-    fireEvent.click(
-      screen.getByRole("button", {
-        name: "重试资料",
-      }),
-    );
+    expect(screen.queryByRole("button", { name: "重试资料" })).toBeNull();
 
     await waitFor(() => expect(document.title).toBe("乔乔的 Moment"));
     await waitFor(() =>
@@ -1445,6 +1440,27 @@ describe("App shell and public routes", () => {
     );
   });
 
+  it("recovers a temporary detail failure without requiring navigation or retry", async () => {
+    const item = post("01K2ABCDEF0123456789ABCDE0", "自动取回的正文");
+    window.history.replaceState({}, "", `/m/${item.id}`);
+    let reads = 0;
+    installApi(async (url) => {
+      if (url === "/api/v1/site") return json(siteEnvelope);
+      if (url === `/api/v1/posts/${item.id}`) {
+        reads += 1;
+        if (reads === 1) return json({}, 503);
+        return json({ data: item, meta: { request_id: "recovered" } });
+      }
+      return json({}, 404);
+    });
+    render(<App />);
+    await screen.findByText("正在重新获取内容…");
+    expect(screen.queryByRole("button", { name: "重试" })).toBeNull();
+    expect(await screen.findByText("自动取回的正文")).toBeInTheDocument();
+    expect(reads).toBe(2);
+    expect(window.location.pathname).toBe(`/m/${item.id}`);
+  });
+
   it("recovers a directly opened detail route and rejects malformed post data", async () => {
     const item = post(
       "01K2ABCDEF0123456789ABCDE0",
@@ -1468,8 +1484,7 @@ describe("App shell and public routes", () => {
       return json({ data: malformed, meta: { request_id: "req_bad" } });
     });
     render(<App />);
-    expect(await screen.findByRole("alert")).toHaveTextContent(
-      "这次收到的内容无法显示",
-    );
+    expect(await screen.findByText("正在重新获取内容…")).toBeInTheDocument();
+    expect(screen.queryByText("直接打开的正文")).toBeNull();
   });
 });

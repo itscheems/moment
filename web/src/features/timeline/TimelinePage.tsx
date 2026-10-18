@@ -8,7 +8,6 @@ import {
 
 import {
   PublicApi,
-  PublicApiError,
   type PublicComment,
   type PublicPost,
   type SiteIdentity,
@@ -16,13 +15,19 @@ import {
   type TimelineRequest,
 } from "../../api/public";
 import { useNavigation } from "../../app/navigation";
+import { useReadRecovery } from "../../components/useReadRecovery";
 import {
   LoadMoreSentinel,
   type LoadSource,
 } from "../../components/LoadMoreSentinel";
 import { usePostReplyDialog } from "../comments/usePostReplyDialog";
 import { PostPresentation } from "../posts/PostPresentation";
-import { PublicEmpty, PublicError, TimelineLoading } from "./PublicStates";
+import {
+  PublicEmpty,
+  PublicError,
+  ReadRecoveryNotice,
+  TimelineLoading,
+} from "./PublicStates";
 import { listenForPostChanges } from "../posts/postEvents";
 import type { PostChangeEvent } from "../posts/postEvents";
 import {
@@ -66,20 +71,6 @@ function hasLoadedProgress(search: string): boolean {
   return query.has("loaded_through") || query.has("loaded_newer");
 }
 
-function recoverableCursorError(error: unknown): boolean {
-  return (
-    error instanceof PublicApiError &&
-    (error.code === "INVALID_ARGUMENT" || error.code === "API_RESPONSE_INVALID")
-  );
-}
-
-function errorKind(error: unknown): "timeline" | "malformed" {
-  return error instanceof PublicApiError &&
-    error.code === "API_RESPONSE_INVALID"
-    ? "malformed"
-    : "timeline";
-}
-
 /**
  * The timeline, read from wherever it starts.
  *
@@ -121,9 +112,7 @@ export function TimelinePage({
   canPublish?: boolean;
 }) {
   const {
-    navigate,
     pathname,
-    search: liveSearch,
     replaceTimelineProgress,
     replaceWithinPage,
     restoreCurrentEntry,
@@ -152,6 +141,7 @@ export function TimelinePage({
   const initialEntryRestored = useRef(false);
   const postChanges = useRef(new Map<string, PostChangeEvent>());
   const visitedCursors = useRef(new Set<string>());
+  const recoveredCursors = useRef(new Set<string>());
   /** The row the list opened at: the newest on or before the anchor. */
   const anchorKey = useRef<string | null>(null);
   /** The top row and where it was, measured just before a page is prepended. */
@@ -199,6 +189,12 @@ export function TimelinePage({
 
   const loadInitial: () => Promise<void> = useCallback(async () => {
     activeInitial.current?.abort();
+    activeMore.current?.abort();
+    activeNewer.current?.abort();
+    loadingMoreRef.current = false;
+    loadingNewerRef.current = false;
+    setLoadingMore(false);
+    setLoadingNewer(false);
     const controller = new AbortController();
     activeInitial.current = controller;
     setLoadingInitial(true);
@@ -397,7 +393,7 @@ export function TimelinePage({
   }, [posts]);
 
   const loadMore = async (source: LoadSource = "manual") => {
-    if (!nextCursor || loadingMoreRef.current) return;
+    if (!nextCursor || loadingMoreRef.current || loadingInitial) return;
     const controller = new AbortController();
     activeMore.current = controller;
     loadingMoreRef.current = true;
@@ -435,12 +431,12 @@ export function TimelinePage({
       if (!controller.signal.aborted) setMoreError(error);
     } finally {
       if (!controller.signal.aborted) setLoadingMore(false);
-      loadingMoreRef.current = false;
+      if (activeMore.current === controller) loadingMoreRef.current = false;
     }
   };
 
   const loadNewer = async (source: LoadSource = "manual") => {
-    if (!prevCursor || loadingNewerRef.current) return;
+    if (!prevCursor || loadingNewerRef.current || loadingInitial) return;
     const controller = new AbortController();
     activeNewer.current = controller;
     loadingNewerRef.current = true;
@@ -484,36 +480,60 @@ export function TimelinePage({
       if (!controller.signal.aborted) setNewerError(error);
     } finally {
       if (!controller.signal.aborted) setLoadingNewer(false);
-      loadingNewerRef.current = false;
+      if (activeNewer.current === controller) loadingNewerRef.current = false;
     }
   };
 
-  const resetFromFirstPage = () => {
-    initialSearchRef.current = withoutLoadedProgress(initialSearchRef.current);
-    visitedCursors.current = new Set();
-    setMoreError(null);
-    setNewerError(null);
-    // The page's own address minus the progress, not the window the list was
-    // read with: on the archive the two differ, and navigating to the window
-    // would be a link to nowhere.
-    navigate(`${pathname}${withoutLoadedProgress(liveSearch)}`);
-    void loadInitial();
+  const recoverContinuation = async (
+    error: unknown,
+    cursor: string | null,
+    newer = false,
+  ) => {
+    if (
+      cursor &&
+      isCursorProgressError(error) &&
+      !recoveredCursors.current.has(cursor)
+    ) {
+      recoveredCursors.current.add(cursor);
+      const visible = posts.find((post) => {
+        const box = rowElement(timelineItemKey(post))?.getBoundingClientRect();
+        return box && box.bottom > 0 && box.top < window.innerHeight;
+      });
+      if (visible) {
+        const key = timelineItemKey(visible);
+        const row = rowElement(key);
+        if (row)
+          compensation.current = { key, top: row.getBoundingClientRect().top };
+      }
+      forgetProgress(true);
+      await loadInitial();
+    } else if (newer) await loadNewer("automatic");
+    else await loadMore("automatic");
   };
 
-  if (loadingInitial) return <TimelineLoading />;
-  if (initialError) {
-    return (
-      <PublicError
-        kind={errorKind(initialError)}
-        onResetProgress={
-          hasLoadedProgress(initialSearchRef.current) &&
-          recoverableCursorError(initialError)
-            ? resetFromFirstPage
-            : undefined
-        }
-        onRetry={loadInitial}
-      />
-    );
+  const enabled = pathname === surfacePath.current;
+  const recoveringInitial = useReadRecovery({
+    error: initialError,
+    loading: loadingInitial,
+    onRetry: loadInitial,
+    enabled,
+  });
+  useReadRecovery({
+    error: moreError,
+    loading: loadingMore || loadingInitial,
+    onRetry: () => recoverContinuation(moreError, nextCursor),
+    enabled,
+  });
+  useReadRecovery({
+    error: newerError,
+    loading: loadingNewer || loadingInitial,
+    onRetry: () => recoverContinuation(newerError, prevCursor, true),
+    enabled,
+  });
+
+  if (loadingInitial && posts.length === 0) return <TimelineLoading />;
+  if (initialError && (!recoveringInitial || posts.length === 0)) {
+    return <PublicError recovering={recoveringInitial} />;
   }
   if (posts.length === 0 && !nextCursor && !prevCursor) {
     return <PublicEmpty context={emptyContext} canPublish={canPublish} />;
@@ -522,33 +542,23 @@ export function TimelinePage({
   return (
     <>
       <section aria-label="公开时间流" className={styles.timelineList}>
+        {posts.length > 0 && (initialError || loadingInitial) ? (
+          <ReadRecoveryNotice />
+        ) : null}
         <p aria-live="polite" className={styles.srOnly}>
           已加载 {posts.length} 条 Moment
         </p>
         {newerError ? (
-          <div className={styles.moreError} role="alert">
-            <span>
-              {errorKind(newerError) === "malformed"
-                ? "更新的一页数据不完整，没有加入时间流。"
-                : "更新的一页没有加载完成。"}
-            </span>
-            {recoverableCursorError(newerError) ? (
-              <button onClick={resetFromFirstPage} type="button">
-                从这一天重新加载
-              </button>
-            ) : (
-              <button onClick={() => void loadNewer("manual")} type="button">
-                重试加载
-              </button>
-            )}
-          </div>
+          <ReadRecoveryNotice error={newerError}>
+            正在重新获取更新的内容…
+          </ReadRecoveryNotice>
         ) : null}
         {prevCursor && settled && !newerError ? (
           <LoadMoreSentinel
             className={styles.moreRow}
             cursor={prevCursor}
             label="加载更新的 Moment"
-            loading={loadingNewer}
+            loading={loadingNewer || loadingInitial}
             onLoad={(source) => void loadNewer(source)}
           />
         ) : null}
@@ -567,34 +577,21 @@ export function TimelinePage({
           />
         ))}
         {moreError ? (
-          <div className={styles.moreError} role="alert">
-            <span>
-              {errorKind(moreError) === "malformed"
-                ? "下一页数据不完整，没有追加到时间流。"
-                : "下一页没有加载完成。"}
-            </span>
-            {recoverableCursorError(moreError) ? (
-              <button onClick={resetFromFirstPage} type="button">
-                从第一页重新加载
-              </button>
-            ) : (
-              <button onClick={() => void loadMore("manual")} type="button">
-                重试加载
-              </button>
-            )}
-          </div>
+          <ReadRecoveryNotice error={moreError}>
+            正在重新获取后续内容…
+          </ReadRecoveryNotice>
         ) : null}
         {nextCursor && !moreError ? (
           <LoadMoreSentinel
             className={styles.moreRow}
             cursor={nextCursor}
             label="加载更早的 Moment"
-            loading={loadingMore}
+            loading={loadingMore || loadingInitial}
             onLoad={(source) => void loadMore(source)}
           />
-        ) : (
+        ) : !nextCursor && !moreError ? (
           <p className={styles.endMark}>已经走到这段时间流的起点</p>
-        )}
+        ) : null}
       </section>
       {replyDialog}
     </>

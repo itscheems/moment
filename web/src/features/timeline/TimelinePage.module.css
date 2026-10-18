@@ -3,14 +3,12 @@
 }
 
 .moreRow,
-.moreError,
 .endMark {
   border-block-end: 1px solid var(--border-subtle);
   padding: var(--space-4);
 }
 
-.moreRow button,
-.moreError button {
+.moreRow button {
   min-block-size: var(--target-size);
   border: 1px solid var(--border-strong);
   border-radius: var(--radius-action);
@@ -22,8 +20,7 @@
 }
 
 @media (hover: hover) {
-  .moreRow button:hover,
-  .moreError button:hover {
+  .moreRow button:hover {
     border-color: var(--accent);
     background: var(--surface-hover);
   }
@@ -32,16 +29,6 @@
 .moreRow button:disabled {
   color: var(--text-tertiary);
   cursor: wait;
-}
-
-.moreError {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-3);
-  color: var(--danger);
-  font-size: var(--text-sm);
 }
 
 .endMark {
@@ -61,7 +48,6 @@
 
 @media (max-width: 719px) {
   .moreRow,
-  .moreError,
   .endMark {
     padding-inline: var(--space-3);
   }

@@ -9,6 +9,7 @@ import {
 } from "../../api/public";
 import { useNavigation } from "../../app/navigation";
 import { ShellState } from "../../components/ShellState";
+import { useReadRecovery } from "../../components/useReadRecovery";
 import {
   SiteAvatar,
   SiteCover,
@@ -16,7 +17,11 @@ import {
   siteHandle,
 } from "../../components/SiteIdentity";
 import { useSession } from "../auth/SessionProvider";
-import { PublicError, TimelineLoading } from "../timeline/PublicStates";
+import {
+  PublicError,
+  ReadRecoveryNotice,
+  TimelineLoading,
+} from "../timeline/PublicStates";
 import { ProfileEditor } from "./ProfileEditor";
 import styles from "./ProfilePage.module.css";
 
@@ -43,10 +48,19 @@ export function MemberProfilePage({
     "loading" | "ready" | "missing" | "failed"
   >("loading");
   const [attempt, setAttempt] = useState(0);
+  const [error, setError] = useState<unknown>(null);
+  const retry = useCallback(() => setAttempt((value) => value + 1), []);
+  const recovering = useReadRecovery({
+    error,
+    loading: state === "loading",
+    onRetry: retry,
+    scope: username,
+  });
 
   useEffect(() => {
     const controller = new AbortController();
     setState("loading");
+    setError(null);
     void api
       .user(username, controller.signal)
       .then((found) => {
@@ -56,6 +70,7 @@ export function MemberProfilePage({
       })
       .catch((error: unknown) => {
         if (controller.signal.aborted) return;
+        setError(error);
         setState(
           error instanceof PublicApiError && error.status === 404
             ? "missing"
@@ -69,7 +84,6 @@ export function MemberProfilePage({
     () => api.forAuthor(account?.userId ?? ""),
     [api, account?.userId],
   );
-  const retry = useCallback(() => setAttempt((value) => value + 1), []);
 
   /**
    * Adopt what the server just saved, and follow the handle if it moved.
@@ -87,16 +101,24 @@ export function MemberProfilePage({
     [navigation, username],
   );
 
-  if (state === "loading") return <TimelineLoading />;
+  const hasAccount = account?.username === username;
+  if (state === "loading" && !hasAccount) return <TimelineLoading />;
   if (state === "missing")
     return <ShellState route={missingRoute} state={null} />;
-  if (state === "failed" || !account) {
-    return <PublicError kind="timeline" onRetry={retry} />;
+  if (
+    (state === "failed" && (!recovering || !hasAccount)) ||
+    !account ||
+    !hasAccount
+  ) {
+    return <PublicError kind="timeline" recovering={recovering} />;
   }
 
   const title = siteDisplayName(account);
   return (
     <section aria-label={`${title} 的个人资料`} className={styles.profile}>
+      {state === "loading" || state === "failed" ? (
+        <ReadRecoveryNotice error={error} />
+      ) : null}
       <div className={styles.cover}>
         <SiteCover eager site={account} />
       </div>

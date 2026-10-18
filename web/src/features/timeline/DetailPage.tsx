@@ -20,13 +20,17 @@ import { postAuthorSite } from "../../components/SiteIdentity";
 import { PostPresentation } from "../posts/PostPresentation";
 import { CommentThread } from "../comments/CommentThread";
 import { useNavigation } from "../../app/navigation";
-import { PublicError, TimelineLoading } from "./PublicStates";
+import { useReadRecovery } from "../../components/useReadRecovery";
+import {
+  PublicError,
+  ReadRecoveryNotice,
+  TimelineLoading,
+} from "./PublicStates";
 
-function detailErrorKind(error: unknown): "detail" | "missing" | "malformed" {
+function detailErrorKind(error: unknown): "detail" | "missing" {
   if (error instanceof PublicApiError) {
     if (error.status === 404 || error.code === "POST_NOT_FOUND")
       return "missing";
-    if (error.code === "API_RESPONSE_INVALID") return "malformed";
   }
   return "detail";
 }
@@ -61,13 +65,20 @@ export function DetailPage({
     setLoading(true);
     setError(null);
     try {
-      setPost(await api.post(id, controller.signal));
+      const next = await api.post(id, controller.signal);
+      if (!controller.signal.aborted) setPost(next);
     } catch (nextError) {
       if (!controller.signal.aborted) setError(nextError);
     } finally {
       if (!controller.signal.aborted) setLoading(false);
     }
   }, [api, id]);
+  const recovering = useReadRecovery({
+    error,
+    loading,
+    onRetry: load,
+    scope: id,
+  });
 
   useEffect(() => {
     void load();
@@ -94,13 +105,15 @@ export function DetailPage({
     );
   }, []);
 
-  if (loading) return <TimelineLoading />;
-  if (error) {
-    return <PublicError kind={detailErrorKind(error)} onRetry={load} />;
+  if (loading && post?.id !== id) return <TimelineLoading />;
+  if (error && (!recovering || post?.id !== id)) {
+    return (
+      <PublicError kind={detailErrorKind(error)} recovering={recovering} />
+    );
   }
-  if (!post) return null;
+  if (!post || post.id !== id) return null;
   if (focusReading && !isReadArticlePost(post)) {
-    return <PublicError kind="missing" onRetry={load} />;
+    return <PublicError kind="missing" />;
   }
   const openReply = (event: MouseEvent<HTMLButtonElement>) => {
     replyTriggerRef.current = event.currentTarget;
@@ -111,6 +124,7 @@ export function DetailPage({
   // where a moment leads with its prose.
   return (
     <>
+      {loading || error ? <ReadRecoveryNotice /> : null}
       {isReadArticlePost(post) && !focusReading ? (
         <HeaderActions>
           <ArticleFocusLink

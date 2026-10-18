@@ -9,13 +9,14 @@ import {
 
 import {
   PublicApi,
-  PublicApiError,
   type PublicComment,
   type SearchHit,
   type SiteIdentity,
 } from "../../api/public";
 import { InternalLink, useNavigation } from "../../app/navigation";
 import { Icon } from "../../components/icons";
+import { useReadRecovery } from "../../components/useReadRecovery";
+import { ReadRecoveryNotice } from "../timeline/PublicStates";
 import {
   LoadMoreSentinel,
   type LoadSource,
@@ -24,6 +25,7 @@ import { usePostReplyDialog } from "../comments/usePostReplyDialog";
 import { PostPresentation } from "../posts/PostPresentation";
 import {
   appendUnique,
+  invalidCursorProgress,
   isCursorProgressError,
   validateCursorPage,
 } from "../timeline/cursorContinuity";
@@ -38,13 +40,6 @@ import {
 import styles from "./Memory.module.css";
 
 const MAX_REPLAY_PAGES = 1_000;
-
-function malformed(message: string): PublicApiError {
-  return new PublicApiError(message, {
-    code: "API_RESPONSE_INVALID",
-    status: 0,
-  });
-}
 
 function naturalDate(value: string | null, fallback: string): string {
   if (!value) return fallback;
@@ -113,6 +108,7 @@ export function SearchPage({
   const loadingMoreRef = useRef(false);
   const entryRestored = useRef(false);
   const visitedCursors = useRef(new Set<string>());
+  const recoveredCursors = useRef(new Set<string>());
   const createdFromSearch = useCallback((comment: PublicComment) => {
     setHits((current) =>
       current.map((hit) =>
@@ -150,6 +146,8 @@ export function SearchPage({
     if (!state.query || state.error) return;
     activeRequest.current?.abort();
     activeMore.current?.abort();
+    loadingMoreRef.current = false;
+    setLoadingMore(false);
     const controller = new AbortController();
     activeRequest.current = controller;
     setLoading(true);
@@ -183,7 +181,7 @@ export function SearchPage({
           break;
         }
         if (visited.has(continuation)) {
-          throw malformed("search cursor cycle detected");
+          throw invalidCursorProgress("search cursor cycle detected");
         }
         visited.add(continuation);
         requestedCursor = continuation;
@@ -258,7 +256,8 @@ export function SearchPage({
   };
 
   const loadMore = async (source: LoadSource = "manual") => {
-    if (!state.query || !nextCursor || loadingMoreRef.current) return;
+    if (!state.query || !nextCursor || loadingMoreRef.current || loading)
+      return;
     const controller = new AbortController();
     activeMore.current = controller;
     loadingMoreRef.current = true;
@@ -267,7 +266,7 @@ export function SearchPage({
     const requestedCursor = nextCursor;
     try {
       if (visitedCursors.current.has(requestedCursor)) {
-        throw malformed("search cursor cycle detected");
+        throw invalidCursorProgress("search cursor cycle detected");
       }
       const page = await api.search({
         query: state.query,
@@ -298,25 +297,36 @@ export function SearchPage({
       if (!controller.signal.aborted) setMoreError(requestError);
     } finally {
       if (!controller.signal.aborted) setLoadingMore(false);
-      loadingMoreRef.current = false;
+      if (activeMore.current === controller) loadingMoreRef.current = false;
     }
   };
 
   const activeYear = activeSearchYear(state.from, state.to);
   const total = yearCounts.reduce((sum, item) => sum + item.count, 0);
-  const clearProgressHref = state.query
-    ? searchHref({ query: state.query, from: state.from, to: state.to })
-    : "/search";
-  const resetFromFirstPage = () => {
-    savedProgress.current = null;
-    stateRef.current = { ...state, loadedThrough: null, error: null };
-    visitedCursors.current = new Set();
-    location.navigate(clearProgressHref);
+  const recoverMore = async () => {
+    if (
+      nextCursor &&
+      isCursorProgressError(moreError) &&
+      !recoveredCursors.current.has(nextCursor)
+    ) {
+      recoveredCursors.current.add(nextCursor);
+      forgetProgress();
+      await load();
+    } else await loadMore("automatic");
   };
-  const continuedPageInvalid =
-    moreError instanceof PublicApiError &&
-    (moreError.code === "INVALID_ARGUMENT" ||
-      moreError.code === "API_RESPONSE_INVALID");
+  const enabled = location.pathname === "/search";
+  const recovering = useReadRecovery({
+    error,
+    loading,
+    onRetry: load,
+    enabled,
+  });
+  useReadRecovery({
+    error: moreError,
+    loading: loadingMore || loading,
+    onRetry: recoverMore,
+    enabled,
+  });
   const filterLabel =
     fromInput || toInput
       ? `${naturalDate(fromInput || null, "最早")} 至 ${naturalDate(toInput || null, "现在")}`
@@ -447,7 +457,7 @@ export function SearchPage({
           title="搜索链接无效"
         />
       ) : null}
-      {loading ? (
+      {loading && hits.length === 0 ? (
         <section
           aria-busy="true"
           aria-label="正在搜索"
@@ -456,34 +466,16 @@ export function SearchPage({
           <span>正在搜索…</span>
         </section>
       ) : null}
-      {!loading && error ? (
+      {!loading && error && recovering ? (
+        <ReadRecoveryNotice>正在重新获取搜索结果…</ReadRecoveryNotice>
+      ) : null}
+      {loading && hits.length > 0 ? (
+        <ReadRecoveryNotice>正在更新搜索结果…</ReadRecoveryNotice>
+      ) : null}
+      {!loading && error && !recovering ? (
         <SearchMessage
-          action={
-            <div className={styles.messageActions}>
-              <button onClick={() => void load()} type="button">
-                重试搜索
-              </button>
-              {state.loadedThrough ? (
-                <button onClick={resetFromFirstPage} type="button">
-                  从第一页重新加载
-                </button>
-              ) : null}
-            </div>
-          }
-          detail={
-            error instanceof PublicApiError &&
-            error.code === "INVALID_ARGUMENT" &&
-            state.loadedThrough
-              ? "已保留搜索条件，可以从第一页重新加载。"
-              : error instanceof PublicApiError &&
-                  error.code === "INVALID_ARGUMENT"
-                ? "请修改搜索词或日期后重试。"
-                : error instanceof PublicApiError &&
-                    error.code === "API_RESPONSE_INVALID"
-                  ? "返回的结果不完整，请重试。"
-                  : "请检查网络后重试。"
-          }
-          title="搜索失败"
+          detail="请检查搜索词和日期后调整条件。"
+          title="无法使用这些搜索条件"
         />
       ) : null}
 
@@ -491,7 +483,9 @@ export function SearchPage({
         <p className={styles.searchHint}>按文字或日期查找 Moment</p>
       ) : null}
 
-      {!loading && !error && state.query ? (
+      {!state.error &&
+      state.query &&
+      (hits.length > 0 || (!loading && !error)) ? (
         <>
           <section aria-label="搜索概览" className={styles.searchSummary}>
             <div>
@@ -576,31 +570,19 @@ export function SearchPage({
                 />
               ))}
               {moreError ? (
-                <div className={styles.moreError} role="alert">
-                  <span>加载失败。</span>
-                  {continuedPageInvalid ? (
-                    <button onClick={resetFromFirstPage} type="button">
-                      从第一页重新加载
-                    </button>
-                  ) : (
-                    <button
-                      onClick={() => void loadMore("manual")}
-                      type="button"
-                    >
-                      重试加载
-                    </button>
-                  )}
-                </div>
+                <ReadRecoveryNotice error={moreError}>
+                  正在重新获取后续结果…
+                </ReadRecoveryNotice>
               ) : null}
               {nextCursor && !moreError ? (
                 <LoadMoreSentinel
                   className={styles.moreRow}
                   cursor={nextCursor}
                   label="加载更早的结果"
-                  loading={loadingMore}
+                  loading={loadingMore || loading}
                   onLoad={(source) => void loadMore(source)}
                 />
-              ) : hits.length > 0 ? (
+              ) : !nextCursor && !moreError && hits.length > 0 ? (
                 <p className={styles.endMark}>已显示全部 Moment</p>
               ) : null}
             </section>

@@ -581,7 +581,7 @@ describe("public timeline", () => {
     expect(cyclic).toHaveBeenCalledTimes(3);
   });
 
-  it("retries an initial failure without losing the deliberate error state", async () => {
+  it("automatically recovers an initial failure without a retry action", async () => {
     let attempt = 0;
     const fetcher = vi.fn(async () => {
       attempt += 1;
@@ -590,11 +590,10 @@ describe("public timeline", () => {
     });
     renderTimeline(new PublicApi(fetcher as typeof fetch));
 
-    expect(await screen.findByRole("alert")).toHaveTextContent(
-      "无法加载时间流",
-    );
-    fireEvent.click(screen.getByRole("button", { name: "重试" }));
+    expect(await screen.findByText("正在重新获取内容…")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "重试" })).toBeNull();
     expect(await screen.findByText("重新取回")).toBeInTheDocument();
+    expect(fetcher).toHaveBeenCalledTimes(2);
   });
 
   it("deduplicates a row that overlaps with a continued page", async () => {
@@ -672,13 +671,11 @@ describe("public timeline", () => {
         screen.getByRole("button", { name: "加载更早的 Moment" }),
       );
 
-      const reset = await screen.findByRole("button", {
-        name: "从第一页重新加载",
-      });
+      await screen.findByText("正在重新获取后续内容…");
       expect(screen.queryByText("不应追加")).not.toBeInTheDocument();
       expect(window.location.search).not.toContain("loaded_through");
 
-      fireEvent.click(reset);
+      await waitFor(() => expect(fetcher).toHaveBeenCalledTimes(3));
       await waitFor(() =>
         expect(
           screen.getByRole("button", { name: "加载更早的 Moment" }),
@@ -713,8 +710,11 @@ describe("public timeline", () => {
     fireEvent.click(screen.getByRole("button", { name: "加载更早的 Moment" }));
 
     expect(
-      await screen.findByRole("button", { name: "从第一页重新加载" }),
+      await screen.findByText("正在重新获取后续内容…"),
     ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "从第一页重新加载" }),
+    ).toBeNull();
     expect(screen.queryByText("不应追加的循环页")).not.toBeInTheDocument();
     expect(window.location.search).toContain("loaded_through=cursor-one");
   });

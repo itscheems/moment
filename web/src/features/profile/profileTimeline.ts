@@ -40,6 +40,7 @@ export interface ProfileFeed {
   initialized: boolean;
   loading: boolean;
   loadingMore: boolean;
+  refreshing: boolean;
   nextCursor: string | null;
   refreshCursor: string | null;
   continuation: string | null;
@@ -53,6 +54,7 @@ function emptyFeed(): ProfileFeed {
     initialized: false,
     loading: false,
     loadingMore: false,
+    refreshing: false,
     nextCursor: null,
     refreshCursor: null,
     continuation: null,
@@ -82,6 +84,7 @@ export class ProfileTimeline {
     article: new Set(),
   };
   private events = new Map<string, PostChangeEvent>();
+  private recoveredCursors = new Set<string>();
   private disposed = false;
   active: ProfileFilter = "all";
   beforeMerge?: () => void;
@@ -153,10 +156,23 @@ export class ProfileTimeline {
   async load(filter: ProfileFilter, reset = false): Promise<void> {
     const key = `initial:${filter}`;
     if (this.requests.has(key) || this.disposed) return;
+    if (reset) {
+      for (const direction of ["older", "newer"]) {
+        const pending = `${direction}:${filter}`;
+        this.requests.get(pending)?.abort();
+        this.requests.delete(pending);
+      }
+    }
     const controller = new AbortController();
     this.requests.set(key, controller);
     const generation = this.generations[filter];
-    this.set(filter, { loading: true, error: null, moreError: null });
+    this.set(filter, {
+      loading: true,
+      error: null,
+      moreError: null,
+      loadingMore: false,
+      refreshing: false,
+    });
     try {
       let page = await this.api.timeline({
         kind: filter === "all" ? null : filter,
@@ -269,10 +285,49 @@ export class ProfileTimeline {
       if (!controller.signal.aborted) this.set(filter, { moreError });
       return null;
     } finally {
-      this.requests.delete(key);
-      if (!controller.signal.aborted) this.set(filter, { loadingMore: false });
+      if (this.requests.get(key) === controller) {
+        this.requests.delete(key);
+        if (!controller.signal.aborted)
+          this.set(filter, { loadingMore: false });
+      }
     }
   }
+
+  private async recoverCursor(
+    filter: ProfileFilter,
+    direction: "older" | "newer",
+  ): Promise<boolean> {
+    const feed = this.feeds[filter];
+    const error = direction === "older" ? feed.moreError : feed.refreshError;
+    const cursor =
+      direction === "older"
+        ? feed.nextCursor
+        : (feed.continuation ?? feed.refreshCursor);
+    const key = `${direction}:${filter}:${cursor}`;
+    if (
+      !cursor ||
+      !isCursorProgressError(error) ||
+      this.recoveredCursors.has(key)
+    )
+      return false;
+    this.recoveredCursors.add(key);
+    this.initialSearch = withoutLoadedProgress(this.initialSearch);
+    this.onProgressDiscarded?.();
+    await this.load(filter, true);
+    return true;
+  }
+
+  async recoverOlder(filter: ProfileFilter): Promise<string | null> {
+    return (await this.recoverCursor(filter, "older"))
+      ? null
+      : this.more(filter);
+  }
+
+  async recoverNewer(filter: ProfileFilter): Promise<void> {
+    if (!(await this.recoverCursor(filter, "newer")))
+      await this.refresh(filter);
+  }
+
   async refresh(filter: ProfileFilter): Promise<void> {
     const feed = this.feeds[filter],
       key = `newer:${filter}`;
@@ -286,8 +341,8 @@ export class ProfileTimeline {
       return;
     const controller = new AbortController();
     this.requests.set(key, controller);
+    this.set(filter, { refreshing: true, refreshError: null });
     const generation = this.generations[filter];
-    this.set(filter, { refreshError: null });
     let cursor = feed.continuation ?? feed.refreshCursor;
     const visited = new Set<string>();
     try {
@@ -337,13 +392,16 @@ export class ProfileTimeline {
     } catch (refreshError) {
       if (!controller.signal.aborted) this.set(filter, { refreshError });
     } finally {
-      this.requests.delete(key);
-      if (
-        !controller.signal.aborted &&
-        generation !== this.generations[filter] &&
-        pageVisible()
-      )
-        void this.refresh(filter);
+      if (this.requests.get(key) === controller) {
+        this.requests.delete(key);
+        if (!controller.signal.aborted) this.set(filter, { refreshing: false });
+        if (
+          !controller.signal.aborted &&
+          generation !== this.generations[filter] &&
+          pageVisible()
+        )
+          void this.refresh(filter);
+      }
     }
   }
 }

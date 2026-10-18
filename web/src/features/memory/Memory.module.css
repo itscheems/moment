@@ -198,7 +198,6 @@
 .message button,
 .messageActions a,
 .message > div > a,
-.moreError button,
 .moreRow button {
   min-block-size: var(--target-size);
   display: inline-flex;
@@ -217,7 +216,6 @@
 @media (hover: hover) {
   .dateFields > button:hover,
   .message button:hover,
-  .moreError button:hover,
   .moreRow button:hover {
     background: var(--button-primary-hover);
   }
@@ -406,7 +404,6 @@
   font-size: var(--text-sm);
 }
 
-.moreError,
 .moreRow {
   min-block-size: 5rem;
   display: flex;
@@ -419,7 +416,6 @@
   font-size: var(--text-sm);
 }
 
-.moreError button,
 .moreRow button {
   min-block-size: var(--target-size);
 }
@@ -931,11 +927,6 @@
 
   .calendarWide {
     padding-inline: var(--space-3);
-  }
-
-  .moreError {
-    align-items: stretch;
-    flex-direction: column;
   }
 }
 
