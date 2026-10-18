@@ -1737,7 +1737,11 @@ describe("owner composing flow", () => {
     // This file shares one history; without this the test inherits whatever
     // address the previous one left behind.
     window.history.replaceState({}, "", "/");
-    keepDraft(instance, "上周没写完的一段", new Date("2026-09-18T02:00:00Z"));
+    keepDraft(
+      instance,
+      "上周没写完的一段",
+      new Date(Date.now() - 7 * 24 * 60 * 60 * 1000),
+    );
     vi.mocked(window.matchMedia).mockImplementation((query) => ({
       matches: query === "(min-width: 720px)",
       media: query,
@@ -1785,7 +1789,11 @@ describe("owner composing flow", () => {
     // This file shares one history; without this the test inherits whatever
     // address the previous one left behind.
     window.history.replaceState({}, "", "/");
-    keepDraft(instance, "先放着的一段", new Date("2026-09-20T07:00:00.000Z"));
+    keepDraft(
+      instance,
+      "先放着的一段",
+      new Date(Date.now() - 24 * 60 * 60 * 1000),
+    );
     vi.mocked(window.matchMedia).mockImplementation((query) => ({
       matches: query === "(min-width: 720px)",
       media: query,
@@ -1837,7 +1845,11 @@ describe("owner composing flow", () => {
   // gives the list its own address so a reload comes back to the list.
   it("restores the compose dialog and its list from the address alone", async () => {
     preauthenticate();
-    keepDraft(instance, "刷新之前存下的", new Date("2026-09-20T07:00:00.000Z"));
+    keepDraft(
+      instance,
+      "刷新之前存下的",
+      new Date(Date.now() - 24 * 60 * 60 * 1000),
+    );
     vi.mocked(window.matchMedia).mockImplementation((query) => ({
       matches: query === "(min-width: 720px)",
       media: query,
@@ -1871,8 +1883,12 @@ describe("owner composing flow", () => {
   it("picks and deletes drafts from the list's edit mode", async () => {
     preauthenticate();
     window.history.replaceState({}, "", "/compose");
-    keepDraft(instance, "第一段", new Date("2026-09-20T01:00:00.000Z"));
-    keepDraft(instance, "第二段", new Date("2026-09-20T02:00:00.000Z"));
+    keepDraft(
+      instance,
+      "第一段",
+      new Date(Date.now() - 2 * 24 * 60 * 60 * 1000),
+    );
+    keepDraft(instance, "第二段", new Date(Date.now() - 24 * 60 * 60 * 1000));
     installApi();
     render(<App />);
 
@@ -1939,7 +1955,7 @@ describe("owner composing flow", () => {
   it("replaces the draft it opened rather than filing a second one", async () => {
     preauthenticate();
     window.history.replaceState({}, "", "/compose");
-    keepDraft(instance, "aaa", new Date("2026-09-20T07:12:58.000Z"));
+    keepDraft(instance, "aaa", new Date(Date.now() - 24 * 60 * 60 * 1000));
     installApi();
     render(<App />);
 
@@ -1968,7 +1984,11 @@ describe("owner composing flow", () => {
   it("asks before deleting a draft", async () => {
     preauthenticate();
     window.history.replaceState({}, "", "/compose");
-    keepDraft(instance, "别手滑删了我", new Date("2026-09-20T07:12:58.000Z"));
+    keepDraft(
+      instance,
+      "别手滑删了我",
+      new Date(Date.now() - 24 * 60 * 60 * 1000),
+    );
     installApi();
     render(<App />);
 
