@@ -396,10 +396,18 @@ function renderThread(
   );
 }
 
-async function chooseFirstCommentAction(name: string) {
+async function openCommentMenu() {
+  const trigger = screen.getAllByRole("button", { name: "回复操作" })[0];
+  await waitFor(() => expect(trigger).toBeEnabled());
   await act(async () => {
-    fireEvent.click(screen.getAllByRole("button", { name: "回复操作" })[0]);
+    trigger.focus();
+    fireEvent.keyDown(trigger, { key: "ArrowDown", code: "ArrowDown" });
   });
+  await waitFor(() => expect(trigger).toHaveAttribute("aria-expanded", "true"));
+}
+
+async function chooseFirstCommentAction(name: string) {
+  await openCommentMenu();
   fireEvent.click(
     await screen.findByRole("menuitem", { name }, { timeout: 3_000 }),
   );
@@ -2167,7 +2175,7 @@ describe("public comment thread", () => {
     });
     renderThread();
     await screen.findByText("我的回复");
-    fireEvent.click(screen.getByRole("button", { name: "回复操作" }));
+    await openCommentMenu();
     expect(
       await screen.findByRole("menuitem", { name: "删除" }),
     ).toBeInTheDocument();
