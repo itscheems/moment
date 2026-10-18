@@ -104,6 +104,7 @@ function renderMembers(strict = false) {
 
 async function openMemberMenu(name: string) {
   const trigger = await screen.findByRole("button", { name: `管理 ${name}` });
+  await waitFor(() => expect(trigger).toBeEnabled());
   trigger.focus();
   fireEvent.keyDown(trigger, { key: "ArrowDown", code: "ArrowDown" });
   await waitFor(() => expect(trigger).toHaveAttribute("aria-expanded", "true"));
