@@ -765,6 +765,7 @@ function PublicApp() {
                       overlayComposer.current?.loadDraft(
                         draft.contentMd,
                         draft.id,
+                        draft.mapCard,
                       );
                       closeDrafts();
                     }}

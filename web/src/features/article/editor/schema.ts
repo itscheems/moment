@@ -1,3 +1,4 @@
+import { InteractiveMapNode } from "./MapNodeView";
 import type { Extensions } from "@tiptap/core";
 import { ReactNodeViewRenderer } from "@tiptap/react";
 import {
@@ -49,9 +50,14 @@ export function articleEditorExtensions(
     ...articleContentExtensions()
       .filter(
         (extension) =>
-          !["table", "tableRow", "tableCell", "tableHeader", "image"].includes(
-            extension.name,
-          ),
+          ![
+            "table",
+            "tableRow",
+            "tableCell",
+            "tableHeader",
+            "image",
+            "mapCard",
+          ].includes(extension.name),
       )
       .map((extension) =>
         extension.name === "codeBlock"
@@ -79,6 +85,7 @@ export function articleEditorExtensions(
     ListNormalizationExtension,
     UiState,
     ManagedNotionImage,
+    InteractiveMapNode,
     ImageUploadNode.configure({
       upload: options.upload,
       accept: "image/*",

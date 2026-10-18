@@ -1,3 +1,4 @@
+import { parseMapCard, type MapCardData } from "../features/maps/types";
 import {
   ApiClient,
   booleanField,
@@ -136,6 +137,7 @@ export interface MergeReviewLinkCard {
 }
 
 export interface MergeReviewEntity {
+  map_card?: MapCardData;
   id: string;
   /**
    * Empty on an account or identity row, which the Go field still emits, and
@@ -879,6 +881,7 @@ export const REVIEW_ENTITY_ALLOWED = new Set([
   ...REVIEW_ENTITY_INSTANTS,
   "location",
   "link_cards",
+  "map_card",
   "avatar",
   "cover",
 ]);
@@ -904,6 +907,8 @@ export function parseMergeReviewEntity(value: unknown): MergeReviewEntity {
   for (const field of REVIEW_ENTITY_INSTANTS) {
     if (field in record) optional[field] = canonicalUTCField(record, field);
   }
+  if ("map_card" in record && record.map_card != null)
+    optional.map_card = parseMapCard(record.map_card);
   if ("location" in record) {
     optional.location = parseLocationInput(record.location);
   }
@@ -1165,7 +1170,7 @@ export function parseImportPlan(
       "warnings",
     ]) ||
     record.dry_run !== true ||
-    record.format_version !== 2
+    (record.format_version !== 2 && record.format_version !== 3)
   ) {
     throw invalidResponse("import plan contract is invalid");
   }
@@ -1271,7 +1276,7 @@ export function parseImportPlan(
     throw invalidResponse("import warnings do not match the preview");
   }
   return {
-    formatVersion: 1,
+    formatVersion: record.format_version,
     archiveSHA256,
     counts,
     timeRange: { from, to },

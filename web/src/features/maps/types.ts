@@ -13,7 +13,18 @@ export interface MapCardData {
   connectPoints: boolean;
 }
 
-export function mapCardPayload(card: MapCardData): Record<string, unknown> {
+export interface MapCardWire {
+  places: {
+    name: string;
+    display_name: string;
+    latitude: number;
+    longitude: number;
+    coordinate_system: "wgs84" | "gcj02";
+  }[];
+  connect_points: boolean;
+}
+
+export function mapCardPayload(card: MapCardData): MapCardWire {
   return {
     places: card.places.map((place) => ({
       name: place.name,

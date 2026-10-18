@@ -1,3 +1,5 @@
+import { MapCardEditor } from "../../maps/MapCardEditor";
+import { mapCardPayload } from "../../maps/types";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { EditorContext, type Editor } from "@tiptap/react";
@@ -78,6 +80,22 @@ export function ArticleFormatToolbar({
         ...(isMobile ? { bottom: `calc(100% - ${height - rect.y}px)` } : {}),
       }}
     >
+      <MapCardEditor
+        value={null}
+        triggerOnly
+        disabled={loading}
+        onChange={(card) => {
+          if (card)
+            editor
+              .chain()
+              .focus()
+              .insertContent({
+                type: "mapCard",
+                attrs: { map_card: mapCardPayload(card) },
+              })
+              .run();
+        }}
+      />
       {mobileView === "main" ? (
         <MainToolbarContent
           onHighlighterClick={() => setMobileView("highlighter")}

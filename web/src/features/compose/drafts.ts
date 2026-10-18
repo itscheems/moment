@@ -1,3 +1,4 @@
+import { mapCardPayload, parseMapCard, type MapCardData } from "../maps/types";
 import { fingerprintComposeDraft } from "./draft";
 
 const KEPT_PREFIX = "moment.compose.kept-drafts.v2:";
@@ -8,6 +9,7 @@ const INSTANCE_PATTERN = /^[0-9a-f]{32}\.[0-9a-f]{32}$/;
 const ID_PATTERN = /^[0-9a-f]{32}$/;
 
 export interface KeptDraft {
+  mapCard?: MapCardData;
   id: string;
   contentMd: string;
   fingerprint: string;
@@ -54,11 +56,19 @@ function parseEntry(value: unknown, now: number): KeptDraft | null {
     typeof value !== "object" ||
     value === null ||
     Array.isArray(value) ||
-    !hasExactKeys(value as Record<string, unknown>, [
-      "id",
-      "content_md",
-      "saved_at",
-    ])
+    !(
+      hasExactKeys(value as Record<string, unknown>, [
+        "id",
+        "content_md",
+        "saved_at",
+      ]) ||
+      hasExactKeys(value as Record<string, unknown>, [
+        "id",
+        "content_md",
+        "saved_at",
+        "map_card",
+      ])
+    )
   ) {
     return null;
   }
@@ -67,17 +77,24 @@ function parseEntry(value: unknown, now: number): KeptDraft | null {
     typeof entry.id !== "string" ||
     !ID_PATTERN.test(entry.id) ||
     typeof entry.content_md !== "string" ||
-    entry.content_md.trim().length === 0 ||
+    (entry.content_md.trim().length === 0 && entry.map_card == null) ||
     !isTimestamp(entry.saved_at)
   ) {
     return null;
   }
   const savedTime = Date.parse(entry.saved_at);
   if (savedTime > now + 60_000 || now - savedTime > MAX_AGE_MS) return null;
+  let mapCard: MapCardData | undefined;
+  try {
+    mapCard = entry.map_card == null ? undefined : parseMapCard(entry.map_card);
+  } catch {
+    return null;
+  }
   return {
+    ...(mapCard ? { mapCard } : {}),
     id: entry.id,
     contentMd: entry.content_md,
-    fingerprint: fingerprintComposeDraft(entry.content_md),
+    fingerprint: fingerprintComposeDraft(entry.content_md, mapCard),
     savedAt: entry.saved_at,
   };
 }
@@ -139,6 +156,7 @@ function write(instanceId: string, drafts: KeptDraft[]): boolean {
         drafts: drafts.slice(0, MAX_KEPT).map((draft) => ({
           id: draft.id,
           content_md: draft.contentMd,
+          ...(draft.mapCard ? { map_card: mapCardPayload(draft.mapCard) } : {}),
           saved_at: draft.savedAt,
         })),
       }),
@@ -165,13 +183,15 @@ export function keepDraft(
   instanceId: string | null,
   contentMd: string,
   now = new Date(),
+  mapCard?: MapCardData | null,
 ): KeptDraft | null {
   if (!instanceId || !INSTANCE_PATTERN.test(instanceId)) return null;
-  if (contentMd.trim().length === 0) return null;
-  const fingerprint = fingerprintComposeDraft(contentMd);
+  if (contentMd.trim().length === 0 && !mapCard) return null;
+  const fingerprint = fingerprintComposeDraft(contentMd, mapCard);
   const current = read(instanceId, now.getTime());
   const existing = current.find((draft) => draft.fingerprint === fingerprint);
   const kept: KeptDraft = {
+    ...(mapCard ? { mapCard } : {}),
     id: existing?.id ?? newDraftID(),
     contentMd,
     fingerprint,
@@ -197,9 +217,10 @@ export function dropKeptDraftByContent(
   instanceId: string | null,
   contentMd: string,
   now = Date.now(),
+  mapCard?: MapCardData | null,
 ): void {
   if (!instanceId || !INSTANCE_PATTERN.test(instanceId)) return;
-  const fingerprint = fingerprintComposeDraft(contentMd);
+  const fingerprint = fingerprintComposeDraft(contentMd, mapCard);
   const current = read(instanceId, now);
   const next = current.filter((draft) => draft.fingerprint !== fingerprint);
   if (next.length !== current.length) write(instanceId, next);

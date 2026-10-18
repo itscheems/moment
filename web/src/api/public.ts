@@ -1,3 +1,9 @@
+import {
+  parseMapCard,
+  mapCardPayload,
+  type MapCardData,
+  type MapCardWire,
+} from "../features/maps/types";
 import { mediaOriginalUrl, mediaPreviewUrl } from "./mediaUrls";
 
 export interface SiteIdentity {
@@ -58,6 +64,7 @@ export function isPostKind(value: unknown): value is PostKind {
  * unknown to whatever renders next.
  */
 export type ArticleNodeType =
+  | "mapCard"
   | "paragraph"
   | "heading"
   | "blockquote"
@@ -101,6 +108,7 @@ export type ArticleMarkType =
  * two spellings to drift apart.
  */
 export interface ArticleNodeAttrs {
+  map_card?: MapCardWire;
   /** heading, 1 to 3. */
   level?: number;
   /** orderedList, written only when it is not 1. */
@@ -207,6 +215,7 @@ export interface PublicPost {
   media: PublicMediaUsage[];
   linkCards: PublicLinkCard[];
   location?: PublicPostLocation | null;
+  mapCard?: MapCardData | null;
   quotedPost?: PublicQuotedPost | null;
 }
 
@@ -301,6 +310,7 @@ export interface PublicLinkCard {
 }
 
 export interface PublicAvailableQuotedPost {
+  mapCard?: MapCardData | null;
   author?: PublicCommentAuthor;
   unavailable: false;
   id: string;
@@ -1166,6 +1176,7 @@ function postBody(
 }
 
 const ARTICLE_NODE_TYPES: readonly ArticleNodeType[] = [
+  "mapCard",
   "paragraph",
   "heading",
   "blockquote",
@@ -1205,6 +1216,7 @@ const ARTICLE_MARK_TYPES: readonly ArticleMarkType[] = [
  * its own row is refused rather than trimmed.
  */
 const ARTICLE_NODE_ATTRS: Record<ArticleNodeType, readonly string[]> = {
+  mapCard: ["id", "map_card"],
   paragraph: [
     "id",
     "textAlign",
@@ -1269,12 +1281,14 @@ const ARTICLE_NODE_ATTRS: Record<ArticleNodeType, readonly string[]> = {
  * without its level and a picture is nothing without the media it names.
  */
 const ARTICLE_REQUIRED_ATTRS: Partial<Record<ArticleNodeType, string>> = {
+  mapCard: "map_card",
   heading: "level",
   image: "media_id",
 };
 
 /** The nodes that hold nothing: a rule, a break and a picture are leaves. */
 const ARTICLE_LEAF_NODES: readonly ArticleNodeType[] = [
+  "mapCard",
   "horizontalRule",
   "hardBreak",
   "tocNode",
@@ -1373,6 +1387,8 @@ function parseArticleNodeAttrs(
     );
   }
   const attrs: ArticleNodeAttrs = {};
+  if ("map_card" in value)
+    attrs.map_card = mapCardPayload(parseMapCard(value.map_card));
   if ("level" in value) {
     const level = positiveIntegerField(value, "level");
     if (level > 3) {
@@ -1518,12 +1534,19 @@ export function parseArticleDocument(value: unknown): ArticleDocument {
     throw invalidResponse("article body must be a document");
   }
   const schemaVersion = positiveIntegerField(value, "schema_version");
+  if (schemaVersion > 3)
+    throw invalidResponse("article body schema is not supported");
   const budget = { remaining: MAX_ARTICLE_NODES };
-  return {
-    schema_version: schemaVersion,
-    type: "doc",
-    content: parseArticleNodes(value.content, 1, budget),
-  };
+  const content = parseArticleNodes(value.content, 1, budget);
+  const containsMap = (nodes: ArticleNode[]): boolean =>
+    nodes.some(
+      (node) =>
+        node.type === "mapCard" ||
+        (node.content ? containsMap(node.content) : false),
+    );
+  if (schemaVersion < 3 && containsMap(content))
+    throw invalidResponse("map nodes require article schema 3");
+  return { schema_version: schemaVersion, type: "doc", content };
 }
 
 function parseArticleCover(value: unknown): PublicArticleCover | null {
@@ -1662,6 +1685,7 @@ export function parsePost(value: unknown): PublicPost {
   if ("edited_at" in value && !postKeys.includes("edited_at"))
     postKeys.push("edited_at");
   if ("author" in value) postKeys.push("author");
+  if ("map_card" in value) postKeys.push("map_card");
   // mirrors postdto.Post (internal/transport/postdto/dto.go)
   if (
     !hasExactKeys(value, postKeys) &&
@@ -1698,6 +1722,7 @@ export function parsePost(value: unknown): PublicPost {
       !isRecord(quoted) ||
       !hasExactKeys(quoted, [
         ...(Object.hasOwn(quoted, "author") ? ["author"] : []),
+        ...(Object.hasOwn(quoted, "map_card") ? ["map_card"] : []),
         "unavailable",
         "id",
         "kind",
@@ -1725,6 +1750,7 @@ export function parsePost(value: unknown): PublicPost {
         quoted.published_at !== null ||
         quoted.media !== null ||
         quoted.location !== null ||
+        quoted.map_card != null ||
         quoted.author != null
       ) {
         throw invalidResponse(
@@ -1777,6 +1803,9 @@ export function parsePost(value: unknown): PublicPost {
           "quoted post",
         ),
         location: quotedLocation,
+        ...(quoted.map_card != null
+          ? { mapCard: parseMapCard(quoted.map_card) }
+          : {}),
       };
     }
   }
@@ -1829,6 +1858,9 @@ export function parsePost(value: unknown): PublicPost {
     linkCards,
     location,
     quotedPost,
+    ...(value.map_card != null
+      ? { mapCard: parseMapCard(value.map_card) }
+      : {}),
   };
 }
 

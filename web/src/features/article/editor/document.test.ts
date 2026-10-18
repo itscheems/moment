@@ -217,7 +217,7 @@ describe("serialising the editor's document", () => {
 
   it("always answers with the one schema version the server takes", () => {
     expect(toArticleDocument({ type: "doc", content: [] }).schema_version).toBe(
-      2,
+      3,
     );
   });
 });
@@ -252,8 +252,8 @@ describe("a stored body round-tripping through the editor", () => {
 
   it("comes back byte for byte, so a draft that was only read is not dirty", () => {
     const again = toArticleDocument(toEditorContent(stored));
-    expect(again).toEqual({ ...stored, schema_version: 2 });
-    expect(sameArticleDocument(again, { ...stored, schema_version: 2 })).toBe(
+    expect(again).toEqual({ ...stored, schema_version: 3 });
+    expect(sameArticleDocument(again, { ...stored, schema_version: 3 })).toBe(
       true,
     );
   });

@@ -1,3 +1,4 @@
+import { InteractiveMapNode } from "../editor/MapNodeView";
 import { useEffect, useMemo } from "react";
 import { createPortal } from "react-dom";
 import { Mark, type JSONContent, type MarkViewProps } from "@tiptap/core";
@@ -60,6 +61,7 @@ const ReadingMentionMark = Mark.create({
 const readingExtensions = articleContentExtensions()
   .map((extension) => {
     if (extension.name === "image") return ManagedNotionImage;
+    if (extension.name === "mapCard") return InteractiveMapNode;
     if (extension.name === "codeBlock") {
       return CodeBlockLowlight.extend({
         addNodeView() {

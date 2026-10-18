@@ -1,0 +1,194 @@
+import { useEffect, useMemo, useRef, useState } from "react";
+import Map, {
+  Marker,
+  NavigationControl,
+  Popup,
+  Source,
+  Layer,
+  type MapRef,
+} from "react-map-gl/maplibre";
+import * as maplibre from "maplibre-gl";
+import workerUrl from "maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url";
+import "maplibre-gl/dist/maplibre-gl.css";
+import { mapBounds, mapConnections, mapCoordinate } from "./geometry";
+import type { MapCardData } from "./types";
+import styles from "./Maps.module.css";
+
+maplibre.setWorkerUrl(workerUrl);
+
+export interface MapCamera {
+  longitude: number;
+  latitude: number;
+  zoom: number;
+  bearing: number;
+  pitch: number;
+}
+
+export default function MapCanvas({
+  card,
+  globe = false,
+  camera,
+  onCamera,
+  onFailure,
+  onPick,
+}: {
+  card: MapCardData;
+  globe?: boolean;
+  camera?: MapCamera;
+  onCamera?: (camera: MapCamera) => void;
+  onFailure: () => void;
+  onPick?: (longitude: number, latitude: number) => void;
+}) {
+  const ref = useRef<MapRef>(null);
+  const [loaded, setLoaded] = useState(false);
+  const [selected, setSelected] = useState<number | null>(null);
+  const bounds = useMemo(() => mapBounds(card.places), [card.places]);
+  const connections = useMemo(() => mapConnections(card), [card]);
+  const pointsKey = card.places
+    .map(
+      (point) =>
+        `${point.latitude},${point.longitude},${point.coordinateSystem}`,
+    )
+    .join(";");
+  const fittedKey = useRef(camera ? pointsKey : "");
+  useEffect(() => {
+    if (loaded && !onPick && fittedKey.current !== pointsKey)
+      ref.current?.fitBounds(bounds, {
+        padding: 48,
+        maxZoom: card.places.length === 1 ? 14 : 12,
+        duration: 0,
+      });
+    if (loaded) fittedKey.current = pointsKey;
+  }, [pointsKey, loaded, bounds, card.places.length, onPick]);
+  useEffect(() => {
+    if (loaded) return;
+    const timer = window.setTimeout(onFailure, 20_000);
+    return () => window.clearTimeout(timer);
+  }, [loaded, onFailure]);
+  const lastGlobe = useRef(false);
+  const flatCamera = useRef<MapCamera | undefined>(undefined);
+  useEffect(() => {
+    if (!loaded || lastGlobe.current === globe) return;
+    const map = ref.current?.getMap();
+    if (!map) return;
+    if (globe) {
+      const center = map.getCenter();
+      flatCamera.current = {
+        longitude: center.lng,
+        latitude: center.lat,
+        zoom: map.getZoom(),
+        bearing: map.getBearing(),
+        pitch: map.getPitch(),
+      };
+      map.easeTo({ zoom: 1.5, pitch: 0, duration: 500 });
+    } else if (flatCamera.current)
+      map.easeTo({ ...flatCamera.current, duration: 500 });
+    lastGlobe.current = globe;
+  }, [globe, loaded]);
+  const popup = selected === null ? null : card.places[selected];
+  return (
+    <Map
+      ref={ref}
+      mapLib={maplibre}
+      initialViewState={
+        camera ??
+        (onPick
+          ? { longitude: 0, latitude: 0, zoom: 1 }
+          : {
+              bounds,
+              fitBoundsOptions: {
+                padding: 48,
+                maxZoom: card.places.length === 1 ? 14 : 12,
+              },
+            })
+      }
+      mapStyle="https://tiles.openfreemap.org/styles/liberty"
+      projection={{ type: globe ? "globe" : "mercator" }}
+      cooperativeGestures={!globe}
+      reuseMaps={false}
+      attributionControl={{ compact: true }}
+      maxPitch={0}
+      onLoad={(event) => {
+        setLoaded(true);
+        const map = event.target;
+        // Existing vector labels carry localized names. Keep the native name
+        // when a Chinese label is absent, and leave non-name symbol layers alone.
+        for (const layer of map.getStyle().layers) {
+          if (layer.type === "symbol" && layer.layout?.["text-field"]) {
+            const field = layer.layout["text-field"];
+            if (
+              (typeof field === "string" || Array.isArray(field)) &&
+              JSON.stringify(field).includes("name")
+            ) {
+              map.setLayoutProperty(layer.id, "text-field", [
+                "coalesce",
+                ["get", "name:zh"],
+                typeof field === "string" ? ["get", "name"] : field,
+              ]);
+            }
+          }
+        }
+      }}
+      onError={onFailure}
+      onMoveEnd={(event) => onCamera?.(event.viewState)}
+      onClick={
+        onPick
+          ? (event) => onPick(event.lngLat.wrap().lng, event.lngLat.lat)
+          : undefined
+      }
+      style={{ width: "100%", height: "100%" }}
+    >
+      <NavigationControl position="top-left" showCompass={false} />
+      {card.connectPoints && (
+        <Source id="place-connections" type="geojson" data={connections}>
+          <Layer
+            id="place-connections-line"
+            type="line"
+            paint={{
+              "line-color": "#327cc7",
+              "line-width": 2.5,
+              "line-dasharray": [2, 2],
+            }}
+          />
+        </Source>
+      )}
+      {card.places.map((place, index) => {
+        const [longitude, latitude] = mapCoordinate(place);
+        return (
+          <Marker
+            key={`${place.name}:${longitude}:${latitude}`}
+            longitude={longitude}
+            latitude={globe ? latitude : Math.max(-85, Math.min(85, latitude))}
+            anchor="bottom"
+            onClick={(event) => {
+              event.originalEvent.stopPropagation();
+              setSelected(index);
+            }}
+          >
+            <button
+              type="button"
+              className={styles.marker}
+              aria-label={`地点 ${index + 1}：${place.name}`}
+            >
+              {index + 1}
+            </button>
+          </Marker>
+        );
+      })}
+      {popup && (
+        <Popup
+          longitude={mapCoordinate(popup)[0]}
+          latitude={mapCoordinate(popup)[1]}
+          anchor="bottom"
+          onClose={() => setSelected(null)}
+          closeOnClick={false}
+        >
+          <div className={styles.popup}>
+            <strong>{popup.name}</strong>
+            <span>{popup.displayName}</span>
+          </div>
+        </Popup>
+      )}
+    </Map>
+  );
+}

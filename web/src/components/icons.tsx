@@ -42,6 +42,7 @@ export type IconName =
   | "danmaku-count"
   | "like-count"
   | "uploader"
+  | "map"
   | "location"
   | "location-picker"
   | "check"
@@ -77,6 +78,14 @@ const iconViewBoxes: Partial<Record<IconName, string>> = {
 };
 
 const paths: Record<IconName, React.ReactNode> = {
+  map: (
+    <>
+      <path d="m3 6 5-2 8 3 5-2v15l-5 2-8-3-5 2V6Z" />
+      <path d="M8 4v15M16 13v9" />
+      <path d="M19 7c0 2.4-3 5.5-3 5.5S13 9.4 13 7a3 3 0 1 1 6 0Z" />
+      <circle cx="16" cy="7" r=".7" />
+    </>
+  ),
   home: (
     <path d="M4 11.5 12 5l8 6.5V20a1 1 0 0 1-1 1h-4.5v-6h-5v6H5a1 1 0 0 1-1-1v-8.5Z" />
   ),

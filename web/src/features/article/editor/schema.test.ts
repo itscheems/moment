@@ -16,6 +16,18 @@ const MEDIA_ID = "01K2ABCDEF0123456789ABCDE7";
 
 /** One plausible value per attribute the allowlist names. */
 const SAMPLE_ATTRS: Readonly<Record<string, unknown>> = {
+  map_card: {
+    places: [
+      {
+        name: "银座",
+        display_name: "日本东京银座",
+        latitude: 35.67,
+        longitude: 139.76,
+        coordinate_system: "wgs84",
+      },
+    ],
+    connect_points: false,
+  },
   level: 2,
   start: 3,
   language: "go",
