@@ -36,12 +36,12 @@ import (
 
 const (
 	// FormatVersion is the import-facing Moment export protocol version.
-	FormatVersion           = 2
+	FormatVersion           = 3
 	formatName              = "moment-export"
 	copyBufferSize          = 128 << 10
 	manifestFixedPointLimit = 32
-	// FormatHeaderValue is the fail-closed HTTP/CLI negotiation token for v2.
-	FormatHeaderValue = "moment-export-v2"
+	// FormatHeaderValue is the fail-closed HTTP/CLI negotiation token for v3.
+	FormatHeaderValue = "moment-export-v3"
 )
 
 // ErrDestinationUnavailable classifies a safe output target that cannot be
@@ -49,7 +49,7 @@ const (
 var ErrDestinationUnavailable = errors.New("archive destination is unavailable")
 
 const readme = "Moment portable export\n\n" +
-	"Format: moment-export v2\n" +
+	"Format: moment-export v3\n" +
 	"Portable records are under data/ and immutable originals are under media/.\n" +
 	"checksums.sha256 uses: <sha256>\\t<uncompressed-bytes>\\t<path>.\n" +
 	"It lists every ZIP member except checksums.sha256 itself.\n"
@@ -92,7 +92,7 @@ func NewExporter(options Options) (*Exporter, error) {
 	return &Exporter{dataDir: options.DataDir, appVersion: options.AppVersion, clock: options.Clock}, nil
 }
 
-// Export streams one v2 ZIP. It holds maintenance shared from CURRENT
+// Export streams one v3 ZIP. It holds maintenance shared from CURRENT
 // resolution through completion, then media shared and one SQLite read snapshot
 // until the last reachable immutable original has been copied.
 func (exporter *Exporter) Export(ctx context.Context, destination io.Writer) (summary Summary, exportErr error) {
@@ -120,7 +120,7 @@ func (exporter *Exporter) Export(ctx context.Context, destination io.Writer) (su
 	return exporter.exportResolved(ctx, destination, runtimeState, database, nil)
 }
 
-// ExportWithinLocks writes a complete v2 backup from an already-open active
+// ExportWithinLocks writes a complete v3 backup from an already-open active
 // database while the caller holds maintenance and media exclusion. It avoids
 // re-acquiring a shared maintenance lease during import commit.
 func (exporter *Exporter) ExportWithinLocks(ctx context.Context, destination io.Writer, runtimeState *runtimefs.Runtime, database *sqlitestore.Database, held *runtimefs.LeaseSet) (Summary, error) {
@@ -645,6 +645,7 @@ type entryRecord struct {
 	QuoteUnavailable bool             `json:"quote_unavailable,omitempty"`
 	Media            []usageRecord    `json:"media"`
 	Location         *locationRecord  `json:"location,omitempty"`
+	MapCard          *domain.MapCard  `json:"map_card,omitempty"`
 	LinkCards        []linkCardRecord `json:"link_cards,omitempty"`
 }
 
@@ -893,7 +894,7 @@ func portableEntryRecord(value sqlitestore.ArchiveEntry) entryRecord {
 		PublishedAt: portableTime(value.PublishedAtMS), RepostedAt: portableOptionalTime(value.RepostedAtMS), EditedAt: portableOptionalTime(value.EditedAtMS),
 		Visibility:    portableVisibility(value.Visibility),
 		QuotedEntryID: value.QuotedEntryID, QuoteUnavailable: value.QuoteUnavailable,
-		Media: portableUsageRecords(value.Media), Location: portableLocation(value.Location),
+		Media: portableUsageRecords(value.Media), Location: portableLocation(value.Location), MapCard: domain.CloneMapCard(value.MapCard),
 		LinkCards: portableLinkCards(value.LinkCards),
 	}
 }
@@ -1186,7 +1187,7 @@ func validateArchiveEntry(value sqlitestore.ArchiveEntry) error {
 	}
 	entry := domain.Entry{
 		PublicationState: value.PublicationState, AuthorUserID: value.AuthorUserID,
-		ID: id, Kind: domain.EntryKind(value.Kind), ContentMD: value.ContentMD, Visibility: value.Visibility,
+		ID: id, MapCard: domain.CloneMapCard(value.MapCard), Kind: domain.EntryKind(value.Kind), ContentMD: value.ContentMD, Visibility: value.Visibility,
 		CreatedAt:   time.UnixMilli(value.CreatedAtMS).UTC(),
 		UpdatedAt:   time.UnixMilli(value.UpdatedAtMS).UTC(),
 		PublishedAt: time.UnixMilli(value.PublishedAtMS).UTC(),
@@ -1224,7 +1225,7 @@ func validateArchiveEntry(value sqlitestore.ArchiveEntry) error {
 		return err
 	}
 	body, isMoment := domain.Entry{Kind: domain.EntryKind(value.Kind), ContentMD: value.ContentMD}.Markdown()
-	if isMoment {
+	if isMoment && value.MapCard == nil {
 		if err := domain.ValidatePostMarkdown(body, len(usages)); err != nil {
 			return err
 		}
@@ -1891,8 +1892,8 @@ func ValidateFileContext(ctx context.Context, name string) error {
 		lastMedia = file.Name
 	}
 	readmeData, err := readSmallZIPMember(ctx, files["README.txt"], 64<<10)
-	if err != nil || !bytes.Equal(readmeData, []byte(readme)) {
-		return archiveInvalid("prepared ZIP README is not the fixed v2 payload", err)
+	if err != nil || (!bytes.Equal(readmeData, []byte(readme)) && !bytes.Equal(readmeData, []byte(strings.Replace(readme, "v3", "v2", 1)))) {
+		return archiveInvalid("prepared ZIP README is not a supported payload", err)
 	}
 
 	manifestData, err := readSmallZIPMember(ctx, files["manifest.json"], 64<<10)
@@ -1916,7 +1917,7 @@ func ValidateFileContext(ctx context.Context, name string) error {
 	if err := requireObjectFields(manifestFields["limits"], []string{"expanded_bytes"}, []string{"expanded_bytes"}); err != nil {
 		return archiveInvalid("prepared ZIP manifest limits are invalid", err)
 	}
-	if value.Format != formatName || value.FormatVersion != FormatVersion || validateAppVersion(value.Source.AppVersion) != nil ||
+	if value.Format != formatName || (value.FormatVersion != 2 && value.FormatVersion != FormatVersion) || validateAppVersion(value.Source.AppVersion) != nil ||
 		len(value.Source.InstanceID) != 32 || !isLowerHex(value.Source.InstanceID) || value.Counts.Entries < 0 || value.Counts.Comments < 0 || value.Counts.Media < 0 || value.Limits.ExpandedBytes < 1 {
 		return archiveInvalid("prepared ZIP manifest contract is invalid", nil)
 	}
@@ -2087,6 +2088,11 @@ func validatePortableRecords(ctx context.Context, files map[string]*zip.File, me
 	articleEntryUsages := make(map[string][]sqlitestore.ArchiveUsage)
 	lastEntryID := ""
 	entries, err := validateJSONLines[entryRecord](ctx, files["data/entries.jsonl"], portableEntryFields, func(value entryRecord, fields map[string]json.RawMessage) error {
+		if document.FormatVersion < 3 {
+			if _, present := fields["map_card"]; present {
+				return errors.New("map_card requires archive format 3")
+			}
+		}
 		if int64(len(entryIDs)) >= document.Counts.Entries {
 			return errors.New("entry records exceed the manifest count")
 		}
@@ -2179,7 +2185,7 @@ func validatePortableRecords(ctx context.Context, files map[string]*zip.File, me
 		}
 		if err := validateArchiveEntry(sqlitestore.ArchiveEntry{
 			PublicationState: portablePublicationState(value.PublicationState), AuthorUserID: value.AuthorUserID, ID: value.ID, Kind: value.Kind, ContentMD: value.ContentMD, Visibility: visibility,
-			CreatedAtMS: created.UnixMilli(), UpdatedAtMS: updated.UnixMilli(), PublishedAtMS: published.UnixMilli(), RepostedAtMS: repostedAtMS, EditedAtMS: editedAtMS, QuotedEntryID: value.QuotedEntryID, QuoteUnavailable: value.QuoteUnavailable, Media: usages, Location: location, LinkCards: linkCards,
+			CreatedAtMS: created.UnixMilli(), UpdatedAtMS: updated.UnixMilli(), PublishedAtMS: published.UnixMilli(), RepostedAtMS: repostedAtMS, EditedAtMS: editedAtMS, QuotedEntryID: value.QuotedEntryID, QuoteUnavailable: value.QuoteUnavailable, Media: usages, Location: location, MapCard: domain.CloneMapCard(value.MapCard), LinkCards: linkCards,
 		}); err != nil {
 			return err
 		}
@@ -2451,6 +2457,9 @@ func validatePortableArticles(
 		if err != nil {
 			return err
 		}
+		if document.FormatVersion < 3 && archived.SchemaVersion >= 3 {
+			return errors.New("article schema 3 requires archive format 3")
+		}
 		article, err := validateArchiveEntryArticle(archived)
 		if err != nil {
 			return err
@@ -2509,6 +2518,9 @@ func validatePortableArticles(
 		archived, err := archiveArticleDraftOf(value)
 		if err != nil {
 			return err
+		}
+		if document.FormatVersion < 3 && archived.SchemaVersion >= 3 {
+			return errors.New("article schema 3 requires archive format 3")
 		}
 		if err := validateArchiveArticleDraft(archived); err != nil {
 			return err

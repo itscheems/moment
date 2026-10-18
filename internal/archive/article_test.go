@@ -212,7 +212,7 @@ func TestExportPacksEveryPictureOnlyAnArticleOrADraftPointsAt(t *testing.T) {
 // Raising the format version would make the backup a person took just before
 // upgrading unreadable by the binary they upgraded to, which is the one moment
 // a backup exists for. Articles are additive members, not a new version.
-func TestCompleteArticleGraphUsesFormatVersionTwo(t *testing.T) {
+func TestCompleteArticleGraphUsesFormatVersionThree(t *testing.T) {
 	fixture := newExportFixture(t, true)
 	seedArticleFixture(t, fixture)
 	members, _ := readArchive(t, exportFixtureBytes(t, fixture))
@@ -220,7 +220,7 @@ func TestCompleteArticleGraphUsesFormatVersionTwo(t *testing.T) {
 	if err := json.Unmarshal(members["manifest.json"], &document); err != nil {
 		t.Fatal(err)
 	}
-	if document.FormatVersion != 2 || FormatVersion != 2 || FormatHeaderValue != "moment-export-v2" {
+	if document.FormatVersion != FormatVersion || FormatVersion != 3 || FormatHeaderValue != "moment-export-v3" {
 		t.Fatalf("an archive carrying an article declared %#v", document)
 	}
 	if document.Counts.Articles != 1 || document.Counts.ArticleDrafts != 1 {

@@ -74,3 +74,33 @@ func TestLocationHTTPRequiresActiveAccountAndReturnsCanonicalSnapshots(t *testin
 		}
 	}
 }
+
+type globalHTTPResolver struct {
+	locationHTTPResolver
+	called bool
+}
+
+func (r *globalHTTPResolver) SearchGlobal(context.Context, string, int) ([]domain.Location, error) {
+	r.called = true
+	return []domain.Location{{Name: "Tokyo", DisplayName: "Japan", Provider: "geoapify"}}, nil
+}
+func TestGlobalLocationHTTPUsesGlobalScopeAndValidatesScope(t *testing.T) {
+	f := newAuthenticationTestFixture(t, false)
+	r := &globalHTTPResolver{}
+	s, err := app.NewLocationService(r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	RegisterLocationRoutes(f.engine.(*gin.Engine), s, f.gate)
+	req := jsonRequest(http.MethodGet, "/api/v1/locations/search?q=Tokyo&scope=global&latitude=31&longitude=121", "")
+	req.Header.Set("Authorization", "Bearer "+f.token)
+	response := performRequest(f.engine, req)
+	if response.Code != 200 || !r.called || r.searchBias != nil {
+		t.Fatalf("global=%d %s", response.Code, response.Body.String())
+	}
+	bad := jsonRequest(http.MethodGet, "/api/v1/locations/search?q=Tokyo&scope=nearby", "")
+	bad.Header.Set("Authorization", "Bearer "+f.token)
+	if response := performRequest(f.engine, bad); response.Code != 400 {
+		t.Fatalf("scope=%d %s", response.Code, response.Body.String())
+	}
+}

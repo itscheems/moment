@@ -110,7 +110,7 @@ func validateStoredEntryBody(entry domain.Entry, article *domain.Article, mediaC
 	if !present {
 		return fmt.Errorf("moment %s was read without its body", entry.ID)
 	}
-	return domain.ValidatePostMarkdown(body, mediaCount)
+	return validatePostAggregate(body, mediaCount, entry.MapCard)
 }
 
 // articlePublishIdempotencyScope keeps a retried publish from producing a

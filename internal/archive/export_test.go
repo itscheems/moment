@@ -45,14 +45,14 @@ const (
 // an archive built from it is byte-stable across runs.
 var exportFixtureClock = time.Date(2026, 8, 10, 12, 0, 0, 123_000_000, time.UTC)
 
-func TestExportV2FullDataChecksumsOrderingAndExclusions(t *testing.T) {
+func TestExportV3FullDataChecksumsOrderingAndExclusions(t *testing.T) {
 	fixture := newExportFixture(t, true)
 	var first bytes.Buffer
 	summary, err := fixture.exporter.Export(context.Background(), &first)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if summary.FormatVersion != 2 || summary.ArchiveBytes != int64(first.Len()) || summary.ArchiveSHA256 != shaHex(first.Bytes()) {
+	if summary.FormatVersion != FormatVersion || summary.ArchiveBytes != int64(first.Len()) || summary.ArchiveSHA256 != shaHex(first.Bytes()) {
 		t.Fatalf("summary = %#v", summary)
 	}
 	members, order := readArchive(t, first.Bytes())
@@ -80,7 +80,7 @@ func TestExportV2FullDataChecksumsOrderingAndExclusions(t *testing.T) {
 	if err := json.Unmarshal(members["manifest.json"], &document); err != nil {
 		t.Fatal(err)
 	}
-	if document.Format != formatName || document.FormatVersion != 2 || document.Source.InstanceID != fixture.runtime.Instance.ID || len(document.Source.InstanceID) != 32 {
+	if document.Format != formatName || document.FormatVersion != FormatVersion || document.Source.InstanceID != fixture.runtime.Instance.ID || len(document.Source.InstanceID) != 32 {
 		t.Fatalf("manifest identity = %#v", document)
 	}
 	if document.Counts != (countManifest{Entries: 1, Comments: 2, Media: 2, Users: 1}) {

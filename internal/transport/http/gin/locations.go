@@ -26,7 +26,7 @@ func RegisterLocationRoutes(engine *gin.Engine, locations *app.LocationService, 
 
 func searchLocations(locations *app.LocationService) gin.HandlerFunc {
 	return func(ctx *gin.Context) {
-		query, err := exactLocationQuery(ctx, map[string]bool{"q": true, "latitude": false, "longitude": false, "limit": false})
+		query, err := exactLocationQuery(ctx, map[string]bool{"q": true, "latitude": false, "longitude": false, "limit": false, "scope": false})
 		if err != nil {
 			writeLocationError(ctx, err)
 			return
@@ -41,7 +41,7 @@ func searchLocations(locations *app.LocationService) gin.HandlerFunc {
 			writeLocationError(ctx, err)
 			return
 		}
-		items, err := locations.Search(ctx.Request.Context(), query.Get("q"), bias, limit)
+		items, err := locations.SearchScope(ctx.Request.Context(), query.Get("q"), bias, limit, query.Get("scope"))
 		if err != nil {
 			writeLocationError(ctx, err)
 			return

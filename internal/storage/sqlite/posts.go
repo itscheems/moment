@@ -146,7 +146,7 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 	if err != nil {
 		return fmt.Errorf("insert entry: %w", err)
 	}
-	return nil
+	return store.replaceEntryMapCard(ctx, entry.ID, entry.MapCard)
 }
 
 func (store postStore) EntryByID(ctx context.Context, id domain.ID) (domain.Entry, bool, error) {
@@ -159,6 +159,10 @@ WHERE id = ?`, id.String()))
 	}
 	if err != nil {
 		return domain.Entry{}, false, fmt.Errorf("query entry: %w", err)
+	}
+	entry.MapCard, err = store.entryMapCard(ctx, entry.ID)
+	if err != nil {
+		return domain.Entry{}, false, err
 	}
 	return entry, true, nil
 }
@@ -181,6 +185,15 @@ func (store postStore) ListEntries(ctx context.Context, query app.TimelineQuery,
 	}
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("iterate timeline entries: %w", err)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	for i := range entries {
+		entries[i].Entry.MapCard, err = store.entryMapCard(ctx, entries[i].Entry.ID)
+		if err != nil {
+			return nil, err
+		}
 	}
 	return entries, nil
 }
@@ -696,7 +709,11 @@ WHERE id = ? AND kind = ?`, entry.ContentMD, contentText, string(entry.Visibilit
 	if err != nil {
 		return false, fmt.Errorf("update entry: %w", err)
 	}
-	return exactlyOneChanged(result, "update entry")
+	changed, err := exactlyOneChanged(result, "update entry")
+	if err != nil || !changed {
+		return changed, err
+	}
+	return true, store.replaceEntryMapCard(ctx, entry.ID, entry.MapCard)
 }
 
 func (store postStore) SetEntryRepostedAt(ctx context.Context, id domain.ID, repostedAt *time.Time, updatedAt time.Time) (bool, error) {

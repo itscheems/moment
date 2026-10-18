@@ -109,11 +109,11 @@ inside a sentence intentionally remains visible.
 
 Post and search DTOs add nullable `edited_at` (RFC 3339 UTC strings with millisecond
 precision). Actual changes
-to Markdown, ordered media/alt text, location, or link cards update this field.
+to Markdown, ordered media/alt text, location, map card, or link cards update this field.
 No-op updates and repost/unrepost activity do not. `updated_at` remains the general
 mutation timestamp. Null means no recorded edit: historical rows are not backfilled
 from ambiguous update times. Archives, import and merge preserve `edited_at` as an
-nullable field in format v2.
+nullable field in formats v2 and v3.
 
 ## Post visibility
 
@@ -151,7 +151,7 @@ timezone, and a cursor minted under a window is valid only with that window.
 
 ## Exports
 
-`GET /backups/export` returns a complete `moment-export-v2` backup for an active administrator.
+`GET /backups/export` returns a complete `moment-export-v3` backup for an active administrator.
 `GET /account/export` returns the authenticated account's
 `moment-account-export-v1` personal archive. Pending accounts can export their own
 data; unauthenticated or revoked/suspended sessions cannot. Neither route accepts
@@ -253,3 +253,22 @@ The equivalent CLI commands are `article drafts`, `article draft`, `article new`
 confirmation (`--yes` in noninteractive use). Direct mode attributes content
 to the original local account; API mode resolves the supplied account credential.
 Unattributed recovery authority cannot publish or manage another author's work.
+
+
+## Published map cards
+
+Ordinary post create/PATCH accepts `map_card`, and post/detail/list/search/available quoted-post DTOs return the same nullable snapshot:
+
+```json
+{"places":[{"name":"Ginza","display_name":"Chuo, Tokyo, Japan","latitude":35.6712345,"longitude":139.7654321,"coordinate_system":"wgs84"}],"connect_points":false}
+```
+
+A map contains 1–20 ordered places. Each place requires a name, display name and complete coordinates in `wgs84` or `gcj02`. Source coordinates are preserved to seven decimal places; conversion belongs to the renderer. Provider identifiers are excluded. `connect_points` requires at least two places when true. Unknown or duplicated map fields, invalid coordinates, missing coordinates and an empty places list return `INVALID_ARGUMENT`. On PATCH, omission preserves the map, JSON null clears it, and an object replaces it. A map may be the only content of a post; clearing the last substantive content returns `CONTENT_EMPTY`. Map changes update `edited_at` and participate in create idempotency. Existing author and visibility rules apply, including quote tombstones. Historical `location` remains a label-only public projection; adding maps does not reveal its stored coordinates.
+
+Article documents add the `mapCard` block node in schema version 3. Its attributes are `{map_card: <same snapshot>, id?: <node ID>}`. Schemas 1 and 2 remain readable, but cannot contain map nodes. Map nodes are substantive content and their labels enter plain-text summaries and search. Draft map changes remain unpublished until the draft is published. Rendering uses the stored snapshot and performs no provider lookups.
+
+Location search accepts `GET /locations/search?q=...&scope=global|auto`. The default `auto` retains existing regional provider selection and optional coordinate bias. `global` queries all configured Geoapify/AMap providers concurrently without device bias, interleaves worldwide/China results in stable order, and keeps successful results when another provider is unavailable. Lookup still requires an active account. Nearby lookup is unchanged.
+
+CLI: `moment --as writer post create --data-dir ./moment-data --map-json ./map.json --json`; `moment --as writer post update <post-id> --data-dir ./moment-data --clear-map --json`; `moment location search --query Tokyo --scope global --json`. Map JSON accepts a file or `-` for stdin; map/media/location/link JSON cannot share stdin. Post and location commands support direct and API mode.
+
+Full-site archives now export format 3 and read formats 2 and 3. Maps survive replacement import and selective merge, including article bodies and drafts. Format 2 cannot carry map cards or schema-3 article bodies; such payloads are refused instead of silently losing content. Format 1 remains unsupported. The separate account-export format also carries the map snapshot.

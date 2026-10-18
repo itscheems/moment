@@ -145,6 +145,15 @@ LIMIT ?`
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("iterate search entries: %w", err)
 	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	for i := range records {
+		records[i].Entry.MapCard, err = newPostStore(store.queries).entryMapCard(ctx, records[i].Entry.ID)
+		if err != nil {
+			return nil, err
+		}
+	}
 	return records, nil
 }
 
@@ -344,6 +353,15 @@ LIMIT ?`, after.String(), after.String(), limit)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("iterate search sources: %w", err)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	for i := range sources {
+		sources[i].MapCard, err = newPostStore(store.queries).entryMapCard(ctx, sources[i].ID)
+		if err != nil {
+			return nil, err
+		}
 	}
 	return sources, nil
 }

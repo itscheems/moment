@@ -125,3 +125,58 @@ func durationOr(value, fallback time.Duration) time.Duration {
 	}
 	return fallback
 }
+
+// SearchGlobal queries every configured provider concurrently. Result order is
+// independent of response timing: worldwide results and China results alternate.
+func (router *Router) SearchGlobal(ctx context.Context, query string, limit int) ([]domain.Location, error) {
+	type response struct {
+		index int
+		items []domain.Location
+		err   error
+	}
+	providers := []provider{router.geoapify, router.amap}
+	responses := make(chan response, len(providers))
+	count := 0
+	for i, item := range providers {
+		if item != nil {
+			count++
+			go func(index int, item provider) {
+				values, err := item.Search(ctx, query, nil, limit)
+				responses <- response{index, values, err}
+			}(i, item)
+		}
+	}
+	if count == 0 {
+		return nil, ErrUnavailable
+	}
+	lists := make([][]domain.Location, len(providers))
+	succeeded := false
+	for range count {
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case value := <-responses:
+			if value.err == nil {
+				succeeded = true
+				lists[value.index] = value.items
+			}
+		}
+	}
+	if !succeeded {
+		return nil, ErrUnavailable
+	}
+	result := make([]domain.Location, 0, limit)
+	for position := 0; len(result) < limit; position++ {
+		added := false
+		for _, list := range lists {
+			if position < len(list) && len(result) < limit {
+				result = append(result, list[position])
+				added = true
+			}
+		}
+		if !added {
+			break
+		}
+	}
+	return result, nil
+}

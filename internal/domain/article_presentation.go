@@ -4,6 +4,7 @@ import "regexp"
 
 // These are the persisted attributes produced by the editor's native nodes.
 var articlePresentationAttrs = map[string][]string{
+	ArticleNodeMapCard:     {"id"},
 	ArticleNodeParagraph:   {"id", "textAlign", "backgroundColor", "nodeTextAlign", "nodeVerticalAlign"},
 	ArticleNodeHeading:     {"id", "data-toc-id", "textAlign", "backgroundColor", "nodeTextAlign", "nodeVerticalAlign"},
 	ArticleNodeBlockquote:  {"id", "backgroundColor", "nodeTextAlign", "nodeVerticalAlign"},

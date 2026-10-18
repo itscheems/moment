@@ -16,6 +16,7 @@ type searchBootstrapSource struct {
 	title     string
 	bodyJSON  string
 	cards     []domain.LinkCard
+	mapCard   *domain.MapCard
 }
 
 // bootstrapSearchText derives one row's indexed text through the same
@@ -31,7 +32,7 @@ func bootstrapSearchText(source searchBootstrapSource) (string, error) {
 	if !source.contentMD.Valid {
 		return "", fmt.Errorf("entry %s is a moment with no body", source.id)
 	}
-	return app.DerivedSearchText(source.contentMD.String, source.cards)
+	return app.DerivedSearchText(source.contentMD.String, source.cards, source.mapCard)
 }
 
 // bootstrapSearchDerived upgrades existing authoritative rows exactly once
@@ -61,9 +62,10 @@ func bootstrapSearchDerived(ctx context.Context, database *sql.DB) error {
 	// doctor reading each carded entry as drifted right after an upgrade.
 	rows, err := tx.QueryContext(ctx, `
 SELECT e.id, e.kind, e.content_md, coalesce(a.title, ''), coalesce(a.body_json, ''),
-       `+searchSourceCardsSQL+`
+       `+searchSourceCardsSQL+`, coalesce(m.map_card_json, '')
 FROM entries AS e
 LEFT JOIN entry_article AS a ON a.entry_id = e.id
+LEFT JOIN entry_map_card AS m ON m.entry_id = e.id
 ORDER BY e.id`)
 	if err != nil {
 		return fmt.Errorf("read entries for search bootstrap: %w", err)
@@ -71,14 +73,21 @@ ORDER BY e.id`)
 	var sources []searchBootstrapSource
 	for rows.Next() {
 		var source searchBootstrapSource
-		var cardsJSON string
-		if err := rows.Scan(&source.id, &source.kind, &source.contentMD, &source.title, &source.bodyJSON, &cardsJSON); err != nil {
+		var cardsJSON, mapJSON string
+		if err := rows.Scan(&source.id, &source.kind, &source.contentMD, &source.title, &source.bodyJSON, &cardsJSON, &mapJSON); err != nil {
 			_ = rows.Close()
 			return fmt.Errorf("scan entry for search bootstrap: %w", err)
 		}
 		if source.cards, err = decodeSearchSourceCards(cardsJSON); err != nil {
 			_ = rows.Close()
 			return err
+		}
+		if mapJSON != "" {
+			source.mapCard, err = domain.ParseMapCard([]byte(mapJSON))
+			if err != nil {
+				_ = rows.Close()
+				return err
+			}
 		}
 		sources = append(sources, source)
 	}

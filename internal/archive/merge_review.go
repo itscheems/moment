@@ -81,9 +81,10 @@ type MergeReviewLinkCard struct {
 type MergeReviewEntity struct {
 	ID string `json:"id"`
 	// ContentMD is null for an article, whose body is not Markdown.
-	ContentMD *string `json:"content_md"`
-	EntryID   *string `json:"entry_id,omitempty"`
-	ParentID  *string `json:"parent_id,omitempty"`
+	ContentMD *string         `json:"content_md"`
+	MapCard   *domain.MapCard `json:"map_card,omitempty"`
+	EntryID   *string         `json:"entry_id,omitempty"`
+	ParentID  *string         `json:"parent_id,omitempty"`
 	// Kind is the post kind; comments and accounts leave it unset.
 	Kind             *string    `json:"kind,omitempty"`
 	AuthorName       *string    `json:"author_name,omitempty"`
@@ -179,7 +180,7 @@ var mergeReviewFieldKeys = map[MergeEntityKind]map[string]string{
 		"kind": "kind", "content_md": "content_md", "created_at": "created_at",
 		"updated_at": "updated_at", "published_at": "published_at", "reposted_at": "reposted_at", "edited_at": "edited_at", "visibility": "visibility",
 		"quoted_entry_id": "quoted_entry_id", "quote_unavailable": "quote_unavailable",
-		"media": "media", "location": "location", "link_cards": "link_cards",
+		"media": "media", "location": "location", "link_cards": "link_cards", "map_card": "map_card",
 	},
 	MergeComment: {
 		"entry_id": "entry_id", "parent_id": "parent_id",
@@ -335,7 +336,7 @@ func reviewEntry(value sqlitestore.ArchiveEntry, source MergeReviewSource, media
 	created, updated, published := archiveTime(value.CreatedAtMS), archiveTime(value.UpdatedAtMS), archiveTime(value.PublishedAtMS)
 	kind, quoteUnavailable := value.Kind, value.QuoteUnavailable
 	entity := MergeReviewEntity{
-		ID: value.ID, ContentMD: value.ContentMD, CreatedAt: created, Kind: &kind,
+		ID: value.ID, ContentMD: value.ContentMD, MapCard: domain.CloneMapCard(value.MapCard), CreatedAt: created, Kind: &kind,
 		UpdatedAt: &updated, PublishedAt: &published, Location: reviewLocation(value.Location),
 		QuotedEntryID: cloneString(value.QuotedEntryID), QuoteUnavailable: &quoteUnavailable,
 		Media: reviewUsages(value.Media, source, mediaByID), LinkCards: reviewLinkCards(value.LinkCards),

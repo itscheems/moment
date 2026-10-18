@@ -73,7 +73,7 @@ func registerPosts(application *Application) {
 		Path:   []string{"post", "create"},
 		Short:  "Publish a Moment post",
 		Long:   "Publish one Markdown post through the shared application service in direct mode or the authenticated account HTTP API.",
-		Inputs: "Provide --content, managed media, --quote, or a combination of them. Add either --location-name or a canonical --location-json path|-; media and location JSON cannot both read stdin. --visibility everyone|only_me chooses who may read the post (default everyone).",
+		Inputs: "Provide --map-json path|-, --content, managed media, --quote, or a combination of them. Add either --location-name or a canonical --location-json path|-; media and location JSON cannot both read stdin. --visibility everyone|only_me chooses who may read the post (default everyone).",
 		Output: "The canonical created post and replay metadata.",
 		Errors: "Content validation, authentication, and idempotency conflicts use stable codes and exit statuses.",
 		Example: "moment --as writer post create --data-dir ./moment-data --content 'hello **moment**' --media ./cat.jpg --media-alt 'cat sleeping' --idempotency-key demo-001 --json\n" +
@@ -87,6 +87,7 @@ func registerPosts(application *Application) {
 			registerPostVisibilityFlag(flags)
 			registerPostMediaFlags(flags)
 			registerPostLocationFlags(flags, false)
+			registerPostMapFlags(flags, false)
 			registerPostLinkCardFlags(flags, false)
 		},
 		Run: runPostCreate,
@@ -96,7 +97,7 @@ func registerPosts(application *Application) {
 		ArgsUsage: "<post-id>",
 		Short:     "Update a Moment post",
 		Long:      "Replace one post's authoritative Markdown while preserving its creation and publication position.",
-		Inputs:    "Provide one post ULID and at least one content, media, location, link, or visibility change. Omitted location preserves it; --clear-location removes it.",
+		Inputs:    "Provide one post ULID and at least one content, media, location, link, or visibility change. Omitted map preserves it; --clear-map removes it. Omitted location preserves it; --clear-location removes it.",
 		Output:    "The complete updated canonical post DTO.",
 		Errors:    "Invalid content, missing posts, and authentication failures use stable codes and exit statuses.",
 		Example: "moment --as writer post update 01ARZ3NDEKTSV4RRFFQ69G5FAV --data-dir ./moment-data --content 'updated' --json\n" +
@@ -108,6 +109,7 @@ func registerPosts(application *Application) {
 			registerPostVisibilityFlag(flags)
 			registerPostMediaFlags(flags)
 			registerPostLocationFlags(flags, true)
+			registerPostMapFlags(flags, true)
 			registerPostLinkCardFlags(flags, true)
 		},
 		Run: runPostUpdate,
@@ -323,6 +325,10 @@ func runPostGet(ctx context.Context, invocation Invocation, input CommandInput) 
 }
 
 func runPostCreate(ctx context.Context, invocation Invocation, input CommandInput) (Result, error) {
+	mapInput, err := postMapInputFromFlags(ctx, input, false)
+	if err != nil {
+		return Result{}, err
+	}
 	locationInput, err := postLocationInputFromFlags(ctx, input, false)
 	if err != nil {
 		return Result{}, err
@@ -351,8 +357,8 @@ func runPostCreate(ctx context.Context, invocation Invocation, input CommandInpu
 		}
 		quotedPostID = &id
 	}
-	if !input.Changed("content") && !mediaInput.Present && quotedPostID == nil {
-		return Result{}, invalidArgument("post create requires --content, media, or --quote", "provide --content, --media, --media-manifest, or --quote")
+	if !input.Changed("content") && !mediaInput.Present && !mapInput.Present && quotedPostID == nil {
+		return Result{}, invalidArgument("post create requires --content, media, --map-json, or --quote", "provide --content, --media, --media-manifest, --map-json, or --quote")
 	}
 	idempotencyKey, err := input.String("idempotency-key")
 	if err != nil {
@@ -379,7 +385,7 @@ func runPostCreate(ctx context.Context, invocation Invocation, input CommandInpu
 		if err != nil {
 			return Result{}, err
 		}
-		create := app.CreatePostInput{ContentMD: content, Media: usages, Location: locationInput.Location, LinkCards: linkInput.Cards, QuotedPostID: quotedPostID, IdempotencyKey: idempotencyKey}
+		create := app.CreatePostInput{ContentMD: content, MapCard: mapInput.Card, Media: usages, Location: locationInput.Location, LinkCards: linkInput.Cards, QuotedPostID: quotedPostID, IdempotencyKey: idempotencyKey}
 		if visibility != nil {
 			create.Visibility = *visibility
 		}
@@ -397,6 +403,9 @@ func runPostCreate(ctx context.Context, invocation Invocation, input CommandInpu
 			return Result{}, err
 		}
 		payload := postWritePayload{ContentMD: &content}
+		if mapInput.Present {
+			payload.MapCard = &mapInput.Card
+		}
 		if quotedPostID != nil {
 			value := quotedPostID.String()
 			payload.QuotedPostID = &value
@@ -434,6 +443,10 @@ func runPostCreate(ctx context.Context, invocation Invocation, input CommandInpu
 }
 
 func runPostUpdate(ctx context.Context, invocation Invocation, input CommandInput) (Result, error) {
+	mapInput, err := postMapInputFromFlags(ctx, input, true)
+	if err != nil {
+		return Result{}, err
+	}
 	id, err := postID(input.Args()[0])
 	if err != nil {
 		return Result{}, postCLIError(err)
@@ -459,8 +472,8 @@ func runPostUpdate(ctx context.Context, invocation Invocation, input CommandInpu
 	if err != nil {
 		return Result{}, err
 	}
-	if !contentPresent && !mediaInput.Present && !locationInput.Present && !linkInput.Present && visibility == nil {
-		return Result{}, invalidArgument("post update requires a content, media, location, link, or visibility change", "provide --content, media input, --location-name, --location-json, --clear-location, --link, --link-json, --clear-link, or --visibility")
+	if !contentPresent && !mediaInput.Present && !locationInput.Present && !linkInput.Present && !mapInput.Present && visibility == nil {
+		return Result{}, invalidArgument("post update requires a content, media, map, location, link, or visibility change", "provide --content, media input, --map-json, --clear-map, --location-name, --location-json, --clear-location, --link, --link-json, --clear-link, or --visibility")
 	}
 	var (
 		post postdto.Post
@@ -480,6 +493,9 @@ func runPostUpdate(ctx context.Context, invocation Invocation, input CommandInpu
 			return Result{}, err
 		}
 		update := app.UpdatePostInput{ID: id, ContentMD: content, PreserveContent: !contentPresent}
+		if mapInput.Present {
+			update.MapCard = &mapInput.Card
+		}
 		if mediaInput.Present {
 			update.Media = &usages
 		}
@@ -508,6 +524,9 @@ func runPostUpdate(ctx context.Context, invocation Invocation, input CommandInpu
 			return Result{}, err
 		}
 		payload := postWritePayload{}
+		if mapInput.Present {
+			payload.MapCard = &mapInput.Card
+		}
 		if contentPresent {
 			payload.ContentMD = &content
 		}
@@ -642,6 +661,7 @@ func runPostPinChange(ctx context.Context, invocation Invocation, input CommandI
 }
 
 type postWritePayload struct {
+	MapCard      **domain.MapCard       `json:"map_card,omitempty"`
 	ContentMD    *string                `json:"content_md,omitempty"`
 	Media        *[]postdto.MediaUsage  `json:"media,omitempty"`
 	Location     **locationdto.Location `json:"location,omitempty"`
@@ -864,11 +884,15 @@ func postLocationInputFromFlags(ctx context.Context, input CommandInput, allowCl
 }
 
 func readBoundedPostLocation(ctx context.Context, stdin io.Reader, path string) ([]byte, error) {
+	return readBoundedPostJSON(ctx, stdin, path, "--location-json")
+}
+
+func readBoundedPostJSON(ctx context.Context, stdin io.Reader, path, flag string) ([]byte, error) {
 	var reader io.Reader
 	var file *os.File
 	if path == "-" {
 		if stdin == nil {
-			return nil, invalidArgument("stdin is unavailable for --location-json -", "pipe one canonical location object to stdin")
+			return nil, invalidArgument("stdin is unavailable for "+flag+" -", "pipe one canonical JSON object to stdin")
 		}
 		reader = stdin
 	} else {
@@ -878,7 +902,7 @@ func readBoundedPostLocation(ctx context.Context, stdin io.Reader, path string) 
 			return nil, postCLIError(err)
 		}
 		if !info.Mode().IsRegular() || info.Mode()&os.ModeSymlink != 0 || info.Size() > maxPostLocationBytes {
-			return nil, invalidArgument("--location-json must be a regular file no larger than 64 KiB", "provide a stable canonical JSON file or use - for stdin")
+			return nil, invalidArgument(flag+" must be a regular file no larger than 64 KiB", "provide a stable canonical JSON file or use - for stdin")
 		}
 		file, err = os.Open(clean)
 		if err != nil {
@@ -887,7 +911,7 @@ func readBoundedPostLocation(ctx context.Context, stdin io.Reader, path string) 
 		opened, err := file.Stat()
 		if err != nil || !opened.Mode().IsRegular() || !os.SameFile(info, opened) {
 			_ = file.Close()
-			return nil, invalidArgument("--location-json changed while it was opened", "retry with a stable regular file")
+			return nil, invalidArgument(flag+" changed while it was opened", "retry with a stable regular file")
 		}
 		defer func() { _ = file.Close() }()
 		reader = file
@@ -897,7 +921,7 @@ func readBoundedPostLocation(ctx context.Context, stdin io.Reader, path string) 
 		return nil, postCLIError(err)
 	}
 	if len(data) > maxPostLocationBytes || !utf8.Valid(data) {
-		return nil, invalidArgument("--location-json must be valid UTF-8 JSON no larger than 64 KiB", "provide one canonical location object")
+		return nil, invalidArgument(flag+" must be valid UTF-8 JSON no larger than 64 KiB", "provide one canonical JSON object")
 	}
 	return data, nil
 }
@@ -1756,4 +1780,63 @@ func postCLIError(err error) error {
 		return err
 	}
 	return canonicalPublicError(string(domainErr.Code), domainErr.Message, domainErr.Details, 0).WithCause(err)
+}
+
+type postMapInput struct {
+	Present bool
+	Card    *domain.MapCard
+}
+
+func registerPostMapFlags(flags *pflag.FlagSet, allowClear bool) {
+	flags.Var(&onceStringFlag{name: "--map-json"}, "map-json", "published map snapshot JSON path or - for stdin")
+	if allowClear {
+		flags.Bool("clear-map", false, "remove the post map")
+	}
+}
+func postMapInputFromFlags(ctx context.Context, input CommandInput, allowClear bool) (postMapInput, error) {
+	path, err := input.String("map-json")
+	if err != nil {
+		return postMapInput{}, err
+	}
+	clear := false
+	if allowClear {
+		clear, err = input.Bool("clear-map")
+		if err != nil {
+			return postMapInput{}, err
+		}
+	}
+	if clear && input.Changed("map-json") {
+		return postMapInput{}, invalidArgument("map flags are mutually exclusive", "choose --map-json or --clear-map")
+	}
+	if clear {
+		return postMapInput{Present: true}, nil
+	}
+	if !input.Changed("map-json") {
+		return postMapInput{}, nil
+	}
+	if path == "" {
+		return postMapInput{}, invalidArgument("--map-json cannot be empty", "provide a JSON file or - for stdin")
+	}
+	if path == "-" {
+		for _, flag := range []string{"media-manifest", "location-json", "link-json"} {
+			if input.Changed(flag) {
+				other, err := input.String(flag)
+				if err != nil {
+					return postMapInput{}, err
+				}
+				if other == "-" {
+					return postMapInput{}, invalidArgument("JSON inputs cannot share stdin", "put one input in a regular file")
+				}
+			}
+		}
+	}
+	data, err := readBoundedPostJSON(ctx, input.In(), path, "--map-json")
+	if err != nil {
+		return postMapInput{}, err
+	}
+	card, err := domain.ParseMapCard(data)
+	if err != nil {
+		return postMapInput{}, postCLIError(err)
+	}
+	return postMapInput{Present: true, Card: card}, nil
 }

@@ -115,6 +115,7 @@ type ArchiveEntry struct {
 	QuoteUnavailable bool
 	Media            []ArchiveUsage
 	Location         *domain.Location
+	MapCard          *domain.MapCard
 	LinkCards        []ArchiveLinkCard
 }
 
@@ -524,11 +525,12 @@ SELECT e.publication_state, e.author_user_id, e.id, e.kind, e.content_md, e.visi
        location.name, location.display_name, location.country_code, location.country,
        location.region, location.city, location.district, location.category,
        location.provider, location.provider_place_id, location.latitude_e7,
-       location.longitude_e7, location.coordinate_system
+       location.longitude_e7, location.coordinate_system, map_card.map_card_json
 FROM entries AS e
 LEFT JOIN entry_media AS usage ON usage.entry_id = e.id
 LEFT JOIN entry_location AS location ON location.entry_id = e.id
 LEFT JOIN entry_quotes AS quote ON quote.entry_id = e.id
+LEFT JOIN entry_map_card AS map_card ON map_card.entry_id = e.id
 ORDER BY e.id, usage.position`)
 	if err != nil {
 		return fmt.Errorf("query archive entries: %w", err)
@@ -544,12 +546,20 @@ ORDER BY e.id, usage.position`)
 		var name, displayName, countryCode, country, region, city, district, category, provider, providerID, coordinateSystem sql.NullString
 		var latitude, longitude sql.NullInt64
 		var visibility string
+		var mapJSON sql.NullString
 		if err := rows.Scan(
 			&entry.PublicationState, &entry.AuthorUserID, &entry.ID, &entry.Kind, &entry.ContentMD, &visibility, &entry.CreatedAtMS, &entry.UpdatedAtMS, &entry.PublishedAtMS, &repostedAt, &editedAt, &quoteEntryID, &quotedEntryID,
 			&mediaID, &position, &alt, &name, &displayName, &countryCode, &country, &region, &city,
-			&district, &category, &provider, &providerID, &latitude, &longitude, &coordinateSystem,
+			&district, &category, &provider, &providerID, &latitude, &longitude, &coordinateSystem, &mapJSON,
 		); err != nil {
 			return fmt.Errorf("scan archive entry: %w", err)
+		}
+		if mapJSON.Valid {
+			card, err := domain.ParseMapCard([]byte(mapJSON.String))
+			if err != nil {
+				return fmt.Errorf("invalid archived map: %w", err)
+			}
+			entry.MapCard = card
 		}
 		entry.Visibility = domain.Visibility(visibility)
 		if editedAt.Valid {

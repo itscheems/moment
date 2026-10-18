@@ -434,14 +434,14 @@ func TestSearchBootstrapForwardUpgradeFromV1RebuildsDerivedState(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(migrations) != 1 {
+	if len(migrations) < 1 {
 		t.Fatalf("embedded migrations = %d, want the account/content baseline", len(migrations))
 	}
 	legacy, err := openPool(sqliteDSN(runtimeState.Current.DatabasePath, defaultBusyTimeout, false), 1)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := applyMigrations(ctx, legacy, migrations, time.UnixMilli(1)); err != nil {
+	if err := applyMigrations(ctx, legacy, migrations[:1], time.UnixMilli(1)); err != nil {
 		_ = legacy.Close()
 		t.Fatal(err)
 	}

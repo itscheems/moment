@@ -117,8 +117,26 @@ func decodeMapJSON(data []byte, target any) error {
 	if len(data) > MaxMapCardBytes || !json.Valid(data) {
 		return mapCardError("map card must be bounded valid JSON")
 	}
-	// Reject duplicate object members, including nested place fields. A point
-	// must not mean two different things to the client and the server.
+	if err := rejectDuplicateJSONFields(data); err != nil {
+		return err
+	}
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(target); err != nil {
+		return mapCardError("map card contains invalid fields")
+	}
+	if err := decoder.Decode(&struct{}{}); err != io.EOF {
+		return mapCardError("map card must contain one JSON value")
+	}
+	return nil
+}
+
+func mapCardError(message string) error {
+	return NewError(CodeInvalidArgument, message, map[string]any{"field": "map_card"})
+}
+
+// rejectDuplicateJSONFields also protects map snapshots nested in documents.
+func rejectDuplicateJSONFields(data []byte) error {
 	check := json.NewDecoder(bytes.NewReader(data))
 	var visit func() error
 	visit = func() error {
@@ -151,17 +169,5 @@ func decodeMapJSON(data []byte, target any) error {
 	if err := visit(); err != nil {
 		return mapCardError("map fields are invalid or duplicated")
 	}
-	decoder := json.NewDecoder(bytes.NewReader(data))
-	decoder.DisallowUnknownFields()
-	if err := decoder.Decode(target); err != nil {
-		return mapCardError("map card contains invalid fields")
-	}
-	if err := decoder.Decode(&struct{}{}); err != io.EOF {
-		return mapCardError("map card must contain one JSON value")
-	}
 	return nil
-}
-
-func mapCardError(message string) error {
-	return NewError(CodeInvalidArgument, message, map[string]any{"field": "map_card"})
 }

@@ -63,6 +63,9 @@ func ArticlePreviewText(document ArticleDocument) string {
 func appendArticlePreviewText(output *strings.Builder, nodes []ArticleNode) {
 	for _, node := range nodes {
 		switch node.Type {
+		case ArticleNodeMapCard:
+			output.WriteString(node.MapCard.Text())
+			output.WriteByte('\n')
 		case ArticleNodeCodeBlock, ArticleNodeTable, ArticleNodeImage, ArticleNodeHorizontalRule:
 			continue
 		case ArticleNodeText:
@@ -81,6 +84,9 @@ func appendArticlePreviewText(output *strings.Builder, nodes []ArticleNode) {
 func appendArticleProse(output *strings.Builder, nodes []ArticleNode) {
 	for _, node := range nodes {
 		switch node.Type {
+		case ArticleNodeMapCard:
+			output.WriteString(node.MapCard.Text())
+			output.WriteByte('\n')
 		case ArticleNodeCodeBlock, ArticleNodeTable:
 			continue
 		case ArticleNodeText:
@@ -107,6 +113,9 @@ func ArticleSearchText(title string, document ArticleDocument) string {
 func appendArticleVisibleText(output *strings.Builder, nodes []ArticleNode) {
 	for _, node := range nodes {
 		switch node.Type {
+		case ArticleNodeMapCard:
+			output.WriteString(node.MapCard.Text())
+			output.WriteByte('\n')
 		case ArticleNodeText:
 			output.WriteString(node.Text)
 		case ArticleNodeHardBreak, ArticleNodeHorizontalRule, ArticleNodeImage:
