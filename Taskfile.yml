@@ -22,6 +22,11 @@ tasks:
     cmds:
       - node scripts/dev/layout-probe.mjs {{.CLI_ARGS}}
 
+  layout:test:
+    desc: Test layout probe asset discovery and selector diagnostics without a browser
+    cmds:
+      - node --test scripts/dev/layout-probe.test.mjs
+
   playground:articles:
     desc: Add named article cases to the running disposable playground on port 18080
     cmds:
@@ -68,6 +73,7 @@ tasks:
   ci:
     desc: Run the complete local CI gate
     cmds:
+      - task: layout:test
       - task: fmt:check
       - task: lint
       - task: test
