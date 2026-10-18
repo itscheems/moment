@@ -17,7 +17,8 @@ import { spawn } from "node:child_process";
 import { createServer } from "node:net";
 import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { basename, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import process from "node:process";
 import { inflateSync } from "node:zlib";
 
@@ -51,7 +52,11 @@ const usage = `Measure real layout in a headless browser.
 "$name" resolves to the class this build hashed the CSS-module class "name"
 into, so a rebuild does not invalidate a probe. It is always the bare class:
 write class="$navLink" in markup and ".$navLink" where a selector is wanted.
-Run the web build first -- the built stylesheet is what is being measured.
+All built CSS chunks are searched. Names shared by multiple components are
+reported as ambiguous; use a semantic DOM selector such as [aria-label="..."]
+for those elements. The JSON report lists the input files under stylesheets.
+Run the web build first -- the built stylesheets are what is being measured.
+Run task layout:test for the probe's regression tests (no browser required).
 
   node scripts/dev/layout-probe.mjs --fragment probe.html --width 1500 \\
     --measure '.$navLink' --measure '.$accountRail' --hover '.$accountRail' \\
@@ -114,19 +119,29 @@ function parseArguments(argv) {
 }
 
 /**
- * The stylesheet the app actually ships.
+ * The stylesheets the app actually ships.
  *
- * Vite emits one hashed bundle, and reading it rather than the sources is the
- * point: a probe against `.module.css` would measure what was written, and
- * what ships is what the reader sees.
+ * Eager chunks keep the order of the generated page, followed by lazy chunks
+ * in a stable order. Reading only the first asset can select an editor chunk
+ * that contains none of the page's styles or shared tokens.
  */
-function builtStylesheet() {
-  if (!existsSync(assetDirectory)) {
+export function builtStylesheets(directory = assetDirectory) {
+  if (!existsSync(directory)) {
     fail("no built assets. Run `task web:build` (or `pnpm --dir web build`) first.");
   }
-  const sheets = readdirSync(assetDirectory).filter((name) => name.endsWith(".css"));
+  const sheets = readdirSync(directory).filter((name) => name.endsWith(".css")).sort();
   if (sheets.length === 0) fail("the built assets carry no stylesheet");
-  return { path: join(assetDirectory, sheets[0]), css: readFileSync(join(assetDirectory, sheets[0]), "utf8") };
+  const linked = [];
+  const entry = join(directory, "..", "index.html");
+  if (existsSync(entry)) {
+    for (const tag of readFileSync(entry, "utf8").matchAll(/<link\b[^>]*>/gi)) {
+      if (!/\brel=["']stylesheet["']/i.test(tag[0])) continue;
+      const href = tag[0].match(/\bhref=["']([^"']+)["']/i)?.[1];
+      if (href && sheets.includes(basename(href))) linked.push(basename(href));
+    }
+  }
+  const paths = [...new Set([...linked, ...sheets])].map((name) => join(directory, name));
+  return { paths, css: paths.map((path) => readFileSync(path, "utf8")).join("\n") };
 }
 
 /**
@@ -136,17 +151,22 @@ function builtStylesheet() {
  * hashed name is stale the next time anybody runs vite. Naming the source
  * class and resolving it here is what makes a probe worth keeping.
  */
-function resolveModuleClasses(text, css) {
+export function resolveModuleClasses(text, css) {
   const missing = new Set();
+  const ambiguous = new Map();
   const resolved = text.replaceAll(/\$([A-Za-z][\w-]*)/g, (whole, name) => {
-    const match = css.match(new RegExp(`\\._${name}_[a-z0-9]+_\\d+`));
-    if (!match) {
+    const classes = [...new Set([...css.matchAll(new RegExp(`\\._${name}_[a-z0-9]+_\\d+`, "g"))].map((match) => match[0].slice(1)))];
+    if (classes.length === 0) {
       missing.add(name);
       return whole;
     }
-    return match[0].slice(1);
+    if (classes.length > 1) {
+      ambiguous.set(name, classes);
+      return whole;
+    }
+    return classes[0];
   });
-  return { resolved, missing: [...missing] };
+  return { resolved, missing: [...missing], ambiguous: [...ambiguous].map(([name, classes]) => ({ name, classes })) };
 }
 
 function chromeBinary() {
@@ -455,14 +475,15 @@ const measureScript = (selectors, extra) => `(() => {
 async function main() {
   const options = parseArguments(process.argv.slice(2));
   // Read in both modes. A fragment needs the stylesheet injected; a live page
-  // already has it, but "$name" has to resolve against something either way,
-  // and the built bundle is the same one the server is serving.
-  const sheet = builtStylesheet();
+  // already has them, but "$name" still resolves against the build's CSS chunks.
+  const sheet = builtStylesheets();
 
   const unresolved = new Set();
+  const ambiguous = new Map();
   const resolveText = (text) => {
-    const { resolved, missing } = resolveModuleClasses(text, sheet.css);
+    const { resolved, missing, ambiguous: collisions } = resolveModuleClasses(text, sheet.css);
     missing.forEach((name) => unresolved.add(name));
+    collisions.forEach(({ name, classes }) => ambiguous.set(name, classes));
     return resolved;
   };
 
@@ -471,16 +492,22 @@ async function main() {
 
   let workspace = null;
   let target = options.url;
+  let markup = null;
   if (options.fragment) {
     if (!existsSync(options.fragment)) fail(`no such fragment: ${options.fragment}`);
-    workspace = mkdtempSync(join(tmpdir(), "moment-layout-probe-"));
-    writeFileSync(join(workspace, "app.css"), sheet.css);
-    const markup = resolveText(readFileSync(options.fragment, "utf8"));
-    writeFileSync(join(workspace, "page.html"), page({ fragment: markup, theme: options.theme }));
-    target = `file://${join(workspace, "page.html")}`;
+    markup = resolveText(readFileSync(options.fragment, "utf8"));
   }
   if (unresolved.size > 0) {
     fail(`no class in the current build matches: ${[...unresolved].join(", ")}. Rebuild, or check the spelling against the .module.css source.`);
+  }
+  if (ambiguous.size > 0) {
+    fail(`source class names match multiple components: ${[...ambiguous].map(([name, classes]) => `$${name}: ${classes.join(", ")}`).join("; ")}. Use a semantic DOM selector such as [aria-label="..."] to identify the intended element.`);
+  }
+  if (markup !== null) {
+    workspace = mkdtempSync(join(tmpdir(), "moment-layout-probe-"));
+    writeFileSync(join(workspace, "app.css"), sheet.css);
+    writeFileSync(join(workspace, "page.html"), page({ fragment: markup, theme: options.theme }));
+    target = `file://${join(workspace, "page.html")}`;
   }
 
   const profile = mkdtempSync(join(tmpdir(), "moment-layout-chrome-"));
@@ -651,7 +678,7 @@ async function main() {
       theme: options.theme ?? null,
       target,
       title,
-      stylesheet: sheet.path ?? null,
+      stylesheets: sheet.paths,
       measured,
       scans,
       screenshot: options.shot ?? null,
@@ -671,7 +698,9 @@ async function main() {
     const exited = new Promise((settle) => chrome.once("exit", settle));
     chrome.kill();
     await Promise.race([exited, new Promise((settle) => setTimeout(settle, 5_000))]);
-    rmSync(profile, { recursive: true, force: true });
+    // Chrome utility processes may finish a profile write after the browser
+    // process exits. Let fs retry that bounded ENOTEMPTY/EBUSY cleanup race.
+    rmSync(profile, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
     if (workspace && !options.keep) rmSync(workspace, { recursive: true, force: true });
     else if (workspace) process.stderr.write(`layout-probe: page kept at ${workspace}\n`);
   }
@@ -705,4 +734,4 @@ async function main() {
   }
 }
 
-await main();
+if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) await main();
