@@ -521,7 +521,6 @@
   background: var(--surface);
   transition:
     border-color var(--motion-fast) var(--ease-out),
-    box-shadow var(--motion-fast) var(--ease-out),
     background var(--motion-fast) var(--ease-out);
 }
 
@@ -529,12 +528,6 @@
   .fields label:hover {
     border-color: var(--text-secondary);
   }
-}
-
-:global(:where(:root:not([data-focus-dismissed]))) .fields label:focus-within {
-  border-color: var(--accent);
-  background: color-mix(in srgb, var(--accent-soft) 24%, var(--surface));
-  box-shadow: 0 0 0 1px var(--accent);
 }
 
 .fields label > span {
@@ -564,6 +557,11 @@
   background: transparent;
   font: inherit;
   line-height: 1.45;
+}
+
+.fields input:focus-visible,
+.fields textarea:focus-visible {
+  outline: none;
 }
 
 .fields textarea {
