@@ -6,6 +6,7 @@ import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
+import { fileURLToPath } from "node:url";
 import {
   assertMergeCommit,
   assertMergeSettings,
@@ -107,7 +108,7 @@ test("CLI: a missing token exits nonzero without contacting GitHub", () => {
     delete env[key];
   const result = spawnSync(
     process.execPath,
-    [new URL("./check-merge-policy.mjs", import.meta.url).pathname],
+    [fileURLToPath(new URL("./check-merge-policy.mjs", import.meta.url))],
     { env, encoding: "utf8", timeout: 5000 },
   );
   assert.equal(result.status, 1);
@@ -184,7 +185,7 @@ test("workflow declarations: retargeting triggers required gate; retrospective a
   assert.match(audit, /pull_request:\s+branches: \[main\]\s+types: \[closed\]/);
   assert.match(audit, /github\.event\.pull_request\.merged == true/);
   assert.match(audit, /check-merge-policy\.mjs audit --pr "\$PR_NUMBER"/);
-  assert.match(audit, /check-merge-policy\.mjs audit\n/);
+  assert.match(audit, /check-merge-policy\.mjs audit\r?\n/);
   assert.doesNotMatch(audit, /merge_group|mise-action/);
   for (const workflow of [gate, audit]) {
     assert.match(workflow, /actions\/setup-node@[a-f\d]{40}/);
