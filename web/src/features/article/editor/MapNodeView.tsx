@@ -4,6 +4,7 @@ import {
   type NodeViewProps,
 } from "@tiptap/react";
 import { MapNode } from "../../../components/content/MapNode";
+import { closeHistory } from "@tiptap/pm/history";
 import { MapCard } from "../../maps/MapCard";
 import { MapCardEditor } from "../../maps/MapCardEditor";
 import { parseMapCard, mapCardPayload } from "../../maps/types";
@@ -26,8 +27,12 @@ function MapNodeView({
         <MapCardEditor
           value={card}
           onChange={(next) => {
+            editor.view.dispatch(closeHistory(editor.state.tr));
             if (next) updateAttributes({ map_card: mapCardPayload(next) });
-            else deleteNode();
+            else {
+              deleteNode();
+              editor.commands.focus();
+            }
           }}
         />
       ) : (

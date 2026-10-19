@@ -1,5 +1,6 @@
 import { InteractiveMapNode } from "./MapNodeView";
 import type { Extensions } from "@tiptap/core";
+import { DraftHistory } from "./draftHistory";
 import { ReactNodeViewRenderer } from "@tiptap/react";
 import {
   CharacterCount,
@@ -76,6 +77,7 @@ export function articleEditorExtensions(
             : extension,
       ),
     UndoRedo,
+    DraftHistory,
     Dropcursor.configure({ width: 2 }),
     Gapcursor,
     ListKeymap,
