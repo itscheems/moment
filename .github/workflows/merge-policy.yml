@@ -1,0 +1,27 @@
+name: merge-policy
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+    types: [opened, reopened, synchronize, ready_for_review, closed]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  merge-policy:
+    name: merge-policy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: jdx/mise-action@5228313ee0372e111a38da051671ca30fc5a96db # v3
+        with:
+          install: true
+          cache: true
+      - run: node --test scripts/dev/check-merge-policy.test.mjs
+      - run: node scripts/dev/check-merge-policy.mjs
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
