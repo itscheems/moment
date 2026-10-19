@@ -1,4 +1,5 @@
 import type { SVGProps } from "react";
+import { locationIconArtwork } from "./locationIcon";
 
 const iconSprite = "/icons/ui-symbols-v3.svg";
 
@@ -362,8 +363,12 @@ const paths: Record<IconName, React.ReactNode> = {
   ),
   location: (
     <>
-      <path d="M19 10.2c0 5-7 10.3-7 10.3S5 15.2 5 10.2a7 7 0 1 1 14 0Z" />
-      <circle cx="12" cy="10" r="2.4" />
+      <path d={locationIconArtwork.outline} />
+      <circle
+        cx={locationIconArtwork.center.x}
+        cy={locationIconArtwork.center.y}
+        r={locationIconArtwork.center.radius}
+      />
     </>
   ),
   "location-picker": (

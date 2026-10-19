@@ -16,6 +16,7 @@
 import type { PublicLinkCard } from "../../api/public";
 import { mediaPosterUrl, mediaPreviewUrl } from "../../api/mediaUrls";
 import { highlightCodeBlocks } from "../../components/codeHighlight";
+import { locationIconArtwork } from "../../components/locationIcon";
 import logoSvg from "../../assets/logo.svg?raw";
 import type { MapCardData } from "../maps/types";
 
@@ -1193,23 +1194,33 @@ export async function renderShareCard(
 
   if (location) {
     y += 14;
-    ctx.fillStyle = ACCENT;
-    // A pin drawn rather than an icon font: one glyph is cheaper than loading a
-    // sprite the card uses once.
-    const pinX = PAD + 5;
-    const pinY = y + 12;
+    const iconSize = 16;
+    const textOffset = iconSize + 4.8;
+    ctx.save();
+    ctx.translate(PAD, y + 4);
+    ctx.scale(iconSize / 24, iconSize / 24);
+    ctx.strokeStyle = ACCENT;
+    ctx.lineWidth = 1.7;
+    ctx.lineCap = "round";
+    ctx.lineJoin = "round";
+    ctx.stroke(new Path2D(locationIconArtwork.outline));
     ctx.beginPath();
-    ctx.arc(pinX, pinY - 3, 5, Math.PI, 0);
-    ctx.lineTo(pinX, pinY + 7);
-    ctx.closePath();
-    ctx.fill();
-    ctx.fillStyle = GROUND;
-    ctx.beginPath();
-    ctx.arc(pinX, pinY - 3, 2, 0, Math.PI * 2);
-    ctx.fill();
+    ctx.arc(
+      locationIconArtwork.center.x,
+      locationIconArtwork.center.y,
+      locationIconArtwork.center.radius,
+      0,
+      Math.PI * 2,
+    );
+    ctx.stroke();
+    ctx.restore();
     ctx.fillStyle = MUTED;
     ctx.font = font(400, PLACE_SIZE);
-    ctx.fillText(truncate(ctx, location, contentWidth - 22), PAD + 22, y + 17);
+    ctx.fillText(
+      truncate(ctx, location, contentWidth - textOffset),
+      PAD + textOffset,
+      y + 17,
+    );
     y += 26;
   }
 
