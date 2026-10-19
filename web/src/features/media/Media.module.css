@@ -8,6 +8,7 @@
 }
 
 .composerMedia {
+  position: relative;
   min-inline-size: 0;
   margin-block-start: var(--space-2);
 }

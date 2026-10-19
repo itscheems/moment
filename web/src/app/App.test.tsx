@@ -710,9 +710,12 @@ describe("App shell and public routes", () => {
       signedInAs("cheemschen");
       render(<App />);
 
-      fireEvent.click(
-        await screen.findByRole("button", { name: "乔乔 的账户菜单" }),
-      );
+      const trigger = await screen.findByRole("button", {
+        name: "乔乔 的账户菜单",
+      });
+      await waitFor(() => expect(trigger).toBeEnabled());
+      trigger.focus();
+      fireEvent.keyDown(trigger, { key: "ArrowDown" });
       await screen.findByRole("menu", { hidden: true });
       for (const name of ["设置", "退出 @cheemschen"]) {
         expect(screen.getByRole("menuitem", { name })).toBeInTheDocument();

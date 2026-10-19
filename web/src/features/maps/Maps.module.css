@@ -110,7 +110,7 @@
 .places {
   list-style: none !important;
   margin: 0 !important;
-  padding: 4px 0 !important;
+  padding: 0 !important;
   font: 13px/1.45 var(--font-timeline);
 }
 .places > li {
@@ -634,8 +634,12 @@
   max-width: calc(100vw - 80px);
   max-height: min(65dvh, calc(100dvh - 72px));
   overflow-y: auto;
+  scrollbar-width: none;
   overscroll-behavior: contain;
-  padding-block-end: 4px;
+  padding-block-end: 8px;
+}
+.panelContent::-webkit-scrollbar {
+  display: none;
 }
 .placePanel .placeRow:hover,
 .placePanel .placeRow:focus-visible,
