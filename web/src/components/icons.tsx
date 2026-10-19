@@ -3,6 +3,7 @@ import type { SVGProps } from "react";
 const iconSprite = "/icons/ui-symbols-v3.svg";
 
 export type IconName =
+  | "globe"
   | "plus"
   | "article"
   | "article-unpublish"
@@ -79,6 +80,13 @@ const iconViewBoxes: Partial<Record<IconName, string>> = {
 };
 
 const paths: Record<IconName, React.ReactNode> = {
+  globe: (
+    <>
+      <circle cx="12" cy="12" r="9" />
+      <ellipse cx="12" cy="12" rx="4" ry="9" />
+      <path d="M3 12h18M5 6.5c4.5 2 9.5 2 14 0M5 17.5c4.5-2 9.5-2 14 0" />
+    </>
+  ),
   plus: <path d="M12 5v14M5 12h14" />,
   map: (
     <>

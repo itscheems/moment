@@ -16,7 +16,7 @@ import {
   mapCoordinate,
   mapPlaceIdentity,
 } from "./geometry";
-import type { MapCardData } from "./types";
+import type { MapCardData, MapPlace } from "./types";
 import styles from "./Maps.module.css";
 
 maplibre.setWorkerUrl(workerUrl);
@@ -36,6 +36,8 @@ export default function MapCanvas({
   onCamera,
   onFailure,
   onPick,
+  focusTarget,
+  fullscreen = false,
 }: {
   card: MapCardData;
   globe?: boolean;
@@ -43,6 +45,8 @@ export default function MapCanvas({
   onCamera?: (camera: MapCamera) => void;
   onFailure: () => void;
   onPick?: (longitude: number, latitude: number) => void;
+  focusTarget?: { place: MapPlace } | null;
+  fullscreen?: boolean;
 }) {
   const ref = useRef<MapRef>(null);
   const [loaded, setLoaded] = useState(false);
@@ -97,6 +101,22 @@ export default function MapCanvas({
   useEffect(() => {
     setSelected(null);
   }, [pointsKey]);
+  useEffect(() => {
+    if (!loaded || !focusTarget) return;
+    const [longitude, latitude] = mapCoordinate(focusTarget.place);
+    setSelected(null);
+    ref.current?.flyTo({
+      center: [
+        longitude,
+        globe ? latitude : Math.max(-85, Math.min(85, latitude)),
+      ],
+      zoom: 14,
+      bearing: 0,
+      pitch: 0,
+      duration: 1400,
+      curve: 1.42,
+    });
+  }, [loaded, focusTarget, globe]);
   return (
     <Map
       ref={ref}
@@ -115,7 +135,7 @@ export default function MapCanvas({
       }
       mapStyle="https://tiles.openfreemap.org/styles/liberty"
       projection={{ type: globe ? "globe" : "mercator" }}
-      cooperativeGestures={!globe}
+      cooperativeGestures={!fullscreen && !globe}
       reuseMaps={false}
       attributionControl={{ compact: true }}
       locale={{

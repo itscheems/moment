@@ -1231,6 +1231,49 @@ describe("owner composing flow", () => {
     ).toBeInTheDocument();
   });
 
+  it("removes an edited map card, restores text focus and saves its removal", async () => {
+    preauthenticate();
+    const item = {
+      ...post("保留正文"),
+      map_card: {
+        places: [
+          {
+            name: "东京",
+            display_name: "日本",
+            latitude: 35.67,
+            longitude: 139.76,
+            coordinate_system: "wgs84",
+          },
+        ],
+        connect_points: false,
+      },
+    };
+    window.history.replaceState({}, "", `/m/${item.id}/edit`);
+    let saved: Record<string, unknown> | undefined;
+    vi.stubGlobal(
+      "IntersectionObserver",
+      class {
+        observe() {}
+        disconnect() {}
+      },
+    );
+    installApi((url, init) => {
+      if (url === `/api/v1/posts/${item.id}` && init?.method === "PATCH") {
+        saved = JSON.parse(String(init.body));
+        return json({ data: { ...item, map_card: null }, meta: {} });
+      }
+      if (url === `/api/v1/posts/${item.id}`)
+        return json({ data: item, meta: {} });
+    });
+    render(<App />);
+    const editor = await screen.findByLabelText("Moment 正文");
+    fireEvent.click(await screen.findByRole("button", { name: "移除地图" }));
+    await waitFor(() => expect(editor).toHaveFocus());
+    expect(screen.queryByRole("button", { name: "展开地图" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "保存更改" }));
+    await waitFor(() => expect(saved?.map_card).toBeNull());
+  });
+
   it("keeps an edited post mounted through auth expiry, re-login, and retry", async () => {
     preauthenticate();
     const item = post("编辑前", "01K2ABCDEF0123456789ABCDE8");

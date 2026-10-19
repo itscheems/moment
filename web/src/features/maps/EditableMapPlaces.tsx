@@ -27,7 +27,9 @@ import {
   useIsPresent,
   useMotionValue,
   useReducedMotion,
+  useTransform,
 } from "motion/react";
+import { useClickOutside } from "@mantine/hooks";
 import { ContextMenu } from "@base-ui/react/context-menu";
 import { ConfirmDialog } from "../../components/ConfirmDialog";
 import { Icon } from "../../components/icons";
@@ -56,6 +58,7 @@ function SortablePlace({
   onReveal,
   onRemove,
   register,
+  onSelect,
 }: {
   row: PlaceRow;
   disabled: boolean;
@@ -64,6 +67,7 @@ function SortablePlace({
   onReveal: (id: string | null) => void;
   onRemove: (row: PlaceRow) => void;
   register: (id: string, element: HTMLElement | null) => void;
+  onSelect?: (place: MapPlace) => void;
 }) {
   const {
     attributes,
@@ -77,6 +81,7 @@ function SortablePlace({
   const reduceMotion = useReducedMotion();
   const swipeWidth = 52;
   const x = useMotionValue(0);
+  const deleteOpacity = useTransform(x, [-8, 0], [1, 0]);
   const verticalGesture = useRef(false);
   useEffect(() => {
     if (isDragging) verticalGesture.current = true;
@@ -105,7 +110,7 @@ function SortablePlace({
       exit={{ opacity: 0, height: 0 }}
       transition={{ duration: reduceMotion ? 0 : 0.16 }}
     >
-      <button
+      <motion.button
         className={styles.swipeDelete}
         type="button"
         aria-label={`删除${row.place.name}`}
@@ -113,9 +118,10 @@ function SortablePlace({
         tabIndex={revealed ? 0 : -1}
         aria-hidden={!revealed}
         onClick={() => onRemove(row)}
+        style={{ opacity: deleteOpacity }}
       >
         <Icon name="delete" />
-      </button>
+      </motion.button>
       <ContextMenu.Root
         onOpenChange={(open, details) => {
           if (
@@ -184,7 +190,11 @@ function SortablePlace({
             />
           }
         >
-          <PlaceContent place={row.place} />
+          <PlaceContent
+            place={row.place}
+            onSelect={onSelect}
+            disabled={disabled || sorting}
+          />
         </ContextMenu.Trigger>
         <ContextMenu.Portal>
           <ContextMenu.Positioner
@@ -211,10 +221,12 @@ export default function EditableMapPlaces({
   card,
   onChange,
   disabled = false,
+  onSelect,
 }: {
   card: MapCardData;
   onChange: (card: MapCardData | null) => void;
   disabled?: boolean;
+  onSelect?: (place: MapPlace) => void;
 }) {
   const listId = useId();
   const rows = placeRows(card.places);
@@ -225,6 +237,17 @@ export default function EditableMapPlaces({
   const [remove, setRemove] = useState<PlaceRow | null>(null);
   const removeFocus = useRef<string | null>(null);
   const [overlayWidth, setOverlayWidth] = useState<number>();
+  useClickOutside(
+    () => setRevealedId(null),
+    ["pointerdown"],
+    [
+      revealedId
+        ? (elements.current.get(revealedId)?.parentElement ?? null)
+        : null,
+    ],
+    revealedId !== null,
+    true,
+  );
   const requestRemove = (row: PlaceRow) => {
     if (disabled) return;
     removeFocus.current = row.id;
@@ -268,6 +291,7 @@ export default function EditableMapPlaces({
             revealed={revealedId === row.id}
             onReveal={setRevealedId}
             onRemove={requestRemove}
+            onSelect={onSelect}
             register={(id, element) => {
               if (element) elements.current.set(id, element);
               else elements.current.delete(id);
