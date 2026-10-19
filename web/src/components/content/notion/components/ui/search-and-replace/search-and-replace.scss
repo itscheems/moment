@@ -111,9 +111,10 @@
   border-radius: var(--tt-radius-lg);
 }
 
-.tiptap-search-replace-input-group:has(
-  [data-slot="tiptap-input-group-control"]:focus-visible
-) {
+:where(:root:not([data-focus-dismissed]))
+  .tiptap-search-replace-input-group:has(
+    [data-slot="tiptap-input-group-control"]:focus-visible
+  ) {
   border-color: var(--tiptap-search-replace-focus-border);
 }
 

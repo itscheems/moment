@@ -531,7 +531,7 @@
   }
 }
 
-.fields label:focus-within {
+:global(:where(:root:not([data-focus-dismissed]))) .fields label:focus-within {
   border-color: var(--accent);
   background: color-mix(in srgb, var(--accent-soft) 24%, var(--surface));
   box-shadow: 0 0 0 1px var(--accent);

@@ -35,6 +35,7 @@ import { ThemeProvider } from "../theme/ThemeProvider";
 import { ReadingLayoutProvider } from "../features/article/ReadingLayout";
 import { FeedbackProvider } from "../components/Feedback";
 import { useDocumentScrollLock } from "../components/useDocumentScrollLock";
+import { useEscapeFocus } from "../components/useEscapeFocus";
 import { useReadRecovery } from "../components/useReadRecovery";
 import {
   COMPOSE_DIALOG_VIEWPORT_QUERY,
@@ -879,6 +880,7 @@ function PublicApp() {
 }
 
 export function App() {
+  useEscapeFocus();
   return (
     <ThemeProvider>
       <ReadingLayoutProvider>

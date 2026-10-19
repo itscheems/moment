@@ -484,6 +484,16 @@ a {
   outline-offset: 2px;
 }
 
+:root[data-focus-dismissed] {
+  --focus-ring: transparent;
+  --navigation-focus: transparent;
+}
+
+:root[data-focus-dismissed] :is(:focus, [data-focus-visible="true"]) {
+  outline: none !important;
+  box-shadow: none !important;
+}
+
 ::selection {
   color: currentColor;
   background: var(--selection-background);

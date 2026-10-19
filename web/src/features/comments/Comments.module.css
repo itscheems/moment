@@ -368,7 +368,7 @@
   background: var(--surface);
 }
 
-.reauth input:focus {
+:global(:where(:root:not([data-focus-dismissed]))) .reauth input:focus {
   border-color: var(--accent);
 }
 

@@ -417,7 +417,7 @@
     box-shadow 150ms;
 }
 
-.field:focus-within {
+:global(:where(:root:not([data-focus-dismissed]))) .field:focus-within {
   border-color: #1d9bf0;
   box-shadow: 0 0 0 1px #1d9bf0;
 }
@@ -427,7 +427,7 @@
   font-weight: 400;
   line-height: 16px;
 }
-.field:focus-within .label {
+:global(:where(:root:not([data-focus-dismissed]))) .field:focus-within .label {
   color: #1d9bf0;
 }
 .counter {
