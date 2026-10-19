@@ -368,10 +368,6 @@
   background: var(--surface);
 }
 
-:global(:where(:root:not([data-focus-dismissed]))) .reauth input:focus {
-  border-color: var(--accent);
-}
-
 .formMeta {
   color: var(--text-secondary);
   font-size: var(--text-xs);

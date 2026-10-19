@@ -185,8 +185,7 @@
 }
 
 .back:focus-visible,
-.apply:focus-visible,
-.sliderThumb:has(input:focus-visible)::after {
+.apply:focus-visible {
   outline: 2px solid #1d9bf0;
   outline-offset: 2px;
 }
