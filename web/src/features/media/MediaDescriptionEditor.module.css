@@ -412,23 +412,12 @@
   padding: 8px;
   color: var(--text-secondary);
   cursor: text;
-  transition:
-    border-color 150ms,
-    box-shadow 150ms;
-}
-
-:global(:where(:root:not([data-focus-dismissed]))) .field:focus-within {
-  border-color: #1d9bf0;
-  box-shadow: 0 0 0 1px #1d9bf0;
 }
 .label,
 .counter {
   font-size: 13px;
   font-weight: 400;
   line-height: 16px;
-}
-:global(:where(:root:not([data-focus-dismissed]))) .field:focus-within .label {
-  color: #1d9bf0;
 }
 .counter {
   font-variant-numeric: normal;

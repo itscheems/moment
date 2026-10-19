@@ -11,7 +11,6 @@
   --tiptap-search-replace-code-bg: var(--tt-gray-light-a-100);
   --tiptap-search-replace-code-border: var(--tt-gray-light-a-200);
   --tiptap-search-replace-code-color: var(--tt-gray-light-a-700);
-  --tiptap-search-replace-focus-border: var(--tt-brand-color-500);
   --tiptap-search-replace-focus-ring: color-mix(
     in srgb,
     var(--tt-brand-color-500) 20%,
@@ -35,7 +34,6 @@
   --tiptap-search-replace-code-bg: var(--tt-gray-dark-a-100);
   --tiptap-search-replace-code-border: var(--tt-gray-dark-a-200);
   --tiptap-search-replace-code-color: var(--tt-gray-dark-a-700);
-  --tiptap-search-replace-focus-border: var(--tt-brand-color-400);
   --tiptap-search-replace-focus-ring: color-mix(
     in srgb,
     var(--tt-brand-color-400) 25%,
@@ -109,13 +107,6 @@
 
 .tiptap-search-replace-input-group {
   border-radius: var(--tt-radius-lg);
-}
-
-:where(:root:not([data-focus-dismissed]))
-  .tiptap-search-replace-input-group:has(
-    [data-slot="tiptap-input-group-control"]:focus-visible
-  ) {
-  border-color: var(--tiptap-search-replace-focus-border);
 }
 
 /* The ↵ badge is only shown while its input is focused */
