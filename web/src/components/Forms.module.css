@@ -177,19 +177,8 @@
   font-family: var(--font-utility);
 }
 
-:global(:where(:root:not([data-focus-dismissed]))) .tokenField input:focus {
-  border-color: var(--accent);
-  box-shadow: 0 0 0 1px var(--accent);
-  outline: none;
-}
-
-.tokenField input[aria-invalid="true"],
-.tokenField input[aria-invalid="true"]:focus {
+.tokenField input[aria-invalid="true"] {
   border-color: var(--danger);
-}
-
-.tokenField input[aria-invalid="true"]:focus {
-  box-shadow: 0 0 0 1px var(--danger);
 }
 
 .tokenField button {
@@ -1251,12 +1240,6 @@
   font: inherit;
 }
 
-:global(:where(:root:not([data-focus-dismissed])))
-  .locationSearch:focus-within {
-  box-shadow: 0 0 0 1px var(--accent);
-  color: var(--accent);
-}
-
 .locationNearby,
 .locationResult {
   inline-size: 100%;
@@ -1409,11 +1392,6 @@
   color: var(--text-primary);
   background: var(--surface);
   font: inherit;
-}
-
-:global(:where(:root:not([data-focus-dismissed]))) .locationManual input:focus {
-  border-color: var(--accent);
-  outline: 1px solid var(--accent);
 }
 
 .locationManual p {
@@ -1664,10 +1642,6 @@
 
 .usernameField input:focus {
   outline: none;
-}
-
-:global(:where(:root:not([data-focus-dismissed]))) .usernameField:focus-within {
-  border-color: var(--accent);
 }
 
 /* The switch sits under the provider buttons and reads as one of them, so it

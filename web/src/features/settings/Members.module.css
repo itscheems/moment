@@ -196,11 +196,6 @@
 .searchField input::-webkit-search-cancel-button {
   -webkit-appearance: none;
 }
-:global(:where(:root:not([data-focus-dismissed]))) .searchField:focus-within {
-  outline: 2px solid var(--accent);
-  outline-offset: 1px;
-  border-color: var(--accent);
-}
 .searchField button {
   display: grid;
   place-items: center;

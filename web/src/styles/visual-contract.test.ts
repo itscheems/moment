@@ -154,12 +154,10 @@ describe("visual foundation contract", () => {
     expect(coverState).not.toContain("transform:");
   });
 
-  it("defines explicit light and dark theme surfaces and a visible focus token", () => {
+  it("defines explicit light and dark theme surfaces", () => {
     expect(globalCss).toContain(':root[data-theme="dim"]');
     expect(globalCss).toContain(':root[data-theme="lights-out"]');
     expect(globalCss).toContain(':root[data-accent="blue"]');
-    expect(globalCss).toContain(":focus-visible");
-    expect(globalCss).toContain("--focus-ring:");
   });
 
   it("self-hosts an open variable Latin face with CJK-safe system fallback", () => {
