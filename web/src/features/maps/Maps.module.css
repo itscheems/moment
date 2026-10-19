@@ -309,7 +309,7 @@
 .card :global(.maplibregl-ctrl-group:not(:empty)),
 .expanded :global(.maplibregl-ctrl-group:not(:empty)) {
   border-radius: 5px;
-  background: rgb(255 255 255 / 60%);
+  background: rgb(255 255 255 / 45%);
   box-shadow: 0 1px 4px #0f141912;
   backdrop-filter: blur(6px);
 }
@@ -425,7 +425,7 @@
   border: 0;
   border-radius: 50%;
   color: var(--text-primary);
-  background: color-mix(in srgb, var(--surface) 88%, transparent);
+  background: color-mix(in srgb, var(--surface) 55%, transparent);
   backdrop-filter: blur(10px);
   box-shadow: 0 2px 12px #0f141914;
   cursor: pointer;
@@ -433,9 +433,8 @@
     background-color 160ms ease,
     color 160ms ease;
 }
-.floatingControl:hover,
-.panelToggle:hover {
-  background: var(--surface);
+.floatingControl:hover {
+  background: color-mix(in srgb, var(--surface) 80%, transparent);
 }
 .floatingControl[aria-pressed="true"] {
   color: var(--accent);
@@ -450,6 +449,29 @@
 }
 .expanded :global(.maplibregl-ctrl-top-left .maplibregl-ctrl) {
   margin: 0;
+}
+.expanded :global(.maplibregl-ctrl-group:not(:empty)) {
+  border-radius: 18px;
+  background: color-mix(in srgb, var(--surface) 55%, transparent);
+  backdrop-filter: blur(10px);
+  box-shadow: 0 2px 12px #0f141914;
+}
+.expanded :global(.maplibregl-ctrl-group button) {
+  width: 36px;
+  height: 36px;
+  transition: background-color 160ms ease;
+}
+.expanded :global(.maplibregl-ctrl-group button:first-child) {
+  border-radius: 18px 18px 0 0;
+}
+.expanded :global(.maplibregl-ctrl-group button:last-child) {
+  border-radius: 0 0 18px 18px;
+}
+.expanded :global(.maplibregl-ctrl-group button:hover) {
+  background-color: color-mix(in srgb, var(--surface) 55%, transparent);
+}
+.expanded :global(.maplibregl-ctrl-icon) {
+  background-size: 25px;
 }
 .expanded :global(.maplibregl-ctrl-bottom-right) {
   right: env(safe-area-inset-right);
@@ -472,6 +494,10 @@
   justify-content: flex-end;
   align-items: center;
   height: 36px;
+  transition: padding-inline-end 200ms ease;
+}
+.panelHeader:has(.panelToggle[aria-expanded="true"]) {
+  padding-inline-end: 15px;
 }
 .panelLabel {
   position: absolute;
@@ -483,6 +509,9 @@
 .panelToggle {
   background: transparent;
   box-shadow: none;
+}
+.panelToggle:hover {
+  background: color-mix(in srgb, var(--text-secondary) 12%, var(--surface));
 }
 .panelChevron {
   display: grid;
@@ -785,6 +814,8 @@
   .swipeDelete,
   .expand,
   .floatingControl,
+  .expanded :global(.maplibregl-ctrl-group button),
+  .panelHeader,
   .panelToggle,
   .addButton {
     transition: none;

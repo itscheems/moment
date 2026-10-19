@@ -75,26 +75,6 @@ export default function MapCanvas({
     const timer = window.setTimeout(onFailure, 20_000);
     return () => window.clearTimeout(timer);
   }, [loaded, onFailure]);
-  const lastGlobe = useRef(false);
-  const flatCamera = useRef<MapCamera | undefined>(undefined);
-  useEffect(() => {
-    if (!loaded || lastGlobe.current === globe) return;
-    const map = ref.current?.getMap();
-    if (!map) return;
-    if (globe) {
-      const center = map.getCenter();
-      flatCamera.current = {
-        longitude: center.lng,
-        latitude: center.lat,
-        zoom: map.getZoom(),
-        bearing: map.getBearing(),
-        pitch: map.getPitch(),
-      };
-      map.easeTo({ zoom: 1.5, pitch: 0, duration: 500 });
-    } else if (flatCamera.current)
-      map.easeTo({ ...flatCamera.current, duration: 500 });
-    lastGlobe.current = globe;
-  }, [globe, loaded]);
   const popup = card.places.find(
     (place) => mapPlaceIdentity(place) === selected,
   );
