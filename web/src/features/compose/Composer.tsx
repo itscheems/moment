@@ -1,4 +1,6 @@
 import { MapCardEditor } from "../maps/MapCardEditor";
+import { useEditHistory } from "../../components/useEditHistory";
+import { EditMediaHistory } from "../media/editMediaHistory";
 import { type MapCardData } from "../maps/types";
 import { accountCacheScope } from "../auth/accountScope";
 import { locationsApi } from "../../api/locations";
@@ -48,7 +50,6 @@ import {
   mediaValidation,
   newMediaItem,
   readLocalPreview,
-  releaseDiscardedLocalPreviews,
   releaseLocalPreview,
   selectMediaFiles,
   uploadMessage,
@@ -274,6 +275,8 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
     contentRef.current = content;
     const activeDraftRef = useRef(activeDraft);
     const mediaItemsRef = useRef(mediaItems);
+    const [mediaHistory] = useState(() => new EditMediaHistory());
+    const resetEditHistory = useRef(() => {});
     const mediaUploadsRef = useRef(new Map<string, AbortController>());
     const mountedRef = useRef(true);
     const draftRemovalRepairRef = useRef<number | null>(null);
@@ -489,16 +492,19 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
     };
 
     const replaceMedia = (next: ComposerMediaItem[]) => {
-      releaseDiscardedLocalPreviews(mediaItemsRef.current, next);
+      mediaHistory.remember(mediaItemsRef.current);
+      mediaHistory.remember(next, mediaItemsRef.current);
       mediaItemsRef.current = next;
       setMediaItems(next);
     };
 
     const clearMedia = useCallback(() => {
+      resetEditHistory.current();
       for (const controller of mediaUploadsRef.current.values())
         controller.abort();
       mediaUploadsRef.current.clear();
-      releaseDiscardedLocalPreviews(mediaItemsRef.current, []);
+      mediaHistory.remember(mediaItemsRef.current);
+      mediaHistory.clear();
       mediaItemsRef.current = [];
       setMediaItems([]);
     }, []);
@@ -534,6 +540,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
     // on this surface, and from the compose dialog's list through the ref.
     const restoreDraftText = useCallback(
       (contentMd: string, keptId?: string, restoredMap?: MapCardData) => {
+        resetEditHistory.current();
         // Whatever is in the editor right now is not thrown away for it.
         const current = contentRef.current;
         if (
@@ -801,6 +808,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
           ? `已从剪贴板加入 ${files.length} 张图片。`
           : `已加入 ${files.length} 张图片。`,
       );
+      window.requestAnimationFrame(() => textareaRef.current?.focus());
       if (session) {
         for (const key of addedKeys) {
           void uploadOne(key, session.csrfToken).catch((nextError) => {
@@ -828,6 +836,73 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
       event.preventDefault();
       addMedia(accepted, "paste");
     };
+
+    const historyValue = {
+      content,
+      mapCard,
+      mediaItems,
+      location,
+      visibility,
+      quotedPost,
+      dismissed: linkPreview.dismissed,
+    };
+    const historyGroup = JSON.stringify([
+      mapCard,
+      mediaHistory.signature(mediaItems),
+      location,
+      visibility,
+      quotedPost?.id,
+      [...linkPreview.dismissed].sort(),
+    ]);
+    const { reset: resetHistory, ...historyEvents } = useEditHistory({
+      value: historyValue,
+      signature: JSON.stringify([content, historyGroup]),
+      group: historyGroup,
+      enabled: active && !pending,
+      input: textareaRef,
+      restore: (next) => {
+        const restoredMedia = mediaHistory.restore(next.mediaItems);
+        for (const [key, controller] of mediaUploadsRef.current) {
+          if (
+            !restoredMedia.some(
+              (item) =>
+                item.key === key &&
+                item.file ===
+                  mediaItemsRef.current.find((current) => current.key === key)
+                    ?.file,
+            )
+          ) {
+            controller.abort();
+            mediaUploadsRef.current.delete(key);
+          }
+        }
+        contentRef.current = next.content;
+        setContent(next.content);
+        changeMapCard(next.mapCard);
+        replaceMedia(restoredMedia);
+        setLocation(next.location);
+        setLocationChanged(
+          JSON.stringify(next.location) !== JSON.stringify(initialLocation),
+        );
+        setVisibility(next.visibility);
+        setQuotedPost(next.quotedPost);
+        linkPreview.restoreDismissed(next.dismissed);
+        setMention(null);
+        setMentionItems([]);
+        if (session)
+          for (const item of restoredMedia) {
+            if (
+              !item.mediaId &&
+              item.file &&
+              !mediaUploadsRef.current.has(item.key)
+            )
+              void uploadOne(item.key, session.csrfToken).catch((nextError) => {
+                if (expireIfInvalidSession(nextError)) setAuthExpired(true);
+              });
+          }
+      },
+    });
+    resetEditHistory.current = resetHistory;
 
     useEffect(() => {
       if (!session || !authExpired) return;
@@ -858,7 +933,8 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
         for (const controller of mediaUploadsRef.current.values())
           controller.abort();
         mediaUploadsRef.current.clear();
-        releaseDiscardedLocalPreviews(mediaItemsRef.current, []);
+        mediaHistory.remember(mediaItemsRef.current);
+        mediaHistory.clear();
         mediaItemsRef.current = [];
       };
     }, []);
@@ -1263,6 +1339,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
 
     return (
       <section
+        {...historyEvents}
         aria-label={post ? "编辑 Moment" : "发布 Moment"}
         className={`${styles.composer} ${inlineLayout ? styles.inlineComposer : styles.pageComposer} ${hasAttachments ? styles.composerHasAttachments : ""}`}
         data-expanded={expanded ? "true" : "false"}
@@ -1531,6 +1608,9 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
                 onRemove={() => {
                   linkPreview.dismiss();
                   setAnnouncement("链接卡片已移除");
+                  window.requestAnimationFrame(() =>
+                    textareaRef.current?.focus(),
+                  );
                 }}
               />
             ) : null}
@@ -1544,6 +1624,9 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
                   dirtyRef.current = true;
                   setDirty(true);
                   setAnnouncement("位置已移除");
+                  window.requestAnimationFrame(() =>
+                    textareaRef.current?.focus(),
+                  );
                   idempotencyKey.current = createIdempotencyKey();
                 }}
               />
@@ -1561,6 +1644,9 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
                     disabled={pending}
                     onClick={() => {
                       setQuotedPost(null);
+                      window.requestAnimationFrame(() =>
+                        textareaRef.current?.focus(),
+                      );
                       setError(null);
                       dirtyRef.current = true;
                       setDirty(true);

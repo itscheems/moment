@@ -1,5 +1,6 @@
 import { MapCardEditor } from "../../maps/MapCardEditor";
 import { mapCardPayload } from "../../maps/types";
+import { closeHistory } from "@tiptap/pm/history";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { EditorContext, type Editor } from "@tiptap/react";
@@ -85,7 +86,8 @@ export function ArticleFormatToolbar({
         triggerOnly
         disabled={loading}
         onChange={(card) => {
-          if (card)
+          if (card) {
+            editor.view.dispatch(closeHistory(editor.state.tr));
             editor
               .chain()
               .focus()
@@ -94,6 +96,7 @@ export function ArticleFormatToolbar({
                 attrs: { map_card: mapCardPayload(card) },
               })
               .run();
+          }
         }}
       />
       {mobileView === "main" ? (

@@ -1,4 +1,6 @@
 import { locationsApi } from "../../api/locations";
+import { useEditHistory } from "../../components/useEditHistory";
+import { EditMediaHistory } from "../media/editMediaHistory";
 
 import { mediaApi } from "../../api/media";
 import { commentsApi } from "../../api/comments";
@@ -33,7 +35,6 @@ import {
   mediaValidation,
   newMediaItem,
   readLocalPreview,
-  releaseDiscardedLocalPreviews,
   releaseLocalPreview,
   uploadMessage,
   type ComposerMediaItem,
@@ -357,6 +358,8 @@ export function CommentForm({
   const [mentionItems, setMentionItems] = useState<MentionSuggestion[]>([]);
   const [mentionActive, setMentionActive] = useState(0);
   const mediaItemsRef = useRef(mediaItems);
+  const [mediaHistory] = useState(() => new EditMediaHistory());
+  const resetEditHistory = useRef(() => {});
   const mediaUploadsRef = useRef(new Map<string, AbortController>());
   const mountedRef = useRef(true);
   const pendingRef = useRef(false);
@@ -409,7 +412,8 @@ export function CommentForm({
   useFoldMotion(layoutFrameRef, expanded);
 
   const replaceMedia = (next: ComposerMediaItem[]) => {
-    releaseDiscardedLocalPreviews(mediaItemsRef.current, next);
+    mediaHistory.remember(mediaItemsRef.current);
+    mediaHistory.remember(next, mediaItemsRef.current);
     mediaItemsRef.current = next;
     setMediaItems(next);
   };
@@ -420,7 +424,8 @@ export function CommentForm({
       mountedRef.current = false;
       for (const controller of mediaUploadsRef.current.values())
         controller.abort();
-      releaseDiscardedLocalPreviews(mediaItemsRef.current, []);
+      mediaHistory.remember(mediaItemsRef.current);
+      mediaHistory.clear();
     };
   }, []);
 
@@ -604,10 +609,12 @@ export function CommentForm({
         replyToCommentId,
       );
       onCreated(result.comment);
+      resetEditHistory.current();
       setContent("");
       signatureRef.current = "";
       idempotencyRef.current = "";
       replaceMedia([]);
+      mediaHistory.clear();
       setCommentLocation(null);
       setActivated(parentId !== null || initialExpanded);
     } catch (nextError) {
@@ -629,12 +636,34 @@ export function CommentForm({
     }
   };
 
+  const historyGroup = JSON.stringify([
+    mediaHistory.signature(mediaItems),
+    commentLocation,
+  ]);
+  const { reset: resetHistory, ...historyEvents } = useEditHistory({
+    value: { content, mediaItems, commentLocation },
+    signature: JSON.stringify([content, historyGroup]),
+    group: historyGroup,
+    input: textareaRef,
+    enabled: !pending && commentsEnabled,
+    restore: (next) => {
+      setContent(next.content);
+      replaceMedia(mediaHistory.restore(next.mediaItems));
+      setCommentLocation(next.commentLocation);
+      setMention(null);
+      setMentionItems([]);
+      setError(null);
+    },
+  });
+  resetEditHistory.current = resetHistory;
+
   return (
     <div
       className={`${styles.formSurface} ${styles.commentLayoutFrame} ${inlineTopLevel ? styles.inlineTopLevelForm : ""} ${parentId ? styles.replyForm : ""} ${expanded ? styles.commentExpanded : styles.commentCollapsed}`}
       data-comment-layout-frame="true"
       data-comment-layout-state={expanded ? "expanded" : "collapsed"}
       data-comment-top-level={inlineTopLevel ? "true" : undefined}
+      {...historyEvents}
       onFocusCapture={() => setActivated(true)}
       ref={layoutFrameRef}
     >
@@ -802,6 +831,9 @@ export function CommentForm({
                 setCommentLocation(null);
                 setActivated(true);
                 setError(null);
+                window.requestAnimationFrame(() =>
+                  textareaRef.current?.focus(),
+                );
               }}
             />
           ) : null}
@@ -898,6 +930,9 @@ export function CommentForm({
                   }
                   replaceMedia(next);
                   setActivated(true);
+                  window.requestAnimationFrame(() =>
+                    textareaRef.current?.focus(),
+                  );
                 }}
                 onChange={(next) => {
                   const replacements = next.filter(

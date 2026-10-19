@@ -1231,7 +1231,7 @@ describe("owner composing flow", () => {
     ).toBeInTheDocument();
   });
 
-  it("removes an edited map card, restores text focus and saves its removal", async () => {
+  it("undoes and redoes text and map removal in order, then saves the removal", async () => {
     preauthenticate();
     const item = {
       ...post("保留正文"),
@@ -1267,8 +1267,20 @@ describe("owner composing flow", () => {
     });
     render(<App />);
     const editor = await screen.findByLabelText("Moment 正文");
+    fireEvent.change(editor, { target: { value: "保留正文，继续编辑" } });
     fireEvent.click(await screen.findByRole("button", { name: "移除地图" }));
     await waitFor(() => expect(editor).toHaveFocus());
+    expect(screen.queryByRole("button", { name: "展开地图" })).toBeNull();
+    fireEvent.keyDown(editor, { key: "z", metaKey: true });
+    expect(
+      screen.getByRole("button", { name: "移除地图" }),
+    ).toBeInTheDocument();
+    expect(editor).toHaveValue("保留正文，继续编辑");
+    fireEvent.keyDown(editor, { key: "z", ctrlKey: true });
+    expect(editor).toHaveValue("保留正文");
+    fireEvent.keyDown(editor, { key: "z", metaKey: true, shiftKey: true });
+    expect(editor).toHaveValue("保留正文，继续编辑");
+    fireEvent.keyDown(editor, { key: "y", ctrlKey: true });
     expect(screen.queryByRole("button", { name: "展开地图" })).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "保存更改" }));
     await waitFor(() => expect(saved?.map_card).toBeNull());

@@ -43,6 +43,8 @@ export interface LinkPreviewState {
   status: LinkPreviewStatus;
   card: LinkCardInput | null;
   dismiss: () => void;
+  dismissed: Set<string>;
+  restoreDismissed: (urls: Set<string>) => void;
 
   changed: boolean;
 }
@@ -67,6 +69,7 @@ export function useLinkPreview(
   const [dismissed, setDismissed] = useState<Set<string>>(() => new Set());
   const [changed, setChanged] = useState(false);
   const controller = useRef<AbortController | null>(null);
+  const resolvedCards = useRef(new Map<string, LinkCardInput>());
 
   const url = enabled ? detectLinkUrl(content) : null;
   const suppressed = url !== null && dismissed.has(url);
@@ -80,6 +83,12 @@ export function useLinkPreview(
       return;
     }
     if (card && card.source_url === url) return;
+    const resolved = resolvedCards.current.get(url);
+    if (resolved) {
+      setCard(resolved);
+      setStatus("ready");
+      return;
+    }
     const abort = new AbortController();
     controller.current = abort;
     setStatus("loading");
@@ -88,6 +97,7 @@ export function useLinkPreview(
         .unfurlLink(url, abort.signal)
         .then((resolved) => {
           if (abort.signal.aborted) return;
+          resolvedCards.current.set(url, resolved);
           setCard(resolved);
           setStatus("ready");
           setChanged(true);
@@ -120,6 +130,8 @@ export function useLinkPreview(
     status: suppressed ? "idle" : status,
     card: suppressed ? null : card,
     dismiss,
+    dismissed,
+    restoreDismissed: setDismissed,
     changed,
   };
 }

@@ -56,6 +56,7 @@ import {
   toEditorContent,
 } from "./document";
 import { articleEditorExtensions } from "./schema";
+import { loadDraftContent, updateDraftFields } from "./draftHistory";
 import styles from "./Editor.module.css";
 import { ArticleSheet } from "../../../components/content/ArticleSheet";
 import { ArticleReadingContent } from "../reader";
@@ -238,6 +239,8 @@ export function ArticleEditor({
     const onUpdate = ({ transaction }: EditorEvents["update"]) => {
       // UniqueID/TOC metadata initialization is not a user edit.
       if (transaction.getMeta("addToHistory") === false) return;
+      setTitle(editor.state.doc.attrs.draftTitle);
+      setCoverMediaId(editor.state.doc.attrs.draftCover);
       markChanged();
     };
     editor.on("update", onUpdate);
@@ -274,9 +277,7 @@ export function ArticleEditor({
       setCoverMediaId(null);
       setSaveState({ kind: "idle" });
       firstChangeAt.current = 0;
-      editor.commands.setContent(toEditorContent(emptyArticleDocument()), {
-        emitUpdate: false,
-      });
+      loadDraftContent(editor, toEditorContent(emptyArticleDocument()));
       setLoadState({ draftId, phase: "ready" });
       return;
     }
@@ -304,9 +305,12 @@ export function ArticleEditor({
         firstChangeAt.current = 0;
         // Loading is not an edit, so the update that would mark the draft
         // dirty -- and schedule a save of what was just read -- is suppressed.
-        editor.commands.setContent(toEditorContent(loaded.body), {
-          emitUpdate: false,
-        });
+        loadDraftContent(
+          editor,
+          toEditorContent(loaded.body),
+          loaded.title,
+          loaded.coverMediaId,
+        );
         setLoadState({ draftId, phase: "ready" });
       } catch (error) {
         if (abandoned || controller.signal.aborted) return;
@@ -650,9 +654,9 @@ export function ArticleEditor({
           controller.signal.aborted
         )
           return;
-        setCoverMediaId(uploaded.id);
+        if (editor && !editor.isDestroyed)
+          updateDraftFields(editor, { coverMediaId: uploaded.id });
         setCoverFile(null);
-        markChanged();
       } catch (error) {
         if (
           generation !== uploadGeneration.current ||
@@ -676,7 +680,7 @@ export function ArticleEditor({
         }
       }
     },
-    [csrfToken, auth, markChanged],
+    [csrfToken, auth, editor],
   );
 
   const publish = useCallback(async () => {
@@ -741,9 +745,8 @@ export function ArticleEditor({
       setTitle("");
       setCoverMediaId(null);
       setSaveState({ kind: "idle" });
-      editor?.commands.setContent(toEditorContent(emptyArticleDocument()), {
-        emitUpdate: false,
-      });
+      if (editor && !editor.isDestroyed)
+        loadDraftContent(editor, toEditorContent(emptyArticleDocument()));
       if (onBack) onBack();
       else location.replace(ARTICLE_COMPOSE_PATH);
       return;
@@ -780,9 +783,12 @@ export function ArticleEditor({
       setDraft(stored);
       setTitle(stored.title);
       setCoverMediaId(stored.coverMediaId);
-      editor.commands.setContent(toEditorContent(stored.body), {
-        emitUpdate: false,
-      });
+      loadDraftContent(
+        editor,
+        toEditorContent(stored.body),
+        stored.title,
+        stored.coverMediaId,
+      );
       firstChangeAt.current = 0;
       setSaveState({ kind: "saved", at: stored.updatedAt });
     } catch (error) {
@@ -861,6 +867,46 @@ export function ArticleEditor({
         className={`${styles.page} ${embedded ? styles.embeddedEditor : ""}`}
         data-article-theme
         aria-busy={loading}
+        onKeyDownCapture={(event) => {
+          if (
+            !editor ||
+            loading ||
+            previewing ||
+            publishing ||
+            discarding ||
+            event.nativeEvent.isComposing ||
+            event.altKey ||
+            !(event.metaKey || event.ctrlKey)
+          )
+            return;
+          const target = event.target;
+          if (
+            target instanceof Element &&
+            (target
+              .closest("[contenteditable]")
+              ?.getAttribute("contenteditable") === "true" ||
+              (target.closest("input, textarea") &&
+                target !== titleInput.current))
+          )
+            return;
+          const key = event.key.toLowerCase();
+          if (key !== "z" && !(event.ctrlKey && key === "y")) return;
+          const dialog =
+            target instanceof Element
+              ? target.closest('[role="dialog"]')
+              : null;
+          if (
+            dialog &&
+            !dialog.contains(event.currentTarget) &&
+            !dialog.matches("[data-map-fullscreen][data-map-editable]")
+          )
+            return;
+          event.preventDefault();
+          event.stopPropagation();
+          if (key === "y" || event.shiftKey) editor.commands.redo();
+          else editor.commands.undo();
+          if (target !== titleInput.current) editor.commands.focus();
+        }}
       >
         <header className={styles.topBar} ref={topBar}>
           <button
@@ -1161,8 +1207,8 @@ export function ArticleEditor({
                   }}
                   onRemove={() => {
                     if (loading) return;
-                    setCoverMediaId(null);
-                    markChanged();
+                    if (editor)
+                      updateDraftFields(editor, { coverMediaId: null });
                   }}
                   readOnly={
                     previewing || publishing || discarding || loadError !== null
@@ -1189,8 +1235,13 @@ export function ArticleEditor({
                         }
                         onChange={(event) => {
                           if (loading) return;
-                          setTitle(event.target.value.replace(/[\r\n]+/g, " "));
-                          markChanged();
+                          if (editor)
+                            updateDraftFields(editor, {
+                              title: event.target.value.replace(
+                                /[\r\n]+/g,
+                                " ",
+                              ),
+                            });
                         }}
                         placeholder="标题"
                         rows={1}
