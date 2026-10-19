@@ -115,7 +115,7 @@ export function MemberProfilePage({
 
   const title = siteDisplayName(account);
   return (
-    <section aria-label={`${title} 的个人资料`} className={styles.profile}>
+    <section aria-label={`${title} 的个人资料`}>
       {state === "loading" || state === "failed" ? (
         <ReadRecoveryNotice error={error} />
       ) : null}

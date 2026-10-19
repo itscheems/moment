@@ -383,7 +383,7 @@ export function ProfilePage({
   });
 
   return (
-    <section aria-label={`${title} 的个人资料`} className={styles.profile}>
+    <section aria-label={`${title} 的个人资料`}>
       <div className={styles.cover}>
         <SiteCover eager site={site} />
       </div>
