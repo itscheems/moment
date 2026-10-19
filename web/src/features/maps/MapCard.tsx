@@ -11,7 +11,8 @@ import {
 import { Dialog } from "@base-ui/react/dialog";
 import { Icon } from "../../components/icons";
 import { useDocumentScrollLock } from "../../components/useDocumentScrollLock";
-import { googleMapUrl } from "./geometry";
+import { ActionTooltip } from "../../components/TimelineInteractions";
+import { MapPlaces } from "./MapPlaces";
 import type { MapCardData } from "./types";
 import type { MapCamera } from "./MapCanvas";
 import styles from "./Maps.module.css";
@@ -35,10 +36,16 @@ export function MapCard({
   card,
   deferMap = false,
   onPick,
+  onChange,
+  disabled,
+  footer,
 }: {
   card: MapCardData;
   deferMap?: boolean;
   onPick?: (longitude: number, latitude: number) => void;
+  onChange?: (card: MapCardData | null) => void;
+  disabled?: boolean;
+  footer?: ReactNode;
 }) {
   const container = useRef<HTMLElement>(null);
   const [visible, setVisible] = useState(false);
@@ -126,25 +133,7 @@ export function MapCard({
     </div>
   );
   const places = (
-    <ol className={styles.places}>
-      {card.places.map((place, index) => (
-        <li key={`${index}:${place.name}`}>
-          <span className={styles.placeNumber}>{index + 1}</span>
-          <div>
-            <strong>{place.name}</strong>
-            <span>{place.displayName}</span>
-          </div>
-          <a
-            href={googleMapUrl(place)}
-            target="_blank"
-            rel="noopener noreferrer"
-            aria-label={`在 Google Maps 打开${place.name}`}
-          >
-            <Icon name="open" />
-          </a>
-        </li>
-      ))}
-    </ol>
+    <MapPlaces card={card} onChange={onChange} disabled={disabled} />
   );
   return (
     <section
@@ -157,20 +146,48 @@ export function MapCard({
     >
       <div className={styles.canvasFrame}>
         {expanded ? <div className={styles.canvas} /> : canvas(false)}
-        <button
-          className={styles.expand}
-          type="button"
-          aria-label="展开地图"
-          onClick={() => setExpanded(true)}
-        >
-          <Icon name="expand" />
-        </button>
+        <ActionTooltip label="展开地图">
+          <button
+            className={styles.expand}
+            type="button"
+            aria-label="展开地图"
+            onClick={() => setExpanded(true)}
+          >
+            <Icon name="expand" />
+          </button>
+        </ActionTooltip>
       </div>
       {places}
-      <Dialog.Root open={expanded} onOpenChange={setExpanded}>
+      {footer}
+      <Dialog.Root
+        open={expanded}
+        onOpenChange={(open, details) => {
+          if (
+            !open &&
+            details.reason === "escape-key" &&
+            details.event.target instanceof Element &&
+            details.event.target.closest("[data-map-place][data-dragging]")
+          ) {
+            details.cancel();
+            details.allowPropagation();
+            return;
+          }
+          setExpanded(open);
+        }}
+      >
         <Dialog.Portal>
           <Dialog.Backdrop className={styles.backdrop} />
-          <Dialog.Popup className={styles.expanded}>
+          <Dialog.Popup
+            className={styles.expanded}
+            onKeyDown={(event) => {
+              if (
+                (event.key === "ArrowUp" || event.key === "ArrowDown") &&
+                event.target instanceof Element &&
+                event.target.closest("[data-map-place][data-dragging]")
+              )
+                event.preventBaseUIHandler();
+            }}
+          >
             <header className={styles.dialogHeader}>
               <Dialog.Title>地图</Dialog.Title>
               <div>
@@ -188,6 +205,7 @@ export function MapCard({
             </header>
             {expanded && canvas(true)}
             <div className={styles.expandedPlaces}>{places}</div>
+            {footer}
           </Dialog.Popup>
         </Dialog.Portal>
       </Dialog.Root>

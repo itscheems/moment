@@ -491,8 +491,7 @@ describe("App shell and public routes", () => {
     ).toBeNull();
   });
 
-  // Articles start from the compose page and land on the same timeline.
-  it("offers the way into an article from the compose page", async () => {
+  it("keeps articles in navigation without an extra compose entry", async () => {
     preauthenticate();
     window.history.replaceState({}, "", "/compose");
     installApi(async (url) => {
@@ -502,10 +501,11 @@ describe("App shell and public routes", () => {
     });
 
     render(<App />);
-    expect(await screen.findByRole("link", { name: "写文章" })).toHaveAttribute(
+    expect(await screen.findByRole("link", { name: "文章" })).toHaveAttribute(
       "href",
       "/compose/articles",
     );
+    expect(screen.queryByRole("link", { name: "写文章" })).toBeNull();
   });
 
   it("hides the mobile bar on deterministic visual-viewport contraction without moving composer focus", async () => {

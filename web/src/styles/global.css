@@ -196,7 +196,9 @@
   --layer-popover: 30;
   --layer-picker: 100;
   --layer-lightbox: 110;
+  --layer-map: 120;
   --layer-confirm: 130;
+  --layer-tooltip: 150;
 
   color: var(--text-primary);
   background: var(--canvas);

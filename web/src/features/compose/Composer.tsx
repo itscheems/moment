@@ -30,8 +30,8 @@ import {
   type SiteIdentity,
 } from "../../api/public";
 
-import { InternalLink, useNavigation } from "../../app/navigation";
-import { ARTICLE_COMPOSE_PATH } from "../../app/routes";
+import { useNavigation } from "../../app/navigation";
+import { ActionTooltip } from "../../components/TimelineInteractions";
 import { notify } from "../../components/Feedback";
 import { MarkdownBody } from "../../components/content/MarkdownBody";
 import { MediaComposer } from "../media/MediaComposer";
@@ -103,7 +103,7 @@ const DRAFT_REMOVAL_REPAIR_DELAY_MS = 50;
 // composer — buttons, the pill, blank space — is a press that leaves focus
 // where it was.
 const TYPED_INTO =
-  'textarea, input, select, a, [contenteditable], [role="status"], [role="alert"]';
+  'textarea, input, select, a, [contenteditable], [data-map-place], [role="switch"], [role="status"], [role="alert"]';
 
 function isTypedInto(target: EventTarget | null): boolean {
   return target instanceof Element && target.closest(TYPED_INTO) !== null;
@@ -325,6 +325,12 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
         locationChanged ||
         visibilityChanged) &&
       !allowLeaveRef.current;
+    const hasAttachments =
+      mediaItems.length > 0 ||
+      mapCard !== null ||
+      quotedPost !== null ||
+      linkPreview.card !== null;
+    const inlineLayout = variant === "inline" || variant === "edit";
     const expanded =
       variant !== "inline" ||
       focusWithin ||
@@ -829,16 +835,16 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
       window.requestAnimationFrame(() => textareaRef.current?.focus());
     }, [authExpired, session]);
 
-    useEffect(() => {
+    useLayoutEffect(() => {
       const textarea = textareaRef.current;
       if (!textarea) return;
-      if (mediaItems.length > 0) {
+      if (window.CSS?.supports?.("field-sizing", "content")) {
         textarea.style.height = "";
         return;
       }
       textarea.style.height = "auto";
       textarea.style.height = `${Math.min(textarea.scrollHeight, 288)}px`;
-    }, [content, mediaItems.length]);
+    }, [content, hasAttachments]);
 
     useEffect(() => {
       mountedRef.current = true;
@@ -1256,7 +1262,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
     return (
       <section
         aria-label={post ? "编辑 Moment" : "发布 Moment"}
-        className={`${styles.composer} ${variant === "inline" ? styles.inlineComposer : styles.pageComposer} ${mediaItems.length > 0 ? styles.composerHasMedia : ""}`}
+        className={`${styles.composer} ${inlineLayout ? styles.inlineComposer : styles.pageComposer} ${hasAttachments ? styles.composerHasAttachments : ""}`}
         data-expanded={expanded ? "true" : "false"}
         onBlur={(event) => {
           const section = event.currentTarget;
@@ -1283,16 +1289,8 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
             in the header, but a phone never gets the dialog, and filing
             text you cannot read back is a trap. Spans both columns so the
             avatar stays level with the audience pill under it. */}
-        {variant === "page" ? (
+        {drafting && (keptCount > 0 || draftsListOpen) ? (
           <div className={styles.pageDrafts}>
-            {/* Articles start inside composing and land on the same timeline. */}
-            <InternalLink
-              className={styles.pageArticleLink}
-              href={ARTICLE_COMPOSE_PATH}
-            >
-              <Icon name="edit" />
-              写文章
-            </InternalLink>
             {drafting && draftsListOpen && keptCount > 0 ? (
               <button
                 className={styles.pageDraftsEdit}
@@ -1486,7 +1484,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
                 }}
                 placeholder={post ? "编辑 Moment" : "有什么新鲜事？"}
                 ref={textareaRef}
-                rows={mediaItems.length > 0 ? 1 : variant === "inline" ? 1 : 4}
+                rows={inlineLayout || hasAttachments ? 1 : 4}
                 value={content}
               />
               {mention ? (
@@ -1590,15 +1588,19 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
               value={mapCard}
               onChange={changeMapCard}
               disabled={pending || !session}
+              onOpenChange={(open) => onSettingsOpenChange("map", open)}
+              onOpenChangeComplete={(open) =>
+                onSettingsOpenChangeComplete("map", open)
+              }
             />
             <MediaComposer
               beforeToolbar={
-                variant === "inline" ? (
+                variant !== "edit" ? (
                   <div
                     aria-hidden={
                       !expanded || visibility !== "everyone" ? true : undefined
                     }
-                    className={`${styles.replyAudienceRow} ${expanded && visibility === "everyone" ? "" : styles.replyAudienceRowCollapsed}`}
+                    className={`${styles.replyAudienceRow} ${variant === "page" ? styles.pageReplyAudienceRow : ""} ${expanded && visibility === "everyone" ? "" : styles.replyAudienceRowCollapsed}`}
                     inert={!expanded || visibility !== "everyone"}
                   >
                     <div>
@@ -1615,24 +1617,64 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
                   </div>
                 ) : null
               }
-              compact={variant === "inline"}
-              className={variant === "inline" ? styles.inlineMedia : undefined}
+              compact={inlineLayout}
+              dialogToolbar={variant === "page"}
+              className={inlineLayout ? styles.inlineMedia : undefined}
               disabled={pending}
-              divider={variant === "inline" && expanded}
+              divider={inlineLayout && expanded}
               footerAction={
-                <button
-                  className={`${styles.primaryButton} ${styles.composerPublishButton}`}
-                  disabled={!valid || pending || !session}
-                  type="submit"
-                >
-                  {pending
-                    ? post
-                      ? "正在保存…"
-                      : "正在发布…"
-                    : post
-                      ? "保存更改"
-                      : "发布"}
-                </button>
+                <div className={styles.composerFooterActions}>
+                  {variant === "page" && (count > 0 || hasAttachments) && (
+                    <ActionTooltip
+                      label={`${count.toLocaleString("zh-CN")} / ${MAX_CONTENT.toLocaleString("zh-CN")} 字`}
+                    >
+                      <span
+                        className={styles.composerCharacterCount}
+                        role="progressbar"
+                        aria-label="正文字数"
+                        aria-valuemin={0}
+                        aria-valuemax={MAX_CONTENT}
+                        aria-valuenow={Math.min(count, MAX_CONTENT)}
+                        data-invalid={count > MAX_CONTENT || undefined}
+                      >
+                        <svg aria-hidden="true" viewBox="0 0 20 20">
+                          <circle
+                            cx="10"
+                            cy="10"
+                            r="10"
+                            fill="none"
+                            strokeWidth="2"
+                            className={styles.characterTrack}
+                          />
+                          <circle
+                            cx="10"
+                            cy="10"
+                            r="10"
+                            fill="none"
+                            strokeWidth="2"
+                            strokeLinecap="round"
+                            pathLength="100"
+                            strokeDasharray={`${Math.min(100, (count / MAX_CONTENT) * 100)} 100`}
+                            className={styles.characterProgress}
+                          />
+                        </svg>
+                      </span>
+                    </ActionTooltip>
+                  )}
+                  <button
+                    className={`${styles.primaryButton} ${styles.composerPublishButton}`}
+                    disabled={!valid || pending || !session}
+                    type="submit"
+                  >
+                    {pending
+                      ? post
+                        ? "正在保存…"
+                        : "正在发布…"
+                      : post
+                        ? "保存更改"
+                        : "发布"}
+                  </button>
+                </div>
               }
               items={mediaItems}
               onAdd={addMedia}
@@ -1645,6 +1687,10 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
                     triggerOnly
                     disabled={pending || !session}
                     onChange={changeMapCard}
+                    onOpenChange={(open) => onSettingsOpenChange("map", open)}
+                    onOpenChangeComplete={(open) =>
+                      onSettingsOpenChangeComplete("map", open)
+                    }
                   />
                   <LocationPicker
                     api={locationsApi}

@@ -10,7 +10,12 @@ import Map, {
 import * as maplibre from "maplibre-gl";
 import workerUrl from "maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url";
 import "maplibre-gl/dist/maplibre-gl.css";
-import { mapBounds, mapConnections, mapCoordinate } from "./geometry";
+import {
+  mapBounds,
+  mapConnections,
+  mapCoordinate,
+  mapPlaceIdentity,
+} from "./geometry";
 import type { MapCardData } from "./types";
 import styles from "./Maps.module.css";
 
@@ -41,7 +46,7 @@ export default function MapCanvas({
 }) {
   const ref = useRef<MapRef>(null);
   const [loaded, setLoaded] = useState(false);
-  const [selected, setSelected] = useState<number | null>(null);
+  const [selected, setSelected] = useState<string | null>(null);
   const bounds = useMemo(() => mapBounds(card.places), [card.places]);
   const connections = useMemo(() => mapConnections(card), [card]);
   const pointsKey = card.places
@@ -49,6 +54,7 @@ export default function MapCanvas({
       (point) =>
         `${point.latitude},${point.longitude},${point.coordinateSystem}`,
     )
+    .sort()
     .join(";");
   const fittedKey = useRef(camera ? pointsKey : "");
   useEffect(() => {
@@ -85,7 +91,12 @@ export default function MapCanvas({
       map.easeTo({ ...flatCamera.current, duration: 500 });
     lastGlobe.current = globe;
   }, [globe, loaded]);
-  const popup = selected === null ? null : card.places[selected];
+  const popup = card.places.find(
+    (place) => mapPlaceIdentity(place) === selected,
+  );
+  useEffect(() => {
+    setSelected(null);
+  }, [pointsKey]);
   return (
     <Map
       ref={ref}
@@ -150,19 +161,17 @@ export default function MapCanvas({
             key={`${place.name}:${longitude}:${latitude}`}
             longitude={longitude}
             latitude={globe ? latitude : Math.max(-85, Math.min(85, latitude))}
-            anchor="bottom"
+            anchor="center"
             onClick={(event) => {
               event.originalEvent.stopPropagation();
-              setSelected(index);
+              setSelected(mapPlaceIdentity(place));
             }}
           >
             <button
               type="button"
               className={styles.marker}
               aria-label={`地点 ${index + 1}：${place.name}`}
-            >
-              {index + 1}
-            </button>
+            ></button>
           </Marker>
         );
       })}

@@ -14,6 +14,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { mediaPreviewUrl } from "../../api/mediaUrls";
 import { App } from "../../app/App";
+import composerStyles from "../../components/Forms.module.css";
 import {
   COMPOSE_DRAFT_CLEARANCE_SCHEMA,
   COMPOSE_DRAFT_CLEAR_ALL_SCHEMA,
@@ -1205,6 +1206,29 @@ describe("owner composing flow", () => {
       await screen.findByRole("dialog", { name: "编辑资料" }),
     ).toBeInTheDocument();
     expect(screen.getByLabelText("显示名称")).toHaveValue("未保存的名字");
+  });
+
+  it("uses the timeline composer layout for editing an existing post", async () => {
+    preauthenticate();
+    const item = post("编辑原有内容");
+    window.history.replaceState({}, "", `/m/${item.id}/edit`);
+    installApi((url) => {
+      if (url === `/api/v1/posts/${item.id}`)
+        return json({ data: item, meta: {} });
+    });
+    render(<App />);
+
+    const editor = await screen.findByLabelText("Moment 正文");
+    const composer = screen.getByRole("region", { name: "编辑 Moment" });
+    expect(composer).toHaveClass(composerStyles.inlineComposer);
+    expect(composer).not.toHaveClass(composerStyles.pageComposer);
+    expect(editor).toHaveAttribute("rows", "1");
+    expect(
+      within(composer).queryByRole("progressbar", { name: "正文字数" }),
+    ).toBeNull();
+    expect(
+      within(composer).getByRole("button", { name: "保存更改" }),
+    ).toBeInTheDocument();
   });
 
   it("keeps an edited post mounted through auth expiry, re-login, and retry", async () => {

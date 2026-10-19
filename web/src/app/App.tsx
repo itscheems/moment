@@ -657,8 +657,17 @@ function PublicApp() {
       </AppShell>
       {overlayCompose && siteIdentityReady ? (
         <Dialog.Root
-          onOpenChange={(open) => {
+          onOpenChange={(open, details) => {
             if (open) return;
+            if (
+              details.reason === "escape-key" &&
+              details.event.target instanceof Element &&
+              details.event.target.closest("[data-map-place][data-dragging]")
+            ) {
+              details.cancel();
+              details.allowPropagation();
+              return;
+            }
             // Escape and a press on the scrim mean the same thing the back
             // arrow does while the list is up: go back to what was being
             // written, not out of the composer.
@@ -681,6 +690,15 @@ function PublicApp() {
             >
               <Dialog.Popup
                 className={styles.composeDialog}
+                onKeyDown={(event) => {
+                  // Sorting arrows belong to dnd-kit's document listener.
+                  if (
+                    (event.key === "ArrowUp" || event.key === "ArrowDown") &&
+                    event.target instanceof Element &&
+                    event.target.closest("[data-map-place][data-dragging]")
+                  )
+                    event.preventBaseUIHandler();
+                }}
                 initialFocus={() =>
                   composeDialogRef.current?.querySelector("textarea") ??
                   composeDialogRef.current
