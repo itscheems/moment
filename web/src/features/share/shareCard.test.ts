@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
   recordCanvas,
@@ -160,6 +160,7 @@ describe("drawing the card", () => {
   let restoreImages: () => void;
 
   beforeEach(() => {
+    vi.stubGlobal("Path2D", class {});
     const canvas = recordCanvas();
     recording = canvas.recording;
     restoreCanvas = canvas.restore;
@@ -167,6 +168,7 @@ describe("drawing the card", () => {
   });
 
   afterEach(() => {
+    vi.unstubAllGlobals();
     restoreCanvas();
     restoreImages();
   });
@@ -231,10 +233,7 @@ describe("drawing the card", () => {
     expect(sources.some((source) => source.includes("/preview"))).toBe(false);
   });
 
-  // The name and the handle are one identity read as a pair. Pinning the ratio
-  // rather than the numbers leaves both free to move, and still catches the
-  // handle drifting back to the footnote it used to look like beside the name.
-  it("keeps the byline's two lines close in size", async () => {
+  it("keeps the byline's two lines at the same size with a bold name", async () => {
     await renderShareCard(input());
 
     const sizeOf = (text: string) => {
@@ -246,8 +245,10 @@ describe("drawing the card", () => {
     const name = sizeOf("Cheems");
     const handle = sizeOf("@itscheems");
 
-    expect(name).toBeGreaterThan(handle);
-    expect(handle / name).toBeGreaterThan(0.75);
+    expect(name).toBe(handle);
+    expect(
+      recording.of("fillText").find((call) => call.args[0] === "Cheems")?.font,
+    ).toMatch(/^700 /);
   });
 
   it("draws what a link preview is and what it says", async () => {
@@ -298,15 +299,15 @@ describe("drawing the card", () => {
     expect(
       recording.of("fillText").find((call) => call.args[0] === "在场")?.fill,
     ).toBe("#0f1419");
-    expect(recording.of("stroke")).toHaveLength(1);
+    expect(recording.of("stroke")).toHaveLength(4);
     expect(recording.of("stroke")[0].stroke).toBe("#cfd9de");
     const before = recording.calls.length;
     const previousFills = recording.of("fill").length;
     await renderShareCard(input());
     expect(recording.of("fill")[previousFills]?.fill).toBe("#ffffff");
     expect(
-      recording.calls.slice(before).some((call) => call.op === "stroke"),
-    ).toBe(false);
+      recording.calls.slice(before).filter((call) => call.op === "stroke"),
+    ).toHaveLength(3);
   });
 
   it("exports an excerpt with the existing avatar fallback when its image fails to load", async () => {
@@ -322,7 +323,7 @@ describe("drawing the card", () => {
       ),
     ).resolves.toBeInstanceOf(Blob);
     expect(recording.of("drawImage")).toHaveLength(0);
-    expect(recording.text()).toContain("CCheems@itscheems来源在场");
+    expect(recording.text()).toContain("CCheems@itscheems·关注来源在场");
   });
 
   it("wraps a long article title completely rather than truncating it", async () => {
@@ -408,13 +409,7 @@ describe("drawing the card", () => {
     );
     const excerpt = recording
       .of("fillText")
-      .filter(
-        (call) =>
-          call.fill !== "#536471" &&
-          call.args[0] !== "Cheems" &&
-          call.args[0] !== "来源" &&
-          call.args[0] !== "C",
-      );
+      .filter((call) => call.font.startsWith("400 20px"));
     expect(excerpt.map((call) => call.args[0]).join("")).toBe(text);
     for (const call of excerpt)
       expect(String(call.args[0]).replace(/👨‍👩‍👧‍👦/g, "")).not.toMatch(
@@ -432,7 +427,7 @@ describe("drawing the card", () => {
     );
     const lines = recording
       .of("fillText")
-      .filter((call) => call.font.startsWith("400 18px"));
+      .filter((call) => call.font.startsWith("400 20px"));
     expect(lines.map((call) => call.args[0]).join("")).toBe(text);
     expect(lines.every((call) => !String(call.args[0]).startsWith("。"))).toBe(
       true,

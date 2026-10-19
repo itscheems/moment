@@ -1,11 +1,3 @@
-/*
- * The dialog that shows a card before it goes anywhere.
- *
- * It borrows the shape of the confirmation dialog rather than inventing a
- * second one, and differs only where the content demands it: the card is tall
- * and portrait, so the popup is sized to it and scrolls rather than shrinking
- * a picture somebody is being asked to judge.
- */
 .backdrop {
   position: fixed;
   z-index: var(--layer-confirm);
@@ -20,20 +12,23 @@
   inset: 0;
   display: grid;
   place-items: center;
-  padding: var(--space-4);
+  padding: max(16px, env(safe-area-inset-top))
+    max(16px, env(safe-area-inset-right)) max(16px, env(safe-area-inset-bottom))
+    max(16px, env(safe-area-inset-left));
 }
 
 .popup {
-  inline-size: min(100%, 26rem);
-  max-block-size: min(100%, 46rem);
+  inline-size: min(100%, 600px);
+  max-block-size: 100%;
+  min-block-size: 0;
   display: flex;
   flex-direction: column;
-  gap: var(--space-4);
-  border: 1px solid var(--border-strong);
-  border-radius: var(--radius-panel);
-  padding: var(--space-5);
-  background: var(--surface-elevated);
-  box-shadow: var(--shadow-popover);
+  overflow: hidden;
+  border: 0;
+  border-radius: 16px;
+  color: #0f1419;
+  background: #fff;
+  font-family: var(--font-timeline);
   transition:
     opacity var(--motion-dialog) var(--ease-out),
     transform var(--motion-dialog) var(--ease-out);
@@ -50,82 +45,135 @@
   transform: translateY(0.5rem);
 }
 
-.title {
-  margin: 0;
-  font-size: var(--text-lg);
-  font-weight: 700;
+.header {
+  min-block-size: 64px;
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding-inline: 24px 12px;
 }
 
-/* The card has transparent corners, so the tile behind it is what those
-   corners show. A flat neutral keeps the card's own white reading as white. */
-.stage {
-  min-block-size: 10rem;
+.title {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 700;
+  line-height: 24px;
+}
+
+.close {
+  inline-size: 44px;
+  block-size: 44px;
+  flex: none;
   display: grid;
   place-items: center;
+  border: 0;
+  border-radius: 50%;
+  padding: 0;
+  color: inherit;
+  background: transparent;
+  cursor: pointer;
+  transition: background var(--motion-fast) var(--ease-out);
+}
+
+.close svg {
+  inline-size: 20px;
+  block-size: 20px;
+}
+
+.description {
+  flex: none;
+  margin: 12px 24px 16px;
+  color: #536471;
+  font-size: 15px;
+  line-height: 20px;
+}
+
+.stage {
+  min-block-size: 0;
   overflow: auto;
-  border-radius: var(--radius-action);
-  background: var(--surface-muted);
-  padding: var(--space-4);
+  overscroll-behavior: contain;
+  padding-inline: 24px;
 }
 
 .preview {
-  inline-size: 100%;
+  inline-size: min(100%, 550px);
   block-size: auto;
   display: block;
+  margin-inline: auto;
 }
 
 .state {
+  min-block-size: 160px;
+  display: grid;
+  place-items: center;
   margin: 0;
-  color: var(--text-secondary);
-  font-size: var(--text-sm);
+  color: #536471;
+  font-size: 15px;
+  line-height: 20px;
 }
 
 .actions {
+  flex: none;
   display: flex;
-  flex-wrap: wrap;
-  justify-content: flex-end;
-  gap: var(--space-2);
+  gap: 12px;
+  margin-block-start: 16px;
+  border-block-start: 1px solid #eff3f4;
+  padding: 16px 24px 24px;
 }
 
 .quiet,
 .primary {
-  min-block-size: var(--target-size);
-  border: 0;
-  border-radius: 999px;
-  padding-inline: var(--space-4);
+  min-inline-size: 0;
+  min-block-size: 44px;
+  flex: 1;
+  border: 1px solid #cfd9de;
+  border-radius: 9999px;
+  padding: 10px 16px;
   font: inherit;
-  font-weight: 650;
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 20px;
   cursor: pointer;
   transition: background var(--motion-fast) var(--ease-out);
 }
 
 .quiet {
-  color: var(--text-primary);
-  background: transparent;
-}
-
-.quiet:focus-visible:not(:disabled) {
-  background: var(--surface-hover-strong);
-}
-
-@media (hover: hover) {
-  .quiet:hover:not(:disabled) {
-    background: var(--surface-hover-strong);
-  }
+  color: #0f1419;
+  background: #fff;
 }
 
 .primary {
-  color: var(--button-primary-contrast);
-  background: var(--button-primary);
+  border-color: #0f1419;
+  color: #fff;
+  background: #0f1419;
+}
+
+.close:focus-visible,
+.quiet:focus-visible:not(:disabled) {
+  background: #e7e7e8;
 }
 
 .primary:focus-visible:not(:disabled) {
-  background: var(--button-primary-hover);
+  background: #272c30;
+}
+
+.close:focus-visible,
+.quiet:focus-visible,
+.primary:focus-visible {
+  outline: 2px solid #006fd6;
+  outline-offset: 2px;
 }
 
 @media (hover: hover) {
+  .close:hover,
+  .quiet:hover:not(:disabled) {
+    background: #e7e7e8;
+  }
+
   .primary:hover:not(:disabled) {
-    background: var(--button-primary-hover);
+    background: #272c30;
   }
 }
 
@@ -135,9 +183,29 @@
   cursor: not-allowed;
 }
 
+@media (max-width: 479px) {
+  .header {
+    padding-inline-start: 16px;
+  }
+
+  .description {
+    margin-inline: 16px;
+  }
+
+  .stage {
+    padding-inline: 16px;
+  }
+
+  .actions {
+    gap: 8px;
+    padding: 16px;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .backdrop,
   .popup,
+  .close,
   .quiet,
   .primary {
     transition: none;

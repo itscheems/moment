@@ -93,7 +93,11 @@ export function recordCanvas(): { recording: Recording; restore: () => void } {
         const size = sizeOf(state.font);
         let width = 0;
         for (const glyph of text) width += WIDE.test(glyph) ? size : size / 2;
-        return { width };
+        return {
+          width,
+          fontBoundingBoxAscent: size * 0.95,
+          fontBoundingBoxDescent: size * 0.2,
+        };
       },
     } as unknown as CanvasRenderingContext2D & Record<string, unknown>;
 
@@ -113,6 +117,7 @@ export function recordCanvas(): { recording: Recording; restore: () => void } {
       "save",
       "scale",
       "stroke",
+      "translate",
     ]) {
       context[op] = (...args: unknown[]) => note(op, ...args);
     }

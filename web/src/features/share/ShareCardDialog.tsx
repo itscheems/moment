@@ -2,6 +2,7 @@ import { Dialog } from "../../components/Dialog";
 import { useEffect, useRef, useState, type ComponentProps } from "react";
 
 import { notify } from "../../components/Feedback";
+import { Icon } from "../../components/icons";
 import { useDocumentScrollLock } from "../../components/useDocumentScrollLock";
 import {
   renderShareCard,
@@ -125,7 +126,15 @@ export function ShareCardDialog({
         <Dialog.Backdrop className={styles.backdrop} />
         <Dialog.Viewport className={styles.viewport}>
           <Dialog.Popup className={styles.popup} finalFocus={finalFocus}>
-            <Dialog.Title className={styles.title}>分享图片</Dialog.Title>
+            <div className={styles.header}>
+              <Dialog.Title className={styles.title}>分享图片</Dialog.Title>
+              <Dialog.Close aria-label="关闭" className={styles.close}>
+                <Icon name="close" />
+              </Dialog.Close>
+            </div>
+            <Dialog.Description className={styles.description}>
+              预览此帖子作为图片分享时的外观。
+            </Dialog.Description>
             <div className={styles.stage}>
               {stage.kind === "ready" ? (
                 <img
@@ -144,7 +153,6 @@ export function ShareCardDialog({
               )}
             </div>
             <div className={styles.actions}>
-              <Dialog.Close className={styles.quiet}>关闭</Dialog.Close>
               {typeof ClipboardItem === "function" ? (
                 <button
                   className={styles.quiet}

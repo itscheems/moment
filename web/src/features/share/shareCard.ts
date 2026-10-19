@@ -11,32 +11,28 @@
  * server, no browser on the server, and nothing to deploy. What that costs is
  * line breaking and block layout, which are written out below.
  *
- * The proportions are the timeline's own -- same faces, same neutrals -- so the
- * card reads as a moment lifted out of the page rather than a poster made about
- * one.
  */
 
 import type { PublicLinkCard } from "../../api/public";
 import { mediaPosterUrl, mediaPreviewUrl } from "../../api/mediaUrls";
 import { highlightCodeBlocks } from "../../components/codeHighlight";
+import logoSvg from "../../assets/logo.svg?raw";
 
-/** The face the timeline sets posts in. */
 const FACE =
-  '"TwitterChirp", -apple-system, "system-ui", "Segoe UI", Roboto, Helvetica, Arial, sans-serif';
+  '-apple-system, "system-ui", "Segoe UI", Roboto, Helvetica, Arial, sans-serif';
 const MONO = '"SFMono-Regular", Consolas, "Liberation Mono", monospace';
 
 /**
  * The card is drawn in these units and rasterised at twice them.
  *
- * 540 is close to the reading column the timeline uses, so type sized against
- * it keeps the proportions a reader already knows. Twice that is 1080 across,
- * which is sharp on a phone opened full-screen and still small enough to send.
+ * The preview and exported file share one layout; doubling its resolution
+ * keeps the text sharp when the image is opened full-screen.
  */
-const WIDTH = 540;
+const WIDTH = 550;
 const SCALE = 2;
-const PAD = 36;
+const PAD = 17;
 /** The card's own corner. Outside it the image is transparent. */
-const CARD_RADIUS = 24;
+const CARD_RADIUS = 12;
 
 /**
  * A block of the body, in the shapes this product's markdown produces.
@@ -171,28 +167,17 @@ const HAIRLINE = "#eff3f4";
 const GROUND = "#ffffff";
 const ACCENT = "#1d9bf0";
 
-/*
- * Sizes with real distance between them.
- *
- * The first pass ran 19 / 18 / 16 / 14 -- four steps inside five pixels, which
- * reads as one undifferentiated grey block however carefully it is spaced. A
- * hierarchy is only legible where the steps are.
- */
-// The two lines of the byline sit closer in size than a heading and a caption
-// would. They are one identity read as a pair, and a handle set half the height
-// of the name beside it reads as a footnote about the name rather than the
-// other half of it.
-const NAME_SIZE = 21;
-const HANDLE_SIZE = 17;
+const NAME_SIZE = 15;
+const HANDLE_SIZE = 15;
 /** The place line, which stays a caption whatever the byline does. */
 const PLACE_SIZE = 15;
-const BODY_SIZE = 18;
-const BODY_LINE = 29;
-const FOOT_SIZE = 13;
+const BODY_SIZE = 20;
+const BODY_LINE = 24;
+const FOOT_SIZE = 15;
 const CODE_SIZE = 15;
 const CODE_LINE = 23;
 const HEADING_SIZES: Record<1 | 2 | 3, number> = { 1: 24, 2: 21, 3: 19 };
-const AVATAR = 52;
+const AVATAR = 48;
 const MEDIA_RADIUS = 14;
 const ITEM_INDENT = 22;
 const QUOTE_INDENT = 16;
@@ -216,14 +201,18 @@ const ITEM_GAP = 4;
  */
 const MAX_BODY_LINES = 60;
 
-/** Three coloured dots decorate the share card frame. */
-const WINDOW_DOTS = ["#ff5f57", "#febc2e", "#28c840"];
-const DOT = 13;
-const DOT_GAP = 9;
-// The dots keep their own inset rather than the content margin. A window's
-// traffic lights sit in the corner; lined up with the text below them they
-// stop reading as a frame and start reading as a bullet list.
-const DOT_INSET = 21;
+const HEADER_TOP = 13;
+const FOOTER_HEIGHT = 128;
+const LINK_INK = "#006fd6";
+
+const DECORATIONS = {
+  info: "M13.5 8.5c0 .83-.67 1.5-1.5 1.5s-1.5-.67-1.5-1.5S11.17 7 12 7s1.5.67 1.5 1.5zM13 17v-5h-2v5h2zm-1 5.25c5.66 0 10.25-4.59 10.25-10.25S17.66 1.75 12 1.75 1.75 6.34 1.75 12 6.34 22.25 12 22.25zM20.25 12c0 4.56-3.69 8.25-8.25 8.25S3.75 16.56 3.75 12 7.44 3.75 12 3.75s8.25 3.69 8.25 8.25z",
+  heart:
+    "M20.884 13.19c-1.351 2.48-4.001 5.12-8.379 7.67l-.503.3-.504-.3c-4.379-2.55-7.029-5.19-8.382-7.67-1.36-2.5-1.41-4.86-.514-6.67.887-1.79 2.647-2.91 4.601-3.01 1.651-.09 3.368.56 4.798 2.01 1.429-1.45 3.146-2.1 4.796-2.01 1.954.1 3.714 1.22 4.601 3.01.896 1.81.846 4.17-.514 6.67z",
+  reply:
+    "M1.751 10c0-4.42 3.584-8 8.005-8h4.366c4.49 0 8.129 3.64 8.129 8.13 0 2.96-1.607 5.68-4.196 7.11l-8.054 4.46v-3.69h-.067c-4.49.1-8.183-3.51-8.183-8.01z",
+  link: "M18.36 5.64c-1.95-1.96-5.11-1.96-7.07 0L9.88 7.05 8.46 5.64l1.42-1.42c2.73-2.73 7.16-2.73 9.9 0 2.73 2.74 2.73 7.17 0 9.9l-1.42 1.42-1.41-1.42 1.41-1.41c1.96-1.96 1.96-5.12 0-7.07zm-2.12 3.53l-7.07 7.07-1.41-1.41 7.07-7.07 1.41 1.41zm-12.02.71l1.42-1.42 1.41 1.42-1.41 1.41c-1.96 1.96-1.96 5.12 0 7.07 1.95 1.96 5.11 1.96 7.07 0l1.41-1.41 1.42 1.41-1.42 1.42c-2.73 2.73-7.16 2.73-9.9 0-2.73-2.74-2.73-7.17 0-9.9z",
+};
 
 const LINK_RADIUS = 14;
 const LINK_BORDER = "#cfd9de";
@@ -836,6 +825,88 @@ function layOutBody(
   return laid;
 }
 
+function drawDecoration(
+  ctx: CanvasRenderingContext2D,
+  icon: keyof typeof DECORATIONS,
+  x: number,
+  y: number,
+  colour: string,
+) {
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.scale(20 / 24, 20 / 24);
+  ctx.fillStyle = colour;
+  ctx.fill(new Path2D(DECORATIONS[icon]));
+  ctx.restore();
+}
+
+function drawLogo(ctx: CanvasRenderingContext2D) {
+  const source = new DOMParser().parseFromString(logoSvg, "image/svg+xml");
+  const path = source.querySelector("path")?.getAttribute("d");
+  if (!path) throw new Error("the share card logo has no path");
+  ctx.save();
+  ctx.translate(WIDTH - PAD - 25, HEADER_TOP);
+  ctx.scale(25 / 1044, 25 / 1044);
+  ctx.translate(-105, -110.5);
+  ctx.fillStyle = INK;
+  ctx.fill(new Path2D(path));
+  ctx.restore();
+}
+
+/** Place text within a line box using the font the browser actually resolved. */
+function baseline(
+  ctx: CanvasRenderingContext2D,
+  text: string,
+  leading: number,
+) {
+  const { fontBoundingBoxAscent: ascent, fontBoundingBoxDescent: descent } =
+    ctx.measureText(text);
+  return (leading - ascent - descent) / 2 + ascent;
+}
+
+/** These are part of the exported image, so they never handle user input. */
+function drawFooter(ctx: CanvasRenderingContext2D, label: string, y: number) {
+  const width = WIDTH - PAD * 2;
+  ctx.font = font(400, FOOT_SIZE);
+  ctx.fillStyle = MUTED;
+  const date = truncate(ctx, label, width - 32);
+  ctx.fillText(date, PAD, y + 8 + baseline(ctx, date, 20));
+  drawDecoration(ctx, "info", WIDTH - PAD - 20, y + 8, MUTED);
+
+  ctx.strokeStyle = LINK_BORDER;
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(PAD, y + 38.5);
+  ctx.lineTo(WIDTH - PAD, y + 38.5);
+  ctx.stroke();
+
+  drawDecoration(ctx, "heart", PAD + 2, y + 49, "#f91880");
+  drawDecoration(ctx, "reply", PAD + 54, y + 49, ACCENT);
+  ctx.font = font(700, 14);
+  ctx.fillStyle = MUTED;
+  ctx.fillText("回复", PAD + 84, y + 51 + baseline(ctx, "回复", 16));
+  const linkX = PAD + 84 + ctx.measureText("回复").width + 22;
+  drawDecoration(ctx, "link", linkX, y + 49, MUTED);
+  ctx.fillStyle = MUTED;
+  ctx.fillText(
+    "复制帖子链接",
+    linkX + 30,
+    y + 51 + baseline(ctx, "复制帖子链接", 16),
+  );
+
+  ctx.beginPath();
+  ctx.roundRect(PAD, y + 79, width, 32, 16);
+  ctx.stroke();
+  ctx.fillStyle = LINK_INK;
+  ctx.textAlign = "center";
+  ctx.fillText(
+    "Read More on Moment",
+    WIDTH / 2,
+    y + 87 + baseline(ctx, "Read More on Moment", 16),
+  );
+  ctx.textAlign = "left";
+}
+
 /** Render the card and hand back the bytes. */
 export async function renderShareCard(input: ShareCardInput): Promise<Blob> {
   await readyFonts();
@@ -896,25 +967,22 @@ export async function renderShareCard(input: ShareCardInput): Promise<Blob> {
     0,
   );
   // A one-pixel rule with 16px of air on either side separates the source title.
-  const bodyGap = titleLines.length > 0 ? 33 : 24;
+  const bodyGap = titleLines.length > 0 ? 33 : 12;
 
   const linkShape = input.link
     ? linkLayout(ruler, input.link, thumbnail, contentWidth)
     : null;
-  const headerHeight = DOT_INSET + DOT + 24;
   const shape =
     drawable.length > 0 ? mediaLayout(drawable.length, contentWidth) : null;
   const height =
-    headerHeight +
+    HEADER_TOP +
     AVATAR +
     titleHeight +
     (bodyHeight > 0 ? bodyGap + bodyHeight : 0) +
     (linkShape ? 18 + linkShape.height : 0) +
     (shape ? 22 + shape.height : 0) +
     (input.location ? 14 + 26 : 0) +
-    30 +
-    FOOT_SIZE +
-    PAD;
+    FOOTER_HEIGHT;
 
   const canvas = document.createElement("canvas");
   canvas.width = WIDTH * SCALE;
@@ -924,29 +992,16 @@ export async function renderShareCard(input: ShareCardInput): Promise<Blob> {
   ctx.scale(SCALE, SCALE);
   ctx.textBaseline = "alphabetic";
 
-  // The canvas starts transparent; only the rounded card is painted, so the
-  // corners stay clear and whatever the card lands on shows through them.
   ctx.fillStyle = GROUND;
+  ctx.strokeStyle = LINK_BORDER;
+  ctx.lineWidth = 1;
   ctx.beginPath();
-  ctx.roundRect(0, 0, WIDTH, height, CARD_RADIUS);
+  ctx.roundRect(0.5, 0.5, WIDTH - 1, height - 1, CARD_RADIUS);
   ctx.fill();
+  ctx.stroke();
 
-  // The three dots a window wears. They say nothing, which is the point: the
-  // card is a small window onto a page, and the frame is the whole ornament.
-  WINDOW_DOTS.forEach((colour, index) => {
-    ctx.fillStyle = colour;
-    ctx.beginPath();
-    ctx.arc(
-      DOT_INSET + DOT / 2 + index * (DOT + DOT_GAP),
-      DOT_INSET + DOT / 2,
-      DOT / 2,
-      0,
-      Math.PI * 2,
-    );
-    ctx.fill();
-  });
-
-  let y = headerHeight;
+  drawLogo(ctx);
+  let y = HEADER_TOP;
 
   if (avatar) {
     ctx.save();
@@ -971,18 +1026,29 @@ export async function renderShareCard(input: ShareCardInput): Promise<Blob> {
     ctx.textAlign = "left";
   }
 
-  const textLeft = PAD + AVATAR + 14;
-  const nameWidth = WIDTH - PAD - textLeft;
+  const textLeft = PAD + AVATAR + 4;
+  const nameWidth = WIDTH - PAD - 25 - 12 - textLeft;
   ctx.fillStyle = INK;
   ctx.font = font(700, NAME_SIZE);
-  ctx.fillText(truncate(ctx, input.displayName, nameWidth), textLeft, y + 22);
+  const name = truncate(ctx, input.displayName, nameWidth);
+  ctx.fillText(name, textLeft, y + 3 + baseline(ctx, name, 20));
   ctx.fillStyle = MUTED;
+  ctx.font = font(700, HANDLE_SIZE);
+  const followWidth = ctx.measureText("关注").width;
   ctx.font = font(400, HANDLE_SIZE);
-  ctx.fillText(
-    truncate(ctx, `@${input.username}`, nameWidth),
-    textLeft,
-    y + 44,
+  const dotWidth = ctx.measureText("·").width + 8;
+  const handle = truncate(
+    ctx,
+    `@${input.username}`,
+    nameWidth - dotWidth - followWidth,
   );
+  const handleY = y + 25 + baseline(ctx, handle, 20);
+  ctx.fillText(handle, textLeft, handleY);
+  const dotX = textLeft + ctx.measureText(handle).width + 4;
+  ctx.fillText("·", dotX, handleY);
+  ctx.fillStyle = LINK_INK;
+  ctx.font = font(700, HANDLE_SIZE);
+  ctx.fillText("关注", dotX + dotWidth - 4, handleY);
   y += AVATAR;
 
   if (titleLines.length > 0) {
@@ -1039,10 +1105,11 @@ export async function renderShareCard(input: ShareCardInput): Promise<Blob> {
       ctx.font = font(piece.weight, piece.size);
       piece.lines.forEach((line, row) => {
         const x = PAD + piece.indent;
-        const baseline = y + row * piece.leading + piece.size;
+        const lineBaseline =
+          y + row * piece.leading + baseline(ctx, line, piece.leading);
         const runs = piece.runs?.[row];
         if (!runs) {
-          ctx.fillText(line, x, baseline);
+          ctx.fillText(line, x, lineBaseline);
           return;
         }
         let prefix = "";
@@ -1056,14 +1123,14 @@ export async function renderShareCard(input: ShareCardInput): Promise<Blob> {
           ctx.fillStyle = run.background;
           ctx.fillRect(
             x + left,
-            baseline - piece.size,
+            lineBaseline - piece.size,
             width,
             piece.size * 1.25,
           );
         }
         for (const { run, left } of positions) {
           ctx.fillStyle = run.colour ?? defaultColour;
-          ctx.fillText(run.text, x + left, baseline);
+          ctx.fillText(run.text, x + left, lineBaseline);
         }
       });
       y += blockHeight(piece);
@@ -1123,14 +1190,7 @@ export async function renderShareCard(input: ShareCardInput): Promise<Blob> {
     y += 26;
   }
 
-  // No rule above the date, and no second signature beside it. The name is at
-  // the top of the card; repeating it at the bottom says nothing twice, and a
-  // line drawn to separate what whitespace already separates is decoration
-  // wearing the costume of structure.
-  y += 30;
-  ctx.fillStyle = MUTED;
-  ctx.font = font(400, FOOT_SIZE);
-  ctx.fillText(input.publishedLabel, PAD, y + FOOT_SIZE);
+  drawFooter(ctx, input.publishedLabel, y);
 
   return new Promise((settle, reject) => {
     canvas.toBlob(
