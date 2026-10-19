@@ -33,9 +33,14 @@ tasks:
       - node --test scripts/dev/check-merge-policy.test.mjs
 
   merge:check:
-    desc: Verify repository merge settings and optionally a merged PR
+    desc: Check repository merge settings before merging
     cmds:
       - node scripts/dev/check-merge-policy.mjs {{.CLI_ARGS}}
+
+  merge:audit:
+    desc: Audit an already merged PR using its recorded merge SHA and head
+    cmds:
+      - node scripts/dev/check-merge-policy.mjs audit {{.CLI_ARGS}}
 
   playground:articles:
     desc: Add named article cases to the running disposable playground on port 18080
