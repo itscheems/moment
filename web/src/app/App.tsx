@@ -1,5 +1,5 @@
 import { accountCacheScope } from "../features/auth/accountScope";
-import { Dialog } from "@base-ui/react/dialog";
+import { Dialog } from "../components/Dialog";
 import {
   Suspense,
   useCallback,
@@ -35,6 +35,7 @@ import { ThemeProvider } from "../theme/ThemeProvider";
 import { ReadingLayoutProvider } from "../features/article/ReadingLayout";
 import { FeedbackProvider } from "../components/Feedback";
 import { useDocumentScrollLock } from "../components/useDocumentScrollLock";
+import { useEscapeFocus } from "../components/useEscapeFocus";
 import { useReadRecovery } from "../components/useReadRecovery";
 import {
   COMPOSE_DIALOG_VIEWPORT_QUERY,
@@ -275,9 +276,7 @@ function PublicApp() {
     if (!draftsOpen) setDraftsEditing(false);
   }, [draftsOpen]);
 
-  // Turning the dialog over takes the pressed control with it, and focus
-  // with nowhere to go falls back to the popup -- which then wears a ring
-  // around the whole dialog. It lands on the other face's way back instead.
+  // Keep focus in the dialog when switching between the editor and drafts.
   const draftsWereOpen = useRef(false);
   useEffect(() => {
     if (!overlayCompose) {
@@ -286,7 +285,7 @@ function PublicApp() {
     }
     if (draftsOpen === draftsWereOpen.current) return;
     draftsWereOpen.current = draftsOpen;
-    (draftsOpen ? draftsBackRef : draftsTriggerRef).current?.focus();
+    composeDialogRef.current?.focus({ preventScroll: true });
   }, [draftsOpen, overlayCompose]);
 
   useEffect(() => {
@@ -700,8 +699,9 @@ function PublicApp() {
                     event.preventBaseUIHandler();
                 }}
                 initialFocus={() =>
-                  composeDialogRef.current?.querySelector("textarea") ??
-                  composeDialogRef.current
+                  composeDialogRef.current?.querySelector<HTMLElement>(
+                    'textarea, [contenteditable="true"]',
+                  ) ?? composeDialogRef.current
                 }
                 ref={composeDialogRef}
               >
@@ -879,6 +879,7 @@ function PublicApp() {
 }
 
 export function App() {
+  useEscapeFocus();
   return (
     <ThemeProvider>
       <ReadingLayoutProvider>

@@ -1,4 +1,4 @@
-import { Dialog } from "@base-ui/react/dialog";
+import { Dialog } from "../../components/Dialog";
 import { Collapsible } from "@base-ui/react/collapsible";
 import { Menu } from "@base-ui/react/menu";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -211,7 +211,6 @@ export function MembersSection({
   const [policyOpen, setPolicyOpen] = useState(false);
   const mounted = useRef(false);
   const pendingWrite = useRef(false);
-  const cancelRef = useRef<HTMLButtonElement>(null);
   const returnFocusRef = useRef<HTMLElement | null>(null);
   useDocumentScrollLock(decision !== null);
   useEffect(() => {
@@ -589,7 +588,6 @@ export function MembersSection({
           <Dialog.Viewport className={forms.dialogViewport}>
             <Dialog.Popup
               className={forms.dialogPopup}
-              initialFocus={cancelRef}
               finalFocus={returnFocusRef}
             >
               <Dialog.Title className={forms.dialogTitle}>
@@ -634,7 +632,6 @@ export function MembersSection({
                 <Dialog.Close
                   className={forms.secondaryButton}
                   disabled={busy !== null}
-                  ref={cancelRef}
                 >
                   取消
                 </Dialog.Close>

@@ -304,11 +304,10 @@ describe("members section", () => {
     fireEvent.click(await screen.findByRole("menuitem", { name: "停用账号" }));
     const dialog = await screen.findByRole("dialog");
     expect(dialog).toHaveTextContent("已发布的内容会保留");
-    await waitFor(() =>
-      expect(
-        within(dialog).getByRole("button", { name: "取消" }),
-      ).toHaveFocus(),
-    );
+    await waitFor(() => expect(dialog).toHaveFocus());
+    expect(
+      within(dialog).getByRole("button", { name: "取消" }),
+    ).not.toHaveFocus();
     fireEvent.click(within(dialog).getByRole("button", { name: "取消" }));
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
     await waitFor(() => expect(trigger).toHaveFocus());

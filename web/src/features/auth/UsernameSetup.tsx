@@ -1,6 +1,6 @@
 import { accountsApi } from "../../api/accounts";
-import { Dialog } from "@base-ui/react/dialog";
-import { type FormEvent, useState } from "react";
+import { Dialog } from "../../components/Dialog";
+import { type FormEvent, useRef, useState } from "react";
 
 import {
   PublicApiError,
@@ -66,6 +66,7 @@ export function UsernameSetup({
   const [username, setUsername] = useState(account.username);
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
+  const usernameInput = useRef<HTMLInputElement>(null);
 
   useDocumentScrollLock(open);
 
@@ -117,7 +118,10 @@ export function UsernameSetup({
       <Dialog.Portal>
         <Dialog.Backdrop className={styles.dialogBackdrop} />
         <Dialog.Viewport className={styles.dialogViewport}>
-          <Dialog.Popup className={styles.dialogPopup}>
+          <Dialog.Popup
+            className={styles.dialogPopup}
+            initialFocus={usernameInput}
+          >
             <Dialog.Title className={styles.dialogTitle}>
               给自己起个用户名
             </Dialog.Title>
@@ -135,7 +139,7 @@ export function UsernameSetup({
                   aria-invalid={Boolean(error)}
                   autoCapitalize="none"
                   autoComplete="off"
-                  autoFocus
+                  ref={usernameInput}
                   id="account-username"
                   onChange={(event) => {
                     setUsername(event.target.value.trim().toLowerCase());

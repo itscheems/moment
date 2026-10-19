@@ -10,7 +10,7 @@ import {
   type MergeReviewMedia,
   type MergeSelection,
 } from "../../api/backups";
-import { Dialog } from "@base-ui/react/dialog";
+import { Dialog } from "../../components/Dialog";
 import {
   type ChangeEvent,
   type ReactNode,

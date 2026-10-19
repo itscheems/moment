@@ -1,4 +1,4 @@
-import { Dialog } from "@base-ui/react/dialog";
+import { Dialog } from "../../components/Dialog";
 import { Tabs } from "@base-ui/react/tabs";
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { mediaPosterUrl } from "../../api/mediaUrls";

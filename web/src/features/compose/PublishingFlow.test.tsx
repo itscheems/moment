@@ -2009,9 +2009,10 @@ describe("owner composing flow", () => {
     expect(
       await screen.findByRole("dialog", { name: "删除选中的草稿？" }),
     ).toBeInTheDocument();
-    // The safe answer holds the opening focus even though 删除 reads first.
     await waitFor(() =>
-      expect(screen.getByRole("button", { name: "保留" })).toHaveFocus(),
+      expect(
+        screen.getByRole("dialog", { name: "删除选中的草稿？" }),
+      ).toHaveFocus(),
     );
     fireEvent.click(
       within(
@@ -2912,7 +2913,9 @@ describe("owner composing flow", () => {
     expect(document.body.style.position).toBe("");
     expect(document.body.style.top).toBe("");
     await waitFor(() =>
-      expect(screen.getByRole("button", { name: "保留" })).toHaveFocus(),
+      expect(
+        screen.getByRole("dialog", { name: "删除这段 Moment？" }),
+      ).toHaveFocus(),
     );
     fireEvent.keyDown(document.body, { key: "n" });
     expect(window.location.pathname).toBe("/");
@@ -2966,11 +2969,7 @@ describe("owner composing flow", () => {
     const dialog = await screen.findByRole("dialog", {
       name: "删除这段 Moment？",
     });
-    await waitFor(() =>
-      expect(
-        within(dialog).getByRole("button", { name: "保留" }),
-      ).toHaveFocus(),
-    );
+    await waitFor(() => expect(dialog).toHaveFocus());
     fireEvent.click(
       within(dialog).getByRole("button", { name: "删除 Moment" }),
     );

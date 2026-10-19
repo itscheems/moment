@@ -1,4 +1,4 @@
-import { Dialog } from "@base-ui/react/dialog";
+import { Dialog } from "../../components/Dialog";
 import {
   type RefObject,
   useCallback,

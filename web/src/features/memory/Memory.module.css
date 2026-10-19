@@ -60,7 +60,7 @@
   display: none;
 }
 
-.queryControl:focus-within {
+:global(:where(:root:not([data-focus-dismissed]))) .queryControl:focus-within {
   border-color: var(--accent);
   box-shadow: 0 0 0 1px var(--accent);
   background: var(--surface);

@@ -58,9 +58,10 @@
 }
 
 /* Focus */
-.tiptap-input-group:has(
-  [data-slot="tiptap-input-group-control"]:focus-visible
-) {
+:where(:root:not([data-focus-dismissed]))
+  .tiptap-input-group:has(
+    [data-slot="tiptap-input-group-control"]:focus-visible
+  ) {
   border-color: var(--tt-ig-border-focus);
 }
 

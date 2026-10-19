@@ -177,7 +177,7 @@
   font-family: var(--font-utility);
 }
 
-.tokenField input:focus {
+:global(:where(:root:not([data-focus-dismissed]))) .tokenField input:focus {
   border-color: var(--accent);
   box-shadow: 0 0 0 1px var(--accent);
   outline: none;
@@ -1263,7 +1263,8 @@
   font: inherit;
 }
 
-.locationSearch:focus-within {
+:global(:where(:root:not([data-focus-dismissed])))
+  .locationSearch:focus-within {
   box-shadow: 0 0 0 1px var(--accent);
   color: var(--accent);
 }
@@ -1422,7 +1423,7 @@
   font: inherit;
 }
 
-.locationManual input:focus {
+:global(:where(:root:not([data-focus-dismissed]))) .locationManual input:focus {
   border-color: var(--accent);
   outline: 1px solid var(--accent);
 }
@@ -1677,7 +1678,7 @@
   outline: none;
 }
 
-.usernameField:focus-within {
+:global(:where(:root:not([data-focus-dismissed]))) .usernameField:focus-within {
   border-color: var(--accent);
 }
 

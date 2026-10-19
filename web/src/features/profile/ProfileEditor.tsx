@@ -1,6 +1,6 @@
 import { accountsApi, type AccountProfileUpdate } from "../../api/accounts";
 
-import { Dialog } from "@base-ui/react/dialog";
+import { Dialog } from "../../components/Dialog";
 import { Menu } from "@base-ui/react/menu";
 import { type ChangeEvent, useEffect, useRef, useState } from "react";
 
