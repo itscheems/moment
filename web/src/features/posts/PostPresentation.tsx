@@ -349,7 +349,7 @@ export function PostPresentation({
           html={quoted.contentHtml}
         />
       )}
-      {quoted.mapCard ? <MapCard card={quoted.mapCard} /> : null}
+      {quoted.mapCard ? <MapCard card={quoted.mapCard} preview /> : null}
       {quoted.location ? <PostLocation location={quoted.location} /> : null}
       {quoted.article ? null : <ImageGrid media={quoted.media} />}
     </div>
@@ -472,7 +472,7 @@ export function PostPresentation({
             阅读全文
           </InternalLink>
         ) : null}
-        {post.mapCard ? <MapCard card={post.mapCard} /> : null}
+        {post.mapCard ? <MapCard card={post.mapCard} preview /> : null}
         {linkCard}
         {post.location ? <PostLocation location={post.location} /> : null}
         {/* An article's `media` is the pictures its body places, projected

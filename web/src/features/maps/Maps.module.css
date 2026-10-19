@@ -110,7 +110,7 @@
 .places {
   list-style: none !important;
   margin: 0 !important;
-  padding: 4px 8px !important;
+  padding: 0 !important;
   font: 13px/1.45 var(--font-timeline);
 }
 .places > li {
@@ -118,14 +118,112 @@
   padding: 0 !important;
   list-style: none !important;
 }
+.inlinePlacesHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 48px;
+  padding: 8px 19px 8px 18px;
+  gap: 12px;
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+.inlinePlacesToggle {
+  display: grid;
+  place-items: center;
+  flex: 0 0 28px;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: background-color 160ms ease;
+}
+.inlinePlacesToggle:hover {
+  background: var(--surface-hover);
+}
+.inlinePlacesChevron {
+  display: grid;
+  place-items: center;
+  transform: rotate(90deg);
+  transition: transform 180ms ease;
+}
+.inlinePlacesToggle[aria-expanded="true"] .inlinePlacesChevron {
+  transform: rotate(0deg);
+}
+.inlinePlacesToggle .inlinePlacesChevron svg {
+  width: 14px;
+  height: 14px;
+}
+.inlinePlacesPanel {
+  height: var(--collapsible-panel-height);
+  overflow: hidden;
+  opacity: 1;
+  transition:
+    height 200ms ease,
+    opacity 160ms ease;
+}
+.inlinePlacesPanel[data-starting-style],
+.inlinePlacesPanel[data-ending-style] {
+  height: 0;
+  opacity: 0;
+}
+.placePagination {
+  --pagination-control-size: 28px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 6px;
+  margin: 0 !important;
+  padding: 8px 18px 12px !important;
+  font: 12px/1 var(--font-timeline);
+}
+.placePageControl {
+  display: grid;
+  place-items: center;
+  min-width: 28px;
+  height: 28px;
+  padding: 0 6px;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--text-secondary);
+  font: inherit;
+  cursor: pointer;
+  text-decoration: none;
+  transition:
+    background-color 160ms ease,
+    color 160ms ease;
+}
+.placePageControl:hover:not(:disabled),
+.placePageControl[data-active] {
+  color: var(--text-primary);
+  background: var(--surface-muted);
+  text-decoration: none;
+}
+.placePageControl[data-active] {
+  font-weight: 650;
+}
+.placePageControl svg {
+  width: 14px;
+  height: 14px;
+}
+.placePageControl:disabled {
+  opacity: 0.35;
+  cursor: default;
+  pointer-events: none;
+}
 .placeRow {
   position: relative;
   display: flex;
   align-items: center;
   gap: 12px;
   min-height: 52px;
-  padding: 8px 10px;
-  border-radius: 16px;
+  padding: 8px 18px;
+  border-radius: 0;
   background: var(--surface);
   color: var(--text-primary);
   touch-action: pan-y;
@@ -211,7 +309,7 @@
 .sortablePlace {
   position: relative;
   overflow: hidden;
-  border-radius: 16px;
+  border-radius: 0;
 }
 .swipeDelete {
   position: absolute;
@@ -235,6 +333,7 @@
   height: 17px;
 }
 .placeDragOverlay {
+  border-radius: 12px;
   border: 1px solid var(--border-subtle);
   box-shadow: 0 6px 24px #0f14191a;
   cursor: grabbing;
@@ -483,12 +582,16 @@
   top: max(12px, env(safe-area-inset-top));
   right: max(12px, env(safe-area-inset-right));
   max-width: calc(100vw - 80px);
+  max-height: calc(100dvh - 24px);
+  display: flex;
+  flex-direction: column;
   overflow: hidden;
   background: color-mix(in srgb, var(--surface) 94%, transparent);
   backdrop-filter: blur(14px);
   box-shadow: 0 3px 20px #0f141914;
 }
 .panelHeader {
+  flex-shrink: 0;
   position: relative;
   display: flex;
   justify-content: flex-end;
@@ -523,6 +626,7 @@
   height: 14px;
 }
 .panelBody {
+  min-height: 0;
   overflow: hidden;
 }
 .panelContent {
@@ -530,8 +634,12 @@
   max-width: calc(100vw - 80px);
   max-height: min(65dvh, calc(100dvh - 72px));
   overflow-y: auto;
+  scrollbar-width: none;
   overscroll-behavior: contain;
-  padding-block-end: 4px;
+  padding-block-end: 8px;
+}
+.panelContent::-webkit-scrollbar {
+  display: none;
 }
 .placePanel .placeRow:hover,
 .placePanel .placeRow:focus-visible,
@@ -833,6 +941,10 @@
   .floatingControl,
   .expanded :global(.maplibregl-ctrl-group button),
   .panelToggle,
+  .inlinePlacesToggle,
+  .inlinePlacesChevron,
+  .inlinePlacesPanel,
+  .placePageControl,
   .pickerClose,
   .addButton {
     transition: none;

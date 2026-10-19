@@ -11,15 +11,17 @@ export function MapPlaces({
   onChange,
   disabled = false,
   onSelect,
+  visiblePlaces,
 }: {
   card: MapCardData;
   onChange?: (card: MapCardData | null) => void;
   disabled?: boolean;
   onSelect?: (place: MapPlace) => void;
+  visiblePlaces?: readonly MapPlace[];
 }) {
   const list = (
     <ol className={styles.places} aria-label="地图地点">
-      {card.places.map((place, index) => (
+      {(visiblePlaces ?? card.places).map((place, index) => (
         <li key={`${mapPlaceIdentity(place)}:${index}`}>
           <div className={styles.placeRow}>
             <PlaceContent place={place} onSelect={onSelect} />

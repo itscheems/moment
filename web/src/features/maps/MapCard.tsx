@@ -15,6 +15,7 @@ import { Icon } from "../../components/icons";
 import { useDocumentScrollLock } from "../../components/useDocumentScrollLock";
 import { ActionTooltip } from "../../components/TimelineInteractions";
 import { MapPlaces } from "./MapPlaces";
+import { MapPlaceDisclosure } from "./MapPlaceDisclosure";
 import type { MapCardData, MapPlace } from "./types";
 import type { MapCamera, MapPlaceFocus } from "./MapCanvas";
 import styles from "./Maps.module.css";
@@ -37,6 +38,7 @@ class MapFailureBoundary extends Component<
 export function MapCard({
   card,
   deferMap = false,
+  preview = false,
   onPick,
   onChange,
   disabled,
@@ -44,6 +46,7 @@ export function MapCard({
 }: {
   card: MapCardData;
   deferMap?: boolean;
+  preview?: boolean;
   onPick?: (longitude: number, latitude: number) => void;
   onChange?: (card: MapCardData | null) => void;
   disabled?: boolean;
@@ -200,7 +203,19 @@ export function MapCard({
           )}
         </div>
       </div>
-      {places}
+      {onChange || onPick ? (
+        places
+      ) : preview ? (
+        <MapPlaces
+          card={card}
+          visiblePlaces={card.places.slice(0, 1)}
+          onSelect={focusPlace}
+        />
+      ) : card.places.length > 1 ? (
+        <MapPlaceDisclosure card={card} onSelect={focusPlace} />
+      ) : (
+        places
+      )}
       {footer}
       <Dialog.Root
         open={expanded}
