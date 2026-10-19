@@ -9,7 +9,7 @@ replaceable cache entries produced by a versioned recipe.
 | Input                                 | Original               | Default browser asset                                   |
 | ------------------------------------- | ---------------------- | ------------------------------------------------------- |
 | JPEG, PNG, WebP, GIF                  | retained byte-for-byte | JPEG or PNG, longest edge 1600 px                       |
-| HEIC                                  | retained byte-for-byte | bounded JPEG decoded with libheif, with FFmpeg fallback |
+| HEIC                                  | retained byte-for-byte | bounded JPEG decoded with libheif, with color-aware fallbacks |
 | MP4 or QuickTime MOV, up to 5 minutes | retained byte-for-byte | H.264/AAC MP4 plus JPEG poster                          |
 
 - An image original may be at most 30 MiB; a video original may be at most
@@ -22,6 +22,32 @@ replaceable cache entries produced by a versioned recipe.
 
 The server identifies media from its signature and processor inspection. A
 filename extension or client-provided MIME type is never authoritative.
+
+## Image color profiles
+
+RGB image samples keep their embedded ICC profile through decoding, resizing,
+and preview encoding. A Display P3 HEIC or JPEG must not lose that profile:
+otherwise the browser interprets the same RGB values as sRGB and changes the
+colors. JPEG APP2, PNG iCCP, and WebP ICCP profiles follow the pixels into the
+derived JPEG or transparent PNG. Browsers perform the final display conversion.
+This retains the source gamut without applying saturation or brightness filters.
+
+Only color metadata is copied. EXIF orientation is applied to the pixels;
+camera, location, and other EXIF/XMP metadata are omitted. Profiles are bounded
+to 1 MiB, validated structurally, and count toward the preview byte ceiling.
+Non-RGB profiles are not attached to the RGB output of a decoder. Untagged
+images retain the existing sRGB browser interpretation.
+
+HEIC decoding prefers libheif. On macOS, the system `sips` decoder is the
+fallback and preserves the complete image, its profile, and orientation.
+The FFmpeg fallback requires FFprobe to identify the complete primary image
+and checks the decoded dimensions before publication. Some FFmpeg versions
+decode only the first tile of an iPhone image while returning success; those
+partial results are rejected rather than published as a complete photograph.
+
+The color-profile recipe changes the preview URL and cache directory. Existing
+originals remain unchanged; their current previews rebuild on demand or through
+`media rebuild-previews`.
 
 ## Ingestion and ownership
 
@@ -231,8 +257,8 @@ original-quality action loads the immutable original only when requested.
 
 Container images install FFmpeg, ffprobe, and libheif tools. Native deployments
 that accept video must expose `ffmpeg` and `ffprobe` on `PATH`. HEIC prefers
-`heif-convert` when available and otherwise uses the same bounded FFmpeg
-runtime. If neither decoder exists, ingestion returns
+`heif-convert`, then macOS `sips` when available, then dimension-checked FFmpeg
+with FFprobe. If no usable decoder exists, ingestion returns
 `MEDIA_PROCESSOR_UNAVAILABLE` before authority is published. A present decoder
 that rejects corrupt input does not silently fall through to another decoder.
 
@@ -285,8 +311,11 @@ MOMENT_TEST_FFPROBE="$(command -v ffprobe)" \
 go test ./internal/media -run 'TestIngest(HEIC|MP4|QuickTime)Real' -count=1
 ```
 
-Set `MOMENT_TEST_HEIF_CONVERT` as well to exercise the preferred libheif path;
-the HEIC integration deliberately also runs with FFmpeg alone. The QuickTime
+Set `MOMENT_TEST_HEIF_CONVERT` as well to exercise the preferred libheif path.
+Set `MOMENT_TEST_COLOR_IMAGE` to a real tagged JPEG or HEIC to verify its RGB
+profile survives ingestion, and `MOMENT_TEST_HEIC_FALLBACK_FIXTURE` to the
+portrait HEIC fixture to exercise macOS `sips` and reject partial FFmpeg tiles.
+The QuickTime
 fixture additionally asserts the exact Dolby Vision 8.4/HLG source metadata,
 immutable original bytes, early-poster timing, the display MP4's
 H.264/8-bit/limited-range BT.709 bitstream contract, absence of Dolby Vision
