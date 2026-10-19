@@ -108,7 +108,7 @@ export function SiteIdentityPreview({
                   href={profileHref}
                   onClick={closeBeforeNavigation}
                 >
-                  {title}
+                  <span>{title}</span>
                 </InternalLink>
               </h2>
               <p className={styles.identityHandle}>@{site.username}</p>
