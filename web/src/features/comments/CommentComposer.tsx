@@ -831,6 +831,9 @@ export function CommentForm({
                 setCommentLocation(null);
                 setActivated(true);
                 setError(null);
+                window.requestAnimationFrame(() =>
+                  textareaRef.current?.focus(),
+                );
               }}
             />
           ) : null}
@@ -927,6 +930,9 @@ export function CommentForm({
                   }
                   replaceMedia(next);
                   setActivated(true);
+                  window.requestAnimationFrame(() =>
+                    textareaRef.current?.focus(),
+                  );
                 }}
                 onChange={(next) => {
                   const replacements = next.filter(

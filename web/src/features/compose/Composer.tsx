@@ -808,6 +808,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
           ? `已从剪贴板加入 ${files.length} 张图片。`
           : `已加入 ${files.length} 张图片。`,
       );
+      window.requestAnimationFrame(() => textareaRef.current?.focus());
       if (session) {
         for (const key of addedKeys) {
           void uploadOne(key, session.csrfToken).catch((nextError) => {
@@ -1607,6 +1608,9 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
                 onRemove={() => {
                   linkPreview.dismiss();
                   setAnnouncement("链接卡片已移除");
+                  window.requestAnimationFrame(() =>
+                    textareaRef.current?.focus(),
+                  );
                 }}
               />
             ) : null}
@@ -1620,6 +1624,9 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
                   dirtyRef.current = true;
                   setDirty(true);
                   setAnnouncement("位置已移除");
+                  window.requestAnimationFrame(() =>
+                    textareaRef.current?.focus(),
+                  );
                   idempotencyKey.current = createIdempotencyKey();
                 }}
               />
@@ -1637,6 +1644,9 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
                     disabled={pending}
                     onClick={() => {
                       setQuotedPost(null);
+                      window.requestAnimationFrame(() =>
+                        textareaRef.current?.focus(),
+                      );
                       setError(null);
                       dirtyRef.current = true;
                       setDirty(true);
