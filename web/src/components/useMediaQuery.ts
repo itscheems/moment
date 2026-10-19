@@ -9,7 +9,7 @@ export const COMPOSE_DIALOG_VIEWPORT_QUERY = "(min-width: 720px)";
 
 // The width at which the shell draws its right rail (AppShell.module.css
 // hides `.rightRail` below it).
-export const RAIL_VIEWPORT_QUERY = "(min-width: 1280px)";
+export const RAIL_VIEWPORT_QUERY = "(min-width: 988px)";
 
 export function useMediaQuery(query: string): boolean {
   const [matches, setMatches] = useState(() =>

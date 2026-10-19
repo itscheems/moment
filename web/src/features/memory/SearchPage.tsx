@@ -38,6 +38,7 @@ import {
   searchHref,
 } from "./memoryState";
 import styles from "./Memory.module.css";
+import { rememberSearch } from "./recentSearches";
 
 const MAX_REPLAY_PAGES = 1_000;
 
@@ -73,12 +74,14 @@ export function SearchPage({
   search,
   site,
   onSiteChanged,
+  recentScope = null,
 }: {
   api: PublicApi;
   canPublish: boolean;
   search: string;
   site: SiteIdentity;
   onSiteChanged?: (site: SiteIdentity) => void;
+  recentScope?: string | null;
 }) {
   const location = useNavigation();
   const stateRef = useRef(parseSearchLocation(search));
@@ -246,6 +249,7 @@ export function SearchPage({
       return;
     }
     setFormError(null);
+    rememberSearch(recentScope, query);
     location.navigate(
       searchHref({
         query,

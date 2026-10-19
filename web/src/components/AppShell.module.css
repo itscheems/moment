@@ -8,9 +8,15 @@
   inline-size: min(100%, 86.5625rem);
   min-block-size: 100dvh;
   display: grid;
-  grid-template-columns: var(--shell-rail-width) 37.5rem minmax(0, 1fr);
+  grid-template-columns: var(--shell-rail-width) minmax(0, 1fr);
   justify-content: center;
   margin-inline: auto;
+}
+
+.contentColumns {
+  display: grid;
+  grid-template-columns: 37.5rem minmax(0, 1fr);
+  min-inline-size: 0;
 }
 
 .leftRail,
@@ -25,10 +31,6 @@
   overflow-x: hidden;
   overflow-y: auto;
   scrollbar-width: none;
-}
-
-.rightRail {
-  min-block-size: 34rem;
 }
 
 .leftRailInner {
@@ -238,6 +240,7 @@
 
 .timeline {
   position: relative;
+  z-index: 1;
   min-inline-size: 0;
   min-block-size: 100dvh;
   border-inline: 1px solid var(--border-subtle);
@@ -412,51 +415,26 @@
 }
 
 .rightRail {
+  z-index: 0;
   display: flex;
   flex-direction: column;
-  gap: var(--space-4);
+  gap: 12px;
   inline-size: min(21.875rem, calc(100% - 1.875rem));
   margin-inline-start: 1.875rem;
-  padding: 0 0 var(--space-4);
-}
-
-.searchPrompt {
-  min-block-size: 2.75rem;
-  display: flex;
-  align-items: center;
-  gap: var(--space-3);
-  border-radius: 999px;
-  margin-block-start: 0.3rem;
-  padding-inline: var(--space-4);
-  color: var(--text-secondary);
-  background: var(--surface-muted);
-  text-decoration: none;
-  transition: box-shadow var(--motion-fast) var(--ease-out);
-}
-
-.searchPrompt:focus-visible {
-  box-shadow: inset 0 0 0 1px var(--accent);
-}
-
-@media (hover: hover) {
-  .searchPrompt:hover {
-    box-shadow: inset 0 0 0 1px var(--accent);
-  }
-}
-
-.searchPrompt strong {
-  display: block;
-  font-weight: 400;
-}
-
-.searchPrompt small {
-  display: none;
+  padding: 0 0 64px;
 }
 
 /* Empty on every page but the archive; hidden then, or the rail's gap would
    open under the search box for nothing. */
 .railSlot:empty {
   display: none;
+}
+
+.railSlot {
+  min-block-size: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: none;
 }
 
 .mobileNav {
@@ -472,10 +450,6 @@
 
   .timeline {
     max-inline-size: 37.5rem;
-  }
-
-  .rightRail {
-    display: none;
   }
 
   .leftRailInner {
@@ -524,6 +498,23 @@
 @media (min-width: 1024px) and (max-width: 1077px) {
   .shell {
     inline-size: min(100%, 63rem);
+  }
+}
+
+@media (min-width: 988px) and (max-width: 1077px) {
+  .rightRail {
+    inline-size: 18.125rem;
+    margin-inline-start: 1.25rem;
+  }
+}
+
+@media (max-width: 987px) {
+  .contentColumns {
+    display: block;
+  }
+
+  .rightRail {
+    display: none;
   }
 }
 
@@ -694,8 +685,7 @@
   .brand,
   .navPill,
   .navLink,
-  .publishAction,
-  .searchPrompt {
+  .publishAction {
     transition: none;
   }
 
@@ -878,6 +868,11 @@
 .shell.focusShell {
   display: block;
   inline-size: 100%;
+}
+
+.focusShell .contentColumns,
+.workspaceShell .contentColumns {
+  display: block;
 }
 
 .focusShell .timeline {

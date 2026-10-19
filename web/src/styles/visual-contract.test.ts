@@ -80,9 +80,7 @@ describe("visual foundation contract", () => {
   });
 
   it("locks the wide, tablet, and mobile shell boundaries", () => {
-    expect(shellCss).toContain(
-      "grid-template-columns: var(--shell-rail-width) 37.5rem minmax(0, 1fr)",
-    );
+    expect(shellCss).toContain("grid-template-columns: 37.5rem minmax(0, 1fr)");
     expect(shellCss).toContain("inline-size: min(100%, 86.5625rem)");
     expect(shellCss).toMatch(
       /\._leftRailInner_[\w-]+\s*\{[^}]*inline-size: 17\.1875rem;[^}]*margin-inline-start: auto;/s,
