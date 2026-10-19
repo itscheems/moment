@@ -187,7 +187,13 @@ export function MapCardEditor({
             onMouseDown={(event) => event.preventDefault()}
             onClick={show}
           >
-            <Icon name="map-picker" style={{ width: 22, height: 22 }} />
+            <Icon
+              name="map-picker"
+              style={{
+                width: "var(--composer-map-icon-size, 22px)",
+                height: "var(--composer-map-icon-size, 22px)",
+              }}
+            />
           </button>
         </ActionTooltip>
       ) : (

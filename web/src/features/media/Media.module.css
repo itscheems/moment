@@ -81,6 +81,27 @@
   margin-inline-start: calc(0px - var(--space-3));
 }
 
+.homeToolbar {
+  --composer-map-icon-size: 23.25px;
+}
+
+.homeToolbar .mediaToolbar {
+  gap: 4px;
+}
+
+.homeToolbar .mediaControls {
+  padding-block-end: 2px;
+}
+
+.homeToolbar:not(.dividedComposer) .mediaControls {
+  align-items: flex-end;
+  padding-block-end: 3px;
+}
+
+.homeToolbar .mediaControls::before {
+  inset-inline-end: 16px;
+}
+
 .mediaToolbar span,
 .altInput small {
   color: var(--text-tertiary);

@@ -1341,7 +1341,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
       <section
         {...historyEvents}
         aria-label={post ? "编辑 Moment" : "发布 Moment"}
-        className={`${styles.composer} ${inlineLayout ? styles.inlineComposer : styles.pageComposer} ${hasAttachments ? styles.composerHasAttachments : ""}`}
+        className={`${styles.composer} ${inlineLayout ? styles.inlineComposer : styles.pageComposer} ${variant === "inline" ? styles.homepageComposer : ""} ${hasAttachments ? styles.composerHasAttachments : ""}`}
         data-expanded={expanded ? "true" : "false"}
         onBlur={(event) => {
           const section = event.currentTarget;
@@ -1706,6 +1706,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
                 ) : null
               }
               compact={inlineLayout}
+              homeToolbar={variant === "inline"}
               dialogToolbar={variant === "page"}
               className={inlineLayout ? styles.inlineMedia : undefined}
               disabled={pending}
