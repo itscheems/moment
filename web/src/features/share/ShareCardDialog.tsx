@@ -126,31 +126,38 @@ export function ShareCardDialog({
         <Dialog.Backdrop className={styles.backdrop} />
         <Dialog.Viewport className={styles.viewport}>
           <Dialog.Popup className={styles.popup} finalFocus={finalFocus}>
-            <div className={styles.header}>
-              <Dialog.Title className={styles.title}>分享图片</Dialog.Title>
-              <Dialog.Close aria-label="关闭" className={styles.close}>
-                <Icon name="close" />
-              </Dialog.Close>
-            </div>
-            <Dialog.Description className={styles.description}>
-              预览此帖子作为图片分享时的外观。
-            </Dialog.Description>
-            <div className={styles.stage}>
-              {stage.kind === "ready" ? (
-                <img
-                  alt="分享图片预览"
-                  className={styles.preview}
-                  src={stage.url}
-                />
-              ) : stage.kind === "failed" ? (
-                <p className={styles.state} role="alert">
-                  {stage.message}
-                </p>
-              ) : (
-                <p aria-busy="true" className={styles.state}>
-                  正在生成…
-                </p>
-              )}
+            <div
+              aria-label="分享图片预览区域"
+              className={styles.body}
+              role="region"
+              tabIndex={0}
+            >
+              <div className={styles.header}>
+                <Dialog.Title className={styles.title}>分享图片</Dialog.Title>
+                <Dialog.Close aria-label="关闭" className={styles.close}>
+                  <Icon name="close" />
+                </Dialog.Close>
+              </div>
+              <Dialog.Description className={styles.description}>
+                预览此帖子作为图片分享时的外观。
+              </Dialog.Description>
+              <div className={styles.stage}>
+                {stage.kind === "ready" ? (
+                  <img
+                    alt="分享图片预览"
+                    className={styles.preview}
+                    src={stage.url}
+                  />
+                ) : stage.kind === "failed" ? (
+                  <p className={styles.state} role="alert">
+                    {stage.message}
+                  </p>
+                ) : (
+                  <p aria-busy="true" className={styles.state}>
+                    正在生成…
+                  </p>
+                )}
+              </div>
             </div>
             <div className={styles.actions}>
               {typeof ClipboardItem === "function" ? (
