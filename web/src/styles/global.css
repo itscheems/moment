@@ -442,6 +442,7 @@ html {
   min-inline-size: 20rem;
   background: var(--canvas);
   scrollbar-gutter: stable;
+  overscroll-behavior-y: none;
 }
 
 body {
