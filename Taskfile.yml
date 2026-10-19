@@ -27,6 +27,16 @@ tasks:
     cmds:
       - node --test scripts/dev/layout-probe.test.mjs
 
+  merge:test:
+    desc: Test the ordinary-merge-only policy without network access
+    cmds:
+      - node --test scripts/dev/check-merge-policy.test.mjs
+
+  merge:check:
+    desc: Verify repository merge settings and optionally a merged PR
+    cmds:
+      - node scripts/dev/check-merge-policy.mjs {{.CLI_ARGS}}
+
   playground:articles:
     desc: Add named article cases to the running disposable playground on port 18080
     cmds:
@@ -73,6 +83,7 @@ tasks:
   ci:
     desc: Run the complete local CI gate
     cmds:
+      - task: merge:test
       - task: layout:test
       - task: fmt:check
       - task: lint
