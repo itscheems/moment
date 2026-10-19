@@ -493,15 +493,7 @@
   display: flex;
   justify-content: flex-end;
   align-items: center;
-  height: 36px;
-  padding-inline-end: 2px;
-  transition:
-    height 200ms ease,
-    padding-inline-end 200ms ease;
-}
-.panelHeader:has(.panelToggle[aria-expanded="true"]) {
   height: 48px;
-  padding-inline-end: 17px;
 }
 .panelLabel {
   position: absolute;
@@ -511,6 +503,9 @@
   font-size: 12px;
 }
 .panelToggle {
+  position: absolute;
+  top: 0;
+  right: 0;
   width: 32px;
   height: 32px;
   background: transparent;
@@ -821,7 +816,6 @@
   .expand,
   .floatingControl,
   .expanded :global(.maplibregl-ctrl-group button),
-  .panelHeader,
   .panelToggle,
   .addButton {
     transition: none;

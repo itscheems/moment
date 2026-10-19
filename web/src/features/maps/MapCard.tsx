@@ -10,7 +10,7 @@ import {
   type ReactNode,
 } from "react";
 import { Dialog } from "@base-ui/react/dialog";
-import { motion, useReducedMotion } from "motion/react";
+import { motion, useReducedMotion, type Transition } from "motion/react";
 import { Icon } from "../../components/icons";
 import { useDocumentScrollLock } from "../../components/useDocumentScrollLock";
 import { ActionTooltip } from "../../components/TimelineInteractions";
@@ -63,6 +63,9 @@ export function MapCard({
   );
   const panelId = useId();
   const reduceMotion = useReducedMotion();
+  const panelTransition: Transition = reduceMotion
+    ? { duration: 0 }
+    : { type: "spring", stiffness: 420, damping: 38 };
   const focusPlace = (place: MapPlace) => {
     setVisible(true);
     setFocusTarget({ place });
@@ -260,16 +263,19 @@ export function MapCard({
               aria-label="地图地点面板"
               initial={false}
               animate={{
-                width: listOpen ? 300 : 36,
-                borderRadius: listOpen ? 20 : 18,
+                width: listOpen ? 300 : 32,
+                borderRadius: listOpen ? 20 : 16,
+                x: listOpen ? 0 : -17,
+                y: listOpen ? 0 : 8,
               }}
-              transition={
-                reduceMotion
-                  ? { duration: 0 }
-                  : { type: "spring", stiffness: 420, damping: 38 }
-              }
+              transition={panelTransition}
             >
-              <header className={styles.panelHeader}>
+              <motion.header
+                className={styles.panelHeader}
+                initial={false}
+                animate={{ height: listOpen ? 48 : 32 }}
+                transition={panelTransition}
+              >
                 <motion.span
                   className={styles.panelLabel}
                   aria-hidden={!listOpen}
@@ -278,8 +284,11 @@ export function MapCard({
                 >
                   地点 · {card.places.length}
                 </motion.span>
-                <button
+                <motion.button
                   className={styles.panelToggle}
+                  initial={false}
+                  animate={{ x: listOpen ? -17 : 0, y: listOpen ? 8 : 0 }}
+                  transition={panelTransition}
                   type="button"
                   aria-label={listOpen ? "收起地点列表" : "展开地点列表"}
                   aria-expanded={listOpen}
@@ -293,8 +302,8 @@ export function MapCard({
                   >
                     <Icon name="chevron-down" />
                   </motion.span>
-                </button>
-              </header>
+                </motion.button>
+              </motion.header>
               <motion.div
                 id={panelId}
                 aria-hidden={!listOpen}
