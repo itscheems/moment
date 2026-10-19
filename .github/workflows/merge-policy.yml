@@ -5,7 +5,7 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
-    types: [opened, reopened, synchronize, ready_for_review, closed]
+    types: [opened, reopened, synchronize, ready_for_review, edited]
   workflow_dispatch:
 
 permissions:
@@ -15,12 +15,12 @@ jobs:
   merge-policy:
     name: merge-policy
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-      - uses: jdx/mise-action@5228313ee0372e111a38da051671ca30fc5a96db # v3
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
-          install: true
-          cache: true
+          node-version: 24.19.0
       - run: node --test scripts/dev/check-merge-policy.test.mjs
       - run: node scripts/dev/check-merge-policy.mjs
         env:
