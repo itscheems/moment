@@ -509,6 +509,7 @@ a {
   :is(
     button,
     a,
+    summary,
     [role="button"],
     [role="switch"],
     [role="checkbox"],
