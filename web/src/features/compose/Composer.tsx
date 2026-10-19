@@ -652,6 +652,8 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
         activeDraftRef.current = draft;
         setActiveDraft(draft);
       }
+      if (next === null)
+        window.requestAnimationFrame(() => textareaRef.current?.focus());
     };
 
     const markMediaEdited = (message: string) => {

@@ -3,6 +3,7 @@ import type { SVGProps } from "react";
 const iconSprite = "/icons/ui-symbols-v3.svg";
 
 export type IconName =
+  | "globe"
   | "plus"
   | "article"
   | "article-unpublish"
@@ -44,6 +45,7 @@ export type IconName =
   | "like-count"
   | "uploader"
   | "map"
+  | "map-picker"
   | "location"
   | "location-picker"
   | "check"
@@ -79,7 +81,22 @@ const iconViewBoxes: Partial<Record<IconName, string>> = {
 };
 
 const paths: Record<IconName, React.ReactNode> = {
+  globe: (
+    <>
+      <circle cx="12" cy="12" r="9" />
+      <ellipse cx="12" cy="12" rx="4" ry="9" />
+      <path d="M3 12h18M5 6.5c4.5 2 9.5 2 14 0M5 17.5c4.5-2 9.5-2 14 0" />
+    </>
+  ),
   plus: <path d="M12 5v14M5 12h14" />,
+  // Official Lucide Map paths: https://lucide.dev/icons/map
+  "map-picker": (
+    <>
+      <path d="M14.106 5.553a2 2 0 0 0 1.788 0l3.659-1.83A1 1 0 0 1 21 4.619v12.764a1 1 0 0 1-.553.894l-4.553 2.277a2 2 0 0 1-1.788 0l-4.212-2.106a2 2 0 0 0-1.788 0l-3.659 1.83A1 1 0 0 1 3 19.381V6.618a1 1 0 0 1 .553-.894l4.553-2.277a2 2 0 0 1 1.788 0z" />
+      <path d="M15 5.764v15" />
+      <path d="M9 3.236v15" />
+    </>
+  ),
   map: (
     <>
       <path d="m3 6 5-2 8 3 5-2v15l-5 2-8-3-5 2V6Z" />

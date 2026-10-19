@@ -4,17 +4,19 @@ import {
   Suspense,
   useCallback,
   useEffect,
+  useId,
   useRef,
   useState,
   type ReactNode,
 } from "react";
 import { Dialog } from "@base-ui/react/dialog";
+import { motion, useReducedMotion, type Transition } from "motion/react";
 import { Icon } from "../../components/icons";
 import { useDocumentScrollLock } from "../../components/useDocumentScrollLock";
 import { ActionTooltip } from "../../components/TimelineInteractions";
 import { MapPlaces } from "./MapPlaces";
-import type { MapCardData } from "./types";
-import type { MapCamera } from "./MapCanvas";
+import type { MapCardData, MapPlace } from "./types";
+import type { MapCamera, MapPlaceFocus } from "./MapCanvas";
 import styles from "./Maps.module.css";
 
 const Canvas = lazy(() => import("./MapCanvas"));
@@ -54,6 +56,20 @@ export function MapCard({
   const [failed, setFailed] = useState(false);
   const [attempt, setAttempt] = useState(0);
   const [camera, setCamera] = useState<MapCamera>();
+  const placeFocus = useRef<MapPlaceFocus | null>(null);
+  const [listOpen, setListOpen] = useState(true);
+  const [focusTarget, setFocusTarget] = useState<{ place: MapPlace } | null>(
+    null,
+  );
+  const panelId = useId();
+  const reduceMotion = useReducedMotion();
+  const panelTransition: Transition = reduceMotion
+    ? { duration: 0 }
+    : { type: "spring", stiffness: 420, damping: 38 };
+  const focusPlace = (place: MapPlace) => {
+    setVisible(true);
+    setFocusTarget({ place });
+  };
   const fail = useCallback(() => setFailed(true), []);
   useDocumentScrollLock(expanded);
   useEffect(() => {
@@ -90,7 +106,7 @@ export function MapCard({
   }, [deferMap, fail]);
   const placeholder = (
     <div className={styles.placeholder} role="status">
-      <Icon name="map" />
+      <Icon name="map-picker" />
       <span>{failed ? "地图暂时无法加载" : "正在准备地图…"}</span>
       {failed && (
         <button
@@ -120,7 +136,13 @@ export function MapCard({
             <Canvas
               card={card}
               camera={camera}
-              onCamera={setCamera}
+              onCamera={(next) => {
+                setCamera(next);
+                setFocusTarget(null);
+              }}
+              focusTarget={focusTarget}
+              placeFocus={placeFocus}
+              fullscreen={large}
               globe={large && globe}
               onFailure={fail}
               onPick={onPick}
@@ -133,7 +155,12 @@ export function MapCard({
     </div>
   );
   const places = (
-    <MapPlaces card={card} onChange={onChange} disabled={disabled} />
+    <MapPlaces
+      card={card}
+      onChange={onChange}
+      disabled={disabled}
+      onSelect={onPick ? undefined : focusPlace}
+    />
   );
   return (
     <section
@@ -143,19 +170,35 @@ export function MapCard({
       data-interactive="true"
       aria-label={`地图：${card.places.map((p) => p.name).join("、")}`}
       onClick={(event) => event.stopPropagation()}
+      onMouseDown={(event) => event.stopPropagation()}
     >
       <div className={styles.canvasFrame}>
         {expanded ? <div className={styles.canvas} /> : canvas(false)}
-        <ActionTooltip label="展开地图">
-          <button
-            className={styles.expand}
-            type="button"
-            aria-label="展开地图"
-            onClick={() => setExpanded(true)}
-          >
-            <Icon name="expand" />
-          </button>
-        </ActionTooltip>
+        <div className={styles.cardControls}>
+          <ActionTooltip label="展开地图">
+            <button
+              className={styles.expand}
+              type="button"
+              aria-label="展开地图"
+              onClick={() => setExpanded(true)}
+            >
+              <Icon name="expand" />
+            </button>
+          </ActionTooltip>
+          {onChange && (
+            <ActionTooltip label="移除地图">
+              <button
+                className={styles.expand}
+                type="button"
+                aria-label="移除地图"
+                disabled={disabled}
+                onClick={() => onChange(null)}
+              >
+                <Icon name="close" />
+              </button>
+            </ActionTooltip>
+          )}
+        </div>
       </div>
       {places}
       {footer}
@@ -178,7 +221,9 @@ export function MapCard({
         <Dialog.Portal>
           <Dialog.Backdrop className={styles.backdrop} />
           <Dialog.Popup
-            className={styles.expanded}
+            className={`${styles.expanded} ${onPick ? styles.pickerExpanded : ""}`}
+            data-map-fullscreen=""
+            data-map-editable={onChange ? "" : undefined}
             onKeyDown={(event) => {
               if (
                 (event.key === "ArrowUp" || event.key === "ArrowDown") &&
@@ -188,24 +233,96 @@ export function MapCard({
                 event.preventBaseUIHandler();
             }}
           >
-            <header className={styles.dialogHeader}>
-              <Dialog.Title>地图</Dialog.Title>
-              <div>
-                <button
-                  type="button"
-                  aria-pressed={globe}
-                  onClick={() => setGlobe((value) => !value)}
+            <Dialog.Title className={styles.hiddenTitle}>地图</Dialog.Title>
+            {expanded && canvas(true)}
+            <div className={styles.fullscreenControls}>
+              <ActionTooltip label="关闭地图">
+                <Dialog.Close
+                  className={styles.floatingControl}
+                  aria-label="关闭地图"
                 >
-                  {globe ? "切换平面" : "切换地球"}
-                </button>
-                <Dialog.Close aria-label="关闭地图">
                   <Icon name="close" />
                 </Dialog.Close>
-              </div>
-            </header>
-            {expanded && canvas(true)}
-            <div className={styles.expandedPlaces}>{places}</div>
-            {footer}
+              </ActionTooltip>
+              <ActionTooltip label={globe ? "切换平面" : "切换地球"}>
+                <button
+                  className={styles.floatingControl}
+                  type="button"
+                  aria-label={globe ? "切换平面" : "切换地球"}
+                  aria-pressed={globe}
+                  onClick={() => {
+                    setFocusTarget(null);
+                    setGlobe((value) => !value);
+                  }}
+                >
+                  <Icon name="globe" />
+                </button>
+              </ActionTooltip>
+            </div>
+            <motion.aside
+              className={styles.placePanel}
+              aria-label="地图地点面板"
+              initial={false}
+              animate={{
+                width: listOpen ? 300 : 32,
+                borderRadius: listOpen ? 20 : 16,
+                x: listOpen ? 0 : -17,
+                y: listOpen ? 0 : 8,
+              }}
+              transition={panelTransition}
+            >
+              <motion.header
+                className={styles.panelHeader}
+                initial={false}
+                animate={{ height: listOpen ? 48 : 32 }}
+                transition={panelTransition}
+              >
+                <motion.span
+                  className={styles.panelLabel}
+                  aria-hidden={!listOpen}
+                  animate={{ opacity: listOpen ? 1 : 0 }}
+                  transition={{ duration: reduceMotion ? 0 : 0.12 }}
+                >
+                  地点 · {card.places.length}
+                </motion.span>
+                <motion.button
+                  className={styles.panelToggle}
+                  initial={false}
+                  animate={{ x: listOpen ? -17 : 0, y: listOpen ? 8 : 0 }}
+                  transition={panelTransition}
+                  type="button"
+                  aria-label={listOpen ? "收起地点列表" : "展开地点列表"}
+                  aria-expanded={listOpen}
+                  aria-controls={panelId}
+                  onClick={() => setListOpen((open) => !open)}
+                >
+                  <motion.span
+                    className={styles.panelChevron}
+                    animate={{ rotate: listOpen ? 0 : 90 }}
+                    transition={{ duration: reduceMotion ? 0 : 0.2 }}
+                  >
+                    <Icon name="chevron-down" />
+                  </motion.span>
+                </motion.button>
+              </motion.header>
+              <motion.div
+                id={panelId}
+                aria-hidden={!listOpen}
+                inert={!listOpen}
+                initial={false}
+                animate={{
+                  height: listOpen ? "auto" : 0,
+                  opacity: listOpen ? 1 : 0,
+                }}
+                transition={{ duration: reduceMotion ? 0 : 0.2 }}
+                className={styles.panelBody}
+              >
+                <div className={styles.panelContent}>
+                  {places}
+                  {footer}
+                </div>
+              </motion.div>
+            </motion.aside>
           </Dialog.Popup>
         </Dialog.Portal>
       </Dialog.Root>

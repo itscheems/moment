@@ -96,7 +96,7 @@ describe("map card editor", () => {
     expect(screen.getByRole("button", { name: "添加地点" })).toBeTruthy();
     expect(screen.getByText(/"connectPoints":false/)).toBeTruthy();
     expect(screen.queryByText("地点连线，非实际行驶路线")).toBeNull();
-    expect(screen.queryByRole("button", { name: "移除地图" })).toBeNull();
+    expect(screen.getByRole("button", { name: "移除地图" })).toBeTruthy();
     const row = await screen.findByRole("group", {
       name: "银座，按住拖动排序",
     });

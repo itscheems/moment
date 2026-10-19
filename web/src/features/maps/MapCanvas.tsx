@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import Map, {
   Marker,
   NavigationControl,
@@ -16,7 +16,7 @@ import {
   mapCoordinate,
   mapPlaceIdentity,
 } from "./geometry";
-import type { MapCardData } from "./types";
+import type { MapCardData, MapPlace } from "./types";
 import styles from "./Maps.module.css";
 
 maplibre.setWorkerUrl(workerUrl);
@@ -29,6 +29,11 @@ export interface MapCamera {
   pitch: number;
 }
 
+export interface MapPlaceFocus {
+  identity: string;
+  camera: MapCamera;
+}
+
 export default function MapCanvas({
   card,
   globe = false,
@@ -36,6 +41,9 @@ export default function MapCanvas({
   onCamera,
   onFailure,
   onPick,
+  focusTarget,
+  placeFocus,
+  fullscreen = false,
 }: {
   card: MapCardData;
   globe?: boolean;
@@ -43,6 +51,9 @@ export default function MapCanvas({
   onCamera?: (camera: MapCamera) => void;
   onFailure: () => void;
   onPick?: (longitude: number, latitude: number) => void;
+  focusTarget?: { place: MapPlace } | null;
+  placeFocus: RefObject<MapPlaceFocus | null>;
+  fullscreen?: boolean;
 }) {
   const ref = useRef<MapRef>(null);
   const [loaded, setLoaded] = useState(false);
@@ -58,45 +69,69 @@ export default function MapCanvas({
     .join(";");
   const fittedKey = useRef(camera ? pointsKey : "");
   useEffect(() => {
-    if (loaded && !onPick && fittedKey.current !== pointsKey)
+    if (loaded && !onPick && fittedKey.current !== pointsKey) {
+      placeFocus.current = null;
       ref.current?.fitBounds(bounds, {
         padding: 48,
         maxZoom: card.places.length === 1 ? 14 : 12,
         duration: 0,
       });
+    }
     if (loaded) fittedKey.current = pointsKey;
-  }, [pointsKey, loaded, bounds, card.places.length, onPick]);
+  }, [pointsKey, loaded, bounds, card.places.length, onPick, placeFocus]);
   useEffect(() => {
     if (loaded) return;
     const timer = window.setTimeout(onFailure, 20_000);
     return () => window.clearTimeout(timer);
   }, [loaded, onFailure]);
-  const lastGlobe = useRef(false);
-  const flatCamera = useRef<MapCamera | undefined>(undefined);
-  useEffect(() => {
-    if (!loaded || lastGlobe.current === globe) return;
-    const map = ref.current?.getMap();
-    if (!map) return;
-    if (globe) {
-      const center = map.getCenter();
-      flatCamera.current = {
-        longitude: center.lng,
-        latitude: center.lat,
-        zoom: map.getZoom(),
-        bearing: map.getBearing(),
-        pitch: map.getPitch(),
-      };
-      map.easeTo({ zoom: 1.5, pitch: 0, duration: 500 });
-    } else if (flatCamera.current)
-      map.easeTo({ ...flatCamera.current, duration: 500 });
-    lastGlobe.current = globe;
-  }, [globe, loaded]);
   const popup = card.places.find(
     (place) => mapPlaceIdentity(place) === selected,
   );
   useEffect(() => {
     setSelected(null);
   }, [pointsKey]);
+  useEffect(() => {
+    const map = ref.current;
+    if (!loaded || !focusTarget || !map) return;
+    const identity = mapPlaceIdentity(focusTarget.place);
+    const previous = placeFocus.current;
+    setSelected(null);
+    if (previous?.identity === identity) {
+      placeFocus.current = null;
+      map.flyTo({
+        center: [previous.camera.longitude, previous.camera.latitude],
+        zoom: previous.camera.zoom,
+        bearing: previous.camera.bearing,
+        pitch: previous.camera.pitch,
+        duration: 1400,
+        curve: 1.42,
+      });
+      return;
+    }
+    const center = map.getCenter();
+    placeFocus.current = {
+      identity,
+      camera: previous?.camera ?? {
+        longitude: center.lng,
+        latitude: center.lat,
+        zoom: map.getZoom(),
+        bearing: map.getBearing(),
+        pitch: map.getPitch(),
+      },
+    };
+    const [longitude, latitude] = mapCoordinate(focusTarget.place);
+    map.flyTo({
+      center: [
+        longitude,
+        globe ? latitude : Math.max(-85, Math.min(85, latitude)),
+      ],
+      zoom: 14,
+      bearing: 0,
+      pitch: 0,
+      duration: 1400,
+      curve: 1.42,
+    });
+  }, [loaded, focusTarget, globe, placeFocus]);
   return (
     <Map
       ref={ref}
@@ -115,7 +150,7 @@ export default function MapCanvas({
       }
       mapStyle="https://tiles.openfreemap.org/styles/liberty"
       projection={{ type: globe ? "globe" : "mercator" }}
-      cooperativeGestures={!globe}
+      cooperativeGestures={!fullscreen && !globe}
       reuseMaps={false}
       attributionControl={{ compact: true }}
       locale={{
@@ -130,7 +165,10 @@ export default function MapCanvas({
         "CooperativeGesturesHandler.MobileHelpText": "使用双指移动地图",
       }}
       maxPitch={0}
-      onLoad={() => setLoaded(true)}
+      onLoad={(event) => {
+        event.target.setPaintProperty("water", "fill-color", "#C7E3EA");
+        setLoaded(true);
+      }}
       onError={onFailure}
       onMoveEnd={(event) => onCamera?.(event.viewState)}
       onClick={

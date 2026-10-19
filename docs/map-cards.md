@@ -4,6 +4,10 @@ Posts and articles use the same interactive map card. The post composer stores o
 
 Authors can search worldwide, use their current location, or pick a point on the map. A card holds 1–20 ordered places. It displays markers by default; enabling **连接地点** joins them in list order. Authors hold a place row to reorder it, or use Space and the arrow keys. Right-clicking a row or swiping it left exposes deletion with confirmation; cancelling restores the row. Each place also opens in Google Maps. A map can be the only content of an ordinary post.
 
+Expansion fills the browser viewport. Close and globe controls sit on the left; the place list floats at the upper right and animates into a small round toggle when collapsed. Selecting a place uses MapLibre's native `flyTo` camera animation, while its external link continues to open Google Maps. Fullscreen maps accept ordinary wheel and touch gestures; embedded maps retain cooperative gestures for scrolling the surrounding page.
+
+Editing surfaces add a close control beside the card's expand control to remove the map. Reader cards expose expansion alone. Revealed swipe actions have rounded corners and animate closed when pressing outside their row. Pointer selection uses Motion's drag-aware press lifecycle so a swipe or reorder does not also select a place.
+
 ## Services
 
 The browser renders OpenFreeMap's Liberty vector tiles through MapLibre GL JS. Rendering requires no map API key. Search runs through the backend's existing AMap and Geoapify integrations. Set `AMAP_API_KEY` and `GEOAPIFY_API_KEY` in the server process for domestic and worldwide search. Keys stay on the server. Global search queries the configured providers concurrently without restricting results to the device's country.
