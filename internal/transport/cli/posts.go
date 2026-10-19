@@ -42,7 +42,7 @@ func registerPosts(application *Application) {
 		Short:      "List the public Moment timeline",
 		Long:       "Read one stable page, newest first, through the selected local instance or HTTP API: the head of the timeline, a cursor's continuation in the direction it names, or the end of an anchored day read back from.",
 		Inputs:     "Use --cursor for continuation, --limit from 1 to 100, and optional YYYY-MM-DD boundaries: inclusive --from and exclusive --to in the configured site timezone. --anchor names a site day to read back from instead; it cannot be combined with --cursor, --from, or --to.",
-		Output:     "A canonical post array in data.items with nullable meta.next_cursor (continues older) and meta.prev_cursor (continues newer); meta.refresh_cursor is a reusable newer watermark, including an empty head.",
+		Output:     "A canonical post array in data.items with nullable meta.next_cursor (continues older) and meta.prev_cursor (continues newer); meta.refresh_cursor is a reusable newer watermark, including an empty head. With --author-id, data.author_post_count counts that author's visible published originals across all pages and filters.",
 		Errors:     "Invalid cursors, limits, dates, or site authority return stable machine codes.",
 		Example:    "moment post list --data-dir ./moment-data --limit 20 --json",
 		Capability: CapabilityBoth,
@@ -1602,6 +1602,9 @@ func validRawAPIPost(data json.RawMessage, post postdto.Post) bool {
 
 func validRawAPIPostPage(data json.RawMessage, page postdto.Page) bool {
 	if !hasRequiredNonNullAPIDataFields(data, "items") {
+		return false
+	}
+	if page.AuthorPostCount != nil && *page.AuthorPostCount < 0 {
 		return false
 	}
 	fields, _ := apiDataFields(data)

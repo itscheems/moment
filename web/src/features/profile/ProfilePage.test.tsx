@@ -380,9 +380,10 @@ describe("profile page", () => {
     expect(
       screen.queryByRole("link", { name: "查看归档" }),
     ).not.toBeInTheDocument();
-    const timezone = screen.getByLabelText(/时区：.*（Asia\/Shanghai）/);
-    expect(timezone).toHaveAttribute("title", "Asia/Shanghai");
-    expect(timezone).not.toHaveTextContent(/^Asia\/Shanghai$/);
+    expect(screen.queryByLabelText(/时区：/)).not.toBeInTheDocument();
+    expect(
+      screen.queryByText(/中国标准时间|UTC\+08:00/),
+    ).not.toBeInTheDocument();
     expect(screen.getByText("已置顶")).toBeInTheDocument();
     const pinned = screen.getByText("置顶内容").closest("article");
     const normal = screen.getByText("普通内容").closest("article");

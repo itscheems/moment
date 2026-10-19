@@ -932,3 +932,61 @@
     grid-template-columns: minmax(0, 1fr);
   }
 }
+
+.timelineHeader.profileHeader {
+  gap: 0;
+  border-block-end: 0;
+  background: color-mix(in srgb, var(--surface) 85%, transparent);
+  font-family: var(--font-timeline);
+  font-feature-settings: normal;
+  font-synthesis: weight style small-caps;
+  letter-spacing: normal;
+  text-rendering: auto;
+  -webkit-font-smoothing: auto;
+}
+
+.profileHeader > .backLink {
+  inline-size: 36px;
+  block-size: 36px;
+  flex: none;
+  margin-inline: -8px 28px;
+}
+
+.profileHeader > .backLink svg {
+  inline-size: 20px;
+  block-size: 20px;
+}
+
+.profileHeader > .backLink:focus-visible {
+  background: color-mix(in srgb, var(--text-primary) 10%, transparent);
+}
+
+@media (hover: hover) {
+  .profileHeader > .backLink:hover {
+    background: color-mix(in srgb, var(--text-primary) 10%, transparent);
+  }
+}
+
+.profileTitle {
+  min-inline-size: 0;
+  flex: 1;
+}
+
+.timelineHeader.profileHeader h1 {
+  overflow: hidden;
+  padding-block: 2px;
+  font-size: 20px;
+  font-weight: 700;
+  letter-spacing: normal;
+  line-height: 24px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.profileCount {
+  min-block-size: 16px;
+  display: block;
+  color: var(--text-secondary);
+  font-size: 13px;
+  line-height: 16px;
+}

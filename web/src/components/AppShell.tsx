@@ -16,6 +16,10 @@ import { SiteAvatar, siteDisplayName } from "./SiteIdentity";
 import { Icon, type IconName } from "./icons";
 import { RailSlotContext } from "./railSlot";
 import { HeaderActionsContext } from "./headerActions";
+import {
+  ProfileHeaderContext,
+  type ProfileHeaderIdentity,
+} from "../features/profile/ProfileHeader";
 import { ShellState } from "./ShellState";
 import { ThemeMenu } from "./ThemeMenu";
 import { SidebarTooltip } from "./SidebarTooltip";
@@ -532,6 +536,8 @@ export function AppShell({
   // once the rail has mounted it.
   const [railSlot, setRailSlot] = useState<HTMLDivElement | null>(null);
   const [headerSlot, setHeaderSlot] = useState<HTMLSpanElement | null>(null);
+  const [profileHeader, setProfileHeader] =
+    useState<ProfileHeaderIdentity | null>(null);
   const focusReading = route.id === "article-focus";
   const { preference: readingLayout } = useReadingLayout();
   return (
@@ -559,7 +565,7 @@ export function AppShell({
               <header
                 className={`${styles.timelineHeader} ${
                   route.id === "home" ? styles.homeHeader : ""
-                } ${route.id === "detail" ? styles.detailHeader : ""} ${workspace ? styles.workspaceHiddenHeader : ""}`}
+                } ${route.id === "detail" ? styles.detailHeader : ""} ${route.id === "profile" ? styles.profileHeader : ""} ${workspace ? styles.workspaceHiddenHeader : ""}`}
               >
                 {route.id === "detail" ||
                 focusReading ||
@@ -605,19 +611,35 @@ export function AppShell({
                     </InternalLink>
                   </nav>
                 ) : (
-                  <div>
+                  <div
+                    className={
+                      route.id === "profile" ? styles.profileTitle : undefined
+                    }
+                  >
                     <p>{route.eyebrow}</p>
                     <h1>
-                      {route.id === "profile"
-                        ? siteDisplayName(site)
-                        : route.title}
+                      {route.id === "profile" ? (
+                        <span>
+                          {profileHeader?.title ?? siteDisplayName(site)}
+                        </span>
+                      ) : (
+                        route.title
+                      )}
                     </h1>
+                    {route.id === "profile" ? (
+                      <span className={styles.profileCount}>
+                        {profileHeader?.postCount == null
+                          ? null
+                          : `${profileHeader.postCount.toLocaleString("zh-CN")} 条帖子`}
+                      </span>
+                    ) : null}
                   </div>
                 )}
                 <span className={styles.headerActions} ref={setHeaderSlot}>
                   {focusReading ? <ThemeToggle headerAction /> : null}
                 </span>
                 {route.id !== "detail" &&
+                route.id !== "profile" &&
                 route.id !== "edit" &&
                 !focusReading ? (
                   <span className={styles.headerTheme}>
@@ -625,7 +647,9 @@ export function AppShell({
                   </span>
                 ) : null}
               </header>
-              {children ?? <ShellState route={route} state={state} />}
+              <ProfileHeaderContext.Provider value={setProfileHeader}>
+                {children ?? <ShellState route={route} state={state} />}
+              </ProfileHeaderContext.Provider>
             </main>
             {!focusReading && !workspace ? (
               <MemoryRail route={route} slotRef={setRailSlot} />

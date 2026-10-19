@@ -167,6 +167,14 @@ WHERE id = ?`, id.String()))
 	return entry, true, nil
 }
 
+func (store postStore) CountPublishedPosts(ctx context.Context, authorID string, viewer app.Viewer) (int, error) {
+	visible, arguments := visibilityPredicate(viewer, "visibility")
+	arguments = append(arguments, authorID)
+	var count int
+	err := store.queries.QueryRowContext(ctx, "SELECT count(*) FROM entries WHERE "+visible+" AND author_user_id = ?", arguments...).Scan(&count)
+	return count, err
+}
+
 func (store postStore) ListEntries(ctx context.Context, query app.TimelineQuery, limit int) ([]app.TimelineEntry, error) {
 	statement, arguments := timelineEntriesQuery(query, limit)
 	rows, err := store.queries.QueryContext(ctx, statement, arguments...)

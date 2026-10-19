@@ -64,6 +64,36 @@ func TestHiddenPostsReachOnlyTheAuthorThroughEveryReadPath(t *testing.T) {
 		t.Fatalf("owner timeline = %v", ids)
 	}
 
+	// Profile totals count originals across pages and filters, under the same
+	// visibility rules as the author feed. Reposts never inflate the number.
+	for _, test := range []struct {
+		name   string
+		viewer app.Viewer
+		kind   domain.EntryKind
+		from   string
+		want   int
+	}{
+		{name: "visitor", want: 1},
+		{name: "author", viewer: app.AccountViewer(testAccountID), want: 2},
+		{name: "another account", viewer: app.AccountViewer("11111111111111111111111111111111"), want: 1},
+		{name: "empty article filter", viewer: app.AccountViewer(testAccountID), kind: domain.KindArticle, want: 2},
+		{name: "empty date window", viewer: app.AccountViewer(testAccountID), from: "2030-01-01", want: 2},
+	} {
+		page, err := posts.List(ctx, app.ListPostsInput{AuthorUserID: testAccountID, Timezone: "UTC", Limit: 1, Viewer: test.viewer, Kind: test.kind, FromDate: test.from})
+		if err != nil || page.AuthorPostCount == nil || *page.AuthorPostCount != test.want {
+			t.Fatalf("%s count = %+v, %v", test.name, page, err)
+		}
+		if page.NextCursor != "" {
+			next, err := posts.List(ctx, app.ListPostsInput{AuthorUserID: testAccountID, Timezone: "UTC", Cursor: page.NextCursor, Viewer: test.viewer})
+			if err != nil || next.AuthorPostCount == nil || *next.AuthorPostCount != test.want {
+				t.Fatalf("%s continuation count = %+v, %v", test.name, next, err)
+			}
+		}
+	}
+	if visitorPage.AuthorPostCount != nil {
+		t.Fatal("unscoped timeline published an author count")
+	}
+
 	// Search and the year counts that travel with it; archive counts too.
 	searchRepository, err := NewSearchRepository(db, runtimeState.Locks)
 	if err != nil {
