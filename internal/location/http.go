@@ -23,6 +23,7 @@ func getJSON(ctx context.Context, client HTTPClient, baseURL, endpoint string, q
 		return err
 	}
 	request.Header.Set("Accept", "application/json")
+	request.Header.Set("User-Agent", "Moment/0.1 (self-hosted location search)")
 	response, err := client.Do(request)
 	if err != nil {
 		return err
