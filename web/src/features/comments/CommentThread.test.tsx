@@ -975,7 +975,7 @@ describe("public comment thread", () => {
       /\._commentLayoutFrame_[\w-]+\[data-comment-layout-motion="fold"\]\s*\{\s*transition:\s*none;/s,
     );
     expect(commentsCss).toMatch(
-      /\._inlineTopLevelForm_[\w-]+ \._collapsedReplyAction_[\w-]+\s*\{[^}]*inline-size:\s*4\.671875rem;[^}]*block-size:\s*2\.25rem;[^}]*color:\s*var\(--surface\);[^}]*background:\s*var\(--text-primary\);[^}]*opacity:\s*0\.25;/s,
+      /\._inlineTopLevelForm_[\w-]+ \._collapsedReplyAction_[\w-]+\s*\{[^}]*inline-size:\s*4\.671875rem;[^}]*block-size:\s*2\.25rem;[^}]*color:\s*var\(--button-primary-contrast\);[^}]*background:\s*var\(--button-primary-disabled\);[^}]*opacity:\s*0\.25;/s,
     );
     expect(commentsCss).toMatch(
       /\._inlineTopLevelForm_[\w-]+ \._commentMediaComposer_[\w-]+\s*\{[^}]*margin-block-start:\s*0;[^}]*animation:\s*none;/s,
@@ -993,7 +993,7 @@ describe("public comment thread", () => {
       /\._inlineTopLevelForm_[\w-]+ \._primaryAction_[\w-]+:hover:not\(:disabled\)\s*\{[^}]*background:\s*var\(--button-primary-hover\);/s,
     );
     expect(commentsCss).toMatch(
-      /\._inlineTopLevelForm_[\w-]+ \._primaryAction_[\w-]+:disabled\s*\{[^}]*color:\s*var\(--surface\);[^}]*background:\s*var\(--text-primary\);[^}]*opacity:\s*0\.25;/s,
+      /\._inlineTopLevelForm_[\w-]+ \._primaryAction_[\w-]+:disabled\s*\{[^}]*color:\s*var\(--button-primary-contrast\);[^}]*background:\s*var\(--button-primary-disabled\);[^}]*opacity:\s*0\.25;/s,
     );
     expect(commentsCss).toMatch(
       /\._inlineTopLevelForm_[\w-]+ \._primaryAction_[\w-]+:active:not\(:disabled\)\s*\{[^}]*background:\s*var\(--button-primary-pressed\);[^}]*transform:\s*none;/s,

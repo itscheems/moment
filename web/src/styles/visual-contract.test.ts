@@ -244,7 +244,7 @@ describe("visual foundation contract", () => {
       /\._inlineTopLevelForm_[\w-]+\._commentCollapsed_[\w-]+ \._commentForm_[\w-]+\s*\{[^}]*padding-block-start:\s*0\.25rem;/s,
     );
     expect(commentsCss).toMatch(
-      /\._inlineTopLevelForm_[\w-]+ \._collapsedReplyAction_[\w-]+\s*\{[^}]*block-size:\s*2\.25rem;[^}]*color:\s*var\(--surface\);[^}]*background:\s*var\(--text-primary\);[^}]*opacity:\s*0\.25;/s,
+      /\._inlineTopLevelForm_[\w-]+ \._collapsedReplyAction_[\w-]+\s*\{[^}]*block-size:\s*2\.25rem;[^}]*color:\s*var\(--button-primary-contrast\);[^}]*background:\s*var\(--button-primary-disabled\);[^}]*opacity:\s*0\.25;/s,
     );
     expect(commentsCss).toMatch(
       /\._inlineTopLevelForm_[\w-]+ \._primaryAction_[\w-]+:disabled\s*\{[^}]*opacity:\s*0\.25;/s,
@@ -256,7 +256,7 @@ describe("visual foundation contract", () => {
       /\._inlineTopLevelForm_[\w-]+ \._primaryAction_[\w-]+:hover:not\(:disabled\)\s*\{[^}]*background:\s*var\(--button-primary-hover\);/s,
     );
     expect(commentsCss).toMatch(
-      /\._inlineTopLevelForm_[\w-]+ \._primaryAction_[\w-]+:disabled\s*\{[^}]*color:\s*var\(--surface\);[^}]*background:\s*var\(--text-primary\);[^}]*opacity:\s*0\.25;/s,
+      /\._inlineTopLevelForm_[\w-]+ \._primaryAction_[\w-]+:disabled\s*\{[^}]*color:\s*var\(--button-primary-contrast\);[^}]*background:\s*var\(--button-primary-disabled\);[^}]*opacity:\s*0\.25;/s,
     );
     expect(commentsCss).toMatch(
       /\._inlineTopLevelForm_[\w-]+ \._primaryAction_[\w-]+:active:not\(:disabled\)\s*\{[^}]*background:\s*var\(--button-primary-pressed\);[^}]*transform:\s*none;/s,
@@ -489,6 +489,9 @@ describe("visual foundation contract", () => {
   });
 
   it("uses contrast-safe state tokens on publish and selected-date actions", () => {
+    // Layout variants inherit the selected accent. Local overrides masked
+    // the theme with fixed blue on inline forms and fixed ink in dialogs.
+    expect(formsCss.match(/--button-primary(?:-[\w-]+)?\s*:/)).toBeNull();
     expect(formsCss).toMatch(
       /\._composerPublishButton_[\w-]+\s*\{[^}]*color: var\(--button-primary-contrast\);[^}]*background: var\(--button-primary\);[^}]*opacity var\(--motion-fast\)/s,
     );

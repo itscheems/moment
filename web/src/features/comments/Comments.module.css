@@ -247,8 +247,8 @@
   font-size: 0.9375rem;
   line-height: 1.25rem;
   letter-spacing: normal;
-  color: var(--surface);
-  background: var(--text-primary);
+  color: var(--button-primary-contrast);
+  background: var(--button-primary-disabled);
   opacity: 0.25;
   cursor: not-allowed;
 }
@@ -695,8 +695,8 @@
 }
 
 .inlineTopLevelForm .primaryAction:disabled {
-  color: var(--surface);
-  background: var(--text-primary);
+  color: var(--button-primary-contrast);
+  background: var(--button-primary-disabled);
   opacity: 0.25;
 }
 
