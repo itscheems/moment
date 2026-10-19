@@ -152,7 +152,7 @@ func TestUnavailableQuoteUsesAnExplicitNullOnlyTombstone(t *testing.T) {
 	if err := json.Unmarshal(encoded, &fields); err != nil {
 		t.Fatal(err)
 	}
-	if len(fields) != 9 || fields["unavailable"] != true || fields["id"] != nil || fields["kind"] != nil || fields["article"] != nil || fields["content_md"] != nil || fields["content_html"] != nil || fields["published_at"] != nil || fields["media"] != nil || fields["location"] != nil {
+	if len(fields) != 10 || fields["unavailable"] != true || fields["id"] != nil || fields["kind"] != nil || fields["article"] != nil || fields["content_md"] != nil || fields["content_html"] != nil || fields["published_at"] != nil || fields["media"] != nil || fields["map_card"] != nil || fields["location"] != nil {
 		t.Fatalf("quote tombstone = %s", encoded)
 	}
 

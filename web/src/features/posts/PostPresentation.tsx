@@ -1,3 +1,4 @@
+import { MapCard } from "../maps/MapCard";
 import { AccountIdentityPreview } from "../../components/AccountIdentityPreview";
 import { postAuthorSite } from "../../components/SiteIdentity";
 import { Popover } from "@base-ui/react/popover";
@@ -284,6 +285,7 @@ export function PostPresentation({
         location:
           post.location?.name?.trim() ||
           post.location?.displayName?.trim() ||
+          post.mapCard?.places.map((place) => place.name).join(" · ") ||
           null,
         link:
           post.linkCards.length > 0 ? shareCardLink(post.linkCards[0]) : null,
@@ -347,6 +349,7 @@ export function PostPresentation({
           html={quoted.contentHtml}
         />
       )}
+      {quoted.mapCard ? <MapCard card={quoted.mapCard} /> : null}
       {quoted.location ? <PostLocation location={quoted.location} /> : null}
       {quoted.article ? null : <ImageGrid media={quoted.media} />}
     </div>
@@ -375,6 +378,7 @@ export function PostPresentation({
             html={post.contentHtml}
             searchQuery={searchQuery}
           />
+          {post.mapCard ? <MapCard card={post.mapCard} /> : null}
           {linkCard}
           {post.location ? <PostLocation location={post.location} /> : null}
           {/* See the timeline branch: an article's pictures are already in its
@@ -468,6 +472,7 @@ export function PostPresentation({
             阅读全文
           </InternalLink>
         ) : null}
+        {post.mapCard ? <MapCard card={post.mapCard} /> : null}
         {linkCard}
         {post.location ? <PostLocation location={post.location} /> : null}
         {/* An article's `media` is the pictures its body places, projected

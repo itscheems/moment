@@ -1,3 +1,4 @@
+import { MapNode } from "./MapNode";
 import { Mark, getSchema, type Extensions } from "@tiptap/core";
 import Document from "@tiptap/extension-document";
 import Paragraph from "@tiptap/extension-paragraph";
@@ -117,6 +118,7 @@ export function articleContentExtensions(): Extensions {
     TableHeader,
     TableCell,
     ManagedImage,
+    MapNode,
   ];
 }
 

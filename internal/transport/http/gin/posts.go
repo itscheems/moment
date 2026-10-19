@@ -136,7 +136,7 @@ func createPost(posts *app.PostService) gin.HandlerFunc {
 			writePostError(ctx, err)
 			return
 		}
-		result, err := posts.Create(ctx.Request.Context(), app.CreatePostInput{ContentMD: input.ContentMD, Visibility: input.Visibility, Media: input.Media, Location: input.Location, LinkCards: input.LinkCards, QuotedPostID: input.QuotedPostID, IdempotencyKey: idempotencyKey})
+		result, err := posts.Create(ctx.Request.Context(), app.CreatePostInput{ContentMD: input.ContentMD, MapCard: input.MapCard, Visibility: input.Visibility, Media: input.Media, Location: input.Location, LinkCards: input.LinkCards, QuotedPostID: input.QuotedPostID, IdempotencyKey: idempotencyKey})
 		if err != nil {
 			writePostError(ctx, err)
 			return
@@ -162,6 +162,9 @@ func updatePost(posts *app.PostService) gin.HandlerFunc {
 			return
 		}
 		update := app.UpdatePostInput{ID: id, ContentMD: decoded.ContentMD, PreserveContent: !decoded.ContentPresent}
+		if decoded.MapPresent {
+			update.MapCard = &decoded.MapCard
+		}
 		if decoded.MediaPresent {
 			media := domain.CloneEntryMediaUsages(decoded.Media)
 			update.Media = &media
@@ -264,6 +267,8 @@ func postListInput(ctx *gin.Context) (app.ListPostsInput, error) {
 type decodedPostWrite struct {
 	ContentMD         string
 	ContentPresent    bool
+	MapCard           *domain.MapCard
+	MapPresent        bool
 	Media             []domain.EntryMediaUsage
 	MediaPresent      bool
 	Location          *domain.Location
@@ -320,6 +325,15 @@ func decodePostWrite(ctx *gin.Context, patch bool) (decodedPostWrite, error) {
 			}
 			result.Media = media
 			result.MediaPresent = true
+		case "map_card":
+			if !bytes.Equal(bytes.TrimSpace(raw), []byte("null")) {
+				card, err := domain.ParseMapCard(raw)
+				if err != nil {
+					return decodedPostWrite{}, err
+				}
+				result.MapCard = card
+			}
+			result.MapPresent = true
 		case "location":
 			location, err := decodePostLocation(raw)
 			if err != nil {
@@ -369,8 +383,8 @@ func decodePostWrite(ctx *gin.Context, patch bool) (decodedPostWrite, error) {
 	if err := decoder.Decode(&struct{}{}); err != io.EOF {
 		return decodedPostWrite{}, invalidPostArgument("request must contain exactly one JSON document", "body")
 	}
-	if (!patch && !result.ContentPresent && !result.MediaPresent && !result.QuotePresent && !result.LinkCardPresent) ||
-		(patch && !result.ContentPresent && !result.MediaPresent && !result.LocationPresent && !result.LinkCardPresent && !result.VisibilityPresent) {
+	if (!patch && !result.ContentPresent && !result.MediaPresent && !result.QuotePresent && !result.MapPresent && !result.LinkCardPresent) ||
+		(patch && !result.ContentPresent && !result.MediaPresent && !result.LocationPresent && !result.MapPresent && !result.LinkCardPresent && !result.VisibilityPresent) {
 		return decodedPostWrite{}, invalidPostArgument("request must contain content_md, media, location, link_cards, or visibility", "body")
 	}
 	return result, nil

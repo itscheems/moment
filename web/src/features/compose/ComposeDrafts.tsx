@@ -111,7 +111,14 @@ export function ComposeDrafts({
                 </span>
               </span>
               <span className={styles.draftsText}>
-                <span>{preview(draft.contentMd)}</span>
+                <span>
+                  {preview(
+                    draft.contentMd ||
+                      (draft.mapCard
+                        ? `地图：${draft.mapCard.places.map((place) => place.name).join("、")}`
+                        : ""),
+                  )}
+                </span>
                 <time dateTime={draft.savedAt}>
                   {new Date(draft.savedAt).toLocaleString("zh-CN")}
                 </time>
@@ -131,7 +138,7 @@ export function ComposeDrafts({
               title="删除这份草稿？"
               trigger={
                 <button
-                  aria-label={`删除草稿：${preview(draft.contentMd).slice(0, 24)}`}
+                  aria-label={`删除草稿：${preview(draft.contentMd || (draft.mapCard ? `地图：${draft.mapCard.places.map((place) => place.name).join("、")}` : "")).slice(0, 24)}`}
                   className={styles.draftsDelete}
                   disabled={editing}
                   type="button"

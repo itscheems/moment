@@ -514,7 +514,7 @@ func (inspector *Inspector) inspectWithinLocks(ctx context.Context, source io.Re
 		warnings = append(warnings, fmt.Sprintf("%d media usages have no image description", portable.missingAlt))
 	}
 	inspection := Inspection{
-		FormatVersion: FormatVersion, ArchiveSHA256: archiveSHA, GenerationID: generationID,
+		FormatVersion: document.FormatVersion, ArchiveSHA256: archiveSHA, GenerationID: generationID,
 		Counts: portable.counts, TimeRange: portable.timeRange, MediaBytes: portable.mediaBytes,
 		MissingAlt: portable.missingAlt, Disk: disk, Replacement: replacement, Warnings: warnings,
 	}
@@ -554,7 +554,7 @@ func (inspector *Inspector) Resume(ctx context.Context, token string, subject Au
 		return Inspection{}, importStagingInvalid("staged portable summary is invalid", err)
 	}
 	return Inspection{
-		FormatVersion: FormatVersion, ArchiveSHA256: state.ArchiveSHA, GenerationID: state.GenerationID,
+		FormatVersion: document.FormatVersion, ArchiveSHA256: state.ArchiveSHA, GenerationID: state.GenerationID,
 		Counts: portable.counts, TimeRange: portable.timeRange, MediaBytes: portable.mediaBytes,
 		MissingAlt: portable.missingAlt, ExpiresAt: time.UnixMilli(state.ExpiresAtMS).UTC(),
 	}, nil
@@ -762,7 +762,7 @@ func (inspector *Inspector) preflight(ctx context.Context, archivePath string) (
 	if document.Format != formatName {
 		return manifest{}, importInvalid("archive format identifier is unsupported", nil)
 	}
-	if document.FormatVersion != FormatVersion {
+	if document.FormatVersion != 2 && document.FormatVersion != FormatVersion {
 		return manifest{}, domain.NewError(domain.CodeExportVersionUnsupported, "archive format version is not supported", map[string]any{"format_version": document.FormatVersion, "supported_version": FormatVersion})
 	}
 	// Articles are bounded by the entry budget because every article is an
@@ -1338,7 +1338,7 @@ func rebuildPortableGeneration(ctx context.Context, parent *runtimefs.Runtime, g
 		}
 		entry := sqlitestore.ArchiveEntry{
 			PublicationState: value.PublicationState, AuthorUserID: value.AuthorUserID, ID: value.ID, Kind: value.Kind, ContentMD: value.ContentMD, Visibility: visibility,
-			CreatedAtMS: created.UnixMilli(), UpdatedAtMS: updated.UnixMilli(), PublishedAtMS: published.UnixMilli(), RepostedAtMS: repostedAtMS, EditedAtMS: editedAtMS, QuotedEntryID: value.QuotedEntryID, QuoteUnavailable: value.QuoteUnavailable, Media: usages, Location: location, LinkCards: linkCards,
+			CreatedAtMS: created.UnixMilli(), UpdatedAtMS: updated.UnixMilli(), PublishedAtMS: published.UnixMilli(), RepostedAtMS: repostedAtMS, EditedAtMS: editedAtMS, QuotedEntryID: value.QuotedEntryID, QuoteUnavailable: value.QuoteUnavailable, Media: usages, Location: location, MapCard: domain.CloneMapCard(value.MapCard), LinkCards: linkCards,
 		}
 		if domain.EntryKind(value.Kind) != domain.KindArticle {
 			return importer.InsertEntry(ctx, entry)

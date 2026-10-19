@@ -1,0 +1,196 @@
+import {
+  Component,
+  lazy,
+  Suspense,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
+import { Dialog } from "@base-ui/react/dialog";
+import { Icon } from "../../components/icons";
+import { useDocumentScrollLock } from "../../components/useDocumentScrollLock";
+import { googleMapUrl } from "./geometry";
+import type { MapCardData } from "./types";
+import type { MapCamera } from "./MapCanvas";
+import styles from "./Maps.module.css";
+
+const Canvas = lazy(() => import("./MapCanvas"));
+
+class MapFailureBoundary extends Component<
+  { children: ReactNode; fallback: ReactNode },
+  { failed: boolean }
+> {
+  state = { failed: false };
+  static getDerivedStateFromError() {
+    return { failed: true };
+  }
+  render() {
+    return this.state.failed ? this.props.fallback : this.props.children;
+  }
+}
+
+export function MapCard({
+  card,
+  deferMap = false,
+  onPick,
+}: {
+  card: MapCardData;
+  deferMap?: boolean;
+  onPick?: (longitude: number, latitude: number) => void;
+}) {
+  const container = useRef<HTMLElement>(null);
+  const [visible, setVisible] = useState(false);
+  const [expanded, setExpanded] = useState(false);
+  const [globe, setGlobe] = useState(false);
+  const [failed, setFailed] = useState(false);
+  const [attempt, setAttempt] = useState(0);
+  const [camera, setCamera] = useState<MapCamera>();
+  const fail = useCallback(() => setFailed(true), []);
+  useDocumentScrollLock(expanded);
+  useEffect(() => {
+    if (!container.current || deferMap) return;
+    if (typeof IntersectionObserver === "undefined") {
+      setVisible(true);
+      return;
+    }
+    let release: ReturnType<typeof setTimeout> | undefined;
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        window.clearTimeout(release);
+        if (entry.isIntersecting) setVisible(true);
+        else release = window.setTimeout(() => setVisible(false), 3_000);
+      },
+      { threshold: 0.01 },
+    );
+    observer.observe(container.current);
+    const preloader = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting) {
+          void import("./MapCanvas").catch(fail);
+          preloader.disconnect();
+        }
+      },
+      { rootMargin: "300px 0px" },
+    );
+    preloader.observe(container.current);
+    return () => {
+      observer.disconnect();
+      preloader.disconnect();
+      window.clearTimeout(release);
+    };
+  }, [deferMap, fail]);
+  const placeholder = (
+    <div className={styles.placeholder} role="status">
+      <Icon name="map" />
+      <span>{failed ? "地图暂时无法加载" : "正在准备地图…"}</span>
+      {failed && (
+        <button
+          type="button"
+          onClick={() => {
+            setFailed(false);
+            setAttempt((n) => n + 1);
+          }}
+        >
+          重试
+        </button>
+      )}
+    </div>
+  );
+  const canvas = (large: boolean) => (
+    <div className={large ? styles.largeCanvas : styles.canvas}>
+      {!deferMap && (visible || large) && !failed ? (
+        <MapFailureBoundary
+          key={attempt}
+          fallback={
+            <div className={styles.placeholder}>
+              地图无法显示，请使用下方地点链接。
+            </div>
+          }
+        >
+          <Suspense fallback={placeholder}>
+            <Canvas
+              card={card}
+              camera={camera}
+              onCamera={setCamera}
+              globe={large && globe}
+              onFailure={fail}
+              onPick={onPick}
+            />
+          </Suspense>
+        </MapFailureBoundary>
+      ) : (
+        placeholder
+      )}
+    </div>
+  );
+  const places = (
+    <ol className={styles.places}>
+      {card.places.map((place, index) => (
+        <li key={`${index}:${place.name}`}>
+          <span className={styles.placeNumber}>{index + 1}</span>
+          <div>
+            <strong>{place.name}</strong>
+            <span>{place.displayName}</span>
+          </div>
+          <a
+            href={googleMapUrl(place)}
+            target="_blank"
+            rel="noopener noreferrer"
+            aria-label={`在 Google Maps 打开${place.name}`}
+          >
+            <Icon name="open" />
+          </a>
+        </li>
+      ))}
+    </ol>
+  );
+  return (
+    <section
+      ref={container}
+      className={styles.card}
+      data-map-card=""
+      data-interactive="true"
+      aria-label={`地图：${card.places.map((p) => p.name).join("、")}`}
+      onClick={(event) => event.stopPropagation()}
+    >
+      <div className={styles.canvasFrame}>
+        {expanded ? <div className={styles.canvas} /> : canvas(false)}
+        <button
+          className={styles.expand}
+          type="button"
+          aria-label="展开地图"
+          onClick={() => setExpanded(true)}
+        >
+          <Icon name="expand" />
+        </button>
+      </div>
+      {places}
+      <Dialog.Root open={expanded} onOpenChange={setExpanded}>
+        <Dialog.Portal>
+          <Dialog.Backdrop className={styles.backdrop} />
+          <Dialog.Popup className={styles.expanded}>
+            <header className={styles.dialogHeader}>
+              <Dialog.Title>地图</Dialog.Title>
+              <div>
+                <button
+                  type="button"
+                  aria-pressed={globe}
+                  onClick={() => setGlobe((value) => !value)}
+                >
+                  {globe ? "切换平面" : "切换地球"}
+                </button>
+                <Dialog.Close aria-label="关闭地图">
+                  <Icon name="close" />
+                </Dialog.Close>
+              </div>
+            </header>
+            {expanded && canvas(true)}
+            <div className={styles.expandedPlaces}>{places}</div>
+          </Dialog.Popup>
+        </Dialog.Portal>
+      </Dialog.Root>
+    </section>
+  );
+}

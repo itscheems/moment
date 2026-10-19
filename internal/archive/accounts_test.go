@@ -284,7 +284,7 @@ func TestMergeReviewProjectsEveryComparedField(t *testing.T) {
 	emitted := map[MergeEntityKind][]string{
 		MergeEntry: entryChangedFields(
 			sqlitestore.ArchiveEntry{Kind: "moment", ContentMD: domain.MarkdownBody("a"), Visibility: domain.VisibilityEveryone, CreatedAtMS: early, UpdatedAtMS: early, PublishedAtMS: early, RepostedAtMS: &early, EditedAtMS: &early, QuotedEntryID: &first, Media: []sqlitestore.ArchiveUsage{{MediaID: first}}},
-			sqlitestore.ArchiveEntry{Kind: "repost", ContentMD: domain.MarkdownBody("b"), Visibility: domain.VisibilityOnlyMe, CreatedAtMS: late, UpdatedAtMS: late, PublishedAtMS: late, QuoteUnavailable: true, Media: []sqlitestore.ArchiveUsage{{MediaID: second}}, Location: &domainLocationForReview, LinkCards: []sqlitestore.ArchiveLinkCard{{ThumbnailSHA256: "cc"}}},
+			sqlitestore.ArchiveEntry{MapCard: mapCardForArchive(t), Kind: "repost", ContentMD: domain.MarkdownBody("b"), Visibility: domain.VisibilityOnlyMe, CreatedAtMS: late, UpdatedAtMS: late, PublishedAtMS: late, QuoteUnavailable: true, Media: []sqlitestore.ArchiveUsage{{MediaID: second}}, Location: &domainLocationForReview, LinkCards: []sqlitestore.ArchiveLinkCard{{ThumbnailSHA256: "cc"}}},
 			shas, shas,
 		),
 		MergeComment: commentChangedFields(
@@ -303,7 +303,7 @@ func TestMergeReviewProjectsEveryComparedField(t *testing.T) {
 	}
 	projections := map[MergeEntityKind]MergeReviewEntity{
 		MergeEntry: reviewEntry(sqlitestore.ArchiveEntry{
-			ID: first, Kind: "moment", ContentMD: domain.MarkdownBody("a"), RepostedAtMS: &early, EditedAtMS: &early, QuotedEntryID: &first,
+			MapCard: mapCardForArchive(t), ID: first, Kind: "moment", ContentMD: domain.MarkdownBody("a"), RepostedAtMS: &early, EditedAtMS: &early, QuotedEntryID: &first,
 			Location: &domainLocationForReview, LinkCards: []sqlitestore.ArchiveLinkCard{{ThumbnailSHA256: "cc"}},
 		}, MergeReviewLocal, nil),
 		MergeComment: reviewComment(sqlitestore.ArchiveComment{

@@ -1,3 +1,4 @@
+import { MapCard } from "../maps/MapCard";
 import {
   backupsApi,
   type ImportStatus,
@@ -330,6 +331,7 @@ function ReviewEntityCard({
           </p>
         </>
       )}
+      {entity.map_card ? <MapCard card={entity.map_card} deferMap /> : null}
       {entity.location ? (
         <p
           className={styles.reviewLocation}

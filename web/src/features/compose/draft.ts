@@ -1,3 +1,4 @@
+import { mapCardPayload, parseMapCard, type MapCardData } from "../maps/types";
 import { sha256 } from "@noble/hashes/sha2.js";
 import { bytesToHex } from "@noble/hashes/utils.js";
 
@@ -24,6 +25,7 @@ export interface ComposeDraftIdentity {
 }
 
 export interface ComposeDraft extends ComposeDraftIdentity {
+  mapCard?: MapCardData;
   contentMd: string;
 }
 
@@ -117,8 +119,14 @@ function parseJSON(value: string | null): unknown {
   }
 }
 
-export function fingerprintComposeDraft(contentMd: string): string {
-  return bytesToHex(sha256(new TextEncoder().encode(contentMd)));
+export function fingerprintComposeDraft(
+  contentMd: string,
+  mapCard?: MapCardData | null,
+): string {
+  const value = mapCard
+    ? JSON.stringify([contentMd, mapCardPayload(mapCard)])
+    : contentMd;
+  return bytesToHex(sha256(new TextEncoder().encode(value)));
 }
 
 function observeDraftTime(savedAt: string): void {
@@ -129,13 +137,15 @@ export function createComposeDraft(
   contentMd: string,
   previousSavedAt?: string | null,
   now = new Date(),
+  mapCard?: MapCardData | null,
 ): ComposeDraft {
   const previous = previousSavedAt ? Date.parse(previousSavedAt) : 0;
   const nextTime = Math.max(now.getTime(), lastDraftTime + 1, previous + 1);
   lastDraftTime = nextTime;
   return {
     contentMd,
-    fingerprint: fingerprintComposeDraft(contentMd),
+    fingerprint: fingerprintComposeDraft(contentMd, mapCard),
+    ...(mapCard ? { mapCard } : {}),
     savedAt: new Date(nextTime).toISOString(),
   };
 }
@@ -146,7 +156,17 @@ function parseStoredDraft(value: string | null): ComposeDraft | null {
     typeof parsed !== "object" ||
     parsed === null ||
     Array.isArray(parsed) ||
-    !hasExactKeys(parsed as Record<string, unknown>, ["content_md", "saved_at"])
+    !(
+      hasExactKeys(parsed as Record<string, unknown>, [
+        "content_md",
+        "saved_at",
+      ]) ||
+      hasExactKeys(parsed as Record<string, unknown>, [
+        "content_md",
+        "saved_at",
+        "map_card",
+      ])
+    )
   ) {
     return null;
   }
@@ -154,9 +174,16 @@ function parseStoredDraft(value: string | null): ComposeDraft | null {
   if (typeof draft.content_md !== "string" || !isTimestamp(draft.saved_at)) {
     return null;
   }
+  let mapCard: MapCardData | undefined;
+  try {
+    mapCard = draft.map_card == null ? undefined : parseMapCard(draft.map_card);
+  } catch {
+    return null;
+  }
   return {
     contentMd: draft.content_md,
-    fingerprint: fingerprintComposeDraft(draft.content_md),
+    ...(mapCard ? { mapCard } : {}),
+    fingerprint: fingerprintComposeDraft(draft.content_md, mapCard),
     savedAt: draft.saved_at,
   };
 }
@@ -463,7 +490,8 @@ export function saveComposeDraft(
     !INSTANCE_PATTERN.test(instanceId) ||
     !isTimestamp(draft.savedAt) ||
     !FINGERPRINT_PATTERN.test(draft.fingerprint) ||
-    fingerprintComposeDraft(draft.contentMd) !== draft.fingerprint
+    fingerprintComposeDraft(draft.contentMd, draft.mapCard) !==
+      draft.fingerprint
   ) {
     return false;
   }
@@ -474,6 +502,7 @@ export function saveComposeDraft(
       draftKey(instanceId),
       JSON.stringify({
         content_md: draft.contentMd,
+        ...(draft.mapCard ? { map_card: mapCardPayload(draft.mapCard) } : {}),
         saved_at: draft.savedAt,
       }),
     );

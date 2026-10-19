@@ -1,3 +1,4 @@
+import { mapCardPayload, type MapCardData } from "../features/maps/types";
 import {
   ApiClient,
   decodeExactSuccess,
@@ -27,6 +28,7 @@ export class PostsApi extends ApiClient {
     quotedPostId?: string,
     linkCards?: LinkCardInput[] | null,
     visibility?: PostVisibility,
+    mapCard?: MapCardData | null,
   ): Promise<PublicPost> {
     const body: Record<string, unknown> = {
       content_md: contentMd,
@@ -38,6 +40,8 @@ export class PostsApi extends ApiClient {
     if (linkCards !== undefined) body.link_cards = linkCards ?? [];
     if (quotedPostId !== undefined) body.quoted_post_id = quotedPostId;
     if (visibility !== undefined) body.visibility = visibility;
+    if (mapCard !== undefined)
+      body.map_card = mapCard === null ? null : mapCardPayload(mapCard);
     const init = requestInit("POST", csrfToken, body);
     const headers = new Headers(init.headers);
     headers.set("Idempotency-Key", idempotencyKey);
@@ -57,6 +61,7 @@ export class PostsApi extends ApiClient {
     location?: LocationInput | null,
     linkCards?: LinkCardInput[] | null,
     visibility?: PostVisibility,
+    mapCard?: MapCardData | null,
   ): Promise<PublicPost> {
     const body: Record<string, unknown> = { content_md: contentMd };
     if (media) body.media = mediaPayload(media);
@@ -65,6 +70,8 @@ export class PostsApi extends ApiClient {
     }
     if (linkCards !== undefined) body.link_cards = linkCards ?? [];
     if (visibility !== undefined) body.visibility = visibility;
+    if (mapCard !== undefined)
+      body.map_card = mapCard === null ? null : mapCardPayload(mapCard);
     const response = await this.fetcher(
       `/api/v1/posts/${encodeURIComponent(id)}`,
       requestInit("PATCH", csrfToken, body),

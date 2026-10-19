@@ -646,6 +646,9 @@ func entryChangedFields(local, incoming sqlitestore.ArchiveEntry, localSHA, inco
 	if !reflect.DeepEqual(local.Location, incoming.Location) {
 		fields = append(fields, "location")
 	}
+	if !reflect.DeepEqual(local.MapCard, incoming.MapCard) {
+		fields = append(fields, "map_card")
+	}
 	// Cards compare directly because a snapshot card names its thumbnail by
 	// content hash, which means the same thing on both sides of the merge.
 	if !reflect.DeepEqual(local.LinkCards, incoming.LinkCards) {
@@ -921,6 +924,7 @@ func sortedMedia(values []sqlitestore.ArchiveMedia) []sqlitestore.ArchiveMedia {
 }
 
 func cloneArchiveEntry(value sqlitestore.ArchiveEntry) sqlitestore.ArchiveEntry {
+	value.MapCard = domain.CloneMapCard(value.MapCard)
 	if value.EditedAtMS != nil {
 		edited := *value.EditedAtMS
 		value.EditedAtMS = &edited

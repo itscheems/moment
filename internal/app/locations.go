@@ -62,6 +62,35 @@ func (service *LocationService) Search(ctx context.Context, query string, bias *
 	return validateLocationResults(items, limit)
 }
 
+// SearchScope selects worldwide lookup without device bias when requested.
+func (service *LocationService) SearchScope(ctx context.Context, query string, bias *domain.GeoPoint, limit int, scope string) ([]domain.Location, error) {
+	if scope == "" || scope == "auto" {
+		return service.Search(ctx, query, bias, limit)
+	}
+	if scope != "global" {
+		return nil, domain.NewError(domain.CodeInvalidArgument, "scope must be auto or global", map[string]any{"field": "scope"})
+	}
+	// Reuse the normal input and result contract with the global resolver adapter.
+	global, ok := service.resolver.(interface {
+		SearchGlobal(context.Context, string, int) ([]domain.Location, error)
+	})
+	if !ok {
+		return service.Search(ctx, query, nil, limit)
+	}
+	return (&LocationService{resolver: globalLocationResolver{LocationResolver: service.resolver, global: global}}).Search(ctx, query, nil, limit)
+}
+
+type globalLocationResolver struct {
+	LocationResolver
+	global interface {
+		SearchGlobal(context.Context, string, int) ([]domain.Location, error)
+	}
+}
+
+func (resolver globalLocationResolver) Search(ctx context.Context, query string, _ *domain.GeoPoint, limit int) ([]domain.Location, error) {
+	return resolver.global.SearchGlobal(ctx, query, limit)
+}
+
 // Nearby returns validated place snapshots around an explicit coordinate.
 func (service *LocationService) Nearby(ctx context.Context, point domain.GeoPoint, limit int) ([]domain.Location, error) {
 	if err := contextError(ctx); err != nil {

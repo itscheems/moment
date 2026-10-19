@@ -74,6 +74,7 @@ type Entry struct {
 	// is KindArticle, whose body is structured and lives in its own aggregate.
 	// The pointer is deliberate: a reader that forgets which kind it holds
 	// fails loudly here instead of rendering an article as a blank post.
+	MapCard     *MapCard
 	ContentMD   *string
 	Visibility  Visibility
 	CreatedAt   time.Time
@@ -160,6 +161,14 @@ func (entry Entry) Validate() error {
 	}
 	if _, err := ParseID(entry.ID.String()); err != nil {
 		return err
+	}
+	if entry.MapCard != nil {
+		if entry.Kind != KindMoment {
+			return NewError(CodeInvalidArgument, "only moments carry a top-level map", map[string]any{"field": "map_card"})
+		}
+		if err := entry.MapCard.Validate(); err != nil {
+			return err
+		}
 	}
 	// The body belongs to exactly one of the two shapes, and the database
 	// carries the same rule as a check constraint.

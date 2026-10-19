@@ -22,14 +22,16 @@ import (
 func registerLocations(application *Application) {
 	application.MustRegisterLeaf(LeafSpec{
 		Path: []string{"location", "search"}, Short: "Search selectable post locations",
-		Long:       "Search normalized location candidates through configured providers in direct mode or the account HTTP API.",
-		Inputs:     "Provide --query and optionally both --latitude and --longitude to bias results. Provider credentials come from AMAP_API_KEY and GEOAPIFY_API_KEY in direct mode.",
-		Output:     "A canonical location result array suitable for --location-json.",
-		Errors:     "Invalid coordinates and unavailable providers use stable codes.",
-		Example:    "moment location search --query '静安寺' --latitude 31.223 --longitude 121.445 --json",
+		Long:   "Search normalized location candidates through configured providers in direct mode or the account HTTP API.",
+		Inputs: "Provide --query and optionally --scope auto|global. Global scope queries all configured providers without device bias; auto may use --latitude and --longitude. Provider credentials come from AMAP_API_KEY and GEOAPIFY_API_KEY in direct mode.",
+		Output: "A canonical location result array suitable for --location-json.",
+		Errors: "Invalid coordinates and unavailable providers use stable codes.",
+		Example: "moment location search --query '静安寺' --latitude 31.223 --longitude 121.445 --json\n" +
+			"moment location search --query Tokyo --scope global --json",
 		Capability: CapabilityBoth,
 		Flags: func(flags *pflag.FlagSet) {
 			flags.String("query", "", "location or place query")
+			flags.String("scope", "auto", "auto regional search or global search without device bias")
 			flags.Float64("latitude", 0, "optional WGS84 latitude bias")
 			flags.Float64("longitude", 0, "optional WGS84 longitude bias")
 			flags.Int("limit", 0, "result count from 1 to 20 (default 8)")
@@ -64,7 +66,7 @@ func runLocationSearch(ctx context.Context, invocation Invocation, input Command
 	if err != nil {
 		return Result{}, err
 	}
-	return resolveLocationCommand(ctx, invocation, "/api/v1/locations/search", query, point, limit, false)
+	return resolveLocationCommand(ctx, invocation, "/api/v1/locations/search", query, point, limit, false, input)
 }
 
 func runLocationNearby(ctx context.Context, invocation Invocation, input CommandInput) (Result, error) {
@@ -76,10 +78,21 @@ func runLocationNearby(ctx context.Context, invocation Invocation, input Command
 	if err != nil {
 		return Result{}, err
 	}
-	return resolveLocationCommand(ctx, invocation, "/api/v1/locations/nearby", "", point, limit, true)
+	return resolveLocationCommand(ctx, invocation, "/api/v1/locations/nearby", "", point, limit, true, input)
 }
 
-func resolveLocationCommand(ctx context.Context, invocation Invocation, endpoint, query string, point *domain.GeoPoint, limit int, nearby bool) (Result, error) {
+func resolveLocationCommand(ctx context.Context, invocation Invocation, endpoint, query string, point *domain.GeoPoint, limit int, nearby bool, input CommandInput) (Result, error) {
+	scope := "auto"
+	if !nearby {
+		var err error
+		scope, err = input.String("scope")
+		if err != nil {
+			return Result{}, err
+		}
+		if scope != "auto" && scope != "global" {
+			return Result{}, invalidArgument("--scope must be auto or global", "choose auto or global")
+		}
+	}
 	var results locationdto.Results
 	var meta map[string]any
 	switch invocation.Mode() {
@@ -92,7 +105,7 @@ func resolveLocationCommand(ctx context.Context, invocation Invocation, endpoint
 		if nearby {
 			items, err = service.Nearby(ctx, *point, limit)
 		} else {
-			items, err = service.Search(ctx, query, point, limit)
+			items, err = service.SearchScope(ctx, query, point, limit, scope)
 		}
 		if err != nil {
 			return Result{}, locationCLIError(err)
@@ -100,6 +113,9 @@ func resolveLocationCommand(ctx context.Context, invocation Invocation, endpoint
 		results = locationdto.FromDomains(items)
 	case ModeAPI:
 		values := url.Values{}
+		if !nearby {
+			values.Set("scope", scope)
+		}
 		if query != "" {
 			values.Set("q", query)
 		}

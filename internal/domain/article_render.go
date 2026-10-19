@@ -63,6 +63,12 @@ func renderArticleNodes(output *strings.Builder, nodes []ArticleNode, options Ar
 
 func renderArticleNode(output *strings.Builder, node ArticleNode, options ArticleRenderOptions) {
 	switch node.Type {
+	case ArticleNodeMapCard:
+		output.WriteString(`<figure class="map-card"><ul>`)
+		for _, place := range node.MapCard.Places {
+			output.WriteString("<li>" + html.EscapeString(place.Name) + " — " + html.EscapeString(place.DisplayName) + "</li>")
+		}
+		output.WriteString("</ul></figure>")
 	case ArticleNodeText:
 		renderArticleText(output, node)
 	case ArticleNodeHardBreak:

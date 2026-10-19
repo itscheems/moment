@@ -15,7 +15,7 @@ import (
 // what the table and the backup file look like; this says which grammar one
 // particular body was written against. Adding a node type raises it, and a body
 // stored under an older number keeps that number and keeps rendering.
-const ArticleDocSchemaVersion = 2
+const ArticleDocSchemaVersion = 3
 
 // Bounds on one article. They exist so a constructed body cannot make the
 // renderer, the search index or a page unbounded, not because anybody writes
@@ -45,6 +45,7 @@ const (
 // renderer that passes through what it does not understand is a renderer that
 // trusts its input.
 const (
+	ArticleNodeMapCard        = "mapCard"
 	ArticleNodeParagraph      = "paragraph"
 	ArticleNodeHeading        = "heading"
 	ArticleNodeBlockquote     = "blockquote"
@@ -89,6 +90,7 @@ type ArticleDocument struct {
 // ArticleNode is one validated node. Presentation retains only attributes
 // checked against the native document contract.
 type ArticleNode struct {
+	MapCard      *MapCard
 	Type         string
 	Presentation map[string]any
 	Level        int
@@ -151,6 +153,7 @@ var articleNodeSpecs = map[string]articleNodeSpec{
 	ArticleNodeTaskList:       {content: articleContentTaskItems, needsChild: true},
 	ArticleNodeTaskItem:       {attributes: []string{"checked"}, content: articleContentNestedBlocks, needsChild: true},
 	ArticleNodeToc:            {content: articleContentNone},
+	ArticleNodeMapCard:        {attributes: []string{"map_card"}, content: articleContentNone},
 }
 
 var articleContentSets = map[articleContentModel][]string{
@@ -158,14 +161,14 @@ var articleContentSets = map[articleContentModel][]string{
 	articleContentTopBlocks: {
 		ArticleNodeParagraph, ArticleNodeHeading, ArticleNodeBlockquote,
 		ArticleNodeBulletList, ArticleNodeOrderedList, ArticleNodeCodeBlock,
-		ArticleNodeHorizontalRule, ArticleNodeTable, ArticleNodeImage, ArticleNodeTaskList, ArticleNodeToc,
+		ArticleNodeHorizontalRule, ArticleNodeTable, ArticleNodeImage, ArticleNodeTaskList, ArticleNodeToc, ArticleNodeMapCard,
 	},
 	articleContentNestedBlocks: {
 		ArticleNodeParagraph, ArticleNodeHeading, ArticleNodeBlockquote,
-		ArticleNodeBulletList, ArticleNodeOrderedList, ArticleNodeCodeBlock, ArticleNodeHorizontalRule, ArticleNodeImage, ArticleNodeTable, ArticleNodeTaskList, ArticleNodeToc,
+		ArticleNodeBulletList, ArticleNodeOrderedList, ArticleNodeCodeBlock, ArticleNodeHorizontalRule, ArticleNodeImage, ArticleNodeTable, ArticleNodeTaskList, ArticleNodeToc, ArticleNodeMapCard,
 	},
 	articleContentCellBlocks: {
-		ArticleNodeParagraph, ArticleNodeHeading, ArticleNodeBlockquote, ArticleNodeBulletList, ArticleNodeOrderedList, ArticleNodeCodeBlock, ArticleNodeHorizontalRule, ArticleNodeImage, ArticleNodeTable, ArticleNodeTaskList, ArticleNodeToc,
+		ArticleNodeParagraph, ArticleNodeHeading, ArticleNodeBlockquote, ArticleNodeBulletList, ArticleNodeOrderedList, ArticleNodeCodeBlock, ArticleNodeHorizontalRule, ArticleNodeImage, ArticleNodeTable, ArticleNodeTaskList, ArticleNodeToc, ArticleNodeMapCard,
 	},
 	articleContentTaskItems: {ArticleNodeTaskItem},
 	articleContentListItems: {ArticleNodeListItem},
@@ -206,6 +209,7 @@ type rawArticleMark struct {
 }
 
 type articleWalk struct {
+	schema int
 	nodes  int
 	images int
 	text   int
@@ -229,6 +233,9 @@ func parseArticleDocument(source []byte, requireSubstance bool) (ArticleDocument
 	if length := len(source); length > MaxArticleBodyBytes {
 		return ArticleDocument{}, NewError(CodeContentTooLarge, "article body exceeds the byte limit",
 			map[string]any{"field": "body", "limit": MaxArticleBodyBytes, "actual": length})
+	}
+	if err := rejectDuplicateJSONFields(source); err != nil {
+		return ArticleDocument{}, articleError("", "article fields must appear once")
 	}
 	if !utf8.Valid(source) {
 		return ArticleDocument{}, articleError("", "article body must be valid UTF-8")
@@ -255,7 +262,7 @@ func parseArticleDocument(source []byte, requireSubstance bool) (ArticleDocument
 		return ArticleDocument{}, articleError("", "article body must be a doc")
 	}
 
-	walk := &articleWalk{}
+	walk := &articleWalk{schema: *raw.SchemaVersion}
 	content, err := validateArticleChildren(raw.Content, articleContentTopBlocks, "content", 1, walk)
 	if err != nil {
 		return ArticleDocument{}, err
@@ -332,6 +339,9 @@ func validateArticleNode(raw rawArticleNode, path string, depth int, walk *artic
 		return ArticleNode{}, articleError(path, fmt.Sprintf("article body holds more than %d nodes", MaxArticleNodes))
 	}
 
+	if raw.Type == ArticleNodeMapCard && walk.schema < 3 {
+		return ArticleNode{}, articleError(path, "mapCard requires schema_version 3")
+	}
 	node := ArticleNode{Type: raw.Type}
 	if err := articleAttributesAllowed(raw.Attrs, spec.attributes, path); err != nil {
 		return ArticleNode{}, err
@@ -344,6 +354,14 @@ func validateArticleNode(raw rawArticleNode, path string, depth int, walk *artic
 	}
 
 	switch raw.Type {
+	case ArticleNodeMapCard:
+		walk.text += utf8.RuneCountInString(node.MapCard.Text())
+		if walk.text > MaxArticleVisibleCodePoints {
+			return ArticleNode{}, articleError(path, "article text exceeds the code-point limit")
+		}
+		if raw.Text != nil {
+			return ArticleNode{}, articleError(path, "only a text node carries text")
+		}
 	case ArticleNodeText:
 		if raw.Text == nil || *raw.Text == "" {
 			return ArticleNode{}, articleError(path, "a text node must carry text")
@@ -474,6 +492,16 @@ func validateArticleMarks(raw []rawArticleMark, path string) ([]ArticleMark, err
 
 func applyArticleAttributes(node *ArticleNode, attrs map[string]any, path string) error {
 	switch node.Type {
+	case ArticleNodeMapCard:
+		encoded, err := json.Marshal(attrs["map_card"])
+		if err != nil {
+			return articleError(path, "map_card must contain a map snapshot")
+		}
+		card, err := ParseMapCard(encoded)
+		if err != nil {
+			return articleError(path, "map_card must contain a valid map snapshot")
+		}
+		node.MapCard = card
 	case ArticleNodeHeading:
 		level, err := articleIntAttribute(attrs, "level", path, 1, 3)
 		if err != nil {
@@ -679,6 +707,8 @@ func marshalArticleNode(node ArticleNode) marshalledArticleNode {
 	// and read back in is noise that makes two equal documents differ in bytes.
 	attrs := map[string]any{}
 	switch node.Type {
+	case ArticleNodeMapCard:
+		attrs["map_card"] = node.MapCard
 	case ArticleNodeHeading:
 		attrs["level"] = node.Level
 	case ArticleNodeOrderedList:

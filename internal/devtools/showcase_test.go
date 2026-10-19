@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/moment/moment/internal/archive"
+	"github.com/moment/moment/internal/domain"
 )
 
 // showcaseExport reads the portable archive of a built showcase into the
@@ -191,7 +192,7 @@ func TestShowcaseBuildsEveryListedCase(t *testing.T) {
 		t.Fatalf("exported %d entries and %d comments, want %+v", len(export.entries), len(export.comments), recipe.Counts)
 	}
 	years := map[string]int{}
-	var hidden, quoted, unavailable, cards, reposted, edited, located, media int
+	var hidden, quoted, unavailable, cards, reposted, edited, located, media, maps int
 	for _, entry := range export.entries {
 		created, err := time.Parse(time.RFC3339Nano, entry["published_at"].(string))
 		if err != nil {
@@ -222,6 +223,16 @@ func TestShowcaseBuildsEveryListedCase(t *testing.T) {
 		if entry["location"] != nil {
 			located++
 		}
+		if entry["map_card"] != nil {
+			maps++
+			encoded, err := json.Marshal(entry["map_card"])
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := domain.ParseMapCard(encoded); err != nil {
+				t.Fatal(err)
+			}
+		}
 		if usages, ok := entry["media"].([]any); ok && len(usages) > 0 {
 			media++
 		}
@@ -229,7 +240,7 @@ func TestShowcaseBuildsEveryListedCase(t *testing.T) {
 	if len(years) < 8 {
 		t.Fatalf("entries span %d years, want at least eight: %v", len(years), years)
 	}
-	if hidden != 2 || quoted != 2 || unavailable != 1 || cards != 4 || reposted != 2 || edited != 1 || located != 3 || media < 12 {
+	if maps != 5 || hidden != 3 || quoted != 2 || unavailable != 1 || cards != 4 || reposted != 2 || edited != 1 || located != 3 || media < 12 {
 		t.Fatalf("entry states: hidden=%d quoted=%d unavailable=%d cards=%d reposted=%d edited=%d located=%d media=%d", hidden, quoted, unavailable, cards, reposted, edited, located, media)
 	}
 

@@ -42,6 +42,7 @@ type Post struct {
 	TimelineKind string            `json:"timeline_item_kind"`
 	CommentCount int               `json:"comment_count"`
 	Media        []MediaProjection `json:"media"`
+	MapCard      *domain.MapCard   `json:"map_card"`
 	Location     *Location         `json:"location"`
 	LinkCards    []LinkCard        `json:"link_cards"`
 	QuotedPost   *QuotedPost       `json:"quoted_post"`
@@ -141,6 +142,7 @@ type QuotedPost struct {
 	ContentHTML *string           `json:"content_html"`
 	PublishedAt *time.Time        `json:"published_at"`
 	Media       []MediaProjection `json:"media"`
+	MapCard     *domain.MapCard   `json:"map_card"`
 	Location    *Location         `json:"location"`
 }
 
@@ -419,6 +421,7 @@ func FromPost(post app.Post) Post {
 		TimelineKind: string(timelineKind),
 		CommentCount: post.CommentCount,
 		Media:        media,
+		MapCard:      domain.CloneMapCard(post.Entry.MapCard),
 		Location: func() *Location {
 			if post.Location == nil {
 				return nil
@@ -444,7 +447,7 @@ func FromPost(post app.Post) Post {
 		mapped.QuotedPost = &QuotedPost{
 			AuthorInfo: fromAuthor(post.Quoted.Author), ID: &id, Kind: &kind, Article: fromArticleCard(post.Quoted.ArticleCard, nil),
 			ContentMD: cloneOptionalText(post.Quoted.Entry.ContentMD), ContentHTML: &contentHTML,
-			PublishedAt: &publishedAt, Media: quotedMedia,
+			PublishedAt: &publishedAt, Media: quotedMedia, MapCard: domain.CloneMapCard(post.Quoted.Entry.MapCard),
 		}
 		if post.Quoted.Location != nil {
 			mapped.QuotedPost.Location = &Location{Name: post.Quoted.Location.Name, DisplayName: post.Quoted.Location.DisplayName}
@@ -514,6 +517,11 @@ func ValidatePost(post Post) error {
 	if post.Media == nil {
 		return errors.New("post media must be an array")
 	}
+	if post.MapCard != nil {
+		if err := post.MapCard.Validate(); err != nil {
+			return err
+		}
+	}
 	if post.Location != nil {
 		location := domain.Location{
 			Name: post.Location.Name, DisplayName: post.Location.DisplayName,
@@ -545,6 +553,9 @@ func ValidatePost(post Post) error {
 	// each other here. An article's is derived from a body this projection
 	// does not carry, so the only thing to insist on is that it exists.
 	if kind == domain.KindArticle {
+		if post.MapCard != nil {
+			return errors.New("an article has no top-level map")
+		}
 		if post.ContentMD != nil {
 			return errors.New("an article carries no Markdown body")
 		}
@@ -578,7 +589,7 @@ func ValidatePost(post Post) error {
 		if post.ContentMD == nil {
 			return errors.New("a moment must carry a Markdown body")
 		}
-		if err := domain.ValidatePostMarkdown(*post.ContentMD, len(usages)); err != nil {
+		if err := validateMomentBody(*post.ContentMD, len(usages), post.MapCard); err != nil {
 			return err
 		}
 		cards := make([]domain.LinkCard, 0, len(post.LinkCards))
@@ -595,7 +606,7 @@ func ValidatePost(post Post) error {
 	}
 	if post.QuotedPost != nil {
 		if post.QuotedPost.Unavailable {
-			if post.QuotedPost.AuthorInfo != nil || post.QuotedPost.ID != nil || post.QuotedPost.Kind != nil || post.QuotedPost.Article != nil || post.QuotedPost.ContentMD != nil || post.QuotedPost.ContentHTML != nil || post.QuotedPost.PublishedAt != nil || post.QuotedPost.Media != nil || post.QuotedPost.Location != nil {
+			if post.QuotedPost.AuthorInfo != nil || post.QuotedPost.ID != nil || post.QuotedPost.Kind != nil || post.QuotedPost.Article != nil || post.QuotedPost.ContentMD != nil || post.QuotedPost.ContentHTML != nil || post.QuotedPost.PublishedAt != nil || post.QuotedPost.Media != nil || post.QuotedPost.MapCard != nil || post.QuotedPost.Location != nil {
 				return errors.New("unavailable quoted post must not contain target data")
 			}
 			return nil
@@ -628,6 +639,9 @@ func validateQuotedPost(post QuotedPost) error {
 		return err
 	}
 	if kind == domain.KindArticle {
+		if post.MapCard != nil {
+			return errors.New("a quoted article has no top-level map")
+		}
 		if post.ContentMD != nil {
 			return errors.New("a quoted article carries no Markdown body")
 		}
@@ -647,6 +661,11 @@ func validateQuotedPost(post QuotedPost) error {
 		html, renderErr := domain.RenderMarkdown(*post.ContentMD)
 		if renderErr != nil || html != *post.ContentHTML {
 			return errors.New("quoted post content_html does not match content_md")
+		}
+	}
+	if post.MapCard != nil {
+		if err := post.MapCard.Validate(); err != nil {
+			return err
 		}
 	}
 	if post.Location != nil {
@@ -816,4 +835,14 @@ func FromArticleDraftSummaries(records []app.ArticleDraftSummary) []ArticleDraft
 		result = append(result, ArticleDraftSummary{ID: record.ID.String(), AuthorUserID: record.AuthorUserID, Title: record.Title, Excerpt: record.Excerpt, PublishedEntryID: target, SourceState: record.SourceState, SourceVisibility: string(record.SourceVisibility), CreatedAt: record.CreatedAt, UpdatedAt: record.UpdatedAt})
 	}
 	return result
+}
+
+func validateMomentBody(content string, mediaCount int, card *domain.MapCard) error {
+	if card != nil {
+		if err := card.Validate(); err != nil {
+			return err
+		}
+		return domain.ValidateMarkdown(content)
+	}
+	return domain.ValidatePostMarkdown(content, mediaCount)
 }

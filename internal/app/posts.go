@@ -7,6 +7,7 @@ import (
 	"crypto/sha256"
 	"encoding/binary"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"reflect"
@@ -186,6 +187,7 @@ type EntryQuoteReference struct {
 // headers, flags, and transport DTOs belong to adapters.
 type CreatePostInput struct {
 	ContentMD string
+	MapCard   *domain.MapCard
 	// Visibility empty means the default, everyone.
 	Visibility     domain.Visibility
 	Media          []domain.EntryMediaUsage
@@ -207,6 +209,8 @@ type UpdatePostInput struct {
 	ID              domain.ID
 	ContentMD       string
 	PreserveContent bool
+	// MapCard omitted preserves, pointer to nil clears, otherwise replaces.
+	MapCard **domain.MapCard
 	// Media nil preserves existing usages. A non-nil empty slice clears them;
 	// every other non-nil value is the complete ordered replacement.
 	Media *[]domain.EntryMediaUsage
@@ -352,7 +356,7 @@ func (service *PostService) Create(ctx context.Context, input CreatePostInput) (
 	if err != nil {
 		return CreatePostResult{}, err
 	}
-	requestHash := hashCreatePost(input.ContentMD, input.Media, input.Location, input.LinkCards, input.QuotedPostID, visibility)
+	requestHash := hashCreatePost(input.ContentMD, input.Media, input.Location, input.LinkCards, input.QuotedPostID, visibility, input.MapCard)
 	if input.IdempotencyKey != "" {
 		replayed, found, err := service.loadCreateReplay(ctx, input, requestHash)
 		if err != nil {
@@ -373,13 +377,13 @@ func (service *PostService) Create(ctx context.Context, input CreatePostInput) (
 	if err := domain.ValidateLinkCards(input.LinkCards); err != nil {
 		return CreatePostResult{}, err
 	}
-	if err := validatePostAggregate(input.ContentMD, len(input.Media)); err != nil {
+	if err := validatePostAggregate(input.ContentMD, len(input.Media), input.MapCard); err != nil {
 		return CreatePostResult{}, err
 	}
 	if _, err := domain.RenderMarkdown(input.ContentMD); err != nil {
 		return CreatePostResult{}, err
 	}
-	contentText, err := DerivedSearchText(input.ContentMD, input.LinkCards)
+	contentText, err := DerivedSearchText(input.ContentMD, input.LinkCards, input.MapCard)
 	if err != nil {
 		return CreatePostResult{}, err
 	}
@@ -439,6 +443,7 @@ func (service *PostService) Create(ctx context.Context, input CreatePostInput) (
 		if createErr != nil {
 			return createErr
 		}
+		entry.MapCard = domain.CloneMapCard(input.MapCard)
 		entry.Visibility = visibility
 		entry.AuthorUserID, createErr = contentActorID(ctx, store)
 		if createErr != nil {
@@ -581,7 +586,7 @@ func reconstructCreateReplay(input CreatePostInput, requestHash string, record I
 			return Post{}, idempotencySnapshotError()
 		}
 	}
-	if err := validatePostAggregate(input.ContentMD, len(input.Media)); err != nil {
+	if err := validatePostAggregate(input.ContentMD, len(input.Media), input.MapCard); err != nil {
 		return Post{}, idempotencySnapshotError()
 	}
 	entry, err := domain.NewEntry(record.ResponseResourceID, input.ContentMD, record.CreatedAt)
@@ -592,6 +597,7 @@ func reconstructCreateReplay(input CreatePostInput, requestHash string, record I
 	if err != nil {
 		return Post{}, idempotencySnapshotError()
 	}
+	entry.MapCard = domain.CloneMapCard(input.MapCard)
 	entry.Visibility = visibility
 	entry.AuthorUserID = record.AuthorUserID
 	if err := entry.Validate(); err != nil {
@@ -966,8 +972,13 @@ func (service *PostService) Update(ctx context.Context, input UpdatePostInput) (
 	if err := validatePostID(input.ID); err != nil {
 		return Post{}, err
 	}
-	if input.PreserveContent && input.Media == nil && input.Location == nil && input.LinkCards == nil && input.Visibility == nil {
-		return Post{}, domain.NewError(domain.CodeInvalidArgument, "post update must change content_md, media, location, link cards, or visibility", map[string]any{"field": "body"})
+	if input.PreserveContent && input.Media == nil && input.Location == nil && input.LinkCards == nil && input.MapCard == nil && input.Visibility == nil {
+		return Post{}, domain.NewError(domain.CodeInvalidArgument, "post update must change content_md, media, map_card, location, link cards, or visibility", map[string]any{"field": "body"})
+	}
+	if input.MapCard != nil && *input.MapCard != nil {
+		if err := (*input.MapCard).Validate(); err != nil {
+			return Post{}, err
+		}
 	}
 	if input.Visibility != nil && !input.Visibility.Valid() {
 		return Post{}, domain.NewError(domain.CodeInvalidArgument, "visibility must be everyone or only_me", map[string]any{"field": "visibility"})
@@ -1057,13 +1068,17 @@ func (service *PostService) Update(ctx context.Context, input UpdatePostInput) (
 			}
 			nextLinkCards = *input.LinkCards
 		}
-		if mediaErr := validatePostAggregate(content, len(updatedMedia)); mediaErr != nil {
+		nextMap := entry.MapCard
+		if input.MapCard != nil {
+			nextMap = domain.CloneMapCard(*input.MapCard)
+		}
+		if mediaErr := validatePostAggregate(content, len(updatedMedia), nextMap); mediaErr != nil {
 			return mediaErr
 		}
 		if _, mediaErr := domain.RenderMarkdown(content); mediaErr != nil {
 			return mediaErr
 		}
-		contentText, mediaErr := DerivedSearchText(content, nextLinkCards)
+		contentText, mediaErr := DerivedSearchText(content, nextLinkCards, nextMap)
 		if mediaErr != nil {
 			return mediaErr
 		}
@@ -1074,7 +1089,9 @@ func (service *PostService) Update(ctx context.Context, input UpdatePostInput) (
 		mediaChanged := (len(currentMedia) != 0 || len(updatedMedia) != 0) && !reflect.DeepEqual(currentMedia, updatedMedia)
 		cardsChanged := (len(currentLinkCards) != 0 || len(nextLinkCards) != 0) && !reflect.DeepEqual(LinkCardsOf(currentLinkCards), nextLinkCards)
 		previousContent, _ := entry.Markdown()
-		contentChanged := content != previousContent || mediaChanged || cardsChanged || !reflect.DeepEqual(currentLocation, updatedLocation)
+		mapChanged := !reflect.DeepEqual(entry.MapCard, nextMap)
+		entry.MapCard = nextMap
+		contentChanged := mapChanged || content != previousContent || mediaChanged || cardsChanged || !reflect.DeepEqual(currentLocation, updatedLocation)
 		if updateErr := entry.UpdateContent(content, now); updateErr != nil {
 			return updateErr
 		}
@@ -1232,7 +1249,7 @@ func (service *PostService) Delete(ctx context.Context, id domain.ID) (Post, err
 	return deleted, err
 }
 
-func hashCreatePost(content string, media []domain.EntryMediaUsage, location *domain.Location, cards []domain.LinkCard, quotedPostID *domain.ID, visibility domain.Visibility) string {
+func hashCreatePost(content string, media []domain.EntryMediaUsage, location *domain.Location, cards []domain.LinkCard, quotedPostID *domain.ID, visibility domain.Visibility, maps ...*domain.MapCard) string {
 	digest := sha256.New()
 	_, _ = digest.Write([]byte("moment-post-create-v1\x00"))
 	writeHashLength(digest, len(content))
@@ -1316,6 +1333,12 @@ func hashCreatePost(content string, media []domain.EntryMediaUsage, location *do
 	if visibility != domain.VisibilityEveryone {
 		_, _ = digest.Write([]byte("\x00visibility-v1\x00" + string(visibility)))
 	}
+	if len(maps) > 0 && maps[0] != nil {
+		encoded, _ := json.Marshal(maps[0])
+		_, _ = digest.Write([]byte("\x00map-card-v1\x00"))
+		writeHashLength(digest, len(encoded))
+		_, _ = digest.Write(encoded)
+	}
 	return hex.EncodeToString(digest.Sum(nil))
 }
 
@@ -1328,7 +1351,13 @@ func createVisibility(requested domain.Visibility) (domain.Visibility, error) {
 	return domain.ParseVisibility(string(requested))
 }
 
-func validatePostAggregate(content string, mediaCount int) error {
+func validatePostAggregate(content string, mediaCount int, maps ...*domain.MapCard) error {
+	if len(maps) > 0 && maps[0] != nil {
+		if err := maps[0].Validate(); err != nil {
+			return err
+		}
+		return domain.ValidateMarkdown(content)
+	}
 	return domain.ValidatePostMarkdown(content, mediaCount)
 }
 

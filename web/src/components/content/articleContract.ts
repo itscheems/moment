@@ -18,6 +18,7 @@ import type { ArticleMarkType, ArticleNodeType } from "../../api/public";
 export const ARTICLE_NODE_ATTRS: Readonly<
   Record<ArticleNodeType, readonly string[]>
 > = {
+  mapCard: ["id", "map_card"],
   paragraph: [
     "id",
     "textAlign",
@@ -92,7 +93,7 @@ export const ARTICLE_MARK_ATTRS: Readonly<
 };
 
 /** Mirrors ArticleDocSchemaVersion (internal/domain/article_doc.go). */
-export const ARTICLE_SCHEMA_VERSION = 2;
+export const ARTICLE_SCHEMA_VERSION = 3;
 
 /** Mirrors articleCodeLanguages: a fence keeps a label only from this list. */
 export const ARTICLE_CODE_LANGUAGES: readonly string[] = [

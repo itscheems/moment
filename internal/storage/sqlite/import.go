@@ -205,7 +205,7 @@ func (importer *PortableImporter) insertEntry(ctx context.Context, value Archive
 		return err
 	}
 	entry := domain.Entry{
-		ID: id, Kind: domain.EntryKind(value.Kind), ContentMD: value.ContentMD, Visibility: value.Visibility,
+		ID: id, MapCard: domain.CloneMapCard(value.MapCard), Kind: domain.EntryKind(value.Kind), ContentMD: value.ContentMD, Visibility: value.Visibility,
 		CreatedAt: time.UnixMilli(value.CreatedAtMS).UTC(), UpdatedAt: time.UnixMilli(value.UpdatedAtMS).UTC(),
 		PublishedAt: time.UnixMilli(value.PublishedAtMS).UTC(),
 	}
@@ -247,7 +247,7 @@ func (importer *PortableImporter) insertEntry(ctx context.Context, value Archive
 		// attached to a moment is a record that belongs to no post at all.
 		return fmt.Errorf("portable entry %s and its article body do not match", value.ID)
 	}
-	if isMoment {
+	if isMoment && value.MapCard == nil {
 		if err := domain.ValidatePostMarkdown(body, len(usages)); err != nil && value.QuotedEntryID == nil && !value.QuoteUnavailable {
 			return err
 		}
@@ -288,7 +288,7 @@ func (importer *PortableImporter) insertEntry(ctx context.Context, value Archive
 		}
 		contentText = app.DerivedArticleSearchText(document.Title, document.Body)
 	} else {
-		contentText, err = app.DerivedSearchText(body, cards)
+		contentText, err = app.DerivedSearchText(body, cards, value.MapCard)
 		if err != nil {
 			return err
 		}
@@ -299,6 +299,9 @@ INSERT INTO entries (
 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		storedPublicationState(value.PublicationState), optionalAuthorID(value.AuthorUserID), value.ID, value.Kind, value.ContentMD, string(entry.Visibility), value.CreatedAtMS, value.UpdatedAtMS, value.PublishedAtMS, value.RepostedAtMS, value.EditedAtMS, contentText); err != nil {
 		return fmt.Errorf("insert portable entry %s: %w", value.ID, err)
+	}
+	if err := newPostStore(importer.tx).replaceEntryMapCard(ctx, id, value.MapCard); err != nil {
+		return err
 	}
 	if isArticle {
 		serialized, err := domain.MarshalArticleDocument(document.Body)
@@ -868,9 +871,10 @@ SELECT
 	rows, err = pool.QueryContext(ctx, `
 SELECT e.id, e.kind, e.content_md, e.content_text,
        coalesce(a.title, ''), coalesce(a.body_json, ''),
-       `+searchSourceCardsSQL+`
+       `+searchSourceCardsSQL+`, coalesce(m.map_card_json, '')
 FROM entries AS e
 LEFT JOIN entry_article AS a ON a.entry_id = e.id
+LEFT JOIN entry_map_card AS m ON m.entry_id = e.id
 ORDER BY e.id`)
 	if err != nil {
 		return fmt.Errorf("query staged normalized content: %w", err)
@@ -878,9 +882,9 @@ ORDER BY e.id`)
 	for rows.Next() {
 		source := searchBootstrapSource{}
 		var contentText string
-		var cardsJSON string
+		var cardsJSON, mapJSON string
 		if err := rows.Scan(&source.id, &source.kind, &source.contentMD, &contentText,
-			&source.title, &source.bodyJSON, &cardsJSON); err != nil {
+			&source.title, &source.bodyJSON, &cardsJSON, &mapJSON); err != nil {
 			_ = rows.Close()
 			return fmt.Errorf("scan staged normalized content: %w", err)
 		}
@@ -890,6 +894,13 @@ ORDER BY e.id`)
 			return err
 		}
 		source.cards = cards
+		if mapJSON != "" {
+			source.mapCard, err = domain.ParseMapCard([]byte(mapJSON))
+			if err != nil {
+				_ = rows.Close()
+				return err
+			}
+		}
 		expectedText, err := bootstrapSearchText(source)
 		if err != nil || contentText != expectedText {
 			_ = rows.Close()

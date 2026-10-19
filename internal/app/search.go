@@ -59,6 +59,7 @@ type SearchSource struct {
 	ArticleTitle        string
 	ArticleBodyJSON     string
 	ContentText         string
+	MapCard             *domain.MapCard
 	LinkCardText        string
 	FTSCopies           int
 	FTSStoredTextCopies int
@@ -67,8 +68,12 @@ type SearchSource struct {
 // DerivedSearchText is the single authority for a moment's indexed text. Both
 // the write path and rebuild call it, so the two can never drift and leave the
 // doctor's FTS consistency check reporting phantom damage.
-func DerivedSearchText(contentMD string, cards []domain.LinkCard) (string, error) {
-	return derivedSearchText(contentMD, domain.LinkCardSearchText(cards))
+func DerivedSearchText(contentMD string, cards []domain.LinkCard, maps ...*domain.MapCard) (string, error) {
+	text := domain.LinkCardSearchText(cards)
+	if len(maps) > 0 && maps[0] != nil {
+		text += "\n" + maps[0].Text()
+	}
+	return derivedSearchText(contentMD, text)
 }
 
 // DerivedArticleSearchText is the same authority for an article. Its title is
@@ -91,7 +96,11 @@ func sourceSearchText(source SearchSource) (string, error) {
 	if source.ContentMD == nil {
 		return "", domain.NewError(domain.CodeDataIntegrityFailed, "a moment was read without its body", nil)
 	}
-	return derivedSearchText(*source.ContentMD, source.LinkCardText)
+	text := source.LinkCardText
+	if source.MapCard != nil {
+		text += "\n" + source.MapCard.Text()
+	}
+	return derivedSearchText(*source.ContentMD, text)
 }
 
 func derivedSearchText(contentMD, cardText string) (string, error) {

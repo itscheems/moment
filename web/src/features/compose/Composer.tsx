@@ -1,3 +1,5 @@
+import { MapCardEditor } from "../maps/MapCardEditor";
+import { type MapCardData } from "../maps/types";
 import { accountCacheScope } from "../auth/accountScope";
 import { locationsApi } from "../../api/locations";
 import { linksApi } from "../../api/links";
@@ -71,6 +73,7 @@ import {
   composeDraftClearanceKey,
   composeDraftKey,
   createComposeDraft,
+  fingerprintComposeDraft,
   loadComposeDraft,
   parseComposeDraftClearEvent,
   parseComposeDraftClearEventValue,
@@ -162,7 +165,11 @@ export interface ComposerHandle {
    * takes it out of 草稿: it is the live text now, and filing it again on
    * the way out replaces it rather than leaving a near-identical copy.
    */
-  loadDraft: (contentMd: string, keptId?: string) => void;
+  loadDraft: (
+    contentMd: string,
+    keptId?: string,
+    mapCard?: MapCardData,
+  ) => void;
 }
 
 interface ComposerProps {
@@ -208,12 +215,18 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
     const initialContent = post?.contentMd ?? "";
     const initialVisibility: PostVisibility = post?.visibility ?? "everyone";
     const [content, setContent] = useState(initialContent);
+    const initialMapCard = post?.mapCard ?? null;
+    const [mapCard, setMapCard] = useState<MapCardData | null>(initialMapCard);
+    const mapCardRef = useRef<MapCardData | null>(initialMapCard);
+    mapCardRef.current = mapCard;
+    const mapChanged =
+      JSON.stringify(mapCard) !== JSON.stringify(initialMapCard);
     const [visibility, setVisibility] =
       useState<PostVisibility>(initialVisibility);
     const [focusWithin, setFocusWithin] = useState(false);
     const [audienceOpen, setAudienceOpen] = useState(false);
     const openSettingsRef = useRef(
-      new Set<"audience" | "replies" | "location">(),
+      new Set<"audience" | "replies" | "location" | "map">(),
     );
     const audienceCloseFrameRef = useRef<number | null>(null);
     const [dirty, setDirty] = useState(false);
@@ -293,9 +306,11 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
     const repostOnly =
       quotedPost !== null &&
       content.trim().length === 0 &&
-      mediaItems.length === 0;
+      mediaItems.length === 0 &&
+      mapCard === null;
     const valid =
-      (content.trim().length > 0 ||
+      (mapCard !== null ||
+        content.trim().length > 0 ||
         mediaItems.length > 0 ||
         quotedPost !== null) &&
       count <= MAX_CONTENT &&
@@ -304,7 +319,8 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
     const visibilityChanged = visibility !== initialVisibility;
     const hasUnpublishedChange =
       dirty &&
-      (content !== initialContent ||
+      (mapChanged ||
+        content !== initialContent ||
         mediaChanged ||
         locationChanged ||
         visibilityChanged) &&
@@ -316,11 +332,12 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
       content.trim().length > 0 ||
       mediaItems.length > 0 ||
       location !== null ||
+      mapCard !== null ||
       quotedPost !== null ||
       linkPreview.card !== null;
 
     const onSettingsOpenChange = (
-      setting: "audience" | "replies" | "location",
+      setting: "audience" | "replies" | "location" | "map",
       open: boolean,
     ) => {
       if (audienceCloseFrameRef.current !== null) {
@@ -334,7 +351,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
     };
 
     const onSettingsOpenChangeComplete = (
-      setting: "audience" | "replies" | "location",
+      setting: "audience" | "replies" | "location" | "map",
       open: boolean,
     ) => {
       if (open) return;
@@ -446,6 +463,8 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
         const nextDraft = createComposeDraft(
           next,
           activeDraftRef.current?.savedAt,
+          undefined,
+          mapCardRef.current,
         );
         activeDraftRef.current = nextDraft;
         setActiveDraft(nextDraft);
@@ -497,7 +516,8 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
       const filed = listKeptDrafts(draftScope).some(
         (kept) => kept.fingerprint === stranded.fingerprint,
       );
-      if (!filed) keepDraft(draftScope, stranded.contentMd);
+      if (!filed)
+        keepDraft(draftScope, stranded.contentMd, undefined, stranded.mapCard);
       clearComposeDraft(draftScope, {
         reason: "discarded",
         draft: stranded,
@@ -507,11 +527,15 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
     // Putting a kept draft back in the editor. Reached from the 草稿 list
     // on this surface, and from the compose dialog's list through the ref.
     const restoreDraftText = useCallback(
-      (contentMd: string, keptId?: string) => {
+      (contentMd: string, keptId?: string, restoredMap?: MapCardData) => {
         // Whatever is in the editor right now is not thrown away for it.
         const current = contentRef.current;
-        if (current.trim() && current !== contentMd) {
-          keepDraft(draftScope, current);
+        if (
+          (current.trim() || mapCardRef.current) &&
+          fingerprintComposeDraft(current, mapCardRef.current) !==
+            fingerprintComposeDraft(contentMd, restoredMap)
+        ) {
+          keepDraft(draftScope, current, undefined, mapCardRef.current);
         }
         // The draft leaves 草稿 as it enters the editor: it is the live
         // text now, and filing it again on the way out replaces it rather
@@ -520,11 +544,15 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
         const restored = createComposeDraft(
           contentMd,
           activeDraftRef.current?.savedAt,
+          undefined,
+          restoredMap,
         );
         activeDraftRef.current = restored;
         setActiveDraft(restored);
         saveComposeDraft(draftScope, restored);
         setContent(contentMd);
+        mapCardRef.current = restoredMap ?? null;
+        setMapCard(restoredMap ?? null);
         dirtyRef.current = true;
         setDirty(true);
         allowLeaveRef.current = false;
@@ -540,17 +568,27 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
         hasUnpublishedChanges: () => hasUnpublishedChange,
         leaveAndKeepDraft: () => {
           allowLeaveRef.current = true;
-          if (variant === "edit" || content.trim().length === 0) return;
+          if (
+            variant === "edit" ||
+            (content.trim().length === 0 && !mapCardRef.current)
+          )
+            return;
           const current =
-            activeDraftRef.current?.contentMd === content
+            activeDraftRef.current?.fingerprint ===
+            fingerprintComposeDraft(content, mapCardRef.current)
               ? activeDraftRef.current
-              : createComposeDraft(content, activeDraftRef.current?.savedAt);
+              : createComposeDraft(
+                  content,
+                  activeDraftRef.current?.savedAt,
+                  undefined,
+                  mapCardRef.current,
+                );
           activeDraftRef.current = current;
           saveComposeDraft(draftScope, current);
           // Keeping is a decision, so it also files a copy under 草稿 --
           // the recovery slot only ever holds the most recent text, and a
           // second keep would otherwise erase the first.
-          keepDraft(draftScope, content);
+          keepDraft(draftScope, content, undefined, mapCardRef.current);
         },
         leaveAndDiscard: () => {
           allowLeaveRef.current = true;
@@ -560,9 +598,16 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
               reason: "discarded",
               draft: current,
             });
-            dropKeptDraftByContent(draftScope, current.contentMd);
+            dropKeptDraftByContent(
+              draftScope,
+              current.contentMd,
+              undefined,
+              current.mapCard,
+            );
           }
           clearMedia();
+          setMapCard(initialMapCard);
+          mapCardRef.current = initialMapCard;
           setLocation(initialLocation);
           setLocationChanged(false);
           setVisibility(initialVisibility);
@@ -573,6 +618,8 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
         clearMedia,
         content,
         hasUnpublishedChange,
+        mapCard,
+        initialMapCard,
         initialLocation,
         initialVisibility,
         restoreDraftText,
@@ -580,6 +627,26 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
         variant,
       ],
     );
+
+    const changeMapCard = (next: MapCardData | null) => {
+      mapCardRef.current = next;
+      setMapCard(next);
+      allowLeaveRef.current = false;
+      dirtyRef.current = true;
+      setDirty(true);
+      setError(null);
+      idempotencyKey.current = createIdempotencyKey();
+      if (variant !== "edit") {
+        const draft = createComposeDraft(
+          contentRef.current,
+          activeDraftRef.current?.savedAt,
+          undefined,
+          next,
+        );
+        activeDraftRef.current = draft;
+        setActiveDraft(draft);
+      }
+    };
 
     const markMediaEdited = (message: string) => {
       allowLeaveRef.current = false;
@@ -799,7 +866,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
       clearMedia();
       setLocation(null);
       setLocationChanged(false);
-      if (content === initialContent) {
+      if (content === initialContent && !mapCardRef.current) {
         dirtyRef.current = false;
         setDirty(false);
       }
@@ -822,6 +889,8 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
         setDirty(false);
         setError(null);
         clearMedia();
+        setMapCard(null);
+        mapCardRef.current = null;
         setLocation(null);
         setLocationChanged(false);
         setVisibility("everyone");
@@ -961,13 +1030,20 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
               draft: currentDraft,
             });
             if (variant === "page") {
-              dropKeptDraftByContent(draftScope, currentDraft.contentMd);
+              dropKeptDraftByContent(
+                draftScope,
+                currentDraft.contentMd,
+                undefined,
+                currentDraft.mapCard,
+              );
             }
           }
           activeDraftRef.current = null;
           setActiveDraft(null);
           setContent("");
           clearMedia();
+          setMapCard(null);
+          mapCardRef.current = null;
           setLocation(null);
           setLocationChanged(false);
           setVisibility("everyone");
@@ -985,7 +1061,12 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
           // and that is not a decision to shelve anything, it is the same
           // sentence continuing on a bigger surface.
           if (variant === "page") {
-            keepDraft(draftScope, currentDraft.contentMd);
+            keepDraft(
+              draftScope,
+              currentDraft.contentMd,
+              undefined,
+              currentDraft.mapCard,
+            );
           }
         }
       }
@@ -1031,9 +1112,16 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
       if (!post) {
         const active = activeDraftRef.current;
         submittedDraft =
-          active && active.contentMd === content
+          active &&
+          active.fingerprint ===
+            fingerprintComposeDraft(content, mapCardRef.current)
             ? active
-            : createComposeDraft(content, active?.savedAt);
+            : createComposeDraft(
+                content,
+                active?.savedAt,
+                undefined,
+                mapCardRef.current,
+              );
         activeDraftRef.current = submittedDraft;
         setActiveDraft(submittedDraft);
         if (!saveComposeDraft(draftScope, submittedDraft)) {
@@ -1070,6 +1158,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
                   : []
                 : undefined,
               visibilityChanged ? visibility : undefined,
+              mapChanged ? mapCard : undefined,
             )
           : repostOnly && quotedPost
             ? await postsApi.setReposted(session.csrfToken, quotedPost.id, true)
@@ -1082,6 +1171,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
                 quotedPost?.id,
                 linkPreview.card ? [linkPreview.card] : undefined,
                 visibility,
+                mapCard ?? undefined,
               );
         allowLeaveRef.current = true;
         dirtyRef.current = false;
@@ -1091,7 +1181,12 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
             reason: "published",
             draft: submittedDraft,
           });
-          dropKeptDraftByContent(draftScope, submittedDraft.contentMd);
+          dropKeptDraftByContent(
+            draftScope,
+            submittedDraft.contentMd,
+            undefined,
+            submittedDraft.mapCard,
+          );
         }
         announcePostChanged({
           kind: post ? "updated" : repostOnly ? "reordered" : "created",
@@ -1114,6 +1209,8 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
         clearMedia();
         if (variant === "inline") {
           setContent("");
+          setMapCard(null);
+          mapCardRef.current = null;
           setLocation(null);
           setLocationChanged(false);
           setVisibility("everyone");
@@ -1229,7 +1326,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
               instanceId={draftScope}
               onEditingChange={setDraftsEditing}
               onOpenDraft={(kept) => {
-                restoreDraftText(kept.contentMd, kept.id);
+                restoreDraftText(kept.contentMd, kept.id, kept.mapCard);
                 setDraftsListOpen(false);
               }}
             />
@@ -1319,6 +1416,8 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
                     const nextDraft = createComposeDraft(
                       event.target.value,
                       activeDraftRef.current?.savedAt,
+                      undefined,
+                      mapCardRef.current,
                     );
                     activeDraftRef.current = nextDraft;
                     setActiveDraft(nextDraft);
@@ -1487,6 +1586,11 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
                 无法载入要引用的 Moment，请返回后重试。
               </p>
             ) : null}
+            <MapCardEditor
+              value={mapCard}
+              onChange={changeMapCard}
+              disabled={pending || !session}
+            />
             <MediaComposer
               beforeToolbar={
                 variant === "inline" ? (
@@ -1535,31 +1639,39 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
               onSelectionError={setMediaSelectionError}
               selectionError={mediaSelectionError}
               toolbarAction={
-                <LocationPicker
-                  api={locationsApi}
-                  disabled={pending || !session}
-                  onOpenChange={(open) =>
-                    onSettingsOpenChange("location", open)
-                  }
-                  onOpenChangeComplete={(open) =>
-                    onSettingsOpenChangeComplete("location", open)
-                  }
-                  onChange={(nextLocation) => {
-                    allowLeaveRef.current = false;
-                    setLocation(nextLocation);
-                    setLocationChanged(true);
-                    dirtyRef.current = true;
-                    setDirty(true);
-                    setError(null);
-                    setAnnouncement(
-                      nextLocation
-                        ? `已添加位置：${nextLocation.name}`
-                        : "位置已移除",
-                    );
-                    idempotencyKey.current = createIdempotencyKey();
-                  }}
-                  value={location}
-                />
+                <>
+                  <MapCardEditor
+                    value={mapCard}
+                    triggerOnly
+                    disabled={pending || !session}
+                    onChange={changeMapCard}
+                  />
+                  <LocationPicker
+                    api={locationsApi}
+                    disabled={pending || !session}
+                    onOpenChange={(open) =>
+                      onSettingsOpenChange("location", open)
+                    }
+                    onOpenChangeComplete={(open) =>
+                      onSettingsOpenChangeComplete("location", open)
+                    }
+                    onChange={(nextLocation) => {
+                      allowLeaveRef.current = false;
+                      setLocation(nextLocation);
+                      setLocationChanged(true);
+                      dirtyRef.current = true;
+                      setDirty(true);
+                      setError(null);
+                      setAnnouncement(
+                        nextLocation
+                          ? `已添加位置：${nextLocation.name}`
+                          : "位置已移除",
+                      );
+                      idempotencyKey.current = createIdempotencyKey();
+                    }}
+                    value={location}
+                  />
+                </>
               }
               onChange={(next, message) => {
                 const replacements = next.filter(

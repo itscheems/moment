@@ -19,8 +19,10 @@ export class LocationsApi extends ApiClient {
     query: string,
     bias?: LocationBias,
     signal?: AbortSignal,
+    scope: "auto" | "global" = "auto",
   ): Promise<LocationInput[]> {
     const params = new URLSearchParams({ q: query });
+    if (scope === "global") params.set("scope", scope);
     if (bias) {
       params.set("latitude", bias.latitude.toString());
       params.set("longitude", bias.longitude.toString());

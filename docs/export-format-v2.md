@@ -1,6 +1,6 @@
-# Moment export format v2
+# Moment export format
 
-Moment exports a streaming ZIP portability protocol rather than a SQLite copy. A full backup uses `format: "moment-export"`, `format_version: 2`, and the HTTP header `X-Archive-Format: moment-export-v2`. Version 1 and incomplete historical layouts are unsupported. Development instances using the preceding database model must first be converted offline into a separate directory, with the original retained.
+Moment exports a streaming ZIP portability protocol rather than a SQLite copy. A full backup uses `format: "moment-export"`, `format_version: 3`, and the HTTP header `X-Archive-Format: moment-export-v3`. Import accepts versions 2 and 3. Version 1 and incomplete historical layouts are unsupported. Development instances using the preceding database model must first be converted offline into a separate directory, with the original retained.
 
 ## Archive layout
 
@@ -40,6 +40,8 @@ Media members follow in SHA order. The checksum file lists every other ZIP membe
 An article entry has `kind: "article"` and a null Markdown body. Its structured document and cover are stored in `data/entry_articles.jsonl`. Ordinary posts carry Markdown instead. Derived HTML and search indexes are rebuilt with the current implementation.
 
 `data/article_drafts.jsonl` preserves the real author, title, structured body, cover, publication relationship and revision timestamps. Published working copies, withdrawn documents and unpublished drafts remain distinct. The full graph is validated, including inline media and references to published entries.
+
+Version 3 adds nullable `map_card` snapshots to ordinary entries and schema-3 `mapCard` blocks to article bodies and drafts. A snapshot preserves the ordered places, source coordinates and coordinate system, and `connect_points` setting. Replacement import and selective merge retain these values; merge review shows map changes. Version 2 retains its original contract and rejects map snapshots or schema-3 documents instead of dropping them. Both versions accept article schemas 1 and 2. See [the map API contract](client-api.md#published-map-cards) for the snapshot shape.
 
 ## Comments and media
 

@@ -33,7 +33,7 @@ func requestIDMiddleware(nextID func() string) gin.HandlerFunc {
 // Without an explicit frame-src the directive falls back to default-src 'self',
 // which refuses every third-party player. Opening it is a deliberate, bounded
 // relaxation: the set is fixed, auditable, and only ever grows. Everything else
-// stays closed, and in particular img-src still refuses remote images -- a card
+// stays closed, and in particular img-src admits only the configured map resource origin -- a card
 // thumbnail is served from managed media, never hotlinked.
 var contentSecurityPolicy = buildContentSecurityPolicy()
 
@@ -41,10 +41,11 @@ func buildContentSecurityPolicy() string {
 	frameSources := append([]string{"'self'"}, linkfetch.EmbeddableOrigins()...)
 	return strings.Join([]string{
 		"default-src 'self'",
-		"img-src 'self' data: blob:",
+		"img-src 'self' data: blob: https://tiles.openfreemap.org",
 		"style-src 'self' 'unsafe-inline'",
 		"script-src 'self'",
-		"connect-src 'self'",
+		"connect-src 'self' https://tiles.openfreemap.org",
+		"worker-src 'self'",
 		"frame-src " + strings.Join(frameSources, " "),
 		"object-src 'none'",
 		"base-uri 'none'",

@@ -1,3 +1,5 @@
+import { MapCard } from "../../features/maps/MapCard";
+import { parseMapCard } from "../../features/maps/types";
 import {
   Children,
   useCallback,
@@ -119,6 +121,9 @@ export function RichContent({
         content: renderedNode,
         options: {
           nodeMapping: {
+            mapCard: ({ node }) => (
+              <MapCard card={parseMapCard(node.attrs.map_card)} deferMap />
+            ),
             tocNode: ({ node }) => <TocContent attrs={node.attrs} />,
             paragraph: ({ children, node }) => (
               <p
