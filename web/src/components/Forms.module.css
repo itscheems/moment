@@ -267,12 +267,6 @@
 
 .inlineComposer {
   --motion-dialog: var(--motion-content);
-  --button-primary: #1d9bf0;
-  --button-primary-hover: #1a8cd8;
-  --button-primary-pressed: #177cc0;
-  --button-primary-disabled: #1d9bf0;
-  --button-primary-disabled-opacity: 0.5;
-  --button-primary-contrast: #fff;
   --composer-tool-color: #829aab;
   --composer-tool-hover: rgb(15 20 25 / 10%);
   --composer-tool-pressed: rgb(15 20 25 / 20%);
@@ -309,12 +303,6 @@
   text-rendering: auto;
   --audience-label-size: 14px;
   --audience-label-stroke: 0px;
-  --button-primary: var(--text-primary);
-  --button-primary-hover: var(--ink-button-hover);
-  --button-primary-pressed: var(--ink-button-pressed);
-  --button-primary-disabled: var(--text-primary);
-  --button-primary-disabled-opacity: 0.5;
-  --button-primary-contrast: var(--surface);
   --composer-tool-transform: none;
   --composer-tool-filter: none;
 }
