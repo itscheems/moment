@@ -1,5 +1,5 @@
-import { Dialog } from "@base-ui/react/dialog";
-import { type ReactElement, useRef, useState } from "react";
+import { Dialog } from "./Dialog";
+import { type ComponentProps, type ReactElement, useState } from "react";
 
 import { useDocumentScrollLock } from "./useDocumentScrollLock";
 import styles from "./Forms.module.css";
@@ -28,7 +28,7 @@ export function ConfirmDialog({
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
   cancelLabel?: string;
-  finalFocus?: Dialog.Popup.Props["finalFocus"];
+  finalFocus?: ComponentProps<typeof Dialog.Popup>["finalFocus"];
   onConfirm: () => void | Promise<void>;
 }) {
   const [localOpen, setLocalOpen] = useState(false);
@@ -37,7 +37,6 @@ export function ConfirmDialog({
     if (controlledOpen === undefined) setLocalOpen(next);
     onOpenChange?.(next);
   };
-  const cancelRef = useRef<HTMLButtonElement>(null);
   useDocumentScrollLock(open);
 
   return (
@@ -52,14 +51,7 @@ export function ConfirmDialog({
       <Dialog.Portal>
         <Dialog.Backdrop className={styles.dialogBackdrop} />
         <Dialog.Viewport className={styles.dialogViewport}>
-          <Dialog.Popup
-            className={styles.dialogPopup}
-            // The safe answer takes the opening focus even though the
-            // destructive one is read first: stacking put 删除 at the top of
-            // the sheet, and Base UI would otherwise focus whatever leads.
-            initialFocus={cancelRef}
-            finalFocus={finalFocus}
-          >
+          <Dialog.Popup className={styles.dialogPopup} finalFocus={finalFocus}>
             <Dialog.Title className={styles.dialogTitle}>{title}</Dialog.Title>
             <Dialog.Description className={styles.dialogDescription}>
               {description}
@@ -83,7 +75,6 @@ export function ConfirmDialog({
               <Dialog.Close
                 className={styles.secondaryButton}
                 disabled={pending}
-                ref={cancelRef}
               >
                 {cancelLabel}
               </Dialog.Close>

@@ -1,5 +1,5 @@
 import { type LocationInput } from "../../api/client";
-import { Dialog } from "@base-ui/react/dialog";
+import { Dialog } from "../../components/Dialog";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { PublicApiError } from "../../api/public";
@@ -153,6 +153,7 @@ export function LocationPicker({
   const [manualName, setManualName] = useState("");
   const [bias, setBias] = useState<{ latitude: number; longitude: number }>();
   const requestRef = useRef<AbortController | null>(null);
+  const searchInput = useRef<HTMLInputElement>(null);
   const usesGeoapify = useMemo(
     () => results.some((location) => location.provider === "geoapify"),
     [results],
@@ -266,7 +267,10 @@ export function LocationPicker({
       <Dialog.Portal>
         <Dialog.Backdrop className={styles.locationBackdrop} />
         <Dialog.Viewport className={styles.locationViewport}>
-          <Dialog.Popup className={styles.locationPopup}>
+          <Dialog.Popup
+            className={styles.locationPopup}
+            initialFocus={searchInput}
+          >
             <header className={styles.locationHeader}>
               <Dialog.Close
                 aria-label="关闭位置选择"
@@ -300,7 +304,7 @@ export function LocationPicker({
                   <span className={styles.srOnly}>搜索地点</span>
                   <input
                     autoComplete="off"
-                    autoFocus
+                    ref={searchInput}
                     onChange={(event) => setQuery(event.target.value)}
                     placeholder="搜索地点"
                     value={query}

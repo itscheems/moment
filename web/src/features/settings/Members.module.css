@@ -145,11 +145,6 @@
   flex-shrink: 0;
   color: var(--accent);
 }
-:global(:where(:root:not([data-focus-dismissed])))
-  .registrationMode:focus-within {
-  outline: 2px solid var(--accent);
-  outline-offset: -2px;
-}
 .registrationMode:has(input:disabled) {
   cursor: wait;
   opacity: 0.65;

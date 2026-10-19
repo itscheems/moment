@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Dialog } from "@base-ui/react/dialog";
+import { Dialog } from "../../components/Dialog";
 import { Switch } from "@base-ui/react/switch";
 import { locationsApi } from "../../api/locations";
 import type { LocationInput } from "../../api/client";

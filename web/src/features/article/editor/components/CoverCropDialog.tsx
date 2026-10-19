@@ -1,4 +1,4 @@
-import { Dialog } from "@base-ui/react/dialog";
+import { Dialog } from "../../../../components/Dialog";
 import { Slider } from "@base-ui/react/slider";
 import { useEffect, useMemo, useRef, useState } from "react";
 import Cropper, { type Area, type MediaSize } from "react-easy-crop";
@@ -44,7 +44,6 @@ export function CoverCropDialog({
   const [applying, setApplying] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const exportController = useRef<AbortController | null>(null);
-  const cancelButton = useRef<HTMLButtonElement>(null);
   const locked = busy || applying;
   const cropSize = useMemo(() => {
     const width = Math.min(
@@ -134,13 +133,12 @@ export function CoverCropDialog({
       <Dialog.Portal>
         <Dialog.Backdrop className={styles.backdrop} />
         <Dialog.Viewport className={styles.viewport}>
-          <Dialog.Popup className={styles.popup} initialFocus={cancelButton}>
+          <Dialog.Popup className={styles.popup}>
             <header className={styles.header}>
               <button
                 aria-label="返回"
                 className={styles.back}
                 onClick={cancel}
-                ref={cancelButton}
                 type="button"
               >
                 <Icon name="back" />

@@ -479,9 +479,51 @@ a {
   -webkit-tap-highlight-color: transparent;
 }
 
-:focus-visible {
+:is(
+  input,
+  textarea,
+  select,
+  [contenteditable="true"],
+  [role="textbox"]
+):focus-visible {
   outline: 2px solid var(--focus-ring);
   outline-offset: 2px;
+}
+
+/* Controls keep their hover/selection feedback without browser or component
+   focus rings. Text fields retain their own focus and validation treatment. */
+:root
+  :is(:focus, [data-focus-visible="true"]):not(
+    input,
+    textarea,
+    select,
+    [contenteditable="true"],
+    [role="textbox"]
+  ) {
+  --focus-ring: transparent;
+  --navigation-focus: transparent;
+  outline: none !important;
+}
+
+:root
+  :is(
+    button,
+    a,
+    [role="button"],
+    [role="switch"],
+    [role="checkbox"],
+    [role="radio"],
+    input:where(
+      [type="checkbox"],
+      [type="radio"],
+      [type="button"],
+      [type="submit"],
+      [type="reset"],
+      [type="file"]
+    )
+  ):is(:focus, [data-focus-visible="true"]) {
+  outline: none !important;
+  box-shadow: none !important;
 }
 
 :root[data-focus-dismissed] {

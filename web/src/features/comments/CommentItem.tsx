@@ -1,6 +1,6 @@
 import { AccountIdentityPreview } from "../../components/AccountIdentityPreview";
 import { commentsApi } from "../../api/comments";
-import { Dialog } from "@base-ui/react/dialog";
+import { Dialog } from "../../components/Dialog";
 import { Menu } from "@base-ui/react/menu";
 import { Popover } from "@base-ui/react/popover";
 import {

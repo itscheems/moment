@@ -9,7 +9,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { Dialog } from "@base-ui/react/dialog";
+import { Dialog } from "../../components/Dialog";
 import { motion, useReducedMotion, type Transition } from "motion/react";
 import { Icon } from "../../components/icons";
 import { useDocumentScrollLock } from "../../components/useDocumentScrollLock";

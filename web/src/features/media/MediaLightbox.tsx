@@ -1,4 +1,4 @@
-import { Dialog } from "@base-ui/react/dialog";
+import { Dialog } from "../../components/Dialog";
 import { useEffect, useRef, useState } from "react";
 
 import { Icon } from "../../components/icons";

@@ -1,5 +1,5 @@
 import { postsApi } from "../../api/posts";
-import { Dialog } from "@base-ui/react/dialog";
+import { Dialog } from "../../components/Dialog";
 import { Menu } from "@base-ui/react/menu";
 import { useRef, useState } from "react";
 

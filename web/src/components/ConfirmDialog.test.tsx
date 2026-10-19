@@ -22,7 +22,7 @@ describe("owner confirmation dialog", () => {
     vi.unstubAllGlobals();
   });
 
-  it("locks the document without changing its safe cancel focus lifecycle", async () => {
+  it("locks the document without selecting an action and returns focus on close", async () => {
     render(
       <ConfirmDialog
         confirmLabel="确认操作"
@@ -41,9 +41,8 @@ describe("owner confirmation dialog", () => {
     expect(document.documentElement.style.overflow).toBe("hidden");
     expect(document.body.style.position).toBe("");
     expect(document.body.style.top).toBe("");
-    await waitFor(() =>
-      expect(screen.getByRole("button", { name: "保留" })).toHaveFocus(),
-    );
+    await waitFor(() => expect(dialog).toHaveFocus());
+    expect(screen.getByRole("button", { name: "保留" })).not.toHaveFocus();
 
     fireEvent.click(screen.getByRole("button", { name: "保留" }));
     await waitFor(() => expect(dialog).not.toBeInTheDocument());

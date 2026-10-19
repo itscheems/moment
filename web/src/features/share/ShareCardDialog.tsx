@@ -1,4 +1,4 @@
-import { Dialog } from "@base-ui/react/dialog";
+import { Dialog } from "../../components/Dialog";
 import { useEffect, useRef, useState, type ComponentProps } from "react";
 
 import { notify } from "../../components/Feedback";
