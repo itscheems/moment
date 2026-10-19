@@ -85,7 +85,7 @@ export function ProfileHeader({
         href="/search"
         title="搜索 Moment"
       >
-        <Icon name="search" />
+        <Icon name="search" variant="navigation" />
       </InternalLink>
     </HeaderActions>
   );

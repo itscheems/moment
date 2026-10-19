@@ -589,7 +589,9 @@ export function AppShell({
                       goBack(focusReading ? route.href : "/");
                     }}
                   >
-                    <Icon name="back" />
+                    <Icon
+                      name={route.id === "profile" ? "arrow-left" : "back"}
+                    />
                   </InternalLink>
                 ) : (
                   <MobileAccountMenu
