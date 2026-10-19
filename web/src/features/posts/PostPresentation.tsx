@@ -282,10 +282,10 @@ export function PostPresentation({
           ? articleShareBlocks(post.article)
           : shareCardBlocks(post.contentHtml),
         media: isArticlePost(post) ? [] : post.media,
+        mapCard: post.mapCard,
         location:
           post.location?.name?.trim() ||
           post.location?.displayName?.trim() ||
-          post.mapCard?.places.map((place) => place.name).join(" · ") ||
           null,
         link:
           post.linkCards.length > 0 ? shareCardLink(post.linkCards[0]) : null,

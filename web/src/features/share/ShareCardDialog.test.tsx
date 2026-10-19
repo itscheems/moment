@@ -53,9 +53,15 @@ describe("sharing an exact excerpt", () => {
       await screen.findByRole("img", { name: "分享图片预览" }),
     ).toHaveAttribute("src", "blob:excerpt");
     mounted.rerender(show(true));
-    expect(cards.renderShareCard).toHaveBeenCalledExactlyOnceWith(input);
+    expect(cards.renderShareCard).toHaveBeenCalledExactlyOnceWith(
+      input,
+      expect.any(AbortSignal),
+    );
     expect(screen.getByRole("button", { name: "保存到本地" })).toBeEnabled();
     mounted.unmount();
+    expect(vi.mocked(cards.renderShareCard).mock.calls[0][1]?.aborted).toBe(
+      true,
+    );
     expect(URL.revokeObjectURL).toHaveBeenCalledWith("blob:excerpt");
   });
 
