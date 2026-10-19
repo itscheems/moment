@@ -17,11 +17,14 @@ import {
   mapPlaceIdentity,
 } from "./geometry";
 import type { MapCardData, MapPlace } from "./types";
+import {
+  applyMapWaterColor,
+  MAP_CONNECTION_PAINT,
+  MAP_STYLE,
+} from "./mapAppearance";
 import styles from "./Maps.module.css";
 
 maplibre.setWorkerUrl(workerUrl);
-
-const WATER_COLOR = "#C7E3EA";
 
 export interface MapCamera {
   longitude: number;
@@ -150,7 +153,7 @@ export default function MapCanvas({
               },
             })
       }
-      mapStyle="https://tiles.openfreemap.org/styles/liberty"
+      mapStyle={MAP_STYLE}
       projection={{ type: globe ? "globe" : "mercator" }}
       cooperativeGestures={!fullscreen && !globe}
       reuseMaps={false}
@@ -167,20 +170,7 @@ export default function MapCanvas({
         "CooperativeGesturesHandler.MobileHelpText": "使用双指移动地图",
       }}
       maxPitch={0}
-      onStyleData={({ target }) => {
-        if (
-          !target.getLayer("water") ||
-          target.getPaintProperty("water", "fill-color") === WATER_COLOR
-        ) {
-          return;
-        }
-        // Style data precedes the first render; load is emitted after it.
-        target.setPaintProperty("water", "fill-color-transition", {
-          duration: 0,
-          delay: 0,
-        });
-        target.setPaintProperty("water", "fill-color", WATER_COLOR);
-      }}
+      onStyleData={({ target }) => applyMapWaterColor(target)}
       onLoad={() => setLoaded(true)}
       onError={onFailure}
       onMoveEnd={(event) => onCamera?.(event.viewState)}
@@ -197,11 +187,7 @@ export default function MapCanvas({
           <Layer
             id="place-connections-line"
             type="line"
-            paint={{
-              "line-color": "#327cc7",
-              "line-width": 2.5,
-              "line-dasharray": [2, 2],
-            }}
+            paint={MAP_CONNECTION_PAINT}
           />
         </Source>
       )}

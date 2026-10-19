@@ -1,4 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { renderMapSnapshot } from "../maps/mapSnapshot";
+
+vi.mock("../maps/mapSnapshot", () => ({
+  renderMapSnapshot: vi.fn(async () => document.createElement("canvas")),
+}));
 
 import {
   recordCanvas,
@@ -160,6 +165,7 @@ describe("drawing the card", () => {
   let restoreImages: () => void;
 
   beforeEach(() => {
+    vi.mocked(renderMapSnapshot).mockClear();
     vi.stubGlobal("Path2D", class {});
     const canvas = recordCanvas();
     recording = canvas.recording;
@@ -189,6 +195,68 @@ describe("drawing the card", () => {
   const badges = () =>
     recording.of("fill").filter((call) => call.fill === "rgb(15 20 25 / 78%)")
       .length;
+
+  const mapCard = {
+    connectPoints: false,
+    places: [
+      {
+        name: "东京",
+        displayName: "东京，日本",
+        latitude: 35.68,
+        longitude: 139.76,
+        coordinateSystem: "wgs84" as const,
+      },
+    ],
+  };
+
+  it("draws a rounded map image instead of a repeated location label", async () => {
+    const controller = new AbortController();
+    await renderShareCard(
+      input({ mapCard, location: "东京" }),
+      controller.signal,
+    );
+    expect(renderMapSnapshot).toHaveBeenCalledWith(
+      mapCard,
+      516,
+      340,
+      controller.signal,
+    );
+    expect(
+      recording
+        .of("drawImage")
+        .some((call) => call.args[0] instanceof HTMLCanvasElement),
+    ).toBe(true);
+    expect(recording.text()).not.toContain("东京");
+    expect(recording.text()).toContain("Read More on Moment");
+  });
+
+  it("preserves an ordinary location when there is no map", async () => {
+    await renderShareCard(input({ location: "东京" }));
+    expect(renderMapSnapshot).not.toHaveBeenCalled();
+    expect(recording.text()).toContain("东京");
+  });
+
+  it("keeps ordinary photos alongside the map", async () => {
+    await renderShareCard(
+      input({ mapCard, media: [{ mediaId: "01A", mimeType: "image/jpeg" }] }),
+    );
+    const pictures = recording.of("drawImage").map((call) => call.args[0]);
+    expect(pictures.some((image) => image instanceof HTMLImageElement)).toBe(
+      true,
+    );
+    expect(pictures.some((image) => image instanceof HTMLCanvasElement)).toBe(
+      true,
+    );
+  });
+
+  it("does not export a partial image when the map fails", async () => {
+    vi.mocked(renderMapSnapshot).mockRejectedValueOnce(
+      new Error("map unavailable"),
+    );
+    await expect(renderShareCard(input({ mapCard }))).rejects.toThrow(
+      "map unavailable",
+    );
+  });
 
   it("badges the video and leaves the photo beside it alone", async () => {
     await renderShareCard(

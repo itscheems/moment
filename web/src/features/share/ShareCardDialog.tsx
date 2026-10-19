@@ -56,8 +56,9 @@ export function ShareCardDialog({
   useEffect(() => {
     if (!open) return;
     let live = true;
+    const controller = new AbortController();
     setStage({ kind: "drawing" });
-    void renderShareCard(input)
+    void renderShareCard(input, controller.signal)
       .then((blob) => {
         if (!live) return;
         if (objectUrl.current) URL.revokeObjectURL(objectUrl.current);
@@ -76,6 +77,7 @@ export function ShareCardDialog({
       });
     return () => {
       live = false;
+      controller.abort();
     };
   }, [input, open]);
 

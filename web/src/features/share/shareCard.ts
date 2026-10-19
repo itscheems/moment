@@ -17,6 +17,7 @@ import type { PublicLinkCard } from "../../api/public";
 import { mediaPosterUrl, mediaPreviewUrl } from "../../api/mediaUrls";
 import { highlightCodeBlocks } from "../../components/codeHighlight";
 import logoSvg from "../../assets/logo.svg?raw";
+import type { MapCardData } from "../maps/types";
 
 const FACE =
   '-apple-system, "system-ui", "Segoe UI", Roboto, Helvetica, Arial, sans-serif';
@@ -146,6 +147,7 @@ export interface ShareCardInput {
   blocks: ShareCardBlock[];
   /** At most four are drawn, in order. */
   media: ShareCardMedia[];
+  mapCard?: MapCardData | null;
   /**
    * The place, named the way the page names it.
    *
@@ -908,7 +910,11 @@ function drawFooter(ctx: CanvasRenderingContext2D, label: string, y: number) {
 }
 
 /** Render the card and hand back the bytes. */
-export async function renderShareCard(input: ShareCardInput): Promise<Blob> {
+export async function renderShareCard(
+  input: ShareCardInput,
+  signal?: AbortSignal,
+): Promise<Blob> {
+  signal?.throwIfAborted();
   await readyFonts();
 
   const contentWidth = WIDTH - PAD * 2;
@@ -927,10 +933,19 @@ export async function renderShareCard(input: ShareCardInput): Promise<Blob> {
   );
   // One batch: the avatar used to wait for the stills to finish before it even
   // started, and a link thumbnail would have waited behind both.
-  const [avatar, thumbnail] = await Promise.all([
+  const mapHeight = 340;
+  const mapCard = input.mapCard;
+  const [avatar, thumbnail, mapImage] = await Promise.all([
     input.avatarUrl ? loadImage(input.avatarUrl) : null,
     input.link?.thumbnailUrl ? loadImage(input.link.thumbnailUrl) : null,
+    mapCard
+      ? import("../maps/mapSnapshot").then(({ renderMapSnapshot }) =>
+          renderMapSnapshot(mapCard, contentWidth, mapHeight, signal),
+        )
+      : null,
   ]);
+  signal?.throwIfAborted();
+  const location = input.mapCard ? null : input.location;
 
   const ruler = document.createElement("canvas").getContext("2d");
   if (!ruler) throw new Error("this browser has no 2d canvas");
@@ -981,7 +996,8 @@ export async function renderShareCard(input: ShareCardInput): Promise<Blob> {
     (bodyHeight > 0 ? bodyGap + bodyHeight : 0) +
     (linkShape ? 18 + linkShape.height : 0) +
     (shape ? 22 + shape.height : 0) +
-    (input.location ? 14 + 26 : 0) +
+    (mapImage ? 22 + mapHeight : 0) +
+    (location ? 14 + 26 : 0) +
     FOOTER_HEIGHT;
 
   const canvas = document.createElement("canvas");
@@ -1164,7 +1180,18 @@ export async function renderShareCard(input: ShareCardInput): Promise<Blob> {
     y += shape.height;
   }
 
-  if (input.location) {
+  if (mapImage) {
+    y += 22;
+    ctx.save();
+    ctx.beginPath();
+    ctx.roundRect(PAD, y, contentWidth, mapHeight, MEDIA_RADIUS);
+    ctx.clip();
+    ctx.drawImage(mapImage, PAD, y, contentWidth, mapHeight);
+    ctx.restore();
+    y += mapHeight;
+  }
+
+  if (location) {
     y += 14;
     ctx.fillStyle = ACCENT;
     // A pin drawn rather than an icon font: one glyph is cheaper than loading a
@@ -1182,11 +1209,7 @@ export async function renderShareCard(input: ShareCardInput): Promise<Blob> {
     ctx.fill();
     ctx.fillStyle = MUTED;
     ctx.font = font(400, PLACE_SIZE);
-    ctx.fillText(
-      truncate(ctx, input.location, contentWidth - 22),
-      PAD + 22,
-      y + 17,
-    );
+    ctx.fillText(truncate(ctx, location, contentWidth - 22), PAD + 22, y + 17);
     y += 26;
   }
 
