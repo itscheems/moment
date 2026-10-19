@@ -52,7 +52,7 @@
   display: grid;
   place-items: start center;
   padding: 5vh var(--space-4) var(--space-4);
-  overscroll-behavior: contain;
+  overscroll-behavior: none;
 }
 
 .composeDialog {
@@ -63,7 +63,7 @@
   min-block-size: 18.5rem;
   max-block-size: calc(100dvh - 10vh);
   overflow-y: auto;
-  overscroll-behavior: contain;
+  overscroll-behavior: none;
   border-radius: 1rem;
   color: var(--text-primary);
   background: var(--surface);
