@@ -106,7 +106,7 @@ export function MapCard({
   }, [deferMap, fail]);
   const placeholder = (
     <div className={styles.placeholder} role="status">
-      <Icon name="map" />
+      <Icon name="map-picker" />
       <span>{failed ? "地图暂时无法加载" : "正在准备地图…"}</span>
       {failed && (
         <button
