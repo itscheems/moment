@@ -494,10 +494,14 @@
   justify-content: flex-end;
   align-items: center;
   height: 36px;
-  transition: padding-inline-end 200ms ease;
+  padding-inline-end: 2px;
+  transition:
+    height 200ms ease,
+    padding-inline-end 200ms ease;
 }
 .panelHeader:has(.panelToggle[aria-expanded="true"]) {
-  padding-inline-end: 15px;
+  height: 48px;
+  padding-inline-end: 17px;
 }
 .panelLabel {
   position: absolute;
@@ -507,6 +511,8 @@
   font-size: 12px;
 }
 .panelToggle {
+  width: 32px;
+  height: 32px;
   background: transparent;
   box-shadow: none;
 }

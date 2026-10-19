@@ -16,7 +16,7 @@ import { useDocumentScrollLock } from "../../components/useDocumentScrollLock";
 import { ActionTooltip } from "../../components/TimelineInteractions";
 import { MapPlaces } from "./MapPlaces";
 import type { MapCardData, MapPlace } from "./types";
-import type { MapCamera } from "./MapCanvas";
+import type { MapCamera, MapPlaceFocus } from "./MapCanvas";
 import styles from "./Maps.module.css";
 
 const Canvas = lazy(() => import("./MapCanvas"));
@@ -56,6 +56,7 @@ export function MapCard({
   const [failed, setFailed] = useState(false);
   const [attempt, setAttempt] = useState(0);
   const [camera, setCamera] = useState<MapCamera>();
+  const placeFocus = useRef<MapPlaceFocus | null>(null);
   const [listOpen, setListOpen] = useState(true);
   const [focusTarget, setFocusTarget] = useState<{ place: MapPlace } | null>(
     null,
@@ -137,6 +138,7 @@ export function MapCard({
                 setFocusTarget(null);
               }}
               focusTarget={focusTarget}
+              placeFocus={placeFocus}
               fullscreen={large}
               globe={large && globe}
               onFailure={fail}

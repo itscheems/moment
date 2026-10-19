@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import Map, {
   Marker,
   NavigationControl,
@@ -29,6 +29,11 @@ export interface MapCamera {
   pitch: number;
 }
 
+export interface MapPlaceFocus {
+  identity: string;
+  camera: MapCamera;
+}
+
 export default function MapCanvas({
   card,
   globe = false,
@@ -37,6 +42,7 @@ export default function MapCanvas({
   onFailure,
   onPick,
   focusTarget,
+  placeFocus,
   fullscreen = false,
 }: {
   card: MapCardData;
@@ -46,6 +52,7 @@ export default function MapCanvas({
   onFailure: () => void;
   onPick?: (longitude: number, latitude: number) => void;
   focusTarget?: { place: MapPlace } | null;
+  placeFocus: RefObject<MapPlaceFocus | null>;
   fullscreen?: boolean;
 }) {
   const ref = useRef<MapRef>(null);
@@ -62,14 +69,16 @@ export default function MapCanvas({
     .join(";");
   const fittedKey = useRef(camera ? pointsKey : "");
   useEffect(() => {
-    if (loaded && !onPick && fittedKey.current !== pointsKey)
+    if (loaded && !onPick && fittedKey.current !== pointsKey) {
+      placeFocus.current = null;
       ref.current?.fitBounds(bounds, {
         padding: 48,
         maxZoom: card.places.length === 1 ? 14 : 12,
         duration: 0,
       });
+    }
     if (loaded) fittedKey.current = pointsKey;
-  }, [pointsKey, loaded, bounds, card.places.length, onPick]);
+  }, [pointsKey, loaded, bounds, card.places.length, onPick, placeFocus]);
   useEffect(() => {
     if (loaded) return;
     const timer = window.setTimeout(onFailure, 20_000);
@@ -82,10 +91,36 @@ export default function MapCanvas({
     setSelected(null);
   }, [pointsKey]);
   useEffect(() => {
-    if (!loaded || !focusTarget) return;
-    const [longitude, latitude] = mapCoordinate(focusTarget.place);
+    const map = ref.current;
+    if (!loaded || !focusTarget || !map) return;
+    const identity = mapPlaceIdentity(focusTarget.place);
+    const previous = placeFocus.current;
     setSelected(null);
-    ref.current?.flyTo({
+    if (previous?.identity === identity) {
+      placeFocus.current = null;
+      map.flyTo({
+        center: [previous.camera.longitude, previous.camera.latitude],
+        zoom: previous.camera.zoom,
+        bearing: previous.camera.bearing,
+        pitch: previous.camera.pitch,
+        duration: 1400,
+        curve: 1.42,
+      });
+      return;
+    }
+    const center = map.getCenter();
+    placeFocus.current = {
+      identity,
+      camera: previous?.camera ?? {
+        longitude: center.lng,
+        latitude: center.lat,
+        zoom: map.getZoom(),
+        bearing: map.getBearing(),
+        pitch: map.getPitch(),
+      },
+    };
+    const [longitude, latitude] = mapCoordinate(focusTarget.place);
+    map.flyTo({
       center: [
         longitude,
         globe ? latitude : Math.max(-85, Math.min(85, latitude)),
@@ -96,7 +131,7 @@ export default function MapCanvas({
       duration: 1400,
       curve: 1.42,
     });
-  }, [loaded, focusTarget, globe]);
+  }, [loaded, focusTarget, globe, placeFocus]);
   return (
     <Map
       ref={ref}
