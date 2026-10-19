@@ -165,7 +165,10 @@ export default function MapCanvas({
         "CooperativeGesturesHandler.MobileHelpText": "使用双指移动地图",
       }}
       maxPitch={0}
-      onLoad={() => setLoaded(true)}
+      onLoad={(event) => {
+        event.target.setPaintProperty("water", "fill-color", "#C7E3EA");
+        setLoaded(true);
+      }}
       onError={onFailure}
       onMoveEnd={(event) => onCamera?.(event.viewState)}
       onClick={
