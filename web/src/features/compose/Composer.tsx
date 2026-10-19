@@ -330,6 +330,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
       mapCard !== null ||
       quotedPost !== null ||
       linkPreview.card !== null;
+    const inlineLayout = variant === "inline" || variant === "edit";
     const expanded =
       variant !== "inline" ||
       focusWithin ||
@@ -1261,7 +1262,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
     return (
       <section
         aria-label={post ? "编辑 Moment" : "发布 Moment"}
-        className={`${styles.composer} ${variant === "inline" ? styles.inlineComposer : styles.pageComposer} ${hasAttachments ? styles.composerHasAttachments : ""}`}
+        className={`${styles.composer} ${inlineLayout ? styles.inlineComposer : styles.pageComposer} ${hasAttachments ? styles.composerHasAttachments : ""}`}
         data-expanded={expanded ? "true" : "false"}
         onBlur={(event) => {
           const section = event.currentTarget;
@@ -1483,7 +1484,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
                 }}
                 placeholder={post ? "编辑 Moment" : "有什么新鲜事？"}
                 ref={textareaRef}
-                rows={hasAttachments ? 1 : variant === "inline" ? 1 : 4}
+                rows={inlineLayout || hasAttachments ? 1 : 4}
                 value={content}
               />
               {mention ? (
@@ -1616,14 +1617,14 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
                   </div>
                 ) : null
               }
-              compact={variant === "inline"}
-              dialogToolbar={variant !== "inline"}
-              className={variant === "inline" ? styles.inlineMedia : undefined}
+              compact={inlineLayout}
+              dialogToolbar={variant === "page"}
+              className={inlineLayout ? styles.inlineMedia : undefined}
               disabled={pending}
-              divider={variant === "inline" && expanded}
+              divider={inlineLayout && expanded}
               footerAction={
                 <div className={styles.composerFooterActions}>
-                  {variant !== "inline" && (count > 0 || hasAttachments) && (
+                  {variant === "page" && (count > 0 || hasAttachments) && (
                     <ActionTooltip
                       label={`${count.toLocaleString("zh-CN")} / ${MAX_CONTENT.toLocaleString("zh-CN")} 字`}
                     >
