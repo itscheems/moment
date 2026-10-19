@@ -21,6 +21,8 @@ import styles from "./Maps.module.css";
 
 maplibre.setWorkerUrl(workerUrl);
 
+const WATER_COLOR = "#C7E3EA";
+
 export interface MapCamera {
   longitude: number;
   latitude: number;
@@ -165,10 +167,21 @@ export default function MapCanvas({
         "CooperativeGesturesHandler.MobileHelpText": "使用双指移动地图",
       }}
       maxPitch={0}
-      onLoad={(event) => {
-        event.target.setPaintProperty("water", "fill-color", "#C7E3EA");
-        setLoaded(true);
+      onStyleData={({ target }) => {
+        if (
+          !target.getLayer("water") ||
+          target.getPaintProperty("water", "fill-color") === WATER_COLOR
+        ) {
+          return;
+        }
+        // Style data precedes the first render; load is emitted after it.
+        target.setPaintProperty("water", "fill-color-transition", {
+          duration: 0,
+          delay: 0,
+        });
+        target.setPaintProperty("water", "fill-color", WATER_COLOR);
       }}
+      onLoad={() => setLoaded(true)}
       onError={onFailure}
       onMoveEnd={(event) => onCamera?.(event.viewState)}
       onClick={
