@@ -221,8 +221,9 @@ export function MapCard({
         <Dialog.Portal>
           <Dialog.Backdrop className={styles.backdrop} />
           <Dialog.Popup
-            className={styles.expanded}
+            className={`${styles.expanded} ${onPick ? styles.pickerExpanded : ""}`}
             data-map-fullscreen=""
+            data-map-editable={onChange ? "" : undefined}
             onKeyDown={(event) => {
               if (
                 (event.key === "ArrowUp" || event.key === "ArrowDown") &&

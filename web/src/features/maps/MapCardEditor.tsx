@@ -242,10 +242,13 @@ export function MapCardEditor({
           />
           <Dialog.Popup className={styles.picker}>
             <header className={styles.dialogHeader}>
-              <Dialog.Title>添加地图地点</Dialog.Title>
-              <Dialog.Close aria-label="关闭地点选择">
+              <Dialog.Close
+                className={styles.pickerClose}
+                aria-label="关闭地点选择"
+              >
                 <Icon name="close" />
               </Dialog.Close>
+              <Dialog.Title>添加地图地点</Dialog.Title>
             </header>
             <div className={styles.pickerBody}>
               <div className={styles.search}>
@@ -329,6 +332,7 @@ export function MapCardEditor({
                     maxLength={160}
                   />
                   <button
+                    className={styles.confirmPoint}
                     type="button"
                     disabled={!picked || !manualName.trim()}
                     onClick={() =>

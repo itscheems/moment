@@ -540,9 +540,9 @@
 }
 .dialogHeader {
   display: flex;
-  justify-content: space-between;
+  justify-content: flex-start;
   align-items: center;
-  padding: 8px 12px 8px 20px;
+  padding: 8px 12px;
   min-height: 60px;
   gap: 12px;
 }
@@ -556,11 +556,10 @@
   align-items: center;
   gap: 8px;
 }
-.dialogHeader button,
 .editActions button,
 .addButton,
 .results button,
-.manual button,
+.confirmPoint,
 .placeholder button {
   border: 0;
   color: inherit;
@@ -571,8 +570,22 @@
   cursor: pointer;
   font: inherit;
 }
-.dialogHeader button:has(svg) {
-  padding: 10px;
+.pickerClose {
+  display: grid;
+  place-items: center;
+  flex: 0 0 32px;
+  width: 32px;
+  height: 32px;
+  border: 0;
+  padding: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: background-color 160ms ease;
+}
+.pickerClose:hover {
+  background: var(--surface-hover);
 }
 .picker {
   inset: 8vh max(16px, calc((100vw - 560px) / 2));
@@ -711,6 +724,9 @@
 .picker {
   z-index: calc(var(--layer-map) + 4);
 }
+.pickerExpanded {
+  z-index: calc(var(--layer-map) + 5);
+}
 .manual {
   display: grid;
   gap: 10px;
@@ -817,6 +833,7 @@
   .floatingControl,
   .expanded :global(.maplibregl-ctrl-group button),
   .panelToggle,
+  .pickerClose,
   .addButton {
     transition: none;
   }
