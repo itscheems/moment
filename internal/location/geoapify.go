@@ -5,6 +5,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"unicode"
 
 	"github.com/moment/moment/internal/domain"
 )
@@ -12,16 +13,17 @@ import (
 const defaultGeoapifyBaseURL = "https://api.geoapify.com"
 
 type geoapifyProvider struct {
-	client  HTTPClient
-	key     string
-	baseURL string
+	client   HTTPClient
+	key      string
+	baseURL  string
+	namesURL string
 }
 
 func newGeoapifyProvider(client HTTPClient, key, baseURL string) *geoapifyProvider {
 	if baseURL == "" {
 		baseURL = defaultGeoapifyBaseURL
 	}
-	return &geoapifyProvider{client: client, key: key, baseURL: baseURL}
+	return &geoapifyProvider{client: client, key: key, baseURL: baseURL, namesURL: "https://www.wikidata.org"}
 }
 
 type geoapifyResult struct {
@@ -54,6 +56,31 @@ type geoapifyPlacesResponse struct {
 }
 
 func (provider *geoapifyProvider) Search(ctx context.Context, query string, bias *domain.GeoPoint, limit int) ([]domain.Location, error) {
+	items, err := provider.search(ctx, query, bias, limit)
+	if err != nil || len(items) > 0 || !strings.ContainsFunc(query, func(r rune) bool { return unicode.Is(unicode.Han, r) }) {
+		return items, err
+	}
+	// Geoapify does not index every localized name. Resolve an English label
+	// through Wikidata's multilingual alias index, then geocode it normally.
+	var names struct {
+		Search []struct {
+			Label string `json:"label"`
+		} `json:"search"`
+	}
+	values := url.Values{"action": {"wbsearchentities"}, "search": {query}, "language": {"zh"}, "uselang": {"en"}, "type": {"item"}, "limit": {"1"}, "format": {"json"}}
+	if err := getJSON(ctx, provider.client, provider.namesURL, "/w/api.php", values, &names); err != nil {
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
+		return items, nil
+	}
+	if len(names.Search) == 0 || strings.EqualFold(names.Search[0].Label, query) || strings.TrimSpace(names.Search[0].Label) == "" {
+		return items, nil
+	}
+	return provider.search(ctx, names.Search[0].Label, bias, limit)
+}
+
+func (provider *geoapifyProvider) search(ctx context.Context, query string, bias *domain.GeoPoint, limit int) ([]domain.Location, error) {
 	values := url.Values{
 		"apiKey": {provider.key}, "text": {query}, "format": {"json"},
 		"lang": {"zh"}, "limit": {strconv.Itoa(limit)},
