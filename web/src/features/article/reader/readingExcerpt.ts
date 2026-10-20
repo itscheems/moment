@@ -19,16 +19,18 @@ export interface ReadingExcerptSource {
   publishedLabel: string;
 }
 
+type ExcerptBlock = Exclude<ShareCardBlock, { kind: "table" }>;
+
 /** Slice source positions before serializing: atoms and newlines aren't offsets in text. */
 export function readingExcerptBlocks(
   editor: Editor,
   selection: ReadingRange,
   resolveColour: (value: string) => string,
-): ShareCardBlock[] {
+): ExcerptBlock[] {
   const { doc } = editor.state;
   const serializers = getTextSerializersFromSchema(editor.schema);
   const annotations = editor.storage.readingAnnotations.ranges;
-  const blocks: ShareCardBlock[] = [];
+  const blocks: ExcerptBlock[] = [];
   doc.nodesBetween(selection.from, selection.to, (node, pos) => {
     if (!node.isTextblock) return;
     const position = doc.resolve(pos + 1);

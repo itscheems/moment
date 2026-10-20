@@ -120,6 +120,32 @@ describe("reading a post body into blocks", () => {
     ).toEqual([{ kind: "text", text: "深处的一段" }]);
   });
 
+  it("keeps table rows, header cells, blank cells and column alignment", () => {
+    expect(
+      shareCardBlocks(
+        `<p>Before</p><table><thead><tr><th>Left</th><th align="center">Center</th><th style="text-align:right">Right</th></tr></thead><tbody><tr><td></td><td>After the fix</td><td>Color-managed reference</td></tr></tbody></table><p>After</p>`,
+      ),
+    ).toEqual([
+      { kind: "text", text: "Before" },
+      {
+        kind: "table",
+        rows: [
+          [
+            { text: "Left", header: true, align: "left" },
+            { text: "Center", header: true, align: "center" },
+            { text: "Right", header: true, align: "right" },
+          ],
+          [
+            { text: "", header: false, align: "left" },
+            { text: "After the fix", header: false, align: "left" },
+            { text: "Color-managed reference", header: false, align: "left" },
+          ],
+        ],
+      },
+      { kind: "text", text: "After" },
+    ]);
+  });
+
   it("says nothing about an empty body rather than drawing a blank line", () => {
     expect(shareCardBlocks("<p></p><p>   </p>")).toEqual([]);
   });
@@ -299,6 +325,94 @@ describe("drawing the card", () => {
       );
     expect(sources.some((source) => source.includes("/poster"))).toBe(true);
     expect(sources.some((source) => source.includes("/preview"))).toBe(false);
+  });
+
+  it.each([
+    { width: 1440, height: 797 },
+    { width: 900, height: 1800 },
+    { width: 2400, height: 400 },
+    { width: 900, height: 900 },
+  ])(
+    "draws a single attachment using its complete $width × $height proportions",
+    async (dimensions) => {
+      restoreImages();
+      restoreImages = resolveImages(dimensions);
+      await renderShareCard(
+        input({ media: [{ mediaId: "01A", mimeType: "image/png" }] }),
+      );
+      const image = recording
+        .of("drawImage")
+        .find((call) => call.args[0] instanceof HTMLImageElement)!;
+      const [, x, y, width, height] = image.args as [
+        HTMLImageElement,
+        number,
+        number,
+        number,
+        number,
+      ];
+      expect(width / height).toBeCloseTo(
+        dimensions.width / dimensions.height,
+        6,
+      );
+      expect(width).toBeLessThanOrEqual(516 + 1e-6);
+      expect(height).toBeLessThanOrEqual(544 + 1e-6);
+      // The clip frame and the drawn image use the same bounds: no cover crop.
+      expect(
+        recording
+          .of("roundRect")
+          .some((call) =>
+            call.args
+              .slice(0, 4)
+              .every(
+                (value, index) =>
+                  Math.abs(Number(value) - [x, y, width, height][index]!) <
+                  0.001,
+              ),
+          ),
+      ).toBe(true);
+    },
+  );
+
+  it("draws table headers on one row, wraps long cells and leaves room for the following paragraph", async () => {
+    const long = "UnbrokenCellContentThatMustStayInsideItsColumn";
+    await renderShareCard(
+      input({
+        blocks: shareCardBlocks(
+          `<table><tr><th>Left</th><th align="center">Center</th><th align="right">Right</th></tr><tr><td>Before</td><td>After</td><td>${long}</td></tr></table><p>AFTER_TABLE</p>`,
+        ),
+      }),
+    );
+    const calls = recording.of("fillText");
+    const headings = ["Left", "Center", "Right"].map((text) =>
+      calls.find((call) => call.args[0] === text)!,
+    );
+    expect(new Set(headings.map((call) => call.args[2])).size).toBe(1);
+    expect(headings.every((call) => call.font.startsWith("700 "))).toBe(true);
+    expect(Number(headings[0].args[1])).toBeLessThan(
+      Number(headings[1].args[1]),
+    );
+    expect(Number(headings[1].args[1])).toBeLessThan(
+      Number(headings[2].args[1]),
+    );
+    expect(recording.text()).toContain(long);
+    const trailing = calls.find((call) => call.args[0] === "AFTER_TABLE")!;
+    const lastTableLine = calls[calls.indexOf(trailing) - 1]!;
+    expect(Number(trailing.args[2])).toBeGreaterThan(
+      Number(lastTableLine.args[2]),
+    );
+  });
+
+  it("marks a clipped post table and refuses to truncate an exact article excerpt", async () => {
+    const blocks = shareCardBlocks(
+      `<table>${Array.from({ length: 70 }, (_, index) => `<tr><td>ROW_${index}</td></tr>`).join("")}</table>`,
+    );
+    await renderShareCard(input({ blocks }));
+    expect(recording.text()).toContain("ROW_0");
+    expect(recording.text()).toContain("…");
+    expect(recording.text()).not.toContain("ROW_69");
+    await expect(
+      renderShareCard(input({ blocks, articleTitle: "Source" })),
+    ).rejects.toThrow(ShareCardTooLongError);
   });
 
   it("keeps the byline's two lines at the same size with a bold name", async () => {
