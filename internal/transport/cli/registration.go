@@ -118,15 +118,15 @@ func registerAPI(ctx context.Context, invocation Invocation, username, password 
 	client := &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
 	response, err := client.Do(request)
 	if err != nil {
-		return registrationResult{}, nil, uncertainRegistration(err, ctx)
+		return registrationResult{}, nil, uncertainRegistration(ctx, err)
 	}
 	defer func() { _ = response.Body.Close() }()
 	body, err := io.ReadAll(io.LimitReader(response.Body, maxAPIResponse+1))
 	if err != nil {
-		return registrationResult{}, nil, uncertainRegistration(err, ctx)
+		return registrationResult{}, nil, uncertainRegistration(ctx, err)
 	}
 	if len(body) > maxAPIResponse || !validAPIJSONContentType(response.Header.Get("Content-Type")) {
-		return registrationResult{}, nil, uncertainRegistration(invalidAPIResponse(), ctx)
+		return registrationResult{}, nil, uncertainRegistration(ctx, invalidAPIResponse())
 	}
 	if response.StatusCode != http.StatusCreated {
 		if response.StatusCode < 200 || response.StatusCode >= 300 {
@@ -136,22 +136,22 @@ func registerAPI(ctx context.Context, invocation Invocation, username, password 
 				return registrationResult{}, nil, failure
 			}
 		}
-		return registrationResult{}, nil, uncertainRegistration(invalidAPIResponse(), ctx)
+		return registrationResult{}, nil, uncertainRegistration(ctx, invalidAPIResponse())
 	}
 	var receipt registrationAPIReceipt
 	_, meta, err := decodeStrictAPISuccess(body, &receipt)
 	if err != nil || !receipt.AccountCreated || receipt.Username == "" || receipt.CSRFToken == "" || receipt.ExpiresAt.IsZero() ||
 		(receipt.AccountStatus != domain.AccountActive && receipt.AccountStatus != domain.AccountPending) {
-		return registrationResult{}, nil, uncertainRegistration(invalidAPIResponse(), ctx)
+		return registrationResult{}, nil, uncertainRegistration(ctx, invalidAPIResponse())
 	}
 	canonical, err := domain.NormalizeUsername(username)
 	if err != nil || canonical != receipt.Username {
-		return registrationResult{}, nil, uncertainRegistration(invalidAPIResponse(), ctx)
+		return registrationResult{}, nil, uncertainRegistration(ctx, invalidAPIResponse())
 	}
 	return registrationResult{AccountCreated: true, Username: receipt.Username, AccountStatus: receipt.AccountStatus}, meta, nil
 }
 
-func uncertainRegistration(cause error, ctx context.Context) error {
+func uncertainRegistration(ctx context.Context, cause error) error {
 	exit := ExitUnavailable
 	if ctx.Err() != nil {
 		exit = ExitTimeout
