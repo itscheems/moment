@@ -27,6 +27,7 @@ interface NavigationLocation extends LocationSnapshot {
 
 interface NavigationContextValue extends NavigationLocation {
   navigate: (href: string, options?: { preserveScroll?: boolean }) => void;
+  navigateAuth: (href: string) => void;
   /**
    * A redirect: the address corrected in place rather than a page the reader
    * chose. The entry keeps its standing in the history, so one reached from
@@ -45,6 +46,7 @@ interface NavigationContextValue extends NavigationLocation {
   openPanel: (href: string, key: string) => void;
   closePanel: (key: string) => void;
   goBack: (fallback: string) => void;
+  goBackAuth: (fallback: string) => void;
   replaceTimelineProgress: (cursor: string, name?: ProgressName) => void;
   /**
    * Puts the entry back where the reader left it. A fresh entry -- one just
@@ -77,6 +79,15 @@ function currentLocation(): LocationSnapshot {
     pathname: window.location.pathname,
     search: window.location.search,
   };
+}
+
+function isAuthPagePath(pathname: string): boolean {
+  return (
+    pathname === "/login" ||
+    pathname === "/login/" ||
+    pathname === "/register" ||
+    pathname === "/register/"
+  );
 }
 
 function locationSnapshot(
@@ -201,6 +212,24 @@ export function NavigationProvider({ children }: { children: ReactNode }) {
     [canLeave, commitNavigation],
   );
 
+  // The reader has not left the retained editing surface when changing which
+  // account entry form is visible. Other destinations still run its blocker.
+  const navigateAuth = useCallback(
+    (href: string) => {
+      const target = new URL(href, window.location.href);
+      if (
+        isAuthPagePath(window.location.pathname) &&
+        target.origin === window.location.origin &&
+        isAuthPagePath(target.pathname)
+      ) {
+        commitNavigation(href);
+      } else {
+        navigate(href);
+      }
+    },
+    [commitNavigation, navigate],
+  );
+
   // Not guarded by the blockers: a redirect is the app correcting where it
   // is, and nothing on the pages that redirect has work to lose. Pushing
   // here was what made the sign-in page inescapable -- back re-entered
@@ -320,6 +349,23 @@ export function NavigationProvider({ children }: { children: ReactNode }) {
     [canLeave, commitNavigation],
   );
 
+  const goBackAuth = useCallback(
+    (fallback: string) => {
+      if (!isAuthPagePath(window.location.pathname)) {
+        goBack(fallback);
+        return;
+      }
+      // Popstate knows the destination: another auth page keeps the editor,
+      // while a real departure still asks its blocker before completing.
+      if ((window.history.state as MomentHistoryState | null)?.momentInternal) {
+        window.history.back();
+      } else {
+        goBack(fallback);
+      }
+    },
+    [goBack],
+  );
+
   useEffect(() => {
     let previous = locationSnapshot(window.history.state);
     const onPopState = (event: PopStateEvent) => {
@@ -329,6 +375,8 @@ export function NavigationProvider({ children }: { children: ReactNode }) {
         a.panel.from.search === b.search;
       const panelTransition =
         sameSurface(previous, next) || sameSurface(next, previous);
+      const authTransition =
+        isAuthPagePath(previous.pathname) && isAuthPagePath(next.pathname);
       previous = next;
       if (suppressNextPopGuard.current) {
         suppressNextPopGuard.current = false;
@@ -337,7 +385,7 @@ export function NavigationProvider({ children }: { children: ReactNode }) {
         return;
       }
       const resume = () => window.history.back();
-      if (!panelTransition && !canLeave(resume)) {
+      if (!panelTransition && !authTransition && !canLeave(resume)) {
         suppressNextPopGuard.current = true;
         window.history.go(1);
         return;
@@ -384,12 +432,14 @@ export function NavigationProvider({ children }: { children: ReactNode }) {
     () => ({
       ...location,
       navigate,
+      navigateAuth,
       replace,
       replaceWithinPage,
       navigateOverlay,
       openPanel,
       closePanel,
       goBack,
+      goBackAuth,
       replaceTimelineProgress,
       restoreCurrentEntry,
       setNavigationBlocker,
@@ -397,12 +447,14 @@ export function NavigationProvider({ children }: { children: ReactNode }) {
     [
       location,
       navigate,
+      navigateAuth,
       replace,
       replaceWithinPage,
       navigateOverlay,
       openPanel,
       closePanel,
       goBack,
+      goBackAuth,
       replaceTimelineProgress,
       restoreCurrentEntry,
       setNavigationBlocker,
@@ -431,11 +483,13 @@ export function InternalLink({
   href,
   children,
   onClick,
+  authSwitch = false,
   ...props
 }: Omit<React.AnchorHTMLAttributes<HTMLAnchorElement>, "href"> & {
   href: string;
+  authSwitch?: boolean;
 }) {
-  const { navigate } = useNavigation();
+  const { navigate, navigateAuth } = useNavigation();
   const follow = (event: MouseEvent<HTMLAnchorElement>) => {
     onClick?.(event);
     if (
@@ -450,7 +504,8 @@ export function InternalLink({
       return;
     }
     event.preventDefault();
-    navigate(href);
+    if (authSwitch) navigateAuth(href);
+    else navigate(href);
   };
   return (
     <a href={href} onClick={follow} {...props}>

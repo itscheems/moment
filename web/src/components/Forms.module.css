@@ -1808,6 +1808,45 @@
   margin-block-start: clamp(var(--space-2), 2dvh, var(--space-4));
 }
 
+.authSwitch {
+  flex-shrink: 0;
+  inline-size: 100%;
+  max-inline-size: 22rem;
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+  line-height: 1.5;
+  text-align: center;
+}
+
+.authSwitch a {
+  color: var(--accent);
+  font-weight: 650;
+  text-decoration: none;
+}
+
+.authSwitch a:hover {
+  text-decoration: underline;
+}
+
+.authSwitch a:focus-visible {
+  border-radius: 2px;
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+
+.loginScreen .loginGate > .registerStatus {
+  margin: 0 0 var(--space-4);
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+  line-height: 1.55;
+}
+
+.registerContinue {
+  color: var(--accent);
+  font-weight: 650;
+}
+
 /* The same 2.75rem arrow the shell's headers carry, pinned to the viewport.
    Over the canvas it is the glyph with the shell's hover wash;
    over the brand panel (the wide layout, below) it stands on a white disc. */

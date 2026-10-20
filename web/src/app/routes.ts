@@ -7,6 +7,7 @@ export type RouteId =
   | "profile-edit"
   | "profile"
   | "login"
+  | "register"
   | "compose"
   | "article-workspace"
   | "edit"
@@ -172,6 +173,13 @@ const routes: Array<AppRoute & { match: (pathname: string) => boolean }> = [
     eyebrow: "",
     href: "/login",
     match: (pathname) => pathname === "/login" || pathname === "/login/",
+  },
+  {
+    id: "register",
+    title: "注册",
+    eyebrow: "",
+    href: "/register",
+    match: (pathname) => pathname === "/register" || pathname === "/register/",
   },
   // Ahead of the compose route so the reading of "/compose/article" is never
   // decided by how loosely that one happens to match today.

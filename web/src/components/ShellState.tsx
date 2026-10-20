@@ -57,6 +57,11 @@ const emptyCopy: Record<
     title: "登录账号",
     detail: "登录后可以发布和管理内容。",
   },
+  register: {
+    marker: "账号",
+    title: "注册账号",
+    detail: "创建账号后可以登录本站。",
+  },
   compose: {
     marker: "发布",
     title: "发布 Moment",

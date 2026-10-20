@@ -46,6 +46,15 @@ type SyncMessage =
 export type SessionState =
   "checking" | "guest" | "signed-in" | "expired" | "unavailable";
 
+export class RegistrationSessionRestoreError extends Error {
+  readonly accountCreated = true;
+
+  constructor(readonly username: string) {
+    super("account was created but its browser session could not be confirmed");
+    this.name = "RegistrationSessionRestoreError";
+  }
+}
+
 interface AuthOutcome {
   kind: "ok" | "linked";
   provider: string | null;
@@ -70,6 +79,7 @@ interface SessionContextValue {
     method?: "password" | "token",
     username?: string,
   ) => Promise<void>;
+  register: (username: string, password: string) => Promise<Account>;
   logout: (instanceId: string | null) => Promise<void>;
   /**
    * Drop this browser's session without asking the server to end it, for when
@@ -558,6 +568,35 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     [adoptSession, api],
   );
 
+  const register = useCallback(
+    async (username: string, password: string) => {
+      const created = await authApi.register(username, password);
+      let restored: Awaited<ReturnType<AuthApi["accountSession"]>>;
+      try {
+        restored = await authApi.accountSession();
+        if (
+          restored.account.username !== created.username ||
+          restored.csrfToken !== created.csrfToken
+        ) {
+          throw new Error("registration session changed before confirmation");
+        }
+      } catch {
+        setAccount(null);
+        setLimits(null);
+        setState("unavailable");
+        throw new RegistrationSessionRestoreError(created.username);
+      }
+      setAccount(restored.account);
+      setLimits(restored.limits);
+      adoptSession({
+        csrfToken: created.csrfToken,
+        expiresAt: created.expiresAt,
+      });
+      return restored.account;
+    },
+    [adoptSession, api],
+  );
+
   const applyAccount = useCallback((next: Account) => setAccount(next), []);
 
   const forgetSession = useCallback(
@@ -612,6 +651,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       account,
       limits,
       login,
+      register,
       logout,
       forgetSession,
       applyAccount,
@@ -626,6 +666,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       forgetSession,
       limits,
       login,
+      register,
       logout,
       retryStatus,
       session,
