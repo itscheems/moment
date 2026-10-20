@@ -142,6 +142,7 @@ function PublicApp() {
     if (location.pathname === COMPOSE_MEDIA_PATH && !location.panel)
       location.replace(COMPOSE_PATH);
   }, [location]);
+  const auth = useSession();
   const requestedRoute = resolveRoute(contentLocation.pathname);
   // Composing is a dialog wherever the page has room for one, whether it was
   // opened from the timeline or the address was loaded cold. Reloading it used
@@ -152,7 +153,9 @@ function PublicApp() {
     requestedRoute.id === "compose" && composeDialogViewport;
   const displayLocation = overlayCompose
     ? (contentLocation.overlayFrom ?? HOME_LOCATION)
-    : contentLocation;
+    : requestedRoute.id === "profile-edit"
+      ? { pathname: auth.account?.profileUrl ?? "/profile", search: "" }
+      : contentLocation;
   const quotedPostId = hasValidRawQueryEncoding(contentLocation.search)
     ? (new URLSearchParams(contentLocation.search).get("quote") ?? undefined)
     : undefined;
@@ -164,7 +167,6 @@ function PublicApp() {
       ? null
       : new URLSearchParams(displayLocation.search).get("state");
   const api = useMemo(() => new PublicApi(), []);
-  const auth = useSession();
   const mobileViewport = useMediaQuery(MOBILE_VIEWPORT_QUERY);
   const [site, setSite] = useState(fallbackSite);
   const draftScope = accountCacheScope(
@@ -330,6 +332,7 @@ function PublicApp() {
   useEffect(() => {
     if (loginRoute) return;
     const pathname = displayLocation.pathname;
+    if (requestedRoute.id === "profile-edit") return;
     if (pathname !== "/profile" && pathname !== "/profile/") return;
     // Still resolving, or unable to say. Neither is an answer to act on.
     if (auth.state === "checking" || auth.state === "unavailable") return;
@@ -345,6 +348,7 @@ function PublicApp() {
     location.replace(own ?? "/login?return=%2Fprofile");
   }, [
     displayLocation.pathname,
+    requestedRoute.id,
     location,
     loginRoute,
     auth.account,
@@ -358,7 +362,8 @@ function PublicApp() {
     if (loginRoute || auth.state === "expired") return;
     const composing =
       requestedRoute.id === "compose" ||
-      requestedRoute.id === "article-workspace";
+      requestedRoute.id === "article-workspace" ||
+      requestedRoute.id === "profile-edit";
     if (!composing || publishingAvailable) return;
     // Still resolving, or unable to say. Neither is an answer to act on.
     if (auth.state === "checking" || auth.state === "unavailable") return;

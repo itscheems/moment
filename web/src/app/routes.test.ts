@@ -26,6 +26,8 @@ describe("route boundaries", () => {
     ["/owner/compose", "not-found"],
     ["/m/01JABC/edit", "edit"],
     ["/settings/account", "settings"],
+    ["/settings/profile", "profile-edit"],
+    ["/settings/profile/", "profile-edit"],
     ["/profile", "profile"],
     ["/itscheems", "profile"],
     ["/itscheems/all", "profile"],

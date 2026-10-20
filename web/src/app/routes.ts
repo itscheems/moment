@@ -4,6 +4,7 @@ export type RouteId =
   | "article-focus"
   | "search"
   | "archive"
+  | "profile-edit"
   | "profile"
   | "login"
   | "compose"
@@ -18,6 +19,11 @@ export interface AppRoute {
   eyebrow: string;
   href: string;
   activeAccountOnly?: boolean;
+}
+
+export const PROFILE_EDIT_PATH = "/settings/profile";
+export function isProfileEditPath(pathname: string): boolean {
+  return pathname === PROFILE_EDIT_PATH || pathname === `${PROFILE_EDIT_PATH}/`;
 }
 
 export const COMPOSE_PATH = "/compose";
@@ -191,6 +197,13 @@ const routes: Array<AppRoute & { match: (pathname: string) => boolean }> = [
     href: "/",
     activeAccountOnly: true,
     match: (pathname) => /^\/m\/[^/]+\/edit\/?$/.test(pathname),
+  },
+  {
+    id: "profile-edit",
+    title: "编辑资料",
+    eyebrow: "",
+    href: PROFILE_EDIT_PATH,
+    match: isProfileEditPath,
   },
   {
     id: "settings",
