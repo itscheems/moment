@@ -51,7 +51,7 @@ export function MentionSuggestions({
             type="button"
           >
             <SiteAvatar site={site} />
-            <span>
+            <span className={styles.mentionIdentity}>
               <strong>{item.displayName}</strong>
               <small>@{item.username}</small>
             </span>

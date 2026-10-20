@@ -503,7 +503,7 @@
   block-size: 2.5rem;
 }
 
-.mentionSuggestion > span,
+.mentionIdentity,
 .mentionSuggestion strong,
 .mentionSuggestion small {
   min-inline-size: 0;
