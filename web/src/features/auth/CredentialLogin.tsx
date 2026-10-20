@@ -18,6 +18,7 @@ import styles from "../../components/Forms.module.css";
 // visitors are in mainland China, where Google is unreachable, so the option
 // that can actually complete has to be the first one they see.
 const PROVIDER_ORDER = ["github", "google"];
+const LOGIN_OPTIONS_RETRY_MS = 3000;
 
 const AUTH_ERROR_MESSAGES: Record<string, string> = {
   OAUTH_PROVIDER_UNAVAILABLE:
@@ -150,6 +151,8 @@ export function CredentialLogin({
   >(null);
   const [providers, setProviders] = useState<OAuthLoginProvider[]>([]);
   const [providersPending, setProvidersPending] = useState(true);
+  const [providerAttempt, setProviderAttempt] = useState(0);
+  const [methodAttempt, setMethodAttempt] = useState(0);
   // How long the form may be held back for its answers. Past this it is
   // drawn with what is known -- a server that never answers must not leave
   // a blank where a sign-in form should be.
@@ -162,6 +165,8 @@ export function CredentialLogin({
   );
   const pendingRef = useRef(false);
   const mountedRef = useRef(true);
+  const knownMethodsRef = useRef<SignInMethod[]>([]);
+  const methodChosenRef = useRef(false);
   const errorId = useId();
   const toastId = `login-error-${errorId}`;
   const authAnnouncedRef = useRef(false);
@@ -229,6 +234,7 @@ export function CredentialLogin({
 
   useEffect(() => {
     const controller = new AbortController();
+    let retryTimer: number | undefined;
     void authApi
       .loginProviders(controller.signal)
       .then((available) => {
@@ -236,17 +242,36 @@ export function CredentialLogin({
           setProviders(orderedProviders(available));
         }
       })
-      .catch(() => {
-        // Instances with no OAuth configured do not serve this endpoint at all.
-        // Falling back to an empty list degrades the page to the password form
-        // instead of showing a failure the visitor cannot act on.
-        if (!controller.signal.aborted) setProviders([]);
+      .catch((error: unknown) => {
+        if (controller.signal.aborted) return;
+        // Older instances may not serve this endpoint. A temporary outage is
+        // different: keep any visible buttons and ask again when it recovers.
+        if (error instanceof PublicApiError && error.status === 404) {
+          setProviders([]);
+          return;
+        }
+        retryTimer = window.setTimeout(
+          () => setProviderAttempt((attempt) => attempt + 1),
+          LOGIN_OPTIONS_RETRY_MS,
+        );
       })
       .finally(() => {
         if (!controller.signal.aborted) setProvidersPending(false);
       });
-    return () => controller.abort();
-  }, [api]);
+    return () => {
+      controller.abort();
+      window.clearTimeout(retryTimer);
+    };
+  }, [api, providerAttempt]);
+
+  useEffect(() => {
+    const refresh = () => {
+      setProviderAttempt((attempt) => attempt + 1);
+      setMethodAttempt((attempt) => attempt + 1);
+    };
+    window.addEventListener("focus", refresh);
+    return () => window.removeEventListener("focus", refresh);
+  }, []);
 
   useEffect(() => {
     // A back navigation can restore this page from the bfcache with the button
@@ -258,33 +283,50 @@ export function CredentialLogin({
 
   useEffect(() => {
     const controller = new AbortController();
+    let retryTimer: number | undefined;
     void authApi
       .signInMethods(controller.signal)
       .then((available) => {
         if (controller.signal.aborted) return;
+        knownMethodsRef.current = available.methods;
         setMethods(available.methods);
         // A password is what somebody signing in today is looking for. The
         // token is a recovery credential, so it is only the default when this
         // instance has no password set at all.
-        setMethod(
-          available.methods.includes("password")
-            ? "password"
-            : (available.methods[0] ?? "token"),
+        const preferred = available.methods.includes("password")
+          ? "password"
+          : (available.methods[0] ?? "token");
+        setMethod((current) =>
+          methodChosenRef.current && available.methods.includes(current)
+            ? current
+            : preferred,
         );
       })
-      .catch(() => {
+      .catch((error: unknown) => {
+        if (controller.signal.aborted) return;
         // An instance that will not say keeps its token path usable, rather
         // than presenting a password form that cannot succeed against it.
-        if (!controller.signal.aborted) {
+        // A transient outage is retried so it cannot strand a password user
+        // on the token form after the server returns.
+        if (knownMethodsRef.current.length === 0) {
           setMethods(["token"]);
           setMethod("token");
+        }
+        if (!(error instanceof PublicApiError && error.status === 404)) {
+          retryTimer = window.setTimeout(
+            () => setMethodAttempt((attempt) => attempt + 1),
+            LOGIN_OPTIONS_RETRY_MS,
+          );
         }
       })
       .finally(() => {
         if (!controller.signal.aborted) setOptionsPending(false);
       });
-    return () => controller.abort();
-  }, [api]);
+    return () => {
+      controller.abort();
+      window.clearTimeout(retryTimer);
+    };
+  }, [api, methodAttempt]);
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
@@ -520,6 +562,7 @@ export function CredentialLogin({
                 disabled={pending}
                 key={candidate}
                 onClick={() => {
+                  methodChosenRef.current = true;
                   setMethod(candidate);
                   setShowOtherMethods(false);
                   setCredential("");
