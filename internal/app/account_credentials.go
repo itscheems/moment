@@ -26,7 +26,9 @@ type AccountCredentialStore interface {
 }
 
 const (
+	// PasswordMinBytes is the shortest accepted UTF-8 password in bytes.
 	PasswordMinBytes = 8
+	// PasswordMaxBytes matches bcrypt's maximum password input size.
 	PasswordMaxBytes = 72
 )
 
