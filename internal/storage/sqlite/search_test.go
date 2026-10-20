@@ -180,6 +180,40 @@ func TestSearchArchivePostSyncAndRebuild(t *testing.T) {
 	}
 }
 
+func TestSearchProjectsMemberAuthor(t *testing.T) {
+	t.Parallel()
+	ctx := testAccountContext()
+	database, runtimeState := openTestDatabase(t, Options{})
+	member := addContentTestAccount(t, database, "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "alice")
+	postRepository, err := newPostRepository(database)
+	if err != nil {
+		t.Fatal(err)
+	}
+	posts, err := app.NewPostService(postRepository)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := posts.Create(app.WithContentActor(ctx, member), app.CreatePostInput{ContentMD: "membersearch story"}); err != nil {
+		t.Fatal(err)
+	}
+	searchRepository, err := NewSearchRepository(database, runtimeState.Locks)
+	if err != nil {
+		t.Fatal(err)
+	}
+	search, err := app.NewSearchService(searchRepository)
+	if err != nil {
+		t.Fatal(err)
+	}
+	page, err := search.Search(ctx, app.SearchInput{Query: "membersearch", Viewer: app.PublicViewer()})
+	if err != nil || len(page.Items) != 1 {
+		t.Fatalf("member search = %+v, %v", page, err)
+	}
+	author := page.Items[0].Post.Author
+	if author == nil || author.UserID != member.ID || author.Username != member.Username || author.ProfileURL != "/alice" {
+		t.Fatalf("member search author = %+v", author)
+	}
+}
+
 func TestSearchLinkCardTextAgreesBetweenWriteAndRebuild(t *testing.T) {
 	// A card contributes its title, site, author, and canonical host to the
 	// indexed text on the write path. The drift check and the rebuild must

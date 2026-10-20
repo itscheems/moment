@@ -11,6 +11,10 @@ func (store postStore) AuthorIdentities(ctx context.Context, ids []string) (map[
 	return newCommentStore(store.queries).CommentAuthorIdentities(ctx, ids)
 }
 
+func (store searchStore) AuthorIdentities(ctx context.Context, ids []string) (map[string]app.CommentAuthorIdentity, error) {
+	return newCommentStore(store.queries).CommentAuthorIdentities(ctx, ids)
+}
+
 func (store commentStore) AuthorIdentities(ctx context.Context, ids []string) (map[string]app.CommentAuthorIdentity, error) {
 	return store.CommentAuthorIdentities(ctx, ids)
 }
