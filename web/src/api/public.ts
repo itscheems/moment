@@ -1996,36 +1996,9 @@ function nullableCursor(meta: Record<string, unknown>): string | null {
 }
 
 function parseSearchHit(value: unknown): SearchHit {
-  const searchKeys = [
-    "id",
-    "kind",
-    "content_md",
-    "article",
-    "content_html",
-    "created_at",
-    "updated_at",
-    "published_at",
-    "reposted_at",
-    "visibility",
-    "timeline_item_kind",
-    "comment_count",
-    "media",
-    "link_cards",
-    "snippet",
-  ];
-  if (isRecord(value) && "edited_at" in value) searchKeys.push("edited_at");
-  // mirrors searchdto.Hit (internal/transport/searchdto/dto.go), which embeds postdto.Post
-  if (
-    !isRecord(value) ||
-    (!hasExactKeys(value, searchKeys) &&
-      !hasExactKeys(value, [...searchKeys, "location"]) &&
-      !hasExactKeys(value, [...searchKeys, "quoted_post"]) &&
-      !hasExactKeys(value, [...searchKeys, "location", "quoted_post"]))
-  ) {
-    throw invalidResponse(
-      "search hit contains an unsupported or missing field",
-    );
-  }
+  // searchdto.Hit embeds postdto.Post. Let the post parser own its exact
+  // field set so a new post field cannot break every search result.
+  if (!isRecord(value)) throw invalidResponse("search hit must be an object");
   const snippet = stringField(value, "snippet");
   if (!snippet.trim()) {
     throw invalidResponse("search snippet must contain visible text");
