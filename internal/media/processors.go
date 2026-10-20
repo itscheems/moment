@@ -218,7 +218,7 @@ func (store *Store) convertHEIC(ctx context.Context, contents []byte) ([]byte, e
 			return nil, err
 		}
 		width, height := displayDimensions(decoded)
-		if !(width == expected.Width && height == expected.Height) && !(width == expected.Height && height == expected.Width) {
+		if (width != expected.Width || height != expected.Height) && (width != expected.Height || height != expected.Width) {
 			return nil, domain.NewError(domain.CodeMediaPreviewFailed, "HEIC decoder did not produce the complete primary image", nil)
 		}
 	}
