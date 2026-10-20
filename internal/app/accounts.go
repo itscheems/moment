@@ -904,7 +904,7 @@ func (service *AccountService) CaptureAvatar(ctx context.Context, userID, avatar
 	})
 }
 
-// CurrentRegistrationMode reports the policy new external identities meet.
+// CurrentRegistrationMode reports the policy new accounts meet.
 func (service *AccountService) CurrentRegistrationMode(ctx context.Context) (domain.RegistrationMode, error) {
 	var mode domain.RegistrationMode
 	err := service.transactions.ReadAccounts(ctx, func(accounts AccountStore, _ SessionStore) error {
