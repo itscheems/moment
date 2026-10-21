@@ -25,6 +25,20 @@ type AccountCredentialStore interface {
 	RevokeUserAPITokens(context.Context, string, int64) error
 }
 
+const (
+	// PasswordMinBytes is the shortest accepted UTF-8 password in bytes.
+	PasswordMinBytes = 8
+	// PasswordMaxBytes matches bcrypt's maximum password input size.
+	PasswordMaxBytes = 72
+)
+
+func validateAccountPassword(password string) error {
+	if !utf8.ValidString(password) || len(password) < PasswordMinBytes || len(password) > PasswordMaxBytes || strings.TrimSpace(password) != password {
+		return domain.NewError(domain.CodeInvalidArgument, "password must contain 8 to 72 UTF-8 bytes without surrounding whitespace", map[string]any{"field": "password"})
+	}
+	return nil
+}
+
 // IssuedAPIToken returns a one-time plaintext credential alongside its persisted metadata.
 type IssuedAPIToken struct {
 	Token domain.APIToken `json:"credential"`
@@ -76,8 +90,8 @@ func (service *AccountService) VerifyPassword(ctx context.Context, username, pas
 // SetAccountPassword atomically replaces a password and revokes this account's
 // browser sessions. API credentials have their own explicit revocation.
 func (service *AccountService) SetAccountPassword(ctx context.Context, userID, password string) error {
-	if len(password) < 8 || len(password) > 72 || strings.TrimSpace(password) != password {
-		return domain.NewError(domain.CodeInvalidArgument, "password must contain 8 to 72 bytes without surrounding whitespace", map[string]any{"field": "password"})
+	if err := validateAccountPassword(password); err != nil {
+		return err
 	}
 	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
 	if err != nil {

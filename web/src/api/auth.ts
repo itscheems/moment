@@ -16,6 +16,19 @@ export interface AuthSession {
   expiresAt: string;
 }
 
+export interface RegistrationOptions {
+  registrationMode: "open" | "approval" | "closed";
+  usernameMinLength: number;
+  usernameMaxLength: number;
+  passwordMinBytes: number;
+  passwordMaxBytes: number;
+}
+
+export interface RegistrationResult extends AuthSession {
+  username: string;
+  accountStatus: "active" | "pending";
+}
+
 export type SignInMethod = "password" | "token";
 
 export interface SignInMethods {
@@ -71,6 +84,95 @@ export function parseAccountLimits(value: unknown): AccountLimits {
 }
 
 export class AuthApi extends ApiClient {
+  async registrationOptions(
+    signal?: AbortSignal,
+  ): Promise<RegistrationOptions> {
+    const response = await this.fetcher("/api/v1/register/options", {
+      ...requestInit("GET"),
+      signal,
+    });
+    const record = objectData((await decodeResponse(response)).data);
+    if (
+      !hasExactKeys(record, [
+        "registration_mode",
+        "username_min_length",
+        "username_max_length",
+        "password_min_bytes",
+        "password_max_bytes",
+      ]) ||
+      (record.registration_mode !== "open" &&
+        record.registration_mode !== "approval" &&
+        record.registration_mode !== "closed")
+    ) {
+      throw invalidResponse("registration options contain unsupported fields");
+    }
+    const usernameMinLength = positiveIntegerField(
+      record,
+      "username_min_length",
+    );
+    const usernameMaxLength = positiveIntegerField(
+      record,
+      "username_max_length",
+    );
+    const passwordMinBytes = positiveIntegerField(record, "password_min_bytes");
+    const passwordMaxBytes = positiveIntegerField(record, "password_max_bytes");
+    if (
+      usernameMinLength > usernameMaxLength ||
+      passwordMinBytes > passwordMaxBytes
+    ) {
+      throw invalidResponse("registration limits are invalid");
+    }
+    return {
+      registrationMode: record.registration_mode,
+      usernameMinLength,
+      usernameMaxLength,
+      passwordMinBytes,
+      passwordMaxBytes,
+    };
+  }
+
+  async register(
+    username: string,
+    password: string,
+  ): Promise<RegistrationResult> {
+    const response = await this.fetcher(
+      "/api/v1/register",
+      requestInit("POST", undefined, { username, password }),
+    );
+    const record = objectData((await decodeResponse(response)).data);
+    if (
+      response.status !== 201 ||
+      !hasExactKeys(record, [
+        "account_created",
+        "username",
+        "account_status",
+        "expires_at",
+        "csrf_token",
+      ]) ||
+      record.account_created !== true ||
+      (record.account_status !== "active" &&
+        record.account_status !== "pending")
+    ) {
+      throw invalidResponse("registration response is invalid");
+    }
+    const normalizedUsername = stringField(record, "username");
+    const expiresAt = stringField(record, "expires_at");
+    const csrfToken = stringField(record, "csrf_token");
+    if (
+      !normalizedUsername ||
+      !Number.isFinite(Date.parse(expiresAt)) ||
+      !csrfToken
+    ) {
+      throw invalidResponse("registration session is invalid");
+    }
+    return {
+      username: normalizedUsername,
+      accountStatus: record.account_status,
+      expiresAt,
+      csrfToken,
+    };
+  }
+
   async exchange(
     credential: string,
     method: "password" | "token" = "password",

@@ -8,7 +8,7 @@ import (
 )
 
 var momentGroups = []GroupSpec{
-	{Name: "auth", Short: "Manage account credentials", Long: "Inspect and manage passwords and API tokens belonging to individual accounts."},
+	{Name: "auth", Short: "Manage account credentials", Long: "Register member accounts and inspect or manage passwords and API tokens belonging to individual accounts."},
 	{Name: "post", Short: "Create and manage Moments", Long: "Create, inspect, update, pin, and delete Moment posts."},
 	{Name: "article", Short: "Write and publish long posts", Long: "Draft, publish, and edit Moment articles, whose body is a structured document rather than Markdown."},
 	{Name: "location", Short: "Resolve post locations", Long: "Search and normalize location snapshots for Moment posts."},

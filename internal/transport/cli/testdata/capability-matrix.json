@@ -498,6 +498,42 @@
       ]
     },
     {
+      "command": "auth register",
+      "direct": {
+        "availability": "offline",
+        "auth": "local_data_access",
+        "locks": [
+          "import:exclusive",
+          "serve:exclusive"
+        ]
+      },
+      "api": {
+        "availability": "supported",
+        "auth": "none",
+        "locks": [
+          "server_managed"
+        ]
+      },
+      "destructive": {
+        "requires_yes": false,
+        "supports_dry_run": false
+      },
+      "output_schema": "account_registration",
+      "parity_strategy": "equivalent_member_result_without_browser_session_fields",
+      "expected_exits": [
+        0,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10
+      ]
+    },
+    {
       "command": "auth revoke-token",
       "direct": {
         "availability": "offline",

@@ -22,6 +22,7 @@ import { ComposeDrafts } from "../features/compose/ComposeDrafts";
 import { listKeptDrafts } from "../features/compose/drafts";
 import { EditPage } from "../features/posts/EditPage";
 import { LoginPage } from "../features/auth/LoginPage";
+import { RegisterPage } from "../features/auth/RegisterPage";
 import { MentionProvider } from "./mentions";
 import { CredentialLogin } from "../features/auth/CredentialLogin";
 import { SessionProvider, useSession } from "../features/auth/SessionProvider";
@@ -117,7 +118,8 @@ function routeSearchKey(search: string): string {
 
 function PublicApp() {
   const location = useNavigation();
-  const loginRoute = resolveRoute(location.pathname).id === "login";
+  const authPage = resolveRoute(location.pathname).id;
+  const authRoute = authPage === "login" || authPage === "register";
   // Reauthentication changes the address, not the work in progress. Keep the
   // original reading/editing surface mounted while the standalone login page
   // is visible, so a successful login returns to the same buffers and media.
@@ -130,7 +132,7 @@ function PublicApp() {
   const surfaceLocation = location.panel?.from ?? location;
   const contentLocation =
     reauthLocation &&
-    (loginRoute ||
+    (authRoute ||
       (location.pathname === reauthLocation.pathname &&
         location.search === reauthLocation.search))
       ? reauthLocation
@@ -205,7 +207,7 @@ function PublicApp() {
   const publishingAvailable = signedIn && auth.account?.status === "active";
 
   useDocumentScrollLock(
-    !loginRoute && ((overlayCompose && siteIdentityReady) || composeExitOpen),
+    !authRoute && ((overlayCompose && siteIdentityReady) || composeExitOpen),
   );
 
   useEffect(() => {
@@ -213,7 +215,7 @@ function PublicApp() {
       expiryRedirected.current = false;
       return;
     }
-    if (loginRoute || expiryRedirected.current) return;
+    if (authRoute || expiryRedirected.current) return;
     expiryRedirected.current = true;
     setReauthLocation({
       pathname: location.pathname,
@@ -223,10 +225,10 @@ function PublicApp() {
     location.replace(
       `/login?return=${encodeURIComponent(`${location.pathname}${location.search}`)}`,
     );
-  }, [location, loginRoute, auth.state]);
+  }, [location, authRoute, auth.state]);
 
   useEffect(() => {
-    if (!reauthLocation || loginRoute) return;
+    if (!reauthLocation || authRoute) return;
     if (auth.state === "expired") {
       if (
         location.pathname !== reauthLocation.pathname ||
@@ -242,7 +244,7 @@ function PublicApp() {
       );
     }
     setReauthLocation(null);
-  }, [location, loginRoute, auth.state, reauthLocation]);
+  }, [location, authRoute, auth.state, reauthLocation]);
 
   const closeOverlayComposer = () => {
     location.goBack(`${displayLocation.pathname}${displayLocation.search}`);
@@ -330,7 +332,7 @@ function PublicApp() {
   }, [location, auth, site.instanceId]);
 
   useEffect(() => {
-    if (loginRoute) return;
+    if (authRoute) return;
     const pathname = displayLocation.pathname;
     if (requestedRoute.id === "profile-edit") return;
     if (pathname !== "/profile" && pathname !== "/profile/") return;
@@ -350,7 +352,7 @@ function PublicApp() {
     displayLocation.pathname,
     requestedRoute.id,
     location,
-    loginRoute,
+    authRoute,
     auth.account,
     auth.state,
   ]);
@@ -359,7 +361,7 @@ function PublicApp() {
   // not a login form folded into the compose dialog, which asked a visitor to
   // sign in inside a surface they had no business seeing yet.
   useEffect(() => {
-    if (loginRoute || auth.state === "expired") return;
+    if (authRoute || auth.state === "expired") return;
     const composing =
       requestedRoute.id === "compose" ||
       requestedRoute.id === "article-workspace" ||
@@ -371,7 +373,7 @@ function PublicApp() {
     location.replace(`/login?return=${encodeURIComponent(location.pathname)}`);
   }, [
     location,
-    loginRoute,
+    authRoute,
     auth.account,
     auth.state,
     publishingAvailable,
@@ -380,7 +382,7 @@ function PublicApp() {
 
   useEffect(() => {
     const siteTitle = site.title.trim() || "Moment";
-    const titleRoute = loginRoute
+    const titleRoute = authRoute
       ? resolveRoute(location.pathname)
       : overlayCompose
         ? requestedRoute
@@ -391,7 +393,7 @@ function PublicApp() {
         : `${titleRoute.title} · ${siteTitle}`;
   }, [
     location.pathname,
-    loginRoute,
+    authRoute,
     overlayCompose,
     requestedRoute,
     route,
@@ -487,6 +489,7 @@ function PublicApp() {
     route.id !== "detail" &&
     route.id !== "article-focus" &&
     route.id !== "login" &&
+    route.id !== "register" &&
     route.id !== "compose" &&
     route.id !== "article-workspace" &&
     route.id !== "edit" &&
@@ -504,7 +507,8 @@ function PublicApp() {
   // Sign-in is the whole page, not a panel inside the shell. Every hook above
   // has already run, so returning here changes what is rendered without
   // changing what is evaluated.
-  if (loginRoute && !reauthLocation) return <LoginPage site={site} />;
+  if (authRoute && !reauthLocation)
+    return authPage === "login" ? <LoginPage site={site} /> : <RegisterPage />;
 
   const readingSurface = (
     <MentionProvider identities={siteIdentityReady ? [site] : []}>
@@ -686,16 +690,16 @@ function PublicApp() {
             }
             requestOverlayComposerClose();
           }}
-          open={!loginRoute}
+          open={!authRoute}
         >
           <Dialog.Portal keepMounted>
             <Dialog.Backdrop
               className={styles.composeBackdrop}
-              style={loginRoute ? { display: "none" } : undefined}
+              style={authRoute ? { display: "none" } : undefined}
             />
             <Dialog.Viewport
               className={styles.composeViewport}
-              style={loginRoute ? { display: "none" } : undefined}
+              style={authRoute ? { display: "none" } : undefined}
             >
               <Dialog.Popup
                 className={styles.composeDialog}
@@ -876,11 +880,17 @@ function PublicApp() {
 
   return (
     <>
-      {loginRoute ? <LoginPage site={site} /> : null}
+      {authRoute ? (
+        authPage === "login" ? (
+          <LoginPage site={site} />
+        ) : (
+          <RegisterPage />
+        )
+      ) : null}
       <div
-        hidden={loginRoute}
-        inert={loginRoute}
-        style={loginRoute ? undefined : { display: "contents" }}
+        hidden={authRoute}
+        inert={authRoute}
+        style={authRoute ? undefined : { display: "contents" }}
       >
         {readingSurface}
       </div>

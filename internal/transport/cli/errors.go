@@ -108,6 +108,15 @@ func canonicalPublicError(code, message string, details map[string]any, httpStat
 	case "USERNAME_RESERVED":
 		exit = ExitInvalidInput
 		suggestion = "choose a username outside the application routes"
+	case "REGISTRATION_CLOSED":
+		exit = ExitConflict
+		suggestion = "ask an administrator to open registration, or sign in to an existing account"
+	case "ALREADY_SIGNED_IN":
+		exit = ExitConflict
+		suggestion = "sign out of the current browser session before registering another account"
+	case "REGISTRATION_SESSION_UNAVAILABLE":
+		exit = ExitUnavailable
+		suggestion = "the account was created; sign in with its username and password instead of registering again"
 	case "POST_NOT_FOUND":
 		exit = ExitNotFound
 		suggestion = "run 'moment post list --json' to inspect available posts"

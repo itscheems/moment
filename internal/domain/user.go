@@ -52,8 +52,7 @@ const (
 	AccountSuspended AccountStatus = "suspended"
 )
 
-// RegistrationMode decides what happens when an unrecognised external identity
-// finishes signing in.
+// RegistrationMode decides whether a newly registered account may join the site.
 type RegistrationMode string
 
 const (

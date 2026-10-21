@@ -127,6 +127,14 @@ func (gate *Gate) VerifiedAccount(ctx *gin.Context) (domain.User, bool) {
 	return user, true
 }
 
+// HasSignedInAccount checks whether an unauthenticated account-entry route
+// would replace an existing live session. It does not authorize a mutation,
+// so it only omits the CSRF test while retaining normal account resolution.
+func (gate *Gate) HasSignedInAccount(ctx *gin.Context) bool {
+	_, err := gate.authenticateWithCSRF(ctx, false)
+	return err == nil
+}
+
 // Viewer returns the real account's author-scoped reading identity.
 func (gate *Gate) Viewer(ctx *gin.Context) app.Viewer {
 	if gate == nil {
@@ -151,6 +159,10 @@ var errAccountUnavailable = errors.New("account authentication is unavailable")
 // authenticate turns the request's credential into an account and stores it on
 // the context. It writes nothing; every refusal is returned.
 func (gate *Gate) authenticate(ctx *gin.Context) (domain.User, error) {
+	return gate.authenticateWithCSRF(ctx, true)
+}
+
+func (gate *Gate) authenticateWithCSRF(ctx *gin.Context, requireCSRF bool) (domain.User, error) {
 	authorizationValues := ctx.Request.Header.Values("Authorization")
 	if len(authorizationValues) > 1 {
 		return domain.User{}, errNoCredential
@@ -183,7 +195,7 @@ func (gate *Gate) authenticate(ctx *gin.Context) (domain.User, error) {
 	if err != nil {
 		return domain.User{}, errNoCredential
 	}
-	if isUnsafeMethod(ctx.Request.Method) && !constantTimeEqual(ctx.GetHeader(CSRFHeaderName), session.CSRFToken) {
+	if requireCSRF && isUnsafeMethod(ctx.Request.Method) && !constantTimeEqual(ctx.GetHeader(CSRFHeaderName), session.CSRFToken) {
 		return domain.User{}, errCSRFRequired
 	}
 

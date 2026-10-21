@@ -11,6 +11,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useEffect, useRef } from "react";
 
 import {
+  InternalLink,
   NavigationProvider,
   type NavigationBlocker,
   useNavigation,
@@ -64,6 +65,12 @@ function NavigationHarness({
       <button onClick={() => navigation.goBack("/fallback")} type="button">
         Go back
       </button>
+      <button onClick={() => navigation.goBackAuth("/fallback")} type="button">
+        Go back auth
+      </button>
+      <InternalLink authSwitch href="/register?return=%2Fcompose">
+        Switch to register
+      </InternalLink>
       <button onClick={() => navigation.replace("/replaced")} type="button">
         Replace
       </button>
@@ -149,6 +156,39 @@ describe("guarded navigation history", () => {
     expect(screen.getByTestId("location")).toHaveTextContent("/current");
     expect(newest).toHaveBeenCalledTimes(2);
     expect(first).toHaveBeenCalledOnce();
+  });
+
+  it("keeps retained editing work while moving between authentication pages", async () => {
+    window.history.replaceState(
+      { momentScrollY: 0 },
+      "",
+      "/login?return=%2Fcompose",
+    );
+    const blocker = vi.fn(() => false);
+    render(
+      <NavigationProvider>
+        <NavigationHarness blockers={[blocker]} />
+      </NavigationProvider>,
+    );
+
+    fireEvent.click(screen.getByRole("link", { name: "Switch to register" }));
+    expect(window.location.pathname).toBe("/register");
+    expect(window.location.search).toBe("?return=%2Fcompose");
+    expect(blocker).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole("button", { name: "Go back auth" }));
+    await waitFor(() => expect(window.location.pathname).toBe("/login"));
+    expect(blocker).not.toHaveBeenCalled();
+
+    act(() => window.history.forward());
+    await waitFor(() => expect(window.location.pathname).toBe("/register"));
+    expect(blocker).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Go back auth" }));
+    await waitFor(() => expect(window.location.pathname).toBe("/login"));
+
+    fireEvent.click(screen.getByRole("button", { name: "Navigate" }));
+    expect(window.location.pathname).toBe("/login");
+    expect(blocker).toHaveBeenCalledOnce();
   });
 
   it("resumes the original destination after asynchronous approval", () => {

@@ -4,6 +4,7 @@ import (
 	"crypto/subtle"
 	"encoding/json"
 	"io"
+	"mime"
 	"net/http"
 	"strings"
 	"time"
@@ -56,6 +57,9 @@ func RegisterAuthenticationRoutes(engine *gin.Engine, gate *Gate, cookies Cookie
 
 func exchangeSession(gate *Gate, cookies CookieOptions) gin.HandlerFunc {
 	return func(ctx *gin.Context) {
+		if !requireJSONContentType(ctx, "password or token sign-in") {
+			return
+		}
 		body, ok := readBody(ctx)
 		if !ok {
 			return
@@ -105,6 +109,15 @@ func exchangeSession(gate *Gate, cookies CookieOptions) gin.HandlerFunc {
 		setSessionCookie(ctx, value, session.ExpiresAt, cookies)
 		Success(ctx, http.StatusOK, sessionResponse{ExpiresAt: session.ExpiresAt, CSRFToken: session.CSRFToken}, nil)
 	}
+}
+
+func requireJSONContentType(ctx *gin.Context, operation string) bool {
+	mediaType, _, err := mime.ParseMediaType(ctx.GetHeader("Content-Type"))
+	if err != nil || mediaType != "application/json" {
+		Failure(ctx, http.StatusUnsupportedMediaType, "INVALID_ARGUMENT", operation+" requires application/json", map[string]any{"field": "content_type"})
+		return false
+	}
+	return true
 }
 
 func accountSecurity(gate *Gate) gin.HandlerFunc {

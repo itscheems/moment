@@ -847,8 +847,44 @@ describe("App shell and public routes", () => {
     expect(screen.queryByText("返回时间流")).toBeNull();
     const back = screen.getByRole("link", { name: "返回时间流" });
     expect(back.querySelector("svg")).not.toBeNull();
+    expect(screen.getByRole("link", { name: "立即注册" })).toHaveAttribute(
+      "href",
+      "/register",
+    );
     fireEvent.click(back);
     await waitFor(() => expect(window.location.pathname).toBe("/"));
+  });
+
+  it("renders registration as its own page and preserves the login return path", async () => {
+    window.history.replaceState({}, "", "/register?return=%2Farchive");
+    installApi(async (url) => {
+      if (url === "/api/v1/site") return json(siteEnvelope);
+      if (url === "/api/v1/register/options") {
+        return json({
+          data: {
+            registration_mode: "approval",
+            username_min_length: 3,
+            username_max_length: 30,
+            password_min_bytes: 8,
+            password_max_bytes: 72,
+          },
+          meta: { request_id: "req_registration_options" },
+        });
+      }
+      return json(timelineEnvelope());
+    });
+    render(<App />);
+
+    expect(await screen.findByLabelText("用户名")).toBeInTheDocument();
+    expect(screen.getByLabelText("确认密码")).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { name: "Join Moment" }),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole("navigation", { name: "主要导航" })).toBeNull();
+    expect(screen.getByRole("link", { name: "立即登录" })).toHaveAttribute(
+      "href",
+      "/login?return=%2Farchive",
+    );
   });
 
   it("sends a visitor with no session from /profile to sign in", async () => {

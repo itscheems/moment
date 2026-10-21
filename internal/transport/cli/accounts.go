@@ -280,7 +280,7 @@ func accountCLIError(err error) error {
 		return err
 	}
 	switch domainErr.Code {
-	case domain.CodeLastAdministrator, domain.CodeAccountInUse, domain.CodeInstanceAlreadyInitialized, domain.CodeAccountNotFound, domain.CodeInvalidArgument, domain.CodeUsernameTaken, domain.CodeUsernameReserved, domain.CodeMediaNotFound:
+	case domain.CodeLastAdministrator, domain.CodeAccountInUse, domain.CodeInstanceAlreadyInitialized, domain.CodeAccountNotFound, domain.CodeInvalidArgument, domain.CodeUsernameTaken, domain.CodeUsernameReserved, domain.CodeRegistrationClosed, domain.CodeMediaNotFound:
 		return canonicalPublicError(string(domainErr.Code), domainErr.Message, domainErr.Details, 0)
 	default:
 		return err

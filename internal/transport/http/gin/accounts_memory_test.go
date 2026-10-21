@@ -32,6 +32,7 @@ type memoryAccounts struct {
 	tokens           map[string]domain.APIToken
 	primaryAccountID string
 	mode             domain.RegistrationMode
+	failSession      bool
 }
 
 func newMemoryAccounts(primaryAccount domain.User) *memoryAccounts {
@@ -135,6 +136,16 @@ func (store *memoryAccounts) CreateAccountWithIdentity(ctx context.Context, user
 	}
 	store.users[user.ID] = user
 	return store.LinkIdentity(ctx, identity)
+}
+
+func (store *memoryAccounts) CreateAccountWithPassword(ctx context.Context, user domain.User, hash []byte) error {
+	for _, existing := range store.users {
+		if strings.EqualFold(existing.Username, user.Username) {
+			return domain.NewError(domain.CodeUsernameTaken, "that username is taken", map[string]any{"field": "username"})
+		}
+	}
+	store.users[user.ID] = user
+	return store.PutPasswordHash(ctx, user.ID, hash, user.CreatedAtMS)
 }
 
 func (store *memoryAccounts) LinkIdentity(_ context.Context, identity domain.Identity) error {
@@ -264,6 +275,9 @@ func (store *memoryAccounts) RegistrationMode(_ context.Context) (domain.Registr
 }
 
 func (store *memoryAccounts) CreateSession(_ context.Context, session domain.SessionRecord) error {
+	if store.failSession {
+		return errors.New("session storage unavailable")
+	}
 	store.sessions[session.ID] = session
 	return nil
 }

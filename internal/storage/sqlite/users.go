@@ -320,6 +320,15 @@ func (store accountStore) CreateAccountWithIdentity(ctx context.Context, user do
 	return store.LinkIdentity(ctx, identity)
 }
 
+// CreateAccountWithPassword keeps the account and its only sign-in method in
+// the caller's account write transaction.
+func (store accountStore) CreateAccountWithPassword(ctx context.Context, user domain.User, hash []byte) error {
+	if err := store.insertUser(ctx, user); err != nil {
+		return err
+	}
+	return store.PutPasswordHash(ctx, user.ID, hash, user.CreatedAtMS)
+}
+
 func (store accountStore) insertUser(ctx context.Context, user domain.User) error {
 	_, err := store.queries.ExecContext(ctx, `
 INSERT INTO users (id, username, display_name, bio, avatar_media_id, cover_media_id,
