@@ -490,7 +490,16 @@ describe("public API client", () => {
     const fetcher = vi.fn(async () =>
       json({
         data: {
-          items: [{ ...post, snippet: "旧城雨落在街口" }],
+          items: [
+            {
+              ...post,
+              author: ownerAuthor,
+              edited_at: null,
+              map_card: null,
+              location: null,
+              snippet: "旧城雨落在街口",
+            },
+          ],
           year_counts: [
             { year: 2026, count: 3 },
             { year: 2024, count: 1 },
@@ -527,6 +536,23 @@ describe("public API client", () => {
       ),
       expect.objectContaining({ signal: undefined }),
     );
+  });
+
+  it("rejects an unknown field in a search hit through the shared post parser", async () => {
+    const api = new PublicApi(
+      vi.fn(async () =>
+        json({
+          data: {
+            items: [{ ...post, snippet: "雨", unrecognized: true }],
+            year_counts: [{ year: 2026, count: 1 }],
+          },
+          meta: { next_cursor: null, request_id: "req_search" },
+        }),
+      ) as typeof fetch,
+    );
+    await expect(api.search({ query: "雨" })).rejects.toMatchObject({
+      code: "API_RESPONSE_INVALID",
+    });
   });
 
   it("rejects malformed search and archive aggregate ordering", async () => {

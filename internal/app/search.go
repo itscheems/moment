@@ -123,6 +123,7 @@ func derivedSearchText(contentMD, cardText string) (string, error) {
 
 // SearchStore is valid only for its transaction callback.
 type SearchStore interface {
+	ContentAuthorStore
 	Timezone(context.Context) (string, error)
 	SearchEntries(context.Context, SearchRepositoryQuery, int) ([]SearchRecord, error)
 	CommentCounts(context.Context, []domain.ID) (map[domain.ID]int, error)
@@ -269,6 +270,7 @@ func (service *SearchService) Search(ctx context.Context, input SearchInput) (Se
 	var revision int64
 	var fromMS, toMS *int64
 	commentCounts := make(map[domain.ID]int)
+	authors := make(map[string]CommentAuthorIdentity)
 	articleCards := make(map[domain.ID]ArticleCard)
 	locations := make(map[domain.ID]*domain.Location)
 	linkCards := make(map[domain.ID][]LinkCardProjection)
@@ -303,6 +305,14 @@ func (service *SearchService) Search(ctx context.Context, input SearchInput) (Se
 		}
 		prepared.FromMS, prepared.ToMS, prepared.Position, prepared.Viewer = fromMS, toMS, position, input.Viewer
 		records, storeErr = store.SearchEntries(ctx, prepared, limit+1)
+		if storeErr != nil {
+			return storeErr
+		}
+		authorEntries := make([]domain.Entry, 0, len(records))
+		for _, record := range records {
+			authorEntries = append(authorEntries, record.Entry)
+		}
+		authors, storeErr = readContentAuthors(ctx, store, authorEntries)
 		if storeErr != nil {
 			return storeErr
 		}
@@ -354,6 +364,7 @@ func (service *SearchService) Search(ctx context.Context, input SearchInput) (Se
 		if renderErr != nil {
 			return SearchPage{}, renderErr
 		}
+		post.Author = contentAuthor(authors, record.Entry.AuthorUserID)
 		page.Items = append(page.Items, SearchHit{Post: post, Snippet: searchSnippet(record.ContentText, normalized)})
 	}
 	if hasNext {

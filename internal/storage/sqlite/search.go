@@ -112,7 +112,7 @@ func (store searchStore) Timezone(ctx context.Context) (string, error) {
 }
 
 func (store searchStore) SearchEntries(ctx context.Context, query app.SearchRepositoryQuery, limit int) ([]app.SearchRecord, error) {
-	statement, arguments, err := searchSelect(query, `e.id, e.kind, e.content_md, e.visibility, e.created_at_ms, e.updated_at_ms, e.published_at_ms, e.reposted_at_ms, e.edited_at_ms, e.content_text`)
+	statement, arguments, err := searchSelect(query, `e.author_user_id, e.id, e.kind, e.content_md, e.visibility, e.created_at_ms, e.updated_at_ms, e.published_at_ms, e.reposted_at_ms, e.edited_at_ms, e.content_text`)
 	if err != nil {
 		return nil, err
 	}
@@ -414,6 +414,7 @@ func (store searchStore) AdvanceSearchRevision(ctx context.Context) (int64, erro
 
 func scanSearchRecord(scanner entryScanner) (app.SearchRecord, error) {
 	var (
+		author                            sql.NullString
 		idString                          string
 		kind                              string
 		contentMD                         sql.NullString
@@ -424,7 +425,7 @@ func scanSearchRecord(scanner entryScanner) (app.SearchRecord, error) {
 		editedAt                          sql.NullInt64
 		rank                              float64
 	)
-	if err := scanner.Scan(&idString, &kind, &contentMD, &visibility, &createdAt, &updatedAt, &publishedAt, &repostedAt, &editedAt, &contentText, &rank); err != nil {
+	if err := scanner.Scan(&author, &idString, &kind, &contentMD, &visibility, &createdAt, &updatedAt, &publishedAt, &repostedAt, &editedAt, &contentText, &rank); err != nil {
 		return app.SearchRecord{}, err
 	}
 	id, err := domain.ParseID(idString)
@@ -432,7 +433,8 @@ func scanSearchRecord(scanner entryScanner) (app.SearchRecord, error) {
 		return app.SearchRecord{}, domain.NewError(domain.CodeDataIntegrityFailed, "stored search entry has an invalid ID", nil)
 	}
 	entry := domain.Entry{
-		ID: id, Kind: domain.EntryKind(kind), ContentMD: nullableText(contentMD), Visibility: domain.Visibility(visibility),
+		AuthorUserID: author.String,
+		ID:           id, Kind: domain.EntryKind(kind), ContentMD: nullableText(contentMD), Visibility: domain.Visibility(visibility),
 		CreatedAt: domain.TimeFromMillis(createdAt), UpdatedAt: domain.TimeFromMillis(updatedAt), PublishedAt: domain.TimeFromMillis(publishedAt),
 	}
 	if editedAt.Valid {

@@ -177,6 +177,35 @@ describe("search and archive memory layer", () => {
     ).not.toBeInTheDocument();
   });
 
+  it("shows a real search hit that carries nullable post fields", async () => {
+    window.history.replaceState({}, "", "/search?q=smoke");
+    const hit = post("01K2ABCDEF0123456789ABCDE0", "registration smoke");
+    install((url) => {
+      if (!url.startsWith("/api/v1/search?")) return json({}, 404);
+      return json({
+        data: {
+          items: [
+            {
+              ...hit,
+              edited_at: null,
+              map_card: null,
+              location: null,
+              snippet: "smoke",
+            },
+          ],
+          year_counts: [{ year: 2026, count: 1 }],
+        },
+        meta: { next_cursor: null, request_id: "req_search" },
+      });
+    });
+    render(<App />);
+
+    expect(
+      await screen.findByText(paragraphText("registration smoke")),
+    ).toBeInTheDocument();
+    expect(screen.queryByText("正在重新获取搜索结果…")).toBeNull();
+  });
+
   it("opens the reply dialog from a search result without leaving search", async () => {
     window.history.replaceState({}, "", "/search?q=%E9%9B%A8");
     // Replying needs an account, so the composer only appears for a signed-in
