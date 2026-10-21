@@ -23,6 +23,7 @@ import {
   TimelineLoading,
 } from "../timeline/PublicStates";
 import { ProfileEditor } from "./ProfileEditor";
+import { ProfileHeader } from "./ProfileHeader";
 import styles from "./ProfilePage.module.css";
 
 const missingRoute = {
@@ -116,6 +117,7 @@ export function MemberProfilePage({
   const title = siteDisplayName(account);
   return (
     <section aria-label={`${title} 的个人资料`}>
+      <ProfileHeader api={api} userId={account.userId} title={title} />
       {state === "loading" || state === "failed" ? (
         <ReadRecoveryNotice error={error} />
       ) : null}
@@ -123,17 +125,25 @@ export function MemberProfilePage({
         <SiteCover eager site={account} />
       </div>
       <div className={styles.identity}>
-        <div className={styles.avatar}>
-          <SiteAvatar eager site={account} />
-        </div>
-        {viewer?.userId === account.userId ? (
-          <div className={styles.profileActions}>
-            <div className={styles.profileEditorSlot}>
-              <ProfileEditor account={account} onSaved={adopt} />
-            </div>
+        <div className={styles.profileTop}>
+          <div className={styles.avatar}>
+            <SiteAvatar eager site={account} />
           </div>
-        ) : null}
-        <h2>{title}</h2>
+          {viewer?.userId === account.userId ? (
+            <div className={styles.profileActions}>
+              <div className={styles.profileEditorSlot}>
+                <ProfileEditor
+                  account={account}
+                  onSaved={adopt}
+                  triggerClassName={styles.editProfile}
+                />
+              </div>
+            </div>
+          ) : null}
+        </div>
+        <h2>
+          <span>{title}</span>
+        </h2>
         <p className={styles.handle}>{siteHandle(account)}</p>
         {account.bio.trim() ? <p>{account.bio.trim()}</p> : null}
         <header className={styles.contentHeading}>

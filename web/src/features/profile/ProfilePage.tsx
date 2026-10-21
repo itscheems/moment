@@ -57,22 +57,7 @@ import { useProfileTimeline } from "./useProfileTimeline";
 import interactionStyles from "../../components/TimelineInteractions.module.css";
 import styles from "./ProfilePage.module.css";
 import { ProfileEditor } from "./ProfileEditor";
-
-function timezoneLabel(timeZone: string, date: Date): string {
-  const part = (style: "longGeneric" | "longOffset") =>
-    new Intl.DateTimeFormat("zh-CN", {
-      timeZone,
-      timeZoneName: style,
-    })
-      .formatToParts(date)
-      .find((candidate) => candidate.type === "timeZoneName")?.value;
-  const offset = part("longOffset")?.replace(/^GMT/, "UTC");
-  const name = part("longGeneric");
-  if (name && name !== timeZone && name !== offset) {
-    return offset ? `${name} · ${offset}` : name;
-  }
-  return offset ?? name ?? timeZone;
-}
+import { ProfileHeader } from "./ProfileHeader";
 
 export function ProfilePage({
   api,
@@ -156,10 +141,6 @@ export function ProfilePage({
         timeZone: site.timezone,
       }).format(new Date(site.instanceInitializedAt))
     : null;
-  const publicTimezone = timezoneLabel(
-    site.timezone,
-    new Date(site.instanceInitializedAt ?? Date.now()),
-  );
   const createdFromProfile = useCallback(
     (comment: PublicComment) => {
       const increment = (post: PublicPost) =>
@@ -384,37 +365,46 @@ export function ProfilePage({
 
   return (
     <section aria-label={`${title} 的个人资料`}>
+      <ProfileHeader api={api} userId={site.profileUserId} title={title} />
       <div className={styles.cover}>
         <SiteCover eager site={site} />
       </div>
       <div className={styles.identity}>
-        <div className={styles.avatar}>
-          <SiteAvatar eager site={site} />
+        <div className={styles.profileTop}>
+          <div className={styles.avatar}>
+            <SiteAvatar eager site={site} />
+          </div>
+          <div className={styles.profileActions}>
+            <ShareMenu
+              baseUrl={site.publicBaseUrl}
+              href={siteProfileHref(site)}
+              title={`${title} 的个人资料`}
+              trigger={
+                <button
+                  aria-label="分享个人资料"
+                  title="分享个人资料"
+                  type="button"
+                >
+                  <Icon name="share" />
+                </button>
+              }
+            />
+            {viewerAccount &&
+            viewerAccount.userId === site.profileUserId &&
+            (auth.state === "signed-in" || auth.state === "expired") ? (
+              <div className={styles.profileEditorSlot}>
+                <ProfileEditor
+                  onSaved={adoptSite}
+                  account={viewerAccount}
+                  triggerClassName={styles.editProfile}
+                />
+              </div>
+            ) : null}
+          </div>
         </div>
-        <div className={styles.profileActions}>
-          <ShareMenu
-            baseUrl={site.publicBaseUrl}
-            href={siteProfileHref(site)}
-            title={`${title} 的个人资料`}
-            trigger={
-              <button
-                aria-label="分享个人资料"
-                title="分享个人资料"
-                type="button"
-              >
-                <Icon name="share" />
-              </button>
-            }
-          />
-          {viewerAccount &&
-          viewerAccount.userId === site.profileUserId &&
-          (auth.state === "signed-in" || auth.state === "expired") ? (
-            <div className={styles.profileEditorSlot}>
-              <ProfileEditor onSaved={adoptSite} account={viewerAccount} />
-            </div>
-          ) : null}
-        </div>
-        <h2>{title}</h2>
+        <h2>
+          <span>{title}</span>
+        </h2>
         <p className={styles.handle}>{handle}</p>
         {site.bio.trim() ? <p>{site.bio.trim()}</p> : null}
         <div className={styles.profileMeta}>
@@ -428,12 +418,6 @@ export function ProfilePage({
               }
             />
           ) : null}
-          <span
-            aria-label={`时区：${publicTimezone}（${site.timezone}）`}
-            title={site.timezone}
-          >
-            {publicTimezone}
-          </span>
         </div>
       </div>
       <Tabs.Root

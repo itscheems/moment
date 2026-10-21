@@ -1,23 +1,49 @@
+@font-face {
+  font-family: MomentProfileRegular;
+  src: url("../../assets/fonts/profile-regular.woff2") format("woff2");
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+}
+
 .cover {
-  block-size: 12.5rem;
+  aspect-ratio: 3 / 1;
   overflow: hidden;
-  background: var(--surface-muted);
+  background: light-dark(#cfd9de, #333639);
+}
+
+.cover > span {
+  background: light-dark(#cfd9de, #333639);
 }
 
 .identity {
-  position: relative;
-  padding: 4.5rem var(--space-4) var(--space-4);
+  padding: 12px 16px 16px;
+  font-family: var(--font-timeline);
+  font-feature-settings: normal;
+  font-size: 15px;
+  font-synthesis: weight style small-caps;
+  letter-spacing: normal;
+  line-height: 20px;
+  text-rendering: auto;
+  -webkit-font-smoothing: auto;
+}
+
+.profileTop {
+  min-block-size: 48px;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
 }
 
 .avatar {
-  position: absolute;
-  inset-block-start: -4rem;
-  inset-inline-start: var(--space-4);
-  inline-size: 8rem;
-  block-size: 8rem;
+  inline-size: 25%;
+  min-inline-size: 48px;
+  aspect-ratio: 1;
+  flex: none;
   display: grid;
   place-items: center;
   overflow: hidden;
+  margin-block: -15% 12px;
   border: 4px solid var(--surface);
   border-radius: 50%;
   background: var(--surface);
@@ -27,21 +53,22 @@
 .avatar > span {
   inline-size: 100%;
   block-size: 100%;
+  border: 0;
   font-size: 2.6rem;
 }
 
 .profileActions {
-  position: absolute;
-  inset-block-start: var(--space-3);
-  inset-inline-end: var(--space-4);
   display: flex;
-  align-items: center;
-  gap: var(--space-2);
+  align-items: flex-start;
+  gap: 8px;
+  margin-block-end: 12px;
 }
 
 .profileActions > button,
-.profileActions > a {
-  min-block-size: var(--target-size);
+.profileActions > a,
+.profileEditorSlot > .editProfile {
+  min-block-size: 36px;
+  block-size: 36px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -49,36 +76,44 @@
   border-radius: 999px;
   color: var(--text-primary);
   background: transparent;
+  font: inherit;
   font-weight: 700;
   text-decoration: none;
+  white-space: nowrap;
   cursor: pointer;
+  transition: background var(--motion-fast) var(--ease-out);
 }
 
 .profileActions > button {
-  inline-size: var(--target-size);
+  inline-size: 36px;
   padding: 0;
 }
 
-.profileActions > a {
-  padding-inline: var(--space-4);
+.profileActions > a,
+.profileEditorSlot > .editProfile {
+  padding: 0 16px;
 }
 
 .profileActions > button:focus-visible,
-.profileActions > a:focus-visible {
-  background: var(--surface-hover);
+.profileActions > a:focus-visible,
+.profileEditorSlot > .editProfile:focus-visible {
+  border-color: var(--border-strong);
+  background: color-mix(in srgb, var(--text-primary) 10%, transparent);
 }
 
 @media (hover: hover) {
   .profileActions > button:hover,
-  .profileActions > a:hover {
-    background: var(--surface-hover);
+  .profileActions > a:hover,
+  .profileEditorSlot > .editProfile:hover {
+    border-color: var(--border-strong);
+    background: color-mix(in srgb, var(--text-primary) 10%, transparent);
   }
 }
 
 .profileActions > button svg,
 .profileActions > a svg {
-  inline-size: 1.2rem;
-  block-size: 1.2rem;
+  inline-size: 20px;
+  block-size: 20px;
 }
 
 .profileEditorSlot {
@@ -92,45 +127,73 @@
 }
 
 .identity h2 {
-  font-size: 1.45rem;
-  letter-spacing: -0.02em;
-  line-height: 1.2;
+  margin-block-start: 4px;
+  overflow-wrap: anywhere;
+  font-size: 20px;
+  font-weight: 800;
+  letter-spacing: normal;
+  line-height: 24px;
 }
 
 .identity .handle {
-  margin-block-start: var(--space-1);
   color: var(--text-secondary);
+  font-family: MomentProfileRegular, var(--font-timeline);
+  font-feature-settings: "ss01";
+  font-size: 15px;
+  font-weight: 400;
+  line-height: 20px;
 }
 
-.identity > p {
-  margin-block-start: var(--space-3);
-  line-height: 1.5;
+.identity > p:not(.handle) {
+  margin-block-start: 12px;
+  overflow-wrap: anywhere;
   white-space: pre-wrap;
 }
 
 .profileMeta {
   display: flex;
   flex-wrap: wrap;
-  gap: var(--space-4);
-  margin-block-start: var(--space-3);
+  margin-block-start: 12px;
   color: var(--text-secondary);
-  font-size: var(--text-sm);
 }
 
-.profileMeta span,
 .profileMeta time {
   display: inline-flex;
   align-items: center;
-  gap: 0.35rem;
+  gap: 4px;
+  cursor: default;
 }
 
 .profileMeta svg {
-  inline-size: 1.05rem;
-  block-size: 1.05rem;
+  inline-size: 18.75px;
+  block-size: 18.75px;
+  flex: none;
 }
 
-.profileMeta time {
-  cursor: default;
+.headerSearch {
+  inline-size: 36px;
+  block-size: 36px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  color: var(--text-primary);
+  text-decoration: none;
+  transition: background var(--motion-fast) var(--ease-out);
+}
+
+.headerSearch svg {
+  inline-size: 20px;
+  block-size: 20px;
+}
+
+.headerSearch:focus-visible {
+  background: color-mix(in srgb, var(--text-primary) 10%, transparent);
+}
+
+@media (hover: hover) {
+  .headerSearch:hover {
+    background: color-mix(in srgb, var(--text-primary) 10%, transparent);
+  }
 }
 
 /* Tabs owns selection, direction, delayed exit unmount and inactive-panel inertness. */
@@ -298,20 +361,4 @@
   color: var(--accent);
   background: transparent;
   cursor: pointer;
-}
-
-@media (max-width: 719px) {
-  .cover {
-    block-size: 9rem;
-  }
-
-  .identity {
-    padding-block-start: 3.8rem;
-  }
-
-  .avatar {
-    inset-block-start: -3.5rem;
-    inline-size: 7rem;
-    block-size: 7rem;
-  }
 }

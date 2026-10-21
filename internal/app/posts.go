@@ -26,6 +26,7 @@ type PostStore interface {
 	InsertEntry(context.Context, domain.Entry, string) error
 	EntryByID(context.Context, domain.ID) (domain.Entry, bool, error)
 	ListEntries(context.Context, TimelineQuery, int) ([]TimelineEntry, error)
+	CountPublishedPosts(context.Context, string, Viewer) (int, error)
 	CommentCounts(context.Context, []domain.ID) (map[domain.ID]int, error)
 	EntryMediaUsages(context.Context, domain.ID) ([]MediaUsageProjection, error)
 	ProjectMediaUsages(context.Context, []domain.EntryMediaUsage) ([]MediaUsageProjection, error)
@@ -274,9 +275,12 @@ type TimelineQuery struct {
 // first; each is empty once the read that produced the page proved that
 // direction exhausted, and a page proves only the direction it read.
 type PostPage struct {
-	Items      []Post
-	NextCursor string
-	PrevCursor string
+	Items []Post
+	// AuthorPostCount counts visible published originals, independent of paging,
+	// date/kind filters and repost projections. Only author-scoped reads set it.
+	AuthorPostCount *int
+	NextCursor      string
+	PrevCursor      string
 	// RefreshCursor remains usable after newer paging is exhausted.
 	RefreshCursor string
 }
@@ -778,6 +782,7 @@ func (service *PostService) List(ctx context.Context, input ListPostsInput) (Pos
 		headSnapshotMS = domain.TimeToMillis(service.clock())
 	}
 	var entries []TimelineEntry
+	var authorPostCount *int
 	mediaByEntry := make(map[domain.ID][]MediaUsageProjection)
 	locationByEntry := make(map[domain.ID]*domain.Location)
 	linkCardsByEntry := make(map[domain.ID][]LinkCardProjection)
@@ -787,6 +792,13 @@ func (service *PostService) List(ctx context.Context, input ListPostsInput) (Pos
 	quotedByEntry := make(map[domain.ID]*QuotedPost)
 	err = service.transactions.Read(ctx, func(store PostStore) error {
 		var storeErr error
+		if input.AuthorUserID != "" {
+			count, countErr := store.CountPublishedPosts(ctx, input.AuthorUserID, input.Viewer)
+			if countErr != nil {
+				return countErr
+			}
+			authorPostCount = &count
+		}
 		entries, storeErr = store.ListEntries(ctx, TimelineQuery{AuthorUserID: input.AuthorUserID, OriginalsOnly: input.OriginalsOnly, Position: position, Direction: direction, FromMS: fromMS, ToMS: toMS, Kind: input.Kind, Viewer: input.Viewer}, limit+1)
 		if storeErr != nil {
 			return storeErr
@@ -846,7 +858,7 @@ func (service *PostService) List(ctx context.Context, input ListPostsInput) (Pos
 		// served newest first like every other page.
 		slices.Reverse(entries)
 	}
-	page := PostPage{Items: make([]Post, 0, len(entries))}
+	page := PostPage{Items: make([]Post, 0, len(entries)), AuthorPostCount: authorPostCount}
 	for _, item := range entries {
 		entry := item.Entry
 		post, renderErr := renderPost(entry, articleView{Card: articleCardFor(articleCards, entry)}, mediaByEntry[entry.ID], locationByEntry[entry.ID], linkCardsByEntry[entry.ID], commentCounts[entry.ID])

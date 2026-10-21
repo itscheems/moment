@@ -461,6 +461,31 @@ describe("public API client", () => {
     });
   });
 
+  it("reads complete author counts without deriving them from a timeline page", async () => {
+    const fetcher = vi.fn(async () =>
+      json({
+        data: { items: [], author_post_count: 137 },
+        meta: { next_cursor: null },
+      }),
+    );
+    const api = new PublicApi(fetcher as typeof fetch);
+    await expect(api.timeline()).resolves.toMatchObject({
+      items: [],
+      authorPostCount: 137,
+    });
+    for (const invalid of [-1, 1.5, "137", null]) {
+      fetcher.mockResolvedValueOnce(
+        json({
+          data: { items: [], author_post_count: invalid },
+          meta: { next_cursor: null },
+        }),
+      );
+      await expect(api.timeline()).rejects.toMatchObject({
+        code: "API_RESPONSE_INVALID",
+      });
+    }
+  });
+
   it("maps search hits, complete year counts, and encoded cursor filters", async () => {
     const fetcher = vi.fn(async () =>
       json({

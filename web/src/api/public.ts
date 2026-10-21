@@ -353,6 +353,8 @@ export interface PublicMediaUsage {
 
 export interface TimelinePage {
   items: PublicPost[];
+  /** Visible published originals for an author, independent of page/filter. */
+  authorPostCount?: number;
   /** Continues older from the last item; null once older is exhausted. */
   nextCursor: string | null;
   /** Continues newer from the first item; null once newer is exhausted. */
@@ -2573,6 +2575,10 @@ export class PublicApi {
       throw invalidResponse("refresh_cursor must be a string or null");
     }
     const items = data.items.map(parsePost);
+    const authorPostCount =
+      data.author_post_count === undefined
+        ? undefined
+        : nonNegativeIntegerField(data, "author_post_count");
     const timelineKeys = new Set<string>();
     for (const item of items) {
       const key = `${item.id}:${item.timelineItemKind}`;
@@ -2581,7 +2587,13 @@ export class PublicApi {
       }
       timelineKeys.add(key);
     }
-    return { items, nextCursor, prevCursor, refreshCursor };
+    return {
+      items,
+      nextCursor,
+      prevCursor,
+      refreshCursor,
+      ...(authorPostCount === undefined ? {} : { authorPostCount }),
+    };
   }
 
   async search(request: SearchRequest): Promise<SearchPage> {

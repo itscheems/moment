@@ -205,6 +205,12 @@ func TestPostDirectAPIParityAndPublicReadsDoNotRequireToken(t *testing.T) {
 	if !reflect.DeepEqual(directList, apiList) {
 		t.Fatalf("direct list = %#v, API list = %#v", directList, apiList)
 	}
+	authorID := directCreated["author"].(map[string]any)["user_id"].(string)
+	directProfile := commandData(t, execute(application, "", "post", "list", "--data-dir", fixture.dataDir, "--as", "writer", "--author-id", authorID, "--limit", "1", "--json"))
+	apiProfile := commandData(t, execute(application, "", "--url", fixture.server.URL, "post", "list", "--author-id", authorID, "--limit", "1", "--json"))
+	if !reflect.DeepEqual(directProfile, apiProfile) || apiProfile["author_post_count"] != float64(1) {
+		t.Fatalf("profile count direct = %#v, API = %#v", directProfile, apiProfile)
+	}
 	apiCreatedOutput := execute(application, "", "--url", fixture.server.URL, "post", "create", "--content", "API retry", "--idempotency-key", "api-post-001", "--json")
 	apiCreated := commandData(t, apiCreatedOutput)
 	apiReplayOutput := execute(application, "", "--url", fixture.server.URL, "post", "create", "--content", "API retry", "--idempotency-key", "api-post-001", "--json")

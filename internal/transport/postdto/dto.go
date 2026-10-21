@@ -315,7 +315,8 @@ func (usage *MediaUsage) UnmarshalJSON(data []byte) error {
 
 // Page is one stable reverse-chronological timeline page.
 type Page struct {
-	Items []Post `json:"items"`
+	AuthorPostCount *int   `json:"author_post_count,omitempty"`
+	Items           []Post `json:"items"`
 }
 
 // FromPost strips internal Entry fields while preserving the canonical
@@ -462,7 +463,7 @@ func FromPage(page app.PostPage) Page {
 	for _, post := range page.Items {
 		items = append(items, FromPost(post))
 	}
-	return Page{Items: items}
+	return Page{Items: items, AuthorPostCount: page.AuthorPostCount}
 }
 
 // NextCursor maps the exhausted application cursor to a nullable wire value

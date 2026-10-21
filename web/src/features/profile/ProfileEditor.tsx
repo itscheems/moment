@@ -41,6 +41,7 @@ function tooLargeMessage(ceilingBytes: number | null): string {
 type ProfileEditorProps = {
   account: PublicAccount;
   onSaved: (account: Account) => void;
+  triggerClassName?: string;
 };
 
 function mediaURL(id: string | null): string | null {
@@ -338,7 +339,11 @@ export function ProfileEditor(props: ProfileEditorProps) {
       }}
       open={open && session !== null}
     >
-      <Dialog.Trigger className={styles.trigger}>编辑资料</Dialog.Trigger>
+      <Dialog.Trigger
+        className={`${styles.trigger} ${props.triggerClassName ?? ""}`}
+      >
+        编辑资料
+      </Dialog.Trigger>
       <Dialog.Portal keepMounted={open}>
         <Dialog.Backdrop
           className={styles.backdrop}
