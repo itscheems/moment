@@ -241,6 +241,36 @@ describe("owner login third-party entry points", () => {
     expect(screen.queryByRole("button", { name: /使用 .* 登录/ })).toBeNull();
   });
 
+  it("reloads an initially empty provider list when the tab regains focus", async () => {
+    let configured = false;
+    const fetcher = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url === "/api/v1/account/session")
+        return json(signedOutEnvelope(), 401);
+      if (url === "/api/v1/login/methods") {
+        return json({ data: { methods: ["password", "token"] }, meta: {} });
+      }
+      if (url === "/api/v1/login/oauth/providers") {
+        return providersEnvelope(
+          configured ? [{ name: "github", label: "GitHub" }] : [],
+        );
+      }
+      return json({}, 404);
+    });
+    vi.stubGlobal("fetch", fetcher);
+    renderLogin();
+
+    expect(await screen.findByLabelText("密码")).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "使用 GitHub 登录" }),
+    ).toBeNull();
+    configured = true;
+    act(() => window.dispatchEvent(new Event("focus")));
+    expect(
+      await screen.findByRole("button", { name: "使用 GitHub 登录" }),
+    ).toBeInTheDocument();
+  });
+
   it("puts GitHub above Google whatever order the server sends", async () => {
     // What the server actually publishes: the flows each client can finish
     // and, for Google, the id a native app runs its own authorization as.
@@ -771,6 +801,65 @@ describe("owner login offers the methods the server reports", () => {
 
     expect(await screen.findByLabelText("API 令牌")).toBeInTheDocument();
   });
+
+  it("returns to password login when the server recovers", async () => {
+    let available = false;
+    const fetcher = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url === "/api/v1/account/session")
+        return json(signedOutEnvelope(), 401);
+      if (url === "/api/v1/login/methods") {
+        return available
+          ? json({ data: { methods: ["password", "token"] }, meta: {} })
+          : json({}, 503);
+      }
+      if (url === "/api/v1/login/oauth/providers") return providersEnvelope([]);
+      return json({}, 404);
+    });
+    vi.stubGlobal("fetch", fetcher);
+    renderLogin();
+
+    expect(await screen.findByLabelText("API 令牌")).toBeInTheDocument();
+    available = true;
+    act(() => window.dispatchEvent(new Event("focus")));
+    expect(await screen.findByLabelText("密码")).toBeInTheDocument();
+    expect(screen.queryByLabelText("API 令牌")).toBeNull();
+  });
+
+  it("automatically retries both sign-in methods and providers after an outage", async () => {
+    let methodCalls = 0;
+    let providerCalls = 0;
+    const fetcher = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url === "/api/v1/account/session")
+        return json(signedOutEnvelope(), 401);
+      if (url === "/api/v1/login/methods") {
+        methodCalls += 1;
+        return methodCalls === 1
+          ? json({}, 503)
+          : json({ data: { methods: ["password", "token"] }, meta: {} });
+      }
+      if (url === "/api/v1/login/oauth/providers") {
+        providerCalls += 1;
+        return providerCalls === 1
+          ? json({}, 503)
+          : providersEnvelope([{ name: "github", label: "GitHub" }]);
+      }
+      return json({}, 404);
+    });
+    vi.stubGlobal("fetch", fetcher);
+    renderLogin();
+
+    expect(await screen.findByLabelText("API 令牌")).toBeInTheDocument();
+    expect(
+      await screen.findByLabelText("密码", {}, { timeout: 4500 }),
+    ).toBeInTheDocument();
+    expect(
+      await screen.findByRole("button", { name: "使用 GitHub 登录" }),
+    ).toBeInTheDocument();
+    expect(methodCalls).toBeGreaterThanOrEqual(2);
+    expect(providerCalls).toBeGreaterThanOrEqual(2);
+  }, 5500);
 });
 
 // The server refuses backslashes, bare newlines and anything carrying a host;
