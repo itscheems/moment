@@ -3,7 +3,7 @@
 // never let a native video element reuse bytes or color metadata from an older
 // rendition at the same media ID.
 export const MEDIA_RECIPE_VERSION =
-  "v9-max1600-display10m-heic-mp4-h264-sdr-bt709-jpeg444";
+  "v10-max1600-display10m-icc-heic-mp4-h264-sdr-bt709-jpeg444";
 
 export function mediaOriginalUrl(mediaId: string): string {
   return `/api/v1/media/${encodeURIComponent(mediaId)}`;

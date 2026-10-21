@@ -118,15 +118,24 @@ func (store *Store) preparePreviewBytesObserved(ctx context.Context, contents []
 	if err != nil {
 		return preparedPreview{}, err
 	}
+	profileMetadata, err := encodeICCMetadata(inspection.iccProfile, alpha)
+	if err != nil {
+		return preparedPreview{}, previewFailure(err)
+	}
+	pixelBudget := store.options.Limits.PreviewMaxBytes - int64(len(profileMetadata))
+	if pixelBudget <= 0 {
+		return preparedPreview{}, previewFailure(errors.New("color profile exceeds preview byte budget"))
+	}
 	encoded, outputImage, mimeType, extension, err := encodePreviewWithinBudget(
 		ctx,
 		oriented,
 		alpha,
-		store.options.Limits.PreviewMaxBytes,
+		pixelBudget,
 	)
 	if err != nil {
 		return preparedPreview{}, err
 	}
+	encoded = insertICCMetadata(encoded, profileMetadata, alpha)
 	if err := ctx.Err(); err != nil {
 		return preparedPreview{}, err
 	}

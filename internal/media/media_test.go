@@ -395,9 +395,12 @@ func TestConvertHEICFallsBackToFFmpegWhenLibheifIsUnavailable(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Setenv("MOMENT_TEST_HEIC_JPEG", jpegPath)
+	ffprobe := heicTestTool(t, "ffprobe", "printf '%s\\n' '{\"streams\":[{\"codec_type\":\"video\",\"width\":24,\"height\":12,\"disposition\":{\"default\":1}}]}'\n")
 	store, _, _ := newTestStoreWithOptions(t, Options{
 		HEIFConvertPath: filepath.Join(t.TempDir(), "missing-heif-convert"),
+		SIPSPath:        filepath.Join(t.TempDir(), "missing-sips"),
 		FFmpegPath:      ffmpeg,
+		FFprobePath:     ffprobe,
 	})
 	converted, err := store.convertHEIC(context.Background(), []byte("synthetic-heic"))
 	if err != nil {
@@ -416,6 +419,7 @@ func TestExtendedMediaReportsMissingProcessorWithoutPublishing(t *testing.T) {
 	copy(header[16:20], "heic")
 	store, runtimeState, database := newTestStoreWithOptions(t, Options{
 		HEIFConvertPath: filepath.Join(t.TempDir(), "missing-heif-convert"),
+		SIPSPath:        filepath.Join(t.TempDir(), "missing-sips"),
 		FFmpegPath:      filepath.Join(t.TempDir(), "missing-ffmpeg"),
 	})
 	_, _, err := store.Ingest(context.Background(), "untrusted.heic", bytes.NewReader(header))

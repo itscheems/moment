@@ -203,6 +203,15 @@ func inspectPNG(contents []byte, limits Limits) (inspected, error) {
 			if orientation, ok := orientationFromEXIF(data); ok {
 				result.orientation = orientation
 			}
+		case "iCCP":
+			if result.iccProfile != nil {
+				return inspected{}, corrupt("PNG contains duplicate ICC profiles")
+			}
+			profile, err := decodePNGICC(data)
+			if err != nil {
+				return inspected{}, err
+			}
+			result.iccProfile = profile
 		case "IEND":
 			if length != 0 || chunkEnd != uint64(len(contents)) {
 				return inspected{}, corrupt("PNG IEND is invalid")
@@ -222,6 +231,7 @@ func inspectPNG(contents []byte, limits Limits) (inspected, error) {
 
 func inspectJPEG(contents []byte) (inspected, error) {
 	result := inspected{format: formatJPEG, orientation: 1}
+	var profiles jpegICCParts
 	for offset := 2; offset < len(contents); {
 		if contents[offset] != 0xff {
 			return inspected{}, corrupt("JPEG marker stream is corrupt")
@@ -248,6 +258,11 @@ func inspectJPEG(contents []byte) (inspected, error) {
 			return inspected{}, corrupt("JPEG segment is truncated")
 		}
 		segment := contents[offset+2 : offset+length]
+		if marker == 0xe2 && bytes.HasPrefix(segment, []byte("ICC_PROFILE\x00")) {
+			if err := profiles.add(segment); err != nil {
+				return inspected{}, err
+			}
+		}
 		if isSOF(marker) {
 			if len(segment) < 6 {
 				return inspected{}, corrupt("JPEG frame header is corrupt")
@@ -268,6 +283,11 @@ func inspectJPEG(contents []byte) (inspected, error) {
 	if result.width == 0 || result.height == 0 {
 		return inspected{}, corrupt("JPEG frame dimensions are missing")
 	}
+	profile, err := profiles.profile()
+	if err != nil {
+		return inspected{}, err
+	}
+	result.iccProfile = profile
 	return result, nil
 }
 
@@ -401,6 +421,14 @@ func inspectWebP(contents []byte) (inspected, error) {
 			if orientation, ok := orientationFromEXIF(chunk); ok {
 				result.orientation = orientation
 			}
+		case "ICCP":
+			if result.iccProfile != nil {
+				return inspected{}, corrupt("WebP contains duplicate ICC profiles")
+			}
+			if err := validateICC(chunk); err != nil {
+				return inspected{}, err
+			}
+			result.iccProfile = chunk
 		case "ANIM", "ANMF":
 			return inspected{}, domain.NewError(domain.CodeMediaTypeUnsupported, "animated WebP is not supported", nil)
 		}
@@ -416,11 +444,14 @@ func inspectWebP(contents []byte) (inspected, error) {
 		if seenEXIF != (extendedFlags&0x08 != 0) {
 			return inspected{}, corrupt("WebP EXIF feature flag is inconsistent")
 		}
+		if (result.iccProfile != nil) != (extendedFlags&0x20 != 0) {
+			return inspected{}, corrupt("WebP ICC feature flag is inconsistent")
+		}
 		if (seenAlpha || frameAlpha) != (extendedFlags&0x10 != 0) {
 			return inspected{}, corrupt("WebP alpha feature flag is inconsistent")
 		}
 	} else {
-		if seenEXIF || seenAlpha {
+		if seenEXIF || seenAlpha || result.iccProfile != nil {
 			return inspected{}, corrupt("WebP extended metadata requires an extended header")
 		}
 		result.width, result.height = frameWidth, frameHeight

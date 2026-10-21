@@ -229,6 +229,7 @@ type inspected struct {
 	gifFirstTransparent bool
 	durationSeconds     float64
 	decodedSource       []byte
+	iccProfile          []byte
 	codec               string
 	codecProfile        string
 	codecTag            string
@@ -408,6 +409,7 @@ type Options struct {
 	Clock            func() time.Time
 	Entropy          io.Reader
 	HEIFConvertPath  string
+	SIPSPath         string
 	AVConvertPath    string
 	FFmpegPath       string
 	FFprobePath      string

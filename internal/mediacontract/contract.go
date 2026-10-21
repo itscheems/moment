@@ -3,4 +3,4 @@
 package mediacontract
 
 // RecipeVersion changes whenever any derived media output semantics change.
-const RecipeVersion = "v9-max1600-display10m-heic-mp4-h264-sdr-bt709-jpeg444"
+const RecipeVersion = "v10-max1600-display10m-icc-heic-mp4-h264-sdr-bt709-jpeg444"

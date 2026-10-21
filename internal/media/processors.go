@@ -198,28 +198,114 @@ func (store *Store) convertHEIC(ctx context.Context, contents []byte) ([]byte, e
 		return nil, err
 	}
 	output := filepath.Join(directory, "decoded.jpg")
+	var expected heicImageDimensions
 	if _, err := store.runTool(ctx, store.options.HEIFConvertPath, "heif-convert", "-q", "95", input, output); err != nil {
 		if !isProcessorUnavailable(err) {
 			return nil, err
 		}
-		if _, fallbackErr := store.runTool(
-			ctx,
-			store.options.FFmpegPath,
-			"ffmpeg",
-			"-nostdin", "-y", "-v", "error",
-			"-i", input,
-			"-frames:v", "1",
-			"-q:v", "2",
-			output,
-		); fallbackErr != nil {
-			return nil, fallbackErr
+		expected, err = store.convertHEICFallback(ctx, input, output)
+		if err != nil {
+			return nil, err
 		}
 	}
 	converted, err := os.ReadFile(output)
 	if err != nil || len(converted) == 0 || int64(len(converted)) > store.options.Limits.MaxImageBytes {
 		return nil, domain.NewError(domain.CodeMediaCorrupt, "HEIC conversion did not produce a bounded image", nil)
 	}
+	if expected.Width != 0 {
+		decoded, err := inspectImage(converted, store.options.Limits)
+		if err != nil {
+			return nil, err
+		}
+		width, height := displayDimensions(decoded)
+		if !(width == expected.Width && height == expected.Height) && !(width == expected.Height && height == expected.Width) {
+			return nil, domain.NewError(domain.CodeMediaPreviewFailed, "HEIC decoder did not produce the complete primary image", nil)
+		}
+	}
 	return converted, nil
+}
+
+type heicImageDimensions struct {
+	Width  uint32 `json:"width"`
+	Height uint32 `json:"height"`
+}
+
+func (store *Store) convertHEICFallback(ctx context.Context, input, output string) (heicImageDimensions, error) {
+	if runtime.GOOS == "darwin" || store.options.SIPSPath != "" {
+		_, err := store.runTool(ctx, store.options.SIPSPath, "sips", "-s", "format", "jpeg", "-s", "formatOptions", "95", input, "--out", output)
+		if err == nil {
+			return heicImageDimensions{}, nil
+		}
+		if !isProcessorUnavailable(err) {
+			return heicImageDimensions{}, err
+		}
+	}
+	if _, err := store.toolPath(store.options.FFmpegPath, "ffmpeg"); err != nil {
+		return heicImageDimensions{}, err
+	}
+	dimensions, err := store.probeHEICPrimaryDimensions(ctx, input)
+	if err != nil {
+		return heicImageDimensions{}, err
+	}
+	_, err = store.runTool(ctx, store.options.FFmpegPath, "ffmpeg",
+		"-nostdin", "-y", "-v", "error", "-i", input, "-frames:v", "1", "-q:v", "2", output)
+	return dimensions, err
+}
+
+func (store *Store) probeHEICPrimaryDimensions(ctx context.Context, input string) (heicImageDimensions, error) {
+	output, err := store.runTool(ctx, store.options.FFprobePath, "ffprobe", "-v", "error", "-show_entries",
+		"stream_group=type:stream_group_disposition=default:stream_group_component=width,height:stream=codec_type,width,height:stream_disposition=default,dependent",
+		"-of", "json", input)
+	if err != nil {
+		return heicImageDimensions{}, err
+	}
+	var document struct {
+		Groups []struct {
+			Type        string                `json:"type"`
+			Components  []heicImageDimensions `json:"components"`
+			Disposition struct {
+				Default int `json:"default"`
+			} `json:"disposition"`
+		} `json:"stream_groups"`
+		Streams []struct {
+			heicImageDimensions
+			Type        string `json:"codec_type"`
+			Disposition struct {
+				Default   int `json:"default"`
+				Dependent int `json:"dependent"`
+			} `json:"disposition"`
+		} `json:"streams"`
+	}
+	if err := json.Unmarshal(output, &document); err != nil {
+		return heicImageDimensions{}, domain.NewError(domain.CodeMediaPreviewFailed, "HEIC primary image dimensions could not be determined", nil)
+	}
+	var primary heicImageDimensions
+	for _, group := range document.Groups {
+		if group.Type != "Tile Grid" || group.Disposition.Default != 1 || len(group.Components) != 1 {
+			continue
+		}
+		if primary.Width != 0 {
+			return heicImageDimensions{}, domain.NewError(domain.CodeMediaPreviewFailed, "HEIC primary image is ambiguous", nil)
+		}
+		primary = group.Components[0]
+	}
+	if len(document.Groups) == 0 {
+		for _, stream := range document.Streams {
+			if stream.Type == "video" && stream.Disposition.Dependent == 0 && (stream.Disposition.Default == 1 || len(document.Streams) == 1) {
+				if primary.Width != 0 {
+					return heicImageDimensions{}, domain.NewError(domain.CodeMediaPreviewFailed, "HEIC primary image is ambiguous", nil)
+				}
+				primary = stream.heicImageDimensions
+			}
+		}
+	}
+	if primary.Width == 0 || primary.Height == 0 {
+		return heicImageDimensions{}, domain.NewError(domain.CodeMediaPreviewFailed, "HEIC primary image dimensions could not be determined", nil)
+	}
+	if err := validateDimensions(primary.Width, primary.Height, store.options.Limits); err != nil {
+		return heicImageDimensions{}, err
+	}
+	return primary, nil
 }
 
 func (store *Store) probeVideoBytes(ctx context.Context, contents []byte, sourceFormat format) (inspected, error) {
