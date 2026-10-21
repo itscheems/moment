@@ -40,6 +40,12 @@ const emptyCopy: Record<
     title: "还没有归档",
     detail: "发布内容后会按年份、月份和日期归档。",
   },
+  "profile-edit": {
+    marker: "编辑资料",
+    title: "编辑个人资料",
+    detail: "登录后可以更新你的个人资料。",
+    action: { label: "登录", href: "/login?return=%2Fsettings%2Fprofile" },
+  },
   profile: {
     marker: "资料",
     title: "还没有公开 Moment",

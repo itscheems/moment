@@ -8,12 +8,30 @@ import {
 } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { NavigationProvider } from "../../app/navigation";
 import { mediaPreviewUrl } from "../../api/mediaUrls";
 import type { Account, SiteIdentity } from "../../api/public";
 import { FeedbackProvider } from "../../components/Feedback";
 import { SessionProvider } from "../auth/SessionProvider";
 import { ProfileEditor } from "./ProfileEditor";
 import { makeAccountLimits } from "../../test/accountFixtures";
+
+vi.mock("./ProfileAvatarCrop", () => ({
+  ProfileAvatarCrop: ({
+    file,
+    onApply,
+    onCancel,
+  }: {
+    file: File;
+    onApply: (file: File) => void;
+    onCancel: () => void;
+  }) => (
+    <div role="dialog" aria-label="编辑媒体">
+      <button onClick={() => onApply(file)}>应用</button>
+      <button onClick={onCancel}>返回</button>
+    </div>
+  ),
+}));
 
 const sessionKey = "moment.auth.session.v2";
 const mediaId = "01ARZ3NDEKTSV4RRFFQ69G5FAY";
@@ -73,6 +91,7 @@ describe("profile editor", () => {
         expires_at: "2999-08-11T01:00:00.000Z",
       }),
     );
+    window.history.replaceState({}, "", "/owner");
     vi.stubGlobal("scrollTo", vi.fn());
   });
 
@@ -121,24 +140,27 @@ describe("profile editor", () => {
     );
     const onSaved = vi.fn();
     render(
-      <FeedbackProvider>
-        <SessionProvider>
-          <ProfileEditor
-            onSaved={onSaved}
-            account={{
-              ...site,
-              userId: site.profileUserId,
-              profileUrl: `/${site.username}`,
-            }}
-          />
-        </SessionProvider>
-      </FeedbackProvider>,
+      <NavigationProvider>
+        <FeedbackProvider>
+          <SessionProvider>
+            <ProfileEditor
+              onSaved={onSaved}
+              account={{
+                ...site,
+                userId: site.profileUserId,
+                profileUrl: `/${site.username}`,
+              }}
+            />
+          </SessionProvider>
+        </FeedbackProvider>
+      </NavigationProvider>,
     );
 
     await waitFor(() =>
       expect(screen.getByRole("button", { name: "编辑资料" })).toBeEnabled(),
     );
     fireEvent.click(screen.getByRole("button", { name: "编辑资料" }));
+    expect(window.location.pathname).toBe("/settings/profile");
     expect(
       screen.getByRole("dialog", { name: "编辑资料" }),
     ).toBeInTheDocument();
@@ -174,7 +196,7 @@ describe("profile editor", () => {
     expect(await screen.findByText("个人资料已更新")).toBeInTheDocument();
   });
 
-  it("uses icon media controls and can reset unsaved profile changes", async () => {
+  it("keeps icon media controls and discards unsaved changes on reopening", async () => {
     vi.stubGlobal(
       "fetch",
       vi.fn(async (input: RequestInfo | URL) => {
@@ -196,18 +218,20 @@ describe("profile editor", () => {
       }),
     );
     render(
-      <FeedbackProvider>
-        <SessionProvider>
-          <ProfileEditor
-            onSaved={vi.fn()}
-            account={{
-              ...site,
-              userId: site.profileUserId,
-              profileUrl: `/${site.username}`,
-            }}
-          />
-        </SessionProvider>
-      </FeedbackProvider>,
+      <NavigationProvider>
+        <FeedbackProvider>
+          <SessionProvider>
+            <ProfileEditor
+              onSaved={vi.fn()}
+              account={{
+                ...site,
+                userId: site.profileUserId,
+                profileUrl: `/${site.username}`,
+              }}
+            />
+          </SessionProvider>
+        </FeedbackProvider>
+      </NavigationProvider>,
     );
 
     await waitFor(() =>
@@ -276,8 +300,7 @@ describe("profile editor", () => {
     expect(screen.queryByRole("img", { name: "头像预览" })).toBeNull();
     await waitFor(() => expect(avatarAction).toHaveFocus());
 
-    const reset = screen.getByRole("button", { name: "重置资料更改" });
-    expect(reset).toBeEnabled();
+    expect(screen.queryByRole("button", { name: "重置资料更改" })).toBeNull();
     fireEvent.change(screen.getByLabelText("显示名称"), {
       target: { value: "尚未保存的名称" },
     });
@@ -286,12 +309,14 @@ describe("profile editor", () => {
     });
     expect(preview).toHaveTextContent("尚未保存的名称");
     expect(preview).toHaveTextContent("@new_owner");
-    expect(reset).toBeEnabled();
-    fireEvent.click(reset);
+    fireEvent.click(screen.getByRole("button", { name: "关闭编辑资料" }));
+    await waitFor(() => expect(window.location.pathname).toBe("/owner"));
+    fireEvent.click(screen.getByRole("button", { name: "编辑资料" }));
 
     expect(screen.getByLabelText("显示名称")).toHaveValue("Moment");
-    expect(preview).toHaveTextContent("Moment");
-    expect(preview).toHaveTextContent("@owner");
+    expect(
+      screen.getByRole("region", { name: "个人资料预览" }),
+    ).toHaveTextContent("@owner");
     expect(screen.getByRole("img", { name: "封面预览" })).toBeInTheDocument();
     expect(screen.getByRole("img", { name: "头像预览" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "保存" })).toBeDisabled();
@@ -375,6 +400,7 @@ describe("profile editor for a member", () => {
         expires_at: "2999-08-11T01:00:00.000Z",
       }),
     );
+    window.history.replaceState({}, "", "/owner");
     vi.stubGlobal("scrollTo", vi.fn());
     vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:local-preview");
     vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => undefined);
@@ -389,11 +415,13 @@ describe("profile editor for a member", () => {
 
   async function openEditor(account: Account, onSaved = vi.fn()) {
     render(
-      <FeedbackProvider>
-        <SessionProvider>
-          <ProfileEditor account={account} onSaved={onSaved} />
-        </SessionProvider>
-      </FeedbackProvider>,
+      <NavigationProvider>
+        <FeedbackProvider>
+          <SessionProvider>
+            <ProfileEditor account={account} onSaved={onSaved} />
+          </SessionProvider>
+        </FeedbackProvider>
+      </NavigationProvider>,
     );
     await waitFor(() =>
       expect(screen.getByRole("button", { name: "编辑资料" })).toBeEnabled(),
@@ -402,12 +430,14 @@ describe("profile editor for a member", () => {
     return onSaved;
   }
 
-  function selectAvatar(file = png()) {
+  function selectAvatar(file = png(), apply = true) {
     const input = document.querySelector<HTMLInputElement>(
       'input[data-profile-media-input="avatar"]',
     )!;
     expect(input).not.toBeNull();
     fireEvent.change(input, { target: { files: [file] } });
+    const applyButton = screen.queryByRole("button", { name: "应用" });
+    if (apply && applyButton) fireEvent.click(applyButton);
   }
 
   it("binds an approved member's picture in one request and adopts the answer", async () => {
@@ -432,6 +462,15 @@ describe("profile editor for a member", () => {
 
     // No note stands between an approved member and the control.
     expect(screen.queryByText("账户通过审核后就能上传图片")).toBeNull();
+    selectAvatar(png(), false);
+    expect(
+      screen.getByRole("dialog", { name: "编辑媒体" }),
+    ).toBeInTheDocument();
+    expect(
+      calls.filter((call) => call.url === "/api/v1/account/avatar"),
+    ).toHaveLength(0);
+    fireEvent.click(screen.getByRole("button", { name: "返回" }));
+    expect(onSaved).not.toHaveBeenCalled();
     selectAvatar();
 
     await waitFor(() => expect(onSaved).toHaveBeenCalledTimes(1));

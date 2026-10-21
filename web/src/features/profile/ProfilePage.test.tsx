@@ -847,6 +847,6 @@ describe("profile page", () => {
     fireEvent.click(screen.getByRole("button", { name: "保存" }));
 
     await waitFor(() => expect(onSiteSaved).toHaveBeenCalledTimes(1));
-    expect(window.location.pathname).toBe("/profile");
+    await waitFor(() => expect(window.location.pathname).toBe("/profile"));
   });
 });

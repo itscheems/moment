@@ -733,9 +733,11 @@ describe("App shell and public routes", () => {
       signedInAs("cheemschen");
       render(<App />);
 
-      fireEvent.click(
-        await screen.findByRole("button", { name: "乔乔 的账户菜单" }),
-      );
+      const trigger = await screen.findByRole("button", {
+        name: "乔乔 的账户菜单",
+      });
+      await waitFor(() => expect(trigger).toBeEnabled());
+      fireEvent.click(trigger);
       await screen.findByRole("menu", { hidden: true });
       fireEvent.click(
         await screen.findByRole("menuitem", { name: "退出 @cheemschen" }),
@@ -1011,6 +1013,29 @@ describe("App shell and public routes", () => {
     render(<App />);
 
     await waitFor(() => expect(window.location.pathname).toBe("/cheemschen"));
+  });
+
+  it("opens a directly loaded profile editor over the signed-in profile", async () => {
+    window.history.replaceState({}, "", "/settings/profile");
+    preauthenticate();
+    installApi();
+    render(<App />);
+    expect(
+      await screen.findByRole("dialog", { name: "编辑资料" }),
+    ).toBeInTheDocument();
+    expect(window.location.pathname).toBe("/settings/profile");
+    fireEvent.click(screen.getByRole("button", { name: "关闭编辑资料" }));
+    await waitFor(() => expect(window.location.pathname).toBe("/owner"));
+  });
+
+  it("sends a visitor from the profile editor to sign in with a return address", async () => {
+    window.history.replaceState({}, "", "/settings/profile");
+    installApi();
+    render(<App />);
+    await waitFor(() => expect(window.location.pathname).toBe("/login"));
+    expect(new URLSearchParams(window.location.search).get("return")).toBe(
+      "/settings/profile",
+    );
   });
 
   it("renders the public profile as a first-class route", async () => {

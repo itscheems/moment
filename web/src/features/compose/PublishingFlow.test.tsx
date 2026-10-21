@@ -1201,7 +1201,9 @@ describe("owner composing flow", () => {
       target: { value: "fresh-owner-token" },
     });
     fireEvent.click(screen.getByRole("button", { name: "登录" }));
-    await waitFor(() => expect(window.location.pathname).toBe("/owner"));
+    await waitFor(() =>
+      expect(window.location.pathname).toBe("/settings/profile"),
+    );
     expect(
       await screen.findByRole("dialog", { name: "编辑资料" }),
     ).toBeInTheDocument();

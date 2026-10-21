@@ -2,7 +2,13 @@ import { accountsApi, type AccountProfileUpdate } from "../../api/accounts";
 
 import { Dialog } from "../../components/Dialog";
 import { Menu } from "@base-ui/react/menu";
-import { type ChangeEvent, useEffect, useRef, useState } from "react";
+import {
+  type ChangeEvent,
+  useEffect,
+  useEffectEvent,
+  useRef,
+  useState,
+} from "react";
 
 import { mediaPreviewUrl } from "../../api/mediaUrls";
 import {
@@ -14,6 +20,14 @@ import { notify } from "../../components/Feedback";
 import { Icon } from "../../components/icons";
 import { SiteAvatar } from "../../components/SiteIdentity";
 import { useDocumentScrollLock } from "../../components/useDocumentScrollLock";
+
+import { useNavigation } from "../../app/navigation";
+import {
+  isProfileEditPath,
+  profileFromPath,
+  PROFILE_EDIT_PATH,
+} from "../../app/routes";
+import { ProfileAvatarCrop } from "./ProfileAvatarCrop";
 
 import { useSession } from "../auth/SessionProvider";
 import styles from "./ProfileEditor.module.css";
@@ -114,6 +128,9 @@ export function ProfileEditor(props: ProfileEditorProps) {
     applyAccount,
     expireIfInvalidSession,
   } = useSession();
+  const navigation = useNavigation();
+  const routeOpen = isProfileEditPath(navigation.pathname);
+  const [cropFile, setCropFile] = useState<File | null>(null);
   const pictureCeiling = limits?.profilePictureBytes ?? null;
   // Falling back to the previous literals only for as long as the server has
   // not answered. These bound an input that has to render either way, unlike
@@ -131,7 +148,7 @@ export function ProfileEditor(props: ProfileEditorProps) {
         ? "账户已停用，暂时不能上传图片"
         : null;
   const canUpload = uploadNote === null;
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(routeOpen);
   const [displayName, setDisplayName] = useState(subject.displayName);
   const [username, setUsername] = useState(subject.username);
   const [bio, setBio] = useState(subject.bio);
@@ -184,11 +201,30 @@ export function ProfileEditor(props: ProfileEditorProps) {
     setSaving(false);
   };
 
-  // Opening reads the mark off the props, which is where a parent that adopted
-  // the last save keeps it. 撤销 reads it off whatever has been confirmed
-  // since, so an upload made a moment ago survives an undo of the words.
   const reopen = () => restore(subject.avatarMediaId, subject.coverMediaId);
-  const undo = () => restore(avatarBase, coverBase);
+  const syncRoute = useEffectEvent(() => {
+    if (routeOpen && !open) reopen();
+    if (!routeOpen) setCropFile(null);
+    setOpen(routeOpen);
+  });
+  useEffect(() => {
+    // Reauthentication keeps the mounted editor and its unsaved fields.
+    if (navigation.pathname === "/login") return;
+    syncRoute();
+  }, [routeOpen, navigation.pathname]);
+  const close = (saved?: Account) => {
+    setOpen(false);
+    setCropFile(null);
+    const from = navigation.panel?.from.pathname;
+    if (
+      navigation.panel?.key === "profile-editor" &&
+      (!saved ||
+        saved.username === subject.username ||
+        profileFromPath(from ?? "")?.username !== subject.username)
+    )
+      navigation.closePanel("profile-editor");
+    else navigation.replace(saved?.profileUrl ?? subject.profileUrl);
+  };
 
   useEffect(
     () => () => {
@@ -267,7 +303,16 @@ export function ProfileEditor(props: ProfileEditorProps) {
   const pick = (kind: AssetKind, event: ChangeEvent<HTMLInputElement>) => {
     const file = event.currentTarget.files?.[0];
     event.currentTarget.value = "";
-    if (file) void upload(kind, file);
+    if (!file || !canUpload) return;
+    const problem = accountPictureProblem(file, pictureCeiling);
+    if (problem) {
+      setError(problem);
+      return;
+    }
+    if (kind === "avatar") {
+      setError(null);
+      setCropFile(file);
+    } else void upload(kind, file);
   };
 
   const removeAsset = (kind: AssetKind) => {
@@ -319,7 +364,7 @@ export function ProfileEditor(props: ProfileEditorProps) {
       applyAccount(saved);
       saveAccount(saved);
       notify("个人资料已更新");
-      setOpen(false);
+      close(saved);
     } catch (nextError) {
       if (!expireIfInvalidSession(nextError)) {
         setError(saveFailure(nextError));
@@ -334,8 +379,11 @@ export function ProfileEditor(props: ProfileEditorProps) {
     <Dialog.Root
       onOpenChange={(nextOpen) => {
         if (saving) return;
-        if (nextOpen) reopen();
-        setOpen(nextOpen);
+        if (nextOpen) {
+          reopen();
+          navigation.openPanel(PROFILE_EDIT_PATH, "profile-editor");
+          setOpen(true);
+        } else close();
       }}
       open={open && session !== null}
     >
@@ -347,11 +395,11 @@ export function ProfileEditor(props: ProfileEditorProps) {
       <Dialog.Portal keepMounted={open}>
         <Dialog.Backdrop
           className={styles.backdrop}
-          style={session ? undefined : { display: "none" }}
+          style={session && !cropFile ? undefined : { visibility: "hidden" }}
         />
         <Dialog.Viewport
           className={styles.viewport}
-          style={session ? undefined : { display: "none" }}
+          style={session && !cropFile ? undefined : { visibility: "hidden" }}
         >
           <Dialog.Popup
             className={styles.popup}
@@ -376,21 +424,10 @@ export function ProfileEditor(props: ProfileEditorProps) {
                   className={styles.iconButton}
                   title="关闭"
                 >
-                  <Icon name="close" />
+                  <Icon name="media-remove" />
                 </Dialog.Close>
                 <Dialog.Title>编辑资料</Dialog.Title>
                 <div className={styles.headerActions}>
-                  <button
-                    aria-label="重置资料更改"
-                    className={styles.resetButton}
-                    disabled={saving || (!changed && !pending && !uploadFailed)}
-                    onClick={undo}
-                    title="重置"
-                    type="button"
-                  >
-                    <Icon name="reset" />
-                    <span>撤销</span>
-                  </button>
                   <button
                     className={styles.saveButton}
                     disabled={
@@ -607,6 +644,18 @@ export function ProfileEditor(props: ProfileEditorProps) {
           </Dialog.Popup>
         </Dialog.Viewport>
       </Dialog.Portal>
+      {cropFile && session ? (
+        <ProfileAvatarCrop
+          file={cropFile}
+          csrfToken={session.csrfToken}
+          onCancel={() => setCropFile(null)}
+          onSessionError={expireIfInvalidSession}
+          onApply={(cropped) => {
+            setCropFile(null);
+            void upload("avatar", cropped);
+          }}
+        />
+      ) : null}
     </Dialog.Root>
   );
 }
