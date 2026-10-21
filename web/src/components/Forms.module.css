@@ -281,6 +281,23 @@
   padding-block-start: var(--space-2);
 }
 
+.homepageComposer {
+  padding-block-start: 9px;
+}
+
+.homepageComposer[data-expanded="false"] {
+  padding-block-end: 7px;
+}
+
+.homepageComposer .newTick > img,
+.homepageComposer .newTick > span {
+  border: 0;
+}
+
+.homepageComposer .replyAudienceRow:not(.replyAudienceRowCollapsed) {
+  margin-block-start: 14px;
+}
+
 .pageComposer {
   min-block-size: 0;
   gap: 10px;
@@ -367,6 +384,10 @@
 
 .inlineComposer .audienceRow:not(.audienceRowCollapsed) {
   margin-block-end: 12px;
+}
+
+.homepageComposer .audienceRow:not(.audienceRowCollapsed) {
+  margin-block-end: 10px;
 }
 
 .inlineComposer .composerEditor {
