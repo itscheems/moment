@@ -56,7 +56,14 @@ export type ShareCardBlock =
     }
   | { kind: "item"; marker: string; text: string; runs?: ShareCardTextRun[] }
   | { kind: "quote"; text: string; runs?: ShareCardTextRun[] }
-  | { kind: "code"; lines: CodeSpan[][] };
+  | { kind: "code"; lines: CodeSpan[][] }
+  | { kind: "table"; rows: ShareCardTableCell[][] };
+
+export interface ShareCardTableCell {
+  text: string;
+  header: boolean;
+  align: "left" | "center" | "right";
+}
 
 /** Display-only reading colours, resolved before the card opens. */
 export interface ShareCardTextRun {
@@ -186,6 +193,11 @@ const ITEM_INDENT = 22;
 const QUOTE_INDENT = 16;
 const CODE_PAD = 14;
 const BLOCK_GAP = 14;
+const TABLE_SIZE = 16;
+const TABLE_LINE = 22;
+const TABLE_PAD = 10;
+// The reader also bounds a single picture at 34rem without cropping it.
+const SINGLE_MEDIA_MAX_HEIGHT = 544;
 /*
  * Two items of one list are not two paragraphs.
  *
@@ -679,19 +691,25 @@ function drawPlayBadge(
 /**
  * The media block's shape, which follows the count.
  *
- * Nothing is letterboxed: a band of grey either side of a photo is the surest
- * way to make a card look unfinished, and where a subject falls inside the
- * frame is the photographer's composition, not this function's problem.
+ * A single attachment keeps its full aspect ratio, as it does in the reader.
+ * Multiple attachments retain the compact grid used by the timeline.
  */
 function mediaLayout(
-  count: number,
+  images: HTMLImageElement[],
   width: number,
 ): { boxes: Array<[number, number, number, number]>; height: number } {
   const gap = 6;
   const half = (width - gap) / 2;
+  const count = images.length;
   if (count === 1) {
-    const height = Math.round((width * 3) / 4);
-    return { boxes: [[0, 0, width, height]], height };
+    const image = images[0]!;
+    const scale = Math.min(
+      width / image.naturalWidth,
+      SINGLE_MEDIA_MAX_HEIGHT / image.naturalHeight,
+    );
+    const imageWidth = image.naturalWidth * scale;
+    const height = image.naturalHeight * scale;
+    return { boxes: [[0, 0, imageWidth, height]], height };
   }
   const height = Math.round(width * 0.62);
   if (count === 2) {
@@ -739,12 +757,112 @@ type LaidBlock =
       quote?: boolean;
       runs?: ShareCardTextRun[][];
     }
-  | { kind: "code"; lines: CodeSpan[][] };
+  | { kind: "code"; lines: CodeSpan[][] }
+  | LaidTable;
 
-const blockHeight = (piece: LaidBlock) =>
-  piece.kind === "code"
+interface LaidTable {
+  kind: "table";
+  columnWidth: number;
+  rows: Array<{
+    height: number;
+    cells: Array<Omit<ShareCardTableCell, "text"> & { lines: string[] }>;
+  }>;
+}
+
+function blockHeight(piece: LaidBlock): number {
+  if (piece.kind === "table")
+    return piece.rows.reduce((sum, row) => sum + row.height, 0);
+  return piece.kind === "code"
     ? piece.lines.length * CODE_LINE + CODE_PAD * 2
     : piece.lines.length * piece.leading;
+}
+
+function layOutTable(
+  ruler: CanvasRenderingContext2D,
+  block: Extract<ShareCardBlock, { kind: "table" }>,
+  width: number,
+  remaining: number,
+  exact: boolean,
+): { table: LaidTable; lines: number; clipped: boolean } {
+  const columns = Math.max(1, ...block.rows.map((row) => row.length));
+  const table: LaidTable = {
+    kind: "table",
+    columnWidth: width / columns,
+    rows: [],
+  };
+  const pad = Math.min(TABLE_PAD, table.columnWidth / 4);
+  let used = 0;
+  for (const row of block.rows) {
+    const cells = Array.from({ length: columns }, (_, index) => {
+      const cell = row[index] ?? {
+        text: "",
+        header: false,
+        align: "left" as const,
+      };
+      ruler.font = font(cell.header ? 700 : 400, TABLE_SIZE);
+      const lines = wrap(ruler, cell.text, table.columnWidth - pad * 2, true);
+      return { header: cell.header, align: cell.align, lines };
+    });
+    const lines = Math.max(1, ...cells.map((cell) => cell.lines.length));
+    if (used + lines > remaining) {
+      if (exact) throw new ShareCardTooLongError();
+      table.rows.push({
+        height: TABLE_LINE + pad * 2,
+        cells: cells.map((cell, index) => ({
+          ...cell,
+          header: false,
+          lines: [index === 0 ? "…" : ""],
+        })),
+      });
+      return { table, lines: used + 1, clipped: true };
+    }
+    table.rows.push({ cells, height: lines * TABLE_LINE + pad * 2 });
+    used += lines;
+  }
+  return { table, lines: used, clipped: false };
+}
+
+function drawTable(
+  ctx: CanvasRenderingContext2D,
+  table: LaidTable,
+  x: number,
+  y: number,
+) {
+  const pad = Math.min(TABLE_PAD, table.columnWidth / 4);
+  for (const row of table.rows) {
+    row.cells.forEach((cell, column) => {
+      const left = x + column * table.columnWidth;
+      ctx.fillStyle = cell.header ? HAIRLINE : GROUND;
+      ctx.fillRect(left, y, table.columnWidth, row.height);
+      ctx.strokeStyle = LINK_BORDER;
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(left, y);
+      ctx.lineTo(left + table.columnWidth, y);
+      ctx.lineTo(left + table.columnWidth, y + row.height);
+      ctx.lineTo(left, y + row.height);
+      ctx.closePath();
+      ctx.stroke();
+      ctx.font = font(cell.header ? 700 : 400, TABLE_SIZE);
+      ctx.fillStyle = INK;
+      cell.lines.forEach((line, index) => {
+        const spare = table.columnWidth - pad * 2 - ctx.measureText(line).width;
+        const offset =
+          cell.align === "right"
+            ? spare
+            : cell.align === "center"
+              ? spare / 2
+              : 0;
+        ctx.fillText(
+          line,
+          left + pad + Math.max(0, offset),
+          y + pad + index * TABLE_LINE + baseline(ctx, line, TABLE_LINE),
+        );
+      });
+    });
+    y += row.height;
+  }
+}
 
 /**
  * Lay the body out before anything is drawn.
@@ -765,6 +883,19 @@ function layOutBody(
 
   for (const block of blocks) {
     if (clipped) break;
+    if (block.kind === "table") {
+      const result = layOutTable(
+        ruler,
+        block,
+        contentWidth,
+        Math.max(0, MAX_BODY_LINES - used),
+        exactExcerpt,
+      );
+      laid.push(result.table);
+      used += result.lines;
+      clipped = result.clipped;
+      continue;
+    }
     if (block.kind === "code") {
       if (exactExcerpt && used + block.lines.length > MAX_BODY_LINES)
         throw new ShareCardTooLongError();
@@ -989,7 +1120,12 @@ export async function renderShareCard(
     ? linkLayout(ruler, input.link, thumbnail, contentWidth)
     : null;
   const shape =
-    drawable.length > 0 ? mediaLayout(drawable.length, contentWidth) : null;
+    drawable.length > 0
+      ? mediaLayout(
+          drawable.map((still) => still.image),
+          contentWidth,
+        )
+      : null;
   const height =
     HEADER_TOP +
     AVATAR +
@@ -1090,6 +1226,11 @@ export async function renderShareCard(
     y += bodyGap;
     laid.forEach((piece, index) => {
       y += gapBefore(index);
+      if (piece.kind === "table") {
+        drawTable(ctx, piece, PAD, y);
+        y += blockHeight(piece);
+        return;
+      }
       if (piece.kind === "code") {
         ctx.fillStyle = HAIRLINE;
         ctx.beginPath();
@@ -1255,6 +1396,30 @@ export function shareCardBlocks(html: string): ShareCardBlock[] {
   const walk = (parent: Element) => {
     for (const node of parent.children) {
       const tag = node.tagName.toLowerCase();
+      if (tag === "table") {
+        const rows = Array.from(node.querySelectorAll("tr"))
+          .filter((row) => row.closest("table") === node)
+          .map((row) =>
+            Array.from(row.children)
+              .filter((cell) => /^(TD|TH)$/.test(cell.tagName))
+              .map((cell): ShareCardTableCell => {
+                const alignment =
+                  cell.getAttribute("align") ??
+                  (cell as HTMLElement).style.textAlign;
+                return {
+                  text: flat(cell),
+                  header: cell.tagName === "TH",
+                  align:
+                    alignment === "center" || alignment === "right"
+                      ? alignment
+                      : ("left" as const),
+                };
+              }),
+          )
+          .filter((row) => row.length > 0);
+        if (rows.length > 0) blocks.push({ kind: "table", rows });
+        continue;
+      }
       if (tag === "ul" || tag === "ol") {
         let ordinal = 1;
         for (const item of node.children) {
