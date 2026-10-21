@@ -1119,7 +1119,7 @@ describe("search and archive memory layer", () => {
     vi.stubGlobal(
       "matchMedia",
       vi.fn((query: string) => ({
-        matches: query === "(min-width: 1280px)",
+        matches: query === "(min-width: 988px)",
         addEventListener: vi.fn(),
         removeEventListener: vi.fn(),
       })),

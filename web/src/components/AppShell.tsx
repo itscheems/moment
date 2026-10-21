@@ -22,6 +22,8 @@ import {
 } from "../features/profile/ProfileHeader";
 import { ShellState } from "./ShellState";
 import { ThemeMenu } from "./ThemeMenu";
+import { RailSearch } from "../features/memory/RailSearch";
+import { recentSearchScope } from "../features/memory/recentSearches";
 import { SidebarTooltip } from "./SidebarTooltip";
 import { ThemeToggle } from "./content/notion/components/templates/notion-like/notion-like-editor-theme-toggle";
 import { MOBILE_VIEWPORT_QUERY, useMediaQuery } from "./useMediaQuery";
@@ -406,21 +408,17 @@ function LeftRail({
 // navigation; the rail is for what a page cannot otherwise reach.
 function MemoryRail({
   route,
+  scope,
   slotRef,
 }: {
   route: AppRoute;
+  scope: string | null;
   slotRef: (element: HTMLDivElement | null) => void;
 }) {
   if (route.id === "search") return null;
   return (
     <aside aria-label="记忆导航" className={styles.rightRail}>
-      <InternalLink className={styles.searchPrompt} href="/search">
-        <Icon name="search" />
-        <span>
-          <strong>搜索 Moment</strong>
-          <small>按文字或日期查找</small>
-        </span>
-      </InternalLink>
+      <RailSearch scope={scope} />
       <div className={styles.railSlot} ref={slotRef} />
     </aside>
   );
@@ -561,101 +559,117 @@ export function AppShell({
                 site={site}
               />
             ) : null}
-            <main className={styles.timeline} id="main-content">
-              <header
-                className={`${styles.timelineHeader} ${
-                  route.id === "home" ? styles.homeHeader : ""
-                } ${route.id === "detail" ? styles.detailHeader : ""} ${route.id === "profile" ? styles.profileHeader : ""} ${workspace ? styles.workspaceHiddenHeader : ""}`}
-              >
-                {route.id === "detail" ||
-                focusReading ||
-                route.id === "profile" ||
-                route.id === "edit" ||
-                route.id === "compose" ? (
-                  <InternalLink
-                    aria-label={focusReading ? "退出全屏阅读" : "返回时间流"}
-                    className={styles.backLink}
-                    href={focusReading ? route.href : "/"}
-                    onClick={(event) => {
-                      if (
-                        event.button !== 0 ||
-                        event.metaKey ||
-                        event.ctrlKey ||
-                        event.shiftKey ||
-                        event.altKey
-                      )
-                        return;
-                      event.preventDefault();
-                      goBack(focusReading ? route.href : "/");
-                    }}
-                  >
-                    <Icon
-                      name={route.id === "profile" ? "arrow-left" : "back"}
-                    />
-                  </InternalLink>
-                ) : (
-                  <MobileAccountMenu
-                    accountSettingsAvailable={accountSettingsAvailable}
-                    profileHref={profileHref}
-                    site={site}
-                  />
-                )}
-                {route.id === "home" ? (
-                  <nav aria-label="首页时间流" className={styles.homeHeaderNav}>
+            <div className={styles.contentColumns}>
+              <main className={styles.timeline} id="main-content">
+                <header
+                  className={`${styles.timelineHeader} ${
+                    route.id === "home" ? styles.homeHeader : ""
+                  } ${route.id === "detail" ? styles.detailHeader : ""} ${route.id === "profile" ? styles.profileHeader : ""} ${workspace ? styles.workspaceHiddenHeader : ""}`}
+                >
+                  {route.id === "detail" ||
+                  focusReading ||
+                  route.id === "profile" ||
+                  route.id === "edit" ||
+                  route.id === "compose" ? (
                     <InternalLink
-                      aria-current="page"
-                      className={styles.homeHeaderTab}
-                      href="/"
-                      onClick={scrollHomeToTop}
+                      aria-label={focusReading ? "退出全屏阅读" : "返回时间流"}
+                      className={styles.backLink}
+                      href={focusReading ? route.href : "/"}
+                      onClick={(event) => {
+                        if (
+                          event.button !== 0 ||
+                          event.metaKey ||
+                          event.ctrlKey ||
+                          event.shiftKey ||
+                          event.altKey
+                        )
+                          return;
+                        event.preventDefault();
+                        goBack(focusReading ? route.href : "/");
+                      }}
                     >
-                      <h1>{route.title}</h1>
-                      <span aria-hidden="true" />
+                      <Icon
+                        name={route.id === "profile" ? "arrow-left" : "back"}
+                      />
                     </InternalLink>
-                  </nav>
-                ) : (
-                  <div
-                    className={
-                      route.id === "profile" ? styles.profileTitle : undefined
-                    }
-                  >
-                    <p>{route.eyebrow}</p>
-                    <h1>
+                  ) : (
+                    <MobileAccountMenu
+                      accountSettingsAvailable={accountSettingsAvailable}
+                      profileHref={profileHref}
+                      site={site}
+                    />
+                  )}
+                  {route.id === "home" ? (
+                    <nav
+                      aria-label="首页时间流"
+                      className={styles.homeHeaderNav}
+                    >
+                      <InternalLink
+                        aria-current="page"
+                        className={styles.homeHeaderTab}
+                        href="/"
+                        onClick={scrollHomeToTop}
+                      >
+                        <h1>{route.title}</h1>
+                        <span aria-hidden="true" />
+                      </InternalLink>
+                    </nav>
+                  ) : (
+                    <div
+                      className={
+                        route.id === "profile" ? styles.profileTitle : undefined
+                      }
+                    >
+                      <p>{route.eyebrow}</p>
+                      <h1>
+                        {route.id === "profile" ? (
+                          <span>
+                            {profileHeader?.title ?? siteDisplayName(site)}
+                          </span>
+                        ) : (
+                          route.title
+                        )}
+                      </h1>
                       {route.id === "profile" ? (
-                        <span>
-                          {profileHeader?.title ?? siteDisplayName(site)}
+                        <span className={styles.profileCount}>
+                          {profileHeader?.postCount == null
+                            ? null
+                            : `${profileHeader.postCount.toLocaleString("zh-CN")} 条帖子`}
                         </span>
-                      ) : (
-                        route.title
-                      )}
-                    </h1>
-                    {route.id === "profile" ? (
-                      <span className={styles.profileCount}>
-                        {profileHeader?.postCount == null
-                          ? null
-                          : `${profileHeader.postCount.toLocaleString("zh-CN")} 条帖子`}
-                      </span>
-                    ) : null}
-                  </div>
-                )}
-                <span className={styles.headerActions} ref={setHeaderSlot}>
-                  {focusReading ? <ThemeToggle headerAction /> : null}
-                </span>
-                {route.id !== "detail" &&
-                route.id !== "profile" &&
-                route.id !== "edit" &&
-                !focusReading ? (
-                  <span className={styles.headerTheme}>
-                    <ThemeMenu site={site} />
+                      ) : null}
+                    </div>
+                  )}
+                  <span className={styles.headerActions} ref={setHeaderSlot}>
+                    {focusReading ? <ThemeToggle headerAction /> : null}
                   </span>
-                ) : null}
-              </header>
-              <ProfileHeaderContext.Provider value={setProfileHeader}>
-                {children ?? <ShellState route={route} state={state} />}
-              </ProfileHeaderContext.Provider>
-            </main>
-            {!focusReading && !workspace ? (
-              <MemoryRail route={route} slotRef={setRailSlot} />
-            ) : null}
+                  {route.id !== "detail" &&
+                  route.id !== "profile" &&
+                  route.id !== "edit" &&
+                  !focusReading ? (
+                    <span className={styles.headerTheme}>
+                      <ThemeMenu site={site} />
+                    </span>
+                  ) : null}
+                </header>
+                <ProfileHeaderContext.Provider value={setProfileHeader}>
+                  {children ?? <ShellState route={route} state={state} />}
+                </ProfileHeaderContext.Provider>
+              </main>
+              {!focusReading && !workspace ? (
+                <MemoryRail
+                  key={recentSearchScope(
+                    site.instanceId,
+                    account?.userId ?? null,
+                  )}
+                  route={route}
+                  scope={recentSearchScope(
+                    site.instanceId,
+                    account?.userId ?? null,
+                  )}
+                  slotRef={setRailSlot}
+                />
+              ) : null}
+            </div>
           </div>
           {!focusReading && !focusWriting ? (
             <MobileNavigation

@@ -11,6 +11,7 @@ import {
 
 import { PublicApi, type SiteIdentity } from "../api/public";
 import { AppShell } from "../components/AppShell";
+import { recentSearchScope } from "../features/memory/recentSearches";
 import { Icon } from "../components/icons";
 import { ShellState } from "../components/ShellState";
 import { ArticleWorkspacePage } from "../features/article/editor";
@@ -561,6 +562,10 @@ function PublicApp() {
         {route.id === "search" ? (
           <SearchPage
             api={api}
+            recentScope={recentSearchScope(
+              site.instanceId,
+              auth.account?.userId ?? null,
+            )}
             key={`${auth.account?.userId ?? "guest"}:${routeSearchKey(displayLocation.search)}`}
             onSiteChanged={setSite}
             canPublish={siteIdentityReady && canPublish}
