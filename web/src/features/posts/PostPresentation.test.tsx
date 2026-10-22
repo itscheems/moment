@@ -222,7 +222,7 @@ describe("shared post presentation", () => {
     // Long enough to be folded had it been a moment. An article keeps its body
     // out of content_md, so there is nothing to measure and nothing to throw
     // on; it reads as short until articles get a timeline shape of their own.
-    expect(screen.queryByRole("link", { name: "阅读全文" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "显示更多" })).toBeNull();
   });
 
   it("renders a quoted Moment as a nested interactive card", () => {
@@ -298,11 +298,7 @@ describe("shared post presentation", () => {
     );
 
     expect(screen.getByText(longText)).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "阅读全文" })).toHaveAttribute(
-      "href",
-      "/m/01K2ABCDEF0123456789ABCDE0",
-    );
-    expect(screen.getByRole("link", { name: "阅读全文" })).toHaveAttribute(
+    expect(screen.getByRole("button", { name: "显示更多" })).toHaveAttribute(
       "data-focus-key",
       "01K2ABCDEF0123456789ABCDE0:original:read-more",
     );
@@ -316,6 +312,86 @@ describe("shared post presentation", () => {
     expect(screen.getByRole("link", { name: "@owner" })).toHaveAttribute(
       "href",
       "/owner",
+    );
+  });
+
+  it("previews long Chinese prose and expands it inside the same timeline card", () => {
+    const lead = "这是需要在时间流中先看到的开头。".repeat(3);
+    const rest = "后续段落在展开前不应提前显示。".repeat(16);
+    render(
+      <NavigationProvider>
+        <PostPresentation
+          post={makePost(`${lead}\n\n${rest}`, `<p>${lead}</p><p>${rest}</p>`)}
+          site={site}
+          timelineDensity
+        />
+      </NavigationProvider>,
+    );
+
+    expect(screen.getByText(lead)).toBeInTheDocument();
+    expect(screen.queryByText(rest)).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "显示更多" }));
+    expect(window.location.pathname).toBe("/");
+    expect(screen.getByText(rest)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "显示更多" })).toBeNull();
+  });
+
+  it("keeps multiple complete paragraphs when they fit the short preview", () => {
+    const first = "记录今天的散步和天气。".repeat(8);
+    const second = "顺便记下沿途的小店。".repeat(3);
+    const third = "后续补充一些细节和照片。".repeat(10);
+    render(
+      <NavigationProvider>
+        <PostPresentation
+          post={makePost(
+            `${first}\n\n${second}\n\n${third}`,
+            `<p>${first}</p><p>${second}</p><p>${third}</p>`,
+          )}
+          site={site}
+          timelineDensity
+        />
+      </NavigationProvider>,
+    );
+
+    expect(screen.getByText(first)).toBeInTheDocument();
+    expect(screen.getByText(second)).toBeInTheDocument();
+    expect(screen.queryByText(third)).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "显示更多" }));
+    expect(screen.getByText(third)).toBeInTheDocument();
+  });
+
+  it("leaves ordinary short posts expanded regardless of line breaks", () => {
+    const text = Array.from({ length: 10 }, (_, index) => `Line ${index}`).join(
+      "\n",
+    );
+    render(
+      <NavigationProvider>
+        <PostPresentation
+          post={makePost(text, `<p>${text.replaceAll("\n", "<br>")}</p>`)}
+          site={site}
+        />
+      </NavigationProvider>,
+    );
+
+    expect(screen.queryByRole("button", { name: "显示更多" })).toBeNull();
+    expect(screen.getByText(/Line 9/)).toBeInTheDocument();
+  });
+
+  it("does not fold a short rendered link because its Markdown URL is long", () => {
+    const url = `https://example.com/${"segment".repeat(50)}`;
+    render(
+      <NavigationProvider>
+        <PostPresentation
+          post={makePost(`[read](${url})`, `<p><a href="${url}">read</a></p>`)}
+          site={site}
+        />
+      </NavigationProvider>,
+    );
+
+    expect(screen.queryByRole("button", { name: "显示更多" })).toBeNull();
+    expect(screen.getByRole("link", { name: "read" })).toHaveAttribute(
+      "href",
+      url,
     );
   });
 
@@ -349,7 +425,7 @@ describe("shared post presentation", () => {
     expect(body).toContainElement(screen.getByText("完整正文"));
     expect(body).not.toHaveAttribute("data-content-density");
     expect(
-      screen.queryByRole("link", { name: "阅读全文" }),
+      screen.queryByRole("button", { name: "显示更多" }),
     ).not.toBeInTheDocument();
     expect(screen.queryByText("条回复")).not.toBeInTheDocument();
     expect(postCss).toMatch(

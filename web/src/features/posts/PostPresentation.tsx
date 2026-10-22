@@ -2,7 +2,12 @@ import { MapCard } from "../maps/MapCard";
 import { AccountIdentityPreview } from "../../components/AccountIdentityPreview";
 import { postAuthorSite } from "../../components/SiteIdentity";
 import { Popover } from "@base-ui/react/popover";
-import { type MouseEvent, type MouseEventHandler } from "react";
+import {
+  useMemo,
+  useState,
+  type MouseEvent,
+  type MouseEventHandler,
+} from "react";
 
 import {
   isArticlePost,
@@ -51,14 +56,63 @@ const interactiveSurfaceSelector = [
   "[data-popup-open]",
 ].join(", ");
 
-function longInTimeline(post: PublicPost): boolean {
-  const body = post.contentMd;
+function weightedTextLength(text: string): number {
+  let weight = 0;
+  // Count visible text instead of Markdown syntax. Common Latin and
+  // punctuation ranges use one unit; CJK and other symbols use two.
+  for (const character of text) {
+    const codePoint = character.codePointAt(0)!;
+    weight +=
+      codePoint <= 0x10ff ||
+      (codePoint >= 0x2000 && codePoint <= 0x200d) ||
+      (codePoint >= 0x2010 && codePoint <= 0x201f) ||
+      (codePoint >= 0x2032 && codePoint <= 0x2037)
+        ? 1
+        : 2;
+  }
+  return weight;
+}
+
+function timelinePreview(post: PublicPost): {
+  long: boolean;
+  html: string;
+  clipped: boolean;
+} {
   // An article keeps its body out of `content_md`, so there is no Markdown to
   // measure here. Reading as short is deliberate: the timeline shape an
   // article deserves is its own change, and until then the collapse control
   // would fold a card it was never measured against.
-  if (body === null) return false;
-  return Array.from(body).length > 480 || body.split(/\r?\n/).length > 9;
+  if (post.contentMd === null)
+    return { long: false, html: post.contentHtml, clipped: false };
+  const body = new DOMParser().parseFromString(
+    post.contentHtml,
+    "text/html",
+  ).body;
+  const blocks = Array.from(body.children);
+  let weight = 0;
+  for (const [index, block] of blocks.entries()) {
+    weight += (index > 0 ? 2 : 0) + weightedTextLength(block.textContent ?? "");
+  }
+  if (blocks.length === 0) weight = weightedTextLength(body.textContent ?? "");
+  if (weight <= 280)
+    return { long: false, html: post.contentHtml, clipped: false };
+
+  const visibleBlocks: string[] = [];
+  let previewWeight = 0;
+  for (const block of blocks) {
+    const nextWeight =
+      previewWeight +
+      (visibleBlocks.length > 0 ? 2 : 0) +
+      weightedTextLength(block.textContent ?? "");
+    if (visibleBlocks.length > 0 && nextWeight > 280) break;
+    visibleBlocks.push(block.outerHTML);
+    previewWeight = nextWeight;
+  }
+  return {
+    long: true,
+    html: visibleBlocks.join("") || post.contentHtml,
+    clipped: previewWeight > 280 || blocks.length === 0,
+  };
 }
 
 export function PostLocation({
@@ -153,10 +207,16 @@ export function PostPresentation({
   timelineDensity?: boolean;
 }) {
   const { navigate } = useNavigation();
+  const [expandedPostId, setExpandedPostId] = useState<string | null>(null);
   site = postAuthorSite(post, site);
   const title = siteDisplayName(site);
   const published = formatMomentDate(post.publishedAt, site.timezone, now);
-  const collapsed = !detail && longInTimeline(post);
+  const preview = useMemo(
+    () => timelinePreview(post),
+    [post.contentHtml, post.contentMd],
+  );
+  const collapsed = !detail && preview.long && expandedPostId !== post.id;
+  const previewHtml = collapsed ? preview.html : post.contentHtml;
   const linkCard =
     post.linkCards.length > 0 ? <LinkCard card={post.linkCards[0]} /> : null;
   const detailHref = `/m/${encodeURIComponent(post.id)}`;
@@ -458,19 +518,23 @@ export function PostPresentation({
           <ArticleCard post={post} />
         ) : (
           <MarkdownBody
-            className={`${styles.markdown} ${collapsed ? styles.collapsed : ""}`}
-            html={post.contentHtml}
+            className={`${styles.markdown} ${collapsed && preview.clipped ? styles.clippedPreview : ""}`}
+            html={previewHtml}
             searchQuery={searchQuery}
           />
         )}
         {collapsed ? (
-          <InternalLink
+          <button
             className={styles.readMore}
             data-focus-key={`${timelineKey}:read-more`}
-            href={detailHref}
+            onClick={(event) => {
+              event.stopPropagation();
+              setExpandedPostId(post.id);
+            }}
+            type="button"
           >
-            阅读全文
-          </InternalLink>
+            显示更多
+          </button>
         ) : null}
         {post.mapCard ? <MapCard card={post.mapCard} preview /> : null}
         {linkCard}
