@@ -297,11 +297,18 @@
 }
 
 .markdown {
-  margin-block-start: 0.22rem;
+  margin-block-start: 0;
   overflow-wrap: anywhere;
   color: var(--text-primary);
   font-size: 0.9375rem;
-  line-height: 1.48;
+  line-height: 1.25rem;
+}
+
+/* Read-only post paragraphs inherit card typography, not editor typography. */
+.markdown:global(.tiptap.ProseMirror) > p:not(:first-child) {
+  font-size: inherit;
+  font-weight: inherit;
+  line-height: inherit;
 }
 
 .timelineDensity .byline,
@@ -432,24 +439,28 @@
 }
 
 .collapsed {
-  position: relative;
-  max-block-size: 18rem;
+  max-block-size: 2.5rem;
   overflow: hidden;
-  mask-image: linear-gradient(to bottom, #000 82%, transparent);
 }
 
 .readMore {
-  min-block-size: var(--target-size);
-  inline-size: fit-content;
-  display: flex;
-  align-items: center;
+  inline-size: 100%;
+  display: block;
+  border: 0;
+  padding: 0;
   color: var(--accent);
+  background: transparent;
+  cursor: pointer;
+  font-family: var(--font-timeline);
   font-size: 0.9375rem;
-  text-decoration: none;
+  font-weight: 400;
+  line-height: 1.25rem;
+  text-align: start;
 }
 
 .readMore:focus-visible {
-  text-decoration: underline;
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
 }
 
 @media (hover: hover) {
@@ -994,9 +1005,5 @@
 
   .post {
     transition: none;
-  }
-
-  .collapsed {
-    mask-image: none;
   }
 }
