@@ -56,21 +56,11 @@ const interactiveSurfaceSelector = [
   "[data-popup-open]",
 ].join(", ");
 
-function timelinePreview(post: PublicPost): { long: boolean; html: string } {
-  // An article keeps its body out of `content_md`, so there is no Markdown to
-  // measure here. Reading as short is deliberate: the timeline shape an
-  // article deserves is its own change, and until then the collapse control
-  // would fold a card it was never measured against.
-  if (post.contentMd === null) return { long: false, html: post.contentHtml };
-  const body = new DOMParser().parseFromString(
-    post.contentHtml,
-    "text/html",
-  ).body;
-  const visibleText = body.textContent ?? "";
+function weightedTextLength(text: string): number {
   let weight = 0;
   // Count visible text instead of Markdown syntax. Common Latin and
   // punctuation ranges use one unit; CJK and other symbols use two.
-  for (const character of visibleText) {
+  for (const character of text) {
     const codePoint = character.codePointAt(0)!;
     weight +=
       codePoint <= 0x10ff ||
@@ -79,13 +69,50 @@ function timelinePreview(post: PublicPost): { long: boolean; html: string } {
       (codePoint >= 0x2032 && codePoint <= 0x2037)
         ? 1
         : 2;
-    if (weight > 280)
-      return {
-        long: true,
-        html: body.firstElementChild?.outerHTML ?? post.contentHtml,
-      };
   }
-  return { long: false, html: post.contentHtml };
+  return weight;
+}
+
+function timelinePreview(post: PublicPost): {
+  long: boolean;
+  html: string;
+  clipped: boolean;
+} {
+  // An article keeps its body out of `content_md`, so there is no Markdown to
+  // measure here. Reading as short is deliberate: the timeline shape an
+  // article deserves is its own change, and until then the collapse control
+  // would fold a card it was never measured against.
+  if (post.contentMd === null)
+    return { long: false, html: post.contentHtml, clipped: false };
+  const body = new DOMParser().parseFromString(
+    post.contentHtml,
+    "text/html",
+  ).body;
+  const blocks = Array.from(body.children);
+  let weight = 0;
+  for (const [index, block] of blocks.entries()) {
+    weight += (index > 0 ? 2 : 0) + weightedTextLength(block.textContent ?? "");
+  }
+  if (blocks.length === 0) weight = weightedTextLength(body.textContent ?? "");
+  if (weight <= 280)
+    return { long: false, html: post.contentHtml, clipped: false };
+
+  const visibleBlocks: string[] = [];
+  let previewWeight = 0;
+  for (const block of blocks) {
+    const nextWeight =
+      previewWeight +
+      (visibleBlocks.length > 0 ? 2 : 0) +
+      weightedTextLength(block.textContent ?? "");
+    if (visibleBlocks.length > 0 && nextWeight > 280) break;
+    visibleBlocks.push(block.outerHTML);
+    previewWeight = nextWeight;
+  }
+  return {
+    long: true,
+    html: visibleBlocks.join("") || post.contentHtml,
+    clipped: previewWeight > 280 || blocks.length === 0,
+  };
 }
 
 export function PostLocation({
@@ -491,7 +518,7 @@ export function PostPresentation({
           <ArticleCard post={post} />
         ) : (
           <MarkdownBody
-            className={`${styles.markdown} ${collapsed ? styles.collapsed : ""}`}
+            className={`${styles.markdown} ${collapsed && preview.clipped ? styles.clippedPreview : ""}`}
             html={previewHtml}
             searchQuery={searchQuery}
           />

@@ -438,7 +438,7 @@
   overflow-wrap: anywhere;
 }
 
-.collapsed {
+.clippedPreview {
   max-block-size: 2.5rem;
   overflow: hidden;
 }

@@ -336,6 +336,30 @@ describe("shared post presentation", () => {
     expect(screen.queryByRole("button", { name: "显示更多" })).toBeNull();
   });
 
+  it("keeps multiple complete paragraphs when they fit the short preview", () => {
+    const first = "记录今天的散步和天气。".repeat(8);
+    const second = "顺便记下沿途的小店。".repeat(3);
+    const third = "后续补充一些细节和照片。".repeat(10);
+    render(
+      <NavigationProvider>
+        <PostPresentation
+          post={makePost(
+            `${first}\n\n${second}\n\n${third}`,
+            `<p>${first}</p><p>${second}</p><p>${third}</p>`,
+          )}
+          site={site}
+          timelineDensity
+        />
+      </NavigationProvider>,
+    );
+
+    expect(screen.getByText(first)).toBeInTheDocument();
+    expect(screen.getByText(second)).toBeInTheDocument();
+    expect(screen.queryByText(third)).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "显示更多" }));
+    expect(screen.getByText(third)).toBeInTheDocument();
+  });
+
   it("leaves ordinary short posts expanded regardless of line breaks", () => {
     const text = Array.from({ length: 10 }, (_, index) => `Line ${index}`).join(
       "\n",
