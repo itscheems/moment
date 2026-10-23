@@ -56,7 +56,9 @@ export function SiteAvatar({
       className={styles.avatarFallback}
       style={dimensions}
     >
-      {Array.from(title)[0]?.toLocaleUpperCase() ?? "M"}
+      <span className={styles.avatarInitial}>
+        {Array.from(title)[0]?.toLocaleUpperCase() ?? "M"}
+      </span>
     </span>
   );
 }
