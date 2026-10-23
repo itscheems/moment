@@ -27,9 +27,15 @@
 }
 
 .avatarFallback {
+  container-type: inline-size;
   display: grid;
   place-items: center;
   color: var(--accent);
-  font-size: 1rem;
+  font-family: var(--font-body);
   font-weight: 750;
+}
+
+.avatarInitial {
+  font-size: 42cqi;
+  line-height: 1;
 }
