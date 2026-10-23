@@ -1,5 +1,7 @@
 import { TimelinePage } from "../timeline/TimelinePage";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { Menu } from "@base-ui/react/menu";
+import { Tabs } from "@base-ui/react/tabs";
 
 import {
   PublicApi,
@@ -8,6 +10,9 @@ import {
   type SiteIdentity,
 } from "../../api/public";
 import { useNavigation } from "../../app/navigation";
+import { profileFeedPath, profileFromPath } from "../../app/routes";
+import { Icon } from "../../components/icons";
+import { ExactTimeTooltip } from "../../components/TimelineInteractions";
 import { ShellState } from "../../components/ShellState";
 import { useReadRecovery } from "../../components/useReadRecovery";
 import {
@@ -24,6 +29,9 @@ import {
 } from "../timeline/PublicStates";
 import { ProfileEditor } from "./ProfileEditor";
 import { ProfileHeader } from "./ProfileHeader";
+import { formatMomentDate } from "../posts/dates";
+import { profileFilters, type ProfileFilter } from "./profileTimeline";
+import interactionStyles from "../../components/TimelineInteractions.module.css";
 import styles from "./ProfilePage.module.css";
 
 const missingRoute = {
@@ -44,6 +52,13 @@ export function MemberProfilePage({
 }) {
   const { account: viewer } = useSession();
   const navigation = useNavigation();
+  const filter = profileFromPath(navigation.pathname)?.filter ?? "all";
+  const [leftFilter, setLeftFilter] = useState<"all" | "moment">(
+    filter === "moment" ? "moment" : "all",
+  );
+  useEffect(() => {
+    if (filter !== "article") setLeftFilter(filter);
+  }, [filter]);
   const [account, setAccount] = useState<PublicAccount | null>(null);
   const [state, setState] = useState<
     "loading" | "ready" | "missing" | "failed"
@@ -82,8 +97,12 @@ export function MemberProfilePage({
   }, [api, attempt, username]);
 
   const feedApi = useMemo(
-    () => api.forAuthor(account?.userId ?? ""),
-    [api, account?.userId],
+    () =>
+      api.forAuthor(
+        account?.userId ?? "",
+        filter === "all" ? undefined : filter,
+      ),
+    [api, account?.userId, filter],
   );
 
   /**
@@ -115,6 +134,21 @@ export function MemberProfilePage({
   }
 
   const title = siteDisplayName(account);
+  const joined = account.joinedAt
+    ? new Intl.DateTimeFormat("zh-CN", {
+        year: "numeric",
+        month: "long",
+        timeZone: site.timezone,
+      }).format(new Date(account.joinedAt))
+    : null;
+  const joinedExact = account.joinedAt
+    ? formatMomentDate(account.joinedAt, site.timezone).absolute
+    : null;
+  const selectFilter = (next: ProfileFilter) => {
+    navigation.navigate(profileFeedPath(account.username, next), {
+      preserveScroll: true,
+    });
+  };
   return (
     <section aria-label={`${title} 的个人资料`}>
       <ProfileHeader api={api} userId={account.userId} title={title} />
@@ -146,18 +180,113 @@ export function MemberProfilePage({
         </h2>
         <p className={styles.handle}>{siteHandle(account)}</p>
         {account.bio.trim() ? <p>{account.bio.trim()}</p> : null}
-        <header className={styles.contentHeading}>
-          <h3>成员</h3>
-          <span>参与本站的对话</span>
-        </header>
+        <div className={styles.profileMeta}>
+          {joined && joinedExact && account.joinedAt ? (
+            <ExactTimeTooltip
+              exact={joinedExact}
+              children={
+                <time dateTime={account.joinedAt}>
+                  <Icon name="calendar" /> {joined}加入
+                </time>
+              }
+            />
+          ) : null}
+        </div>
       </div>
-      <TimelinePage
-        api={feedApi}
-        site={site}
-        initialSearch=""
-        canPublish={viewer?.status === "active"}
-        key={account.userId}
-      />
+      <Tabs.Root
+        value={filter}
+        onValueChange={(value) => selectFilter(value as ProfileFilter)}
+        className={styles.contentTabs}
+      >
+        <Tabs.List
+          aria-label="帖子类型"
+          className={styles.tabList}
+          activateOnFocus={false}
+        >
+          <div className={styles.tabSlot}>
+            <Tabs.Tab
+              value={leftFilter}
+              aria-label={leftFilter === "moment" ? "帖子" : "全部"}
+              className={styles.typeTab}
+            />
+            <div
+              className={styles.tabContent}
+              data-active={filter !== "article" ? "" : undefined}
+            >
+              <Icon name="archive" variant="navigation" />
+              <span className={styles.tabLabel}>
+                <span className={styles.tabLabelContent}>
+                  {leftFilter === "moment" ? "帖子" : "全部"}
+                </span>
+              </span>
+              <span className={styles.filterSlot}>
+                <Menu.Root>
+                  <Menu.Trigger
+                    aria-label="选择帖子类型"
+                    className={styles.filterTrigger}
+                    disabled={filter === "article"}
+                  >
+                    <Icon name="chevron-down" />
+                  </Menu.Trigger>
+                  <Menu.Portal>
+                    <Menu.Positioner
+                      side="bottom"
+                      align="start"
+                      sideOffset={4}
+                      className={interactionStyles.sharePositioner}
+                    >
+                      <Menu.Popup
+                        aria-label="帖子类型筛选"
+                        className={interactionStyles.sharePopup}
+                      >
+                        {(["all", "moment"] as const).map((kind) => (
+                          <Menu.Item
+                            key={kind}
+                            className={interactionStyles.shareItem}
+                            onClick={() => selectFilter(kind)}
+                          >
+                            <span>{kind === "all" ? "全部" : "帖子"}</span>
+                          </Menu.Item>
+                        ))}
+                      </Menu.Popup>
+                    </Menu.Positioner>
+                  </Menu.Portal>
+                </Menu.Root>
+              </span>
+            </div>
+          </div>
+          <div className={styles.tabSlot}>
+            <Tabs.Tab
+              value="article"
+              aria-label="文章"
+              className={styles.typeTab}
+            >
+              <Icon name="article" />
+            </Tabs.Tab>
+          </div>
+          <Tabs.Indicator
+            className={styles.tabIndicator}
+            style={{
+              transform: filter === "article" ? "translateX(250%)" : undefined,
+            }}
+          />
+        </Tabs.List>
+        <div className={styles.feedViewport}>
+          {profileFilters.map((kind) => (
+            <Tabs.Panel key={kind} value={kind} className={styles.feedPanel}>
+              {kind === filter ? (
+                <TimelinePage
+                  api={feedApi}
+                  site={site}
+                  initialSearch=""
+                  canPublish={viewer?.status === "active"}
+                  key={`${account.userId}:${kind}`}
+                />
+              ) : null}
+            </Tabs.Panel>
+          ))}
+        </div>
+      </Tabs.Root>
     </section>
   );
 }

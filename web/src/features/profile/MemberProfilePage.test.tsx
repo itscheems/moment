@@ -37,6 +37,7 @@ function memberEnvelope() {
       avatar_media_id: null,
       cover_media_id: null,
       profile_url: "/linlin",
+      joined_at: "2026-08-01T09:08:00Z",
     },
     meta: { request_id: "req_user" },
   };
@@ -156,6 +157,9 @@ describe("member profile", () => {
     expect(await screen.findByRole("heading", { name: "林林" })).toBeVisible();
     expect(screen.getByText("@linlin")).toBeInTheDocument();
     expect(screen.getByText("在这里记下路过的天气")).toBeInTheDocument();
+    expect(screen.getByText("2026年8月加入")).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "全部" })).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "文章" })).toBeInTheDocument();
     // No cover of their own falls back to the same colour band the site page
     // uses, rather than to an empty strip that reads as a failed image.
     expect(container.querySelector('[class*="coverFallback"]')).not.toBeNull();
@@ -171,6 +175,38 @@ describe("member profile", () => {
     );
     // A reader who is not this account gets an identity and nothing to press.
     expect(screen.queryByRole("button", { name: "编辑资料" })).toBeNull();
+  });
+
+  it("switches member profile tabs using author and post-kind filters", async () => {
+    window.history.replaceState({}, "", "/linlin");
+    const requested: string[] = [];
+    const fetcher = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      requested.push(url);
+      if (url === "/api/v1/users/linlin") return json(memberEnvelope());
+      return json({
+        data: { items: [] },
+        meta: { next_cursor: null, prev_cursor: null, request_id: "req_posts" },
+      });
+    });
+    vi.stubGlobal("fetch", signedIn(null));
+    mount(new PublicApi(fetcher as unknown as typeof fetch), "linlin");
+
+    fireEvent.click(await screen.findByRole("tab", { name: "文章" }));
+    await waitFor(() =>
+      expect(window.location.pathname).toBe("/linlin/articles"),
+    );
+    await waitFor(() =>
+      expect(requested.some((url) => url.includes("kind=article"))).toBe(true),
+    );
+    fireEvent.click(screen.getByRole("tab", { name: "全部" }));
+    await waitFor(() => expect(window.location.pathname).toBe("/linlin/all"));
+    fireEvent.click(screen.getByRole("button", { name: "选择帖子类型" }));
+    fireEvent.click(await screen.findByRole("menuitem", { name: "帖子" }));
+    await waitFor(() => expect(window.location.pathname).toBe("/linlin/posts"));
+    await waitFor(() =>
+      expect(requested.some((url) => url.includes("kind=moment"))).toBe(true),
+    );
   });
 
   it("automatically restores a member identity after a temporary read failure", async () => {
