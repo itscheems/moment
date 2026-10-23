@@ -146,10 +146,6 @@ export function MemberProfilePage({
         </h2>
         <p className={styles.handle}>{siteHandle(account)}</p>
         {account.bio.trim() ? <p>{account.bio.trim()}</p> : null}
-        <header className={styles.contentHeading}>
-          <h3>成员</h3>
-          <span>参与本站的对话</span>
-        </header>
       </div>
       <TimelinePage
         api={feedApi}
