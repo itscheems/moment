@@ -1204,6 +1204,13 @@
   text-rendering: auto;
 }
 
+/* Read-only comment paragraphs inherit comment typography, not editor typography. */
+.commentMarkdown:global(.tiptap.ProseMirror) > p:not(:first-child) {
+  font-size: inherit;
+  font-weight: inherit;
+  line-height: inherit;
+}
+
 .commentByline :where(strong, time) {
   font-family: inherit;
   font-feature-settings: inherit;
