@@ -880,7 +880,6 @@
   outline: 0;
   border: 1px solid var(--border-subtle);
   border-radius: 0.75rem;
-  padding-block: var(--space-1);
   color: var(--text-primary);
   background: var(--surface-elevated);
   box-shadow: var(--shadow-popover);
