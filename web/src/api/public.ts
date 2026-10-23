@@ -2324,6 +2324,7 @@ export interface PublicAccount {
   avatarMediaId: string | null;
   coverMediaId: string | null;
   profileUrl: string;
+  joinedAt?: string;
 }
 export interface Account extends PublicAccount {
   role: AccountRole;
@@ -2358,8 +2359,12 @@ function publicAccountFields(value: Record<string, unknown>): PublicAccount {
     bio: stringField(value, "bio"),
     avatarMediaId,
     coverMediaId,
+    ...(value.joined_at === undefined
+      ? {}
+      : { joinedAt: instantField(value, "joined_at") }),
   };
 }
+const publicAccountOptionalKeys = ["joined_at"];
 const publicAccountKeys = [
   "user_id",
   "username",
@@ -2370,7 +2375,10 @@ const publicAccountKeys = [
   "profile_url",
 ];
 export function parseAccount(value: unknown): PublicAccount {
-  if (!isRecord(value) || !hasKeys(value, publicAccountKeys, []))
+  if (
+    !isRecord(value) ||
+    !hasKeys(value, publicAccountKeys, publicAccountOptionalKeys)
+  )
     throw invalidResponse("public account contains unsupported fields");
   return publicAccountFields(value);
 }
@@ -2380,7 +2388,7 @@ export function parsePrivateAccount(value: unknown): Account {
     !hasKeys(
       value,
       [...publicAccountKeys, "role", "status", "username_chosen"],
-      [],
+      publicAccountOptionalKeys,
     )
   )
     throw invalidResponse("private account is incomplete");
@@ -2402,17 +2410,20 @@ export function parsePrivateAccount(value: unknown): Account {
 export class PublicApi {
   private readonly fetcher: Fetcher;
   private readonly authorUserId: string | undefined;
+  private readonly postKind: PostKind | undefined;
 
   constructor(
     fetcher: Fetcher = (input, init) => window.fetch(input, init),
     authorUserId?: string,
+    postKind?: PostKind,
   ) {
     this.fetcher = fetcher;
     this.authorUserId = authorUserId;
+    this.postKind = postKind;
   }
 
-  forAuthor(userId: string): PublicApi {
-    return new PublicApi(this.fetcher, userId);
+  forAuthor(userId: string, kind?: PostKind): PublicApi {
+    return new PublicApi(this.fetcher, userId, kind);
   }
 
   async site(signal?: AbortSignal): Promise<SiteIdentity> {
@@ -2524,7 +2535,8 @@ export class PublicApi {
     if (request.anchor) query.set("anchor", request.anchor);
     // An empty value is a client that meant to send a kind and did not, which
     // the server rejects; leaving the parameter off is how both kinds are read.
-    if (request.kind) query.set("kind", request.kind);
+    const kind = request.kind ?? this.postKind;
+    if (kind) query.set("kind", kind);
     const response = await this.fetcher(`/api/v1/posts?${query}`, {
       headers: { Accept: "application/json" },
       signal: request.signal,

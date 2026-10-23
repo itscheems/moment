@@ -15,6 +15,7 @@
     "bio",
     "cover_media_id",
     "display_name",
+    "joined_at",
     "profile_url",
     "user_id",
     "username"
@@ -151,6 +152,7 @@
     "bio",
     "cover_media_id",
     "display_name",
+    "joined_at",
     "profile_url",
     "role",
     "status",
