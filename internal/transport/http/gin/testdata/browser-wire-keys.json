@@ -113,6 +113,12 @@
     "reply_count",
     "reply_to"
   ],
+  "commentdto.Context": [
+    "comment",
+    "pinned_comment_id",
+    "reply_target",
+    "root_comment_id"
+  ],
   "identityView": [
     "display_name",
     "email",

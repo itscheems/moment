@@ -382,7 +382,7 @@ func TestCommentPagingKeepsDirectAndAPIAnswersIdentical(t *testing.T) {
 			loaded++
 		}
 	}
-	if loaded != 3 {
+	if loaded != app.InlineReplyPreviewCount {
 		t.Fatalf("inline replies = %d, want the preview count", loaded)
 	}
 }

@@ -959,6 +959,40 @@
       "parity_strategy": "byte_identical_data_and_effect"
     },
     {
+      "command": "comment get",
+      "direct": {
+        "availability": "supported",
+        "auth": "local_data_access",
+        "locks": [
+          "maintenance:shared"
+        ]
+      },
+      "api": {
+        "availability": "supported",
+        "auth": "none",
+        "locks": [
+          "server_managed"
+        ]
+      },
+      "destructive": {
+        "requires_yes": false,
+        "supports_dry_run": false
+      },
+      "output_schema": "comment_context",
+      "expected_exits": [
+        0,
+        2,
+        3,
+        4,
+        6,
+        7,
+        8,
+        9,
+        10
+      ],
+      "parity_strategy": "byte_identical_data"
+    },
+    {
       "command": "comment list",
       "direct": {
         "availability": "supported",

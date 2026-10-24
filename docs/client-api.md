@@ -32,7 +32,7 @@ product contract. Existing authentication and CSRF requirements apply unchanged.
       "max_cursor_bytes": 512,
       "default_comment_page_size": 20,
       "default_reply_page_size": 10,
-      "inline_reply_preview_count": 3,
+      "inline_reply_preview_count": 1,
       "accepted_image_types": ["image/jpeg", "image/png", "image/webp", "image/gif", "image/heic"],
       "accepted_video_types": ["video/mp4", "video/quicktime"],
       "max_post_link_cards": 1
@@ -272,3 +272,11 @@ Location search accepts `GET /locations/search?q=...&scope=global|auto`. The def
 CLI: `moment --as writer post create --data-dir ./moment-data --map-json ./map.json --json`; `moment --as writer post update <post-id> --data-dir ./moment-data --clear-map --json`; `moment location search --query Tokyo --scope global --json`. Map JSON accepts a file or `-` for stdin; map/media/location/link JSON cannot share stdin. Post and location commands support direct and API mode.
 
 Full-site archives now export format 3 and read formats 2 and 3. Maps survive replacement import and selective merge, including article bodies and drafts. Format 2 cannot carry map cards or schema-3 article bodies; such payloads are refused instead of silently losing content. Format 1 remains unsupported. The separate account-export format also carries the map snapshot.
+
+## Comment conversations
+
+`GET /posts/:post_id/comments/:comment_id` reads a comment without scanning preceding pages. Its data contains `comment`, nullable `reply_target` (the full safe projection of the immediate target), `root_comment_id`, and nullable `pinned_comment_id`. The post visibility rule applies to every context read. Missing or cross-post comments return `COMMENT_NOT_FOUND`; an unreadable post returns `POST_NOT_FOUND`.
+
+`GET /posts/:post_id/comments/:comment_id/replies` accepts `scope=thread|direct`, `cursor`, and `limit`. Omitted scope retains the existing whole-floor `thread` behavior and requires a root comment. `direct` accepts any comment and lists only replies explicitly addressing it; a root also includes historical replies with no saved target. Reply pages remain oldest first, default to 10, and cap at 100. Direct cursors cannot be used for a different comment or in thread scope. `reply_count` continues to describe the whole floor on roots and remains zero on replies.
+
+Root-list reads default to 20 roots with one inline reply preview per root. The CLI provides `comment get <post-id> <comment-id>` and `comment replies <post-id> <comment-id> --scope direct`, in both direct and API modes. Existing calls without `--scope` retain whole-floor semantics.

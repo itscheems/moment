@@ -486,6 +486,15 @@ export interface CommentReplyPage {
   nextCursor: string | null;
 }
 
+export type CommentReplyScope = "thread" | "direct";
+
+export interface CommentContext {
+  comment: PublicComment;
+  replyTarget: PublicComment | null;
+  rootCommentId: string;
+  pinnedCommentId: string | null;
+}
+
 export interface UploadedMedia {
   id: string;
   byteSize: number;
@@ -1131,6 +1140,7 @@ function parseCommentReplyPage(
   postId: string,
   rootId: string,
   nextCursor: string | null,
+  scope: CommentReplyScope = "thread",
 ): CommentReplyPage {
   // mirrors locationdto.Results (internal/transport/locationdto/dto.go)
   if (
@@ -1143,7 +1153,13 @@ function parseCommentReplyPage(
   const items = value.items.map((item) => parseComment(item, postId));
   let previous: PublicComment | null = null;
   for (const comment of items) {
-    if (comment.parentId !== rootId) {
+    if (
+      scope === "thread"
+        ? comment.parentId !== rootId
+        : comment.parentId === null ||
+          (comment.replyTo?.commentId !== rootId &&
+            !(comment.replyTo === null && comment.parentId === rootId))
+    ) {
       throw invalidResponse("comment reply page mixes conversations");
     }
     if (previous && commentOrder(previous, comment) >= 0) {
@@ -2682,11 +2698,16 @@ export class PublicApi {
   async commentReplies(
     postId: string,
     rootId: string,
-    options: { cursor?: string | null; signal?: AbortSignal } = {},
+    options: {
+      cursor?: string | null;
+      signal?: AbortSignal;
+      scope?: CommentReplyScope;
+    } = {},
   ): Promise<CommentReplyPage> {
-    const query = options.cursor
-      ? `?cursor=${encodeURIComponent(options.cursor)}`
-      : "";
+    const params = new URLSearchParams();
+    if (options.cursor) params.set("cursor", options.cursor);
+    if (options.scope) params.set("scope", options.scope);
+    const query = params.size ? `?${params}` : "";
     const response = await this.fetcher(
       `/api/v1/posts/${encodeURIComponent(postId)}/comments/${encodeURIComponent(rootId)}/replies${query}`,
       { headers: { Accept: "application/json" }, signal: options.signal },
@@ -2697,7 +2718,58 @@ export class PublicApi {
     if (response.status !== 200) {
       throw invalidResponse("comment replies must return HTTP 200");
     }
-    return parseCommentReplyPage(data, postId, rootId, nullableCursor(meta));
+    return parseCommentReplyPage(
+      data,
+      postId,
+      rootId,
+      nullableCursor(meta),
+      options.scope,
+    );
+  }
+
+  async commentContext(
+    postId: string,
+    commentId: string,
+    signal?: AbortSignal,
+  ): Promise<CommentContext> {
+    const response = await this.fetcher(
+      `/api/v1/posts/${encodeURIComponent(postId)}/comments/${encodeURIComponent(commentId)}`,
+      { headers: { Accept: "application/json" }, signal },
+    );
+    const { data } = await decodeResponse(response);
+    if (
+      response.status !== 200 ||
+      !isRecord(data) ||
+      !hasExactKeys(data, [
+        "comment",
+        "reply_target",
+        "root_comment_id",
+        "pinned_comment_id",
+      ])
+    )
+      throw invalidResponse("comment context is invalid");
+    const comment = parseComment(data.comment, postId);
+    const rootCommentId = stringField(data, "root_comment_id");
+    const pinnedCommentId = nullableStringField(data, "pinned_comment_id");
+    if (pinnedCommentId !== null && !isCanonicalUlid(pinnedCommentId))
+      throw invalidResponse("comment context pin is invalid");
+    if (
+      comment.id !== commentId ||
+      rootCommentId !== (comment.parentId ?? comment.id)
+    )
+      throw invalidResponse("comment context belongs to another conversation");
+    const replyTarget =
+      data.reply_target === null
+        ? null
+        : parseComment(data.reply_target, postId);
+    if (
+      replyTarget &&
+      (replyTarget.id !== comment.replyTo?.commentId ||
+        (replyTarget.id !== rootCommentId &&
+          replyTarget.parentId !== rootCommentId))
+    )
+      throw invalidResponse("comment context reply target is invalid");
+    return { comment, replyTarget, rootCommentId, pinnedCommentId };
   }
 }
 

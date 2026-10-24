@@ -18,10 +18,11 @@ const (
 	// InlineReplyPreviewCount is how many replies travel with their root before
 	// the reader asks for more. Enough to show a conversation is happening,
 	// few enough that a popular root cannot dominate the page it sits on.
-	InlineReplyPreviewCount = 3
+	InlineReplyPreviewCount = 1
 
-	commentRootCursorV1  = 1
-	commentReplyCursorV1 = 1
+	commentRootCursorV1        = 1
+	commentReplyCursorV1       = 1
+	commentDirectReplyCursorV1 = 2
 )
 
 // CommentPosition is the keyset boundary passed to the repository.
@@ -65,8 +66,16 @@ func encodeCommentRootCursor(entryID domain.ID, position CommentPosition) string
 }
 
 func encodeCommentReplyCursor(rootID domain.ID, position CommentPosition) string {
+	return encodeScopedCommentReplyCursor(rootID, position, CommentRepliesThread)
+}
+
+func encodeScopedCommentReplyCursor(rootID domain.ID, position CommentPosition, scope CommentReplyScope) string {
+	version := commentReplyCursorV1
+	if scope == CommentRepliesDirect {
+		version = commentDirectReplyCursorV1
+	}
 	payload, err := json.Marshal(commentReplyCursorPayload{
-		Version: commentReplyCursorV1, RootID: rootID.String(),
+		Version: version, RootID: rootID.String(),
 		CreatedAtMS: position.CreatedAtMS, ID: position.ID.String(),
 	})
 	if err != nil {
@@ -100,6 +109,10 @@ func decodeCommentRootCursor(value string, entryID domain.ID) (*CommentPosition,
 }
 
 func decodeCommentReplyCursor(value string, rootID domain.ID) (*CommentPosition, error) {
+	return decodeScopedCommentReplyCursor(value, rootID, CommentRepliesThread)
+}
+
+func decodeScopedCommentReplyCursor(value string, rootID domain.ID, scope CommentReplyScope) (*CommentPosition, error) {
 	payloadBytes, ok := decodeCursorBytes(value)
 	if !ok {
 		if value == "" {
@@ -111,7 +124,11 @@ func decodeCommentReplyCursor(value string, rootID domain.ID) (*CommentPosition,
 	if err := decodeCanonicalCursor(payloadBytes, &payload); err != nil {
 		return nil, err
 	}
-	if payload.Version != commentReplyCursorV1 || payload.RootID != rootID.String() {
+	version := commentReplyCursorV1
+	if scope == CommentRepliesDirect {
+		version = commentDirectReplyCursorV1
+	}
+	if payload.Version != version || payload.RootID != rootID.String() {
 		return nil, invalidCursor()
 	}
 	return commentPositionFrom(payload.CreatedAtMS, payload.ID)

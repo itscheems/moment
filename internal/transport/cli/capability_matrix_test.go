@@ -183,6 +183,7 @@ func TestEveryMatrixModeExecutesOrRejectsBeforeHandlerAndPrompt(t *testing.T) {
 		application.MustRegisterLeaf(leaf)
 	}
 	positional := map[string][]string{
+		"comment get":       {"01ARZ3NDEKTSV4RRFFQ69G5FAV", "01ARZ3NDEKTSV4RRFFQ69G5FAW"},
 		"auth revoke-token": {"0123456789abcdef0123456789abcdef"},
 		"post get":          {"01ARZ3NDEKTSV4RRFFQ69G5FAV"}, "post update": {"01ARZ3NDEKTSV4RRFFQ69G5FAV"},
 		"post delete": {"01ARZ3NDEKTSV4RRFFQ69G5FAV"}, "post pin": {"01ARZ3NDEKTSV4RRFFQ69G5FAV"},

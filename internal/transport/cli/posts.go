@@ -1556,6 +1556,18 @@ func validPostAPIRawData(data json.RawMessage, destination any) bool {
 		return typed != nil && validRawAPIPostPage(data, *typed)
 	case *commentdto.Comment:
 		return typed != nil && validRawAPIComment(data, *typed)
+	case *commentdto.Context:
+		if typed == nil || !hasRequiredAPIDataFields(data, "comment", "reply_target", "root_comment_id", "pinned_comment_id") {
+			return false
+		}
+		fields, ok := apiDataFields(data)
+		if !ok || !validRawAPIComment(fields["comment"], typed.Comment) {
+			return false
+		}
+		if typed.ReplyTarget != nil {
+			return validRawAPIComment(fields["reply_target"], *typed.ReplyTarget)
+		}
+		return bytes.Equal(bytes.TrimSpace(fields["reply_target"]), []byte("null"))
 	case *commentdto.Thread:
 		return typed != nil && validRawAPICommentThread(data, *typed)
 	case *commentdto.ReplyPage:

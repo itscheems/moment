@@ -187,6 +187,18 @@ WHERE comments.parent_id = ?` + predicate + `
 	return store.queryCommentPage(ctx, query, append(append([]any{rootID.String()}, arguments...), limit)...)
 }
 
+// Unaddressed historical replies remain with their root when a target is absent.
+func (store commentStore) ListDirectCommentReplies(ctx context.Context, entryID, targetID domain.ID, after *app.CommentPosition, limit int) ([]domain.Comment, error) {
+	predicate, arguments := commentSeekArguments(after)
+	query := `SELECT ` + commentColumns + `
+FROM comments
+LEFT JOIN comment_location AS location ON location.comment_id = comments.id
+WHERE comments.entry_id = ? AND (comments.reply_to_comment_id = ? OR
+ (comments.parent_id = ? AND comments.reply_to_comment_id IS NULL))` + predicate + `
+` + commentKeysetOrder
+	return store.queryCommentPage(ctx, query, append(append([]any{entryID.String(), targetID.String(), targetID.String()}, arguments...), limit)...)
+}
+
 func (store commentStore) queryCommentPage(ctx context.Context, query string, arguments ...any) ([]domain.Comment, error) {
 	rows, err := store.queries.QueryContext(ctx, query, arguments...)
 	if err != nil {

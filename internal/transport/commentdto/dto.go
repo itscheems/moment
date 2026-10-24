@@ -82,6 +82,54 @@ type ReplyPage struct {
 	Items []Comment `json:"items"`
 }
 
+// Context is the current comment and the content it directly answers.
+type Context struct {
+	Comment         Comment  `json:"comment"`
+	ReplyTarget     *Comment `json:"reply_target"`
+	RootCommentID   string   `json:"root_comment_id"`
+	PinnedCommentID *string  `json:"pinned_comment_id"`
+}
+
+func FromContext(result app.CommentContext) Context {
+	projection := Context{Comment: FromComment(result.Comment), RootCommentID: result.RootCommentID.String()}
+	if result.PinnedCommentID != nil {
+		value := result.PinnedCommentID.String()
+		projection.PinnedCommentID = &value
+	}
+	if result.ReplyTarget != nil {
+		target := FromComment(*result.ReplyTarget)
+		projection.ReplyTarget = &target
+	}
+	return projection
+}
+
+func ValidateContext(context Context) error {
+	if err := ValidateComment(context.Comment); err != nil {
+		return err
+	}
+	rootID := context.Comment.ID
+	if context.Comment.ParentID != nil {
+		rootID = *context.Comment.ParentID
+	}
+	if context.RootCommentID != rootID {
+		return errors.New("comment context root does not match its parent")
+	}
+	if context.PinnedCommentID != nil {
+		if _, err := domain.ParseID(*context.PinnedCommentID); err != nil {
+			return err
+		}
+	}
+	if target := context.ReplyTarget; target != nil {
+		if err := ValidateComment(*target); err != nil {
+			return err
+		}
+		if context.Comment.ReplyTo == nil || target.ID != context.Comment.ReplyTo.CommentID || target.PostID != context.Comment.PostID || (target.ID != rootID && (target.ParentID == nil || *target.ParentID != rootID)) {
+			return errors.New("comment context target belongs to another conversation")
+		}
+	}
+	return nil
+}
+
 // Pin identifies the root pinned within one post's conversation.
 type Pin struct {
 	PostID          string  `json:"post_id"`

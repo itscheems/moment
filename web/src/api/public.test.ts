@@ -75,6 +75,58 @@ const replyComment = {
 };
 
 describe("public API client", () => {
+  it("reads a comment context and rejects a target from another conversation", async () => {
+    const reply = {
+      ...replyComment,
+      reply_to: { comment_id: rootComment.id, author: rootComment.author },
+    };
+    const payload = {
+      comment: reply,
+      reply_target: rootComment,
+      root_comment_id: rootComment.id,
+      pinned_comment_id: null,
+    };
+    const api = new PublicApi(
+      vi.fn(async () => json({ data: payload, meta: {} })) as typeof fetch,
+    );
+    const context = await api.commentContext(post.id, reply.id);
+    expect(context.comment.id).toBe(reply.id);
+    expect(context.replyTarget?.id).toBe(rootComment.id);
+    expect(context.rootCommentId).toBe(rootComment.id);
+    const invalid = new PublicApi(
+      vi.fn(async () =>
+        json({ data: { ...payload, root_comment_id: reply.id }, meta: {} }),
+      ) as typeof fetch,
+    );
+    await expect(
+      invalid.commentContext(post.id, reply.id),
+    ).rejects.toMatchObject({ code: "API_RESPONSE_INVALID" });
+  });
+
+  it("validates direct reply membership using the reply target", async () => {
+    const targetId = replyComment.id;
+    const answer = {
+      ...replyComment,
+      id: "01K2ABCDEF0123456789ABCDE3",
+      reply_to: { comment_id: targetId, author: ownerAuthor },
+    };
+    const fetcher = vi.fn<typeof fetch>(async () =>
+      json({
+        data: { items: [answer] },
+        meta: { next_cursor: null, request_id: "context-test" },
+      }),
+    );
+    const api = new PublicApi(fetcher as typeof fetch);
+    expect(
+      (await api.commentReplies(post.id, targetId, { scope: "direct" }))
+        .items[0].id,
+    ).toBe(answer.id);
+    expect(fetcher.mock.calls[0][0]).toContain("scope=direct");
+    await expect(api.commentReplies(post.id, targetId)).rejects.toMatchObject({
+      code: "API_RESPONSE_INVALID",
+    });
+  });
+
   it("maps the non-recursive quoted Moment projection", async () => {
     const quoted = {
       ...post,
