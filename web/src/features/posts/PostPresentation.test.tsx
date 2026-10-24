@@ -123,6 +123,35 @@ function makePost(
 }
 
 describe("shared post presentation", () => {
+  it("keeps a legacy comment author unlinked in the shared detail renderer", () => {
+    const post = makePost("旧留言", "<p>旧留言</p>");
+    render(
+      <NavigationProvider>
+        <PostPresentation
+          detail
+          post={{
+            ...post,
+            author: {
+              userId: null,
+              username: null,
+              displayName: "旧访客",
+              avatarMediaId: null,
+              profileUrl: null,
+            },
+          }}
+          site={site}
+        />
+      </NavigationProvider>,
+    );
+    expect(screen.getByText("旧访客")).toBeVisible();
+    expect(
+      screen.queryByRole("link", { name: "旧访客" }),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByText("@")).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "分享这条 Moment" }),
+    ).toBeVisible();
+  });
   it("lets the browser skip offscreen timeline rendering with a stable estimate", () => {
     expect(postCss).toMatch(
       /@supports\s*\(content-visibility:\s*auto\)[\s\S]*?\._post_[^}]+:not\(\._detail_[^)]+\)\s*\{[^}]*content-visibility:\s*auto;[^}]*contain-intrinsic-size:\s*auto 22rem;/,
