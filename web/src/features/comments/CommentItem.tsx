@@ -514,6 +514,30 @@ export function CommentIdentity({ author }: { author: PublicCommentAuthor }) {
   );
 }
 
+export function CommentAuthorAvatar({
+  author,
+}: {
+  author: PublicCommentAuthor;
+}) {
+  return (
+    <AccountIdentityPreview author={author}>
+      {author.username && author.profileUrl ? (
+        <InternalLink
+          aria-label={`查看 ${author.displayName} 的个人资料`}
+          className={styles.commentAvatar}
+          href={author.profileUrl}
+        >
+          <SiteAvatar site={{ ...author, coverMediaId: null }} />
+        </InternalLink>
+      ) : (
+        <span aria-hidden="true" className={styles.commentAvatar}>
+          {Array.from(author.displayName)[0]?.toLocaleUpperCase() ?? "M"}
+        </span>
+      )}
+    </AccountIdentityPreview>
+  );
+}
+
 export function CommentItem({
   active = true,
   comment,
@@ -541,7 +565,7 @@ export function CommentItem({
   canDelete?: boolean;
   pinned: boolean;
   replyRootId: string | null;
-  presentation?: "list" | "focused";
+  presentation?: "list" | "focused" | "direct-reply";
   navigable?: boolean;
   /**
    * Whether this reader may actually reply. It is deliberately separate from
@@ -569,33 +593,6 @@ export function CommentItem({
   const authorName = author.displayName;
   const isPostAuthor =
     author.userId !== null && author.userId === postAuthorUserId;
-  // A legacy guest row carries a free-text name and nothing else — no profile
-  // to open, so no links and no preview card. The parser guarantees the three
-  // reference fields arrive together; this narrows them for the renderer.
-  const account =
-    author.username !== null && author.profileUrl !== null
-      ? { profileUrl: author.profileUrl, username: author.username }
-      : null;
-  const authorFace = {
-    displayName: authorName,
-    avatarMediaId: author.avatarMediaId,
-    coverMediaId: null,
-  };
-  const avatar = account ? (
-    <InternalLink
-      aria-label={`查看 ${authorName} 的个人资料`}
-      className={styles.commentAvatar}
-      href={account.profileUrl}
-    >
-      <SiteAvatar site={authorFace} />
-    </InternalLink>
-  ) : (
-    // A legacy guest row has no account behind it and never had a picture, so
-    // the name the visitor typed is the only thing left to draw with.
-    <span aria-hidden="true" className={styles.commentAvatar}>
-      {Array.from(authorName)[0]?.toLocaleUpperCase() ?? "M"}
-    </span>
-  );
   const headerRef = useRef<HTMLElement>(null);
   const restoreScrollRef = useRef(false);
   const { bodyRef, expanded, overflowing, setExpanded } = useFoldedBody(
@@ -627,7 +624,7 @@ export function CommentItem({
       className={`${styles.commentItem} ${!root && presentation === "list" ? styles.replyComment : ""}`}
       data-comment-id={comment.id}
       data-focus-key={"comment-row-" + comment.id}
-      data-depth={comment.depth}
+      data-depth={presentation === "list" ? comment.depth : 0}
       data-presentation={presentation}
       tabIndex={-1}
     >
@@ -667,9 +664,7 @@ export function CommentItem({
           />
         ) : null}
         {}
-        <AccountIdentityPreview author={author}>
-          {avatar}
-        </AccountIdentityPreview>
+        <CommentAuthorAvatar author={author} />
         {pinned ? (
           <p className={styles.pinnedCommentMark}>
             <Icon name="pin" />

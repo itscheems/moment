@@ -17,6 +17,7 @@ import { NavigationProvider } from "../../app/navigation";
 import { SessionProvider } from "../auth/SessionProvider";
 import { CommentDetailPage } from "./CommentDetailPage";
 import type { DiscussionChange } from "./discussionChanges";
+import { makeAccountLimits } from "../../test/accountFixtures";
 
 const postId = "01K2ABCDEF0123456789ABCDE0";
 const rootId = "01K2ABCDEF0123456789ABCDE1";
@@ -162,6 +163,7 @@ function setup(
 
 beforeEach(() => {
   localStorage.clear();
+  sessionStorage.clear();
   window.history.replaceState(
     {},
     "",
@@ -206,6 +208,16 @@ describe("focused comment reading", () => {
         "被回复者的评论",
       ),
     ).toBeVisible();
+    expect(screen.getByRole("link", { name: "原始帖子内容" })).toHaveAttribute(
+      "href",
+      "/m/" + postId,
+    );
+    expect(
+      screen.getByRole("link", { name: "被回复者的评论" }),
+    ).toHaveAttribute("href", "/m/" + postId + "/comments/" + targetId);
+    expect(
+      screen.queryByRole("link", { name: "返回原帖" }),
+    ).not.toBeInTheDocument();
     expect(
       within(screen.getByRole("list", { name: "直接回复列表" })).getByText(
         "直接回答当前评论",
@@ -224,6 +236,88 @@ describe("focused comment reading", () => {
       fetcher.mock.calls.some(([url]) => String(url).endsWith("/comments")),
     ).toBe(false);
   });
+  it("renders direct replies as the first level of the selected conversation", async () => {
+    const { wrapper } = setup();
+    render(wrapper());
+    const answer = await screen.findByText("直接回答当前评论");
+    expect(answer.closest("li")).toHaveAttribute("data-depth", "0");
+    expect(answer.closest("li")).toHaveAttribute(
+      "data-presentation",
+      "direct-reply",
+    );
+    expect(screen.getByText("当前评论全文").closest("li")).toHaveAttribute(
+      "data-depth",
+      "0",
+    );
+  });
+  it.each([false, true])(
+    "only offers a separate destination when a new reply belongs to a child discussion: %s",
+    async (answerChild) => {
+      const { wrapper, mutation } = setup();
+      const target = answerChild ? answerId : selectedId;
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async (input, init) => {
+          if (String(input) === "/api/v1/account/session")
+            return response({
+              expires_at: "2999-08-11T01:00:00Z",
+              csrf_token: "test-csrf",
+              account: {
+                ...author,
+                bio: "",
+                cover_media_id: null,
+                role: "member",
+                status: "active",
+                username_chosen: true,
+              },
+              limits: makeAccountLimits(),
+            });
+          expect(init?.method).toBe("POST");
+          expect(JSON.parse(String(init?.body)).reply_to_comment_id).toBe(
+            target,
+          );
+          return new Response(
+            JSON.stringify({
+              data: wire(secondId, "刚发表的回复", target),
+              meta: { request_id: "created", replayed: false },
+            }),
+            { status: 201, headers: { "Content-Type": "application/json" } },
+          );
+        }),
+      );
+      render(wrapper());
+      const textbox = await screen.findByRole("textbox", { name: "回复内容" });
+      if (answerChild)
+        fireEvent.click(
+          within(screen.getByRole("list", { name: "直接回复列表" })).getByRole(
+            "button",
+            { name: "回复 Alice" },
+          ),
+        );
+      fireEvent.change(textbox, { target: { value: "刚发表的回复" } });
+      fireEvent.click(screen.getByRole("button", { name: "发表回复" }));
+      await waitFor(() => expect(mutation).toHaveBeenCalled());
+      if (answerChild) {
+        expect(
+          screen.getByRole("link", { name: "查看刚发布的回复" }),
+        ).toHaveAttribute("href", "/m/" + postId + "/comments/" + secondId);
+        expect(
+          within(
+            screen.getByRole("list", { name: "直接回复列表" }),
+          ).queryByText("刚发表的回复"),
+        ).not.toBeInTheDocument();
+      } else {
+        expect(
+          screen.queryByRole("link", { name: "查看刚发布的回复" }),
+        ).not.toBeInTheDocument();
+        expect(
+          within(screen.getByRole("list", { name: "直接回复列表" })).getByText(
+            "刚发表的回复",
+          ),
+        ).toBeVisible();
+      }
+    },
+  );
   it("pages forward, folds and reopens cached replies, including after suspension", async () => {
     const { fetcher, wrapper } = setup();
     const view = render(wrapper());
@@ -264,6 +358,10 @@ describe("focused comment reading", () => {
     expect(screen.getByRole("link", { name: "只看直接回复" })).toHaveAttribute(
       "href",
       "/m/" + postId + "/comments/" + rootId,
+    );
+    expect(screen.getByText("直接回答当前评论").closest("li")).toHaveAttribute(
+      "data-depth",
+      "1",
     );
   });
   it("shows a missing comment without rendering unavailable context", async () => {
@@ -313,7 +411,7 @@ describe("focused comment reading", () => {
         screen.queryByRole("region", { name: "被回复评论引用" }),
       ).not.toBeInTheDocument(),
     );
-    expect(screen.getByText(/未记录具体回复对象/)).toBeVisible();
+    expect(screen.queryByText(/未记录具体回复对象/)).not.toBeInTheDocument();
     expect(screen.getByText("当前评论全文")).toBeVisible();
   });
 });

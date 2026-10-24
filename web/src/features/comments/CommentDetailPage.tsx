@@ -11,6 +11,7 @@ import {
   type CommentContext,
   type CommentReplyScope,
   type PublicComment,
+  type PublicCommentAuthor,
   type PublicPost,
   type SiteIdentity,
 } from "../../api/public";
@@ -24,7 +25,11 @@ import {
   validateCursorPage,
 } from "../timeline/cursorContinuity";
 import { CommentForm, SignInToReply, useReplyBlock } from "./CommentComposer";
-import { CommentIdentity, CommentItem } from "./CommentItem";
+import {
+  CommentAuthorAvatar,
+  CommentIdentity,
+  CommentItem,
+} from "./CommentItem";
 import {
   clearReplyTarget,
   isDirectReply,
@@ -39,6 +44,37 @@ function plainSummary(html: string): string {
     new DOMParser()
       .parseFromString(html, "text/html")
       .body.textContent?.trim() ?? ""
+  );
+}
+
+function ContextQuote({
+  label,
+  author,
+  href,
+  summary,
+  connected,
+}: {
+  label: string;
+  author: PublicCommentAuthor;
+  href: string;
+  summary: string;
+  connected: boolean;
+}) {
+  return (
+    <section
+      aria-label={label + "引用"}
+      className={styles.contextQuote}
+      data-connected={connected || undefined}
+    >
+      <CommentAuthorAvatar author={author} />
+      <div className={styles.contextByline}>
+        <span>{label === "被回复评论" ? "回复的评论" : label}</span>
+        <CommentIdentity author={author} />
+      </div>
+      <InternalLink href={href} className={styles.contextExcerpt}>
+        {summary}
+      </InternalLink>
+    </section>
   );
 }
 
@@ -203,9 +239,7 @@ export function CommentDetailPage({
   useLayoutEffect(() => {
     if (!active || !context || loading) return;
     navigation.restoreCurrentEntry(() => {
-      sectionRef.current
-        ?.querySelector<HTMLElement>('[data-presentation="focused"]')
-        ?.scrollIntoView?.({ block: "start" });
+      sectionRef.current?.scrollIntoView?.({ block: "start" });
     });
   }, [active, context, loading, navigation]);
 
@@ -254,6 +288,7 @@ export function CommentDetailPage({
           setItems((current) => mergeCommentReplies(current, [comment]));
         return;
       }
+      setRecentReply((current) => (current === comment.id ? null : current));
       if (comment.id === commentId || comment.id === context?.rootCommentId) {
         request.current?.abort();
         continuation.current?.abort();
@@ -327,12 +362,12 @@ export function CommentDetailPage({
     onMutation({ kind: "created", comment });
     onCountChange(1);
     setAnnouncement("回复已发表");
-    setRecentReply(comment.id);
+    const visibleHere = scope === "thread" || isDirectReply(comment, commentId);
+    setRecentReply(visibleHere ? null : comment.id);
     setTarget(null);
     setTargetNotice(null);
     setExpanded(true);
-    if (scope === "thread" || isDirectReply(comment, commentId))
-      focusReply.current = comment.id;
+    if (visibleHere) focusReply.current = comment.id;
   };
   const deleted = (comment: PublicComment, repliesAffected: number) => {
     applyMutation({ kind: "deleted", comment, repliesAffected });
@@ -395,41 +430,25 @@ export function CommentDetailPage({
       </p>
       {active ? (
         <div className={styles.discussionContext}>
-          <section aria-label="原帖引用" className={styles.contextQuote}>
-            <div className={styles.contextByline}>
-              <span>原帖</span>
-              <CommentIdentity author={postAuthor} />
-            </div>
-            <InternalLink
-              href={"/m/" + post.id}
-              className={styles.contextExcerpt}
-            >
-              {postSummary}
-            </InternalLink>
-          </section>
+          <ContextQuote
+            label="原帖"
+            author={postAuthor}
+            href={"/m/" + post.id}
+            summary={postSummary}
+            connected={isReady}
+          />
           {isReady && context.replyTarget ? (
-            <section
-              aria-label="被回复评论引用"
-              className={styles.contextQuote}
-            >
-              <div className={styles.contextByline}>
-                <span>回复的评论</span>
-                <CommentIdentity author={context.replyTarget.author} />
-              </div>
-              <InternalLink
-                className={styles.contextExcerpt}
-                href={commentDetailPath(post.id, context.replyTarget.id)}
-              >
-                {plainSummary(context.replyTarget.contentHtml) ||
-                  context.replyTarget.location?.displayName ||
-                  "图片回复"}
-              </InternalLink>
-            </section>
-          ) : null}
-          {isReady && context.comment.parentId && !context.replyTarget ? (
-            <p className={styles.contextUnavailable}>
-              这是一条楼内回复，未记录具体回复对象或原回复已被删除。
-            </p>
+            <ContextQuote
+              label="被回复评论"
+              author={context.replyTarget.author}
+              href={commentDetailPath(post.id, context.replyTarget.id)}
+              summary={
+                plainSummary(context.replyTarget.contentHtml) ||
+                context.replyTarget.location?.displayName ||
+                "图片回复"
+              }
+              connected
+            />
           ) : null}
         </div>
       ) : null}
@@ -482,18 +501,6 @@ export function CommentDetailPage({
               onPinChange={pinChanged}
             />
           </ol>
-          <div className={styles.discussionNavigation}>
-            <InternalLink href={"/m/" + post.id}>返回原帖</InternalLink>
-            <InternalLink
-              href={commentDetailPath(
-                post.id,
-                context.rootCommentId,
-                scope !== "thread",
-              )}
-            >
-              {scope === "thread" ? "只看直接回复" : "查看整层讨论"}
-            </InternalLink>
-          </div>
           {targetNotice ? (
             <p className={styles.targetNotice} role="status">
               {targetNotice}
@@ -540,6 +547,15 @@ export function CommentDetailPage({
             tabIndex={-1}
           >
             {scope === "thread" ? "整层回复" : "直接回复"}
+            <InternalLink
+              href={commentDetailPath(
+                post.id,
+                context.rootCommentId,
+                scope !== "thread",
+              )}
+            >
+              {scope === "thread" ? "只看直接回复" : "查看整层讨论"}
+            </InternalLink>
           </h2>
           {items.length === 0 && !loading ? (
             <p className={styles.threadState}>还没有回复。</p>
@@ -553,6 +569,7 @@ export function CommentDetailPage({
                 key={comment.id}
                 active={active && (expanded || index === 0)}
                 navigable
+                presentation={scope === "direct" ? "direct-reply" : "list"}
                 comment={comment}
                 site={site}
                 postAuthorUserId={post.author?.userId ?? null}
@@ -574,7 +591,9 @@ export function CommentDetailPage({
             ))}
           </ol>
           {items.length > 1 || cursor ? (
-            <div className={styles.replyBranch}>
+            <div
+              className={`${styles.replyBranch} ${scope === "direct" ? styles.directReplyPaging : ""}`}
+            >
               {expanded && cursor ? (
                 <button
                   type="button"

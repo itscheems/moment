@@ -1161,10 +1161,7 @@
   mask-image: linear-gradient(to bottom, #000 82%, transparent);
 }
 
-/*
- * There is no comment detail route to escape to the way a post's 阅读全文 has
- * one, so this control has to work in both directions.
- */
+/* Folding stays bidirectional within the current reading view. */
 .commentFoldToggle {
   grid-column: 2;
   min-block-size: 1.75rem;
@@ -1663,21 +1660,36 @@
 }
 
 .discussionDetail {
+  --discussion-inline-padding: var(--space-4);
   background: var(--surface);
+  scroll-margin-block-start: 4rem;
 }
 .discussionContext {
-  display: grid;
-  gap: var(--space-3);
-  padding: var(--space-4);
-  border-block-end: 1px solid var(--border-subtle);
+  position: relative;
 }
 .contextQuote {
+  --comment-avatar-size: var(--target-size);
+  position: relative;
+  display: grid;
+  grid-template-columns: var(--comment-avatar-size) minmax(0, 1fr);
+  column-gap: var(--space-3);
   min-inline-size: 0;
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-action);
-  padding: var(--space-3);
+  padding: var(--space-3) var(--discussion-inline-padding);
+}
+.contextQuote[data-connected]::after {
+  content: "";
+  position: absolute;
+  inset-block-start: calc(var(--space-3) + var(--target-size) + var(--space-2));
+  inset-block-end: calc(-1 * var(--space-1));
+  inset-inline-start: calc(
+    var(--discussion-inline-padding) + var(--target-size) / 2 - 1px
+  );
+  inline-size: 2px;
+  background: var(--border-subtle);
+  pointer-events: none;
 }
 .contextByline {
+  grid-column: 2;
   display: flex;
   flex-wrap: wrap;
   align-items: baseline;
@@ -1686,6 +1698,7 @@
   font-size: 0.8125rem;
 }
 .contextExcerpt {
+  grid-column: 2;
   display: -webkit-box;
   -webkit-line-clamp: 3;
   -webkit-box-orient: vertical;
@@ -1702,33 +1715,33 @@
   outline: 2px solid var(--accent);
   outline-offset: 3px;
 }
-.contextUnavailable {
-  margin: 0;
-  color: var(--text-secondary);
-  font-size: 0.875rem;
-}
-.discussionNavigation {
+.discussionHeading {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
   gap: var(--space-3);
-  padding: var(--space-2) var(--space-4);
-  border-block: 1px solid var(--border-subtle);
+  margin: 0;
+  min-block-size: var(--target-size);
+  padding-inline: var(--space-4);
+  font-size: 1rem;
+  scroll-margin-block-start: 4rem;
 }
-.discussionNavigation a {
+.discussionHeading a {
   display: inline-flex;
   align-items: center;
   min-block-size: var(--target-size);
   color: var(--accent);
   font-size: 0.875rem;
+  font-weight: 400;
   text-decoration: none;
 }
-.discussionHeading {
-  margin: 0;
-  padding: var(--space-3) var(--space-4);
-  font-size: 1rem;
-  scroll-margin-block-start: 4rem;
+.discussionHeading a:hover,
+.discussionHeading a:focus-visible {
+  text-decoration: underline;
+}
+.directReplyPaging {
+  padding-inline-start: var(--discussion-inline-padding);
 }
 .recentReply {
   margin: 0;
@@ -1743,4 +1756,10 @@
   padding: var(--space-3) var(--space-4);
   color: var(--text-secondary);
   font-size: 0.875rem;
+}
+
+@media (max-width: 719px) {
+  .discussionDetail {
+    --discussion-inline-padding: var(--space-3);
+  }
 }
