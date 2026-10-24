@@ -108,10 +108,6 @@ func decodeCommentRootCursor(value string, entryID domain.ID) (*CommentPosition,
 	return commentPositionFrom(payload.CreatedAtMS, payload.ID)
 }
 
-func decodeCommentReplyCursor(value string, rootID domain.ID) (*CommentPosition, error) {
-	return decodeScopedCommentReplyCursor(value, rootID, CommentRepliesThread)
-}
-
 func decodeScopedCommentReplyCursor(value string, rootID domain.ID, scope CommentReplyScope) (*CommentPosition, error) {
 	payloadBytes, ok := decodeCursorBytes(value)
 	if !ok {

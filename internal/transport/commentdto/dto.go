@@ -90,6 +90,7 @@ type Context struct {
 	PinnedCommentID *string  `json:"pinned_comment_id"`
 }
 
+// FromContext maps a selected comment and its safe conversation context.
 func FromContext(result app.CommentContext) Context {
 	projection := Context{Comment: FromComment(result.Comment), RootCommentID: result.RootCommentID.String()}
 	if result.PinnedCommentID != nil {
@@ -103,6 +104,7 @@ func FromContext(result app.CommentContext) Context {
 	return projection
 }
 
+// ValidateContext refuses inconsistent comment ownership or reply relationships.
 func ValidateContext(context Context) error {
 	if err := ValidateComment(context.Comment); err != nil {
 		return err

@@ -167,6 +167,7 @@ type ListRepliesInput struct {
 // CommentReplyScope selects a whole floor or only answers to the selected comment.
 type CommentReplyScope string
 
+// Reply collection scopes keep the whole floor distinct from direct answers.
 const (
 	CommentRepliesThread CommentReplyScope = "thread"
 	CommentRepliesDirect CommentReplyScope = "direct"
