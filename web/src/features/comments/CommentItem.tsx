@@ -626,6 +626,7 @@ export function CommentItem({
     <li
       className={`${styles.commentItem} ${!root && presentation === "list" ? styles.replyComment : ""}`}
       data-comment-id={comment.id}
+      data-focus-key={"comment-row-" + comment.id}
       data-depth={comment.depth}
       data-presentation={presentation}
       tabIndex={-1}
@@ -696,6 +697,7 @@ export function CommentItem({
               <InternalLink
                 aria-label={"查看" + authorName + "的评论详情"}
                 className={styles.commentPermalink}
+                data-focus-key={"comment-link-" + comment.id}
                 href={detailHref}
               >
                 <time dateTime={comment.createdAt}>{created.relative}</time>

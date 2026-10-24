@@ -271,6 +271,11 @@ describe("focused comment reading", () => {
     render(wrapper());
     await screen.findByText("这条评论已不存在或不可访问。");
     expect(
+      screen
+        .getByText("这条评论已不存在或不可访问。")
+        .closest('[role="status"]'),
+    ).toHaveFocus();
+    expect(
       screen.queryByRole("region", { name: "被回复评论引用" }),
     ).not.toBeInTheDocument();
     expect(screen.getByRole("link", { name: "返回原帖" })).toHaveAttribute(

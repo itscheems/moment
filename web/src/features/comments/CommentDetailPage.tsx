@@ -83,6 +83,7 @@ export function CommentDetailPage({
   const [targetNotice, setTargetNotice] = useState<string | null>(null);
   const sectionRef = useRef<HTMLElement>(null);
   const headingRef = useRef<HTMLHeadingElement>(null);
+  const missingRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const loaded = useRef(false);
   const request = useRef<AbortController | null>(null);
@@ -376,6 +377,10 @@ export function CommentDetailPage({
         error.code === "COMMENT_NOT_FOUND" ||
         error.code === "POST_NOT_FOUND"));
   const isReady = context !== null && !missingRead;
+  useEffect(() => {
+    if (active && missingRead)
+      missingRef.current?.focus({ preventScroll: true });
+  }, [active, missingRead]);
 
   return (
     <section
@@ -429,7 +434,12 @@ export function CommentDetailPage({
         </div>
       ) : null}
       {missingRead ? (
-        <div className={styles.threadState} role="status">
+        <div
+          className={styles.threadState}
+          role="status"
+          ref={missingRef}
+          tabIndex={-1}
+        >
           <strong>这条评论已不存在或不可访问。</strong>
           <InternalLink href={"/m/" + post.id}>返回原帖</InternalLink>
         </div>
@@ -456,7 +466,7 @@ export function CommentDetailPage({
               site={site}
               postAuthorUserId={post.author?.userId ?? null}
               presentation="focused"
-              focusTarget={headingRef}
+              focusTarget={missingRef}
               canModerate={canModerate}
               canDelete={
                 auth.account?.status === "active" &&
