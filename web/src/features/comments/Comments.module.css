@@ -881,6 +881,7 @@
 }
 
 .commentItem {
+  --comment-avatar-size: var(--target-size);
   position: relative;
   min-inline-size: 0;
   padding: var(--space-3) var(--space-4);
@@ -896,14 +897,15 @@
 
 .commentItem > article {
   display: grid;
-  grid-template-columns: var(--target-size) minmax(0, 1fr);
+  grid-template-columns: var(--comment-avatar-size) minmax(0, 1fr);
   column-gap: var(--space-3);
 }
 
 .commentAvatar {
+  position: relative;
   grid-row: 1 / span 3;
-  inline-size: var(--target-size);
-  block-size: var(--target-size);
+  inline-size: var(--comment-avatar-size);
+  block-size: var(--comment-avatar-size);
   display: grid;
   place-items: center;
   border: 1px solid var(--border-subtle);
@@ -912,6 +914,14 @@
   background: var(--accent-soft);
   font-weight: 750;
   text-decoration: none;
+}
+
+/* Keep the smaller visible face an accessible target without moving text. */
+.commentAvatar::after {
+  content: "";
+  position: absolute;
+  inset: min(0px, calc((var(--comment-avatar-size) - var(--target-size)) / 2));
+  border-radius: 50%;
 }
 
 .commentAvatar > img,
@@ -956,91 +966,35 @@
 }
 
 .commentReplyTo {
-  grid-column: 2;
-  min-block-size: 1.25rem;
-  margin: 0.05rem 0 0;
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.3rem;
+  min-inline-size: 0;
+}
+
+.commentReplyUnknown {
   color: var(--text-secondary);
-  font-size: 0.9375rem;
-  line-height: 1.25rem;
-}
-
-.commentReplyToLink,
-.commentReplyTo span:last-child {
-  color: var(--accent);
-}
-
-.commentReplyToLink {
-  border: 0;
-  padding: 0;
-  background: transparent;
-  font: inherit;
-  cursor: pointer;
-}
-
-.commentReplyToLink:focus-visible {
-  text-decoration: underline;
-}
-
-@media (hover: hover) {
-  .commentReplyToLink:hover {
-    text-decoration: underline;
-  }
-}
-
-/*
- * A comment the reader jumped to from a 「回复 @X」 prefix. Set as a data
- * attribute by the prefix rather than as React state, because the comment that
- * has to light up is somebody else's row, not the one holding the control.
- */
-.commentItem[data-comment-flash="true"] {
-  animation: comment-flash-target 1.4s var(--ease-out);
 }
 
 .replyComment {
-  padding-inline-start: var(--space-4);
+  --comment-avatar-size: calc(var(--target-size) * 0.6);
+  padding-inline-start: calc(
+    var(--space-4) + var(--target-size) + var(--space-3)
+  );
 }
 
-.replyComment::before {
-  content: "";
-  position: absolute;
-  inset-block-start: 0;
-  inset-inline-start: calc(var(--space-4) + (var(--target-size) / 2));
-  inline-size: 2px;
-  block-size: var(--space-3);
-  background: var(--border-subtle);
+.commentItem[data-depth="0"]:not(:first-child) {
+  border-block-start: 1px solid var(--border-subtle);
 }
 
-/*
- * The connector is drawn by sibling adjacency, so anything spliced between a
- * comment and the replies below it — the inline composer, the 「共 N 条回复」
- * row — is enough to break a bare `+ .replyComment` match and snap the line.
- * Every row that can legally sit in that gap has to be named here, and the
- * composer additionally carries the line across itself whenever a reply still
- * comes after it.
- */
-.commentItem:has(+ .replyBranch)::after,
-.commentItem:has(+ .replyComposerRow)::after,
-.commentItem:has(+ .replyComment)::after {
-  content: "";
-  position: absolute;
-  inset-block-start: calc(var(--space-3) + var(--target-size));
-  inset-block-end: 0;
-  inset-inline-start: calc(var(--space-4) + (var(--target-size) / 2));
-  inline-size: 2px;
-  background: var(--border-subtle);
-}
-
-/*
- * The tail of a root's branch, offering the replies that did not travel with
- * the page. It sits at the same inset as a reply so the control reads as part
- * of the branch it continues rather than as a sibling of the root.
- */
 .replyBranch {
   padding-inline-start: calc(
     var(--space-4) + var(--target-size) + var(--space-3)
   );
   padding-block: var(--space-2);
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: var(--space-3);
 }
@@ -1048,7 +1002,7 @@
 .replyBranch button {
   border: 0;
   background: none;
-  padding: 0;
+  padding: 0.5rem 0;
   color: var(--accent);
   font: inherit;
   font-size: 0.875rem;
@@ -1069,62 +1023,6 @@
 .replyBranch [role="alert"] {
   color: var(--text-secondary);
   font-size: 0.8125rem;
-}
-
-/*
- * Within one root's run the order is: the comment, then the inline composer
- * aimed at it, then the branch row that continues the whole run. So a composer
- * can be followed by either a reply or the branch row, and the branch row is
- * last and followed by nothing. `.replyBranch:has(+ ...)` is kept for the day
- * that changes; it does not match today, and a rule that silently matches
- * nothing is why the composer gap went unnoticed in the first place.
- */
-.replyBranch:has(+ .replyComposerRow),
-.replyBranch:has(+ .replyComment),
-.replyComposerRow:has(+ .replyBranch),
-.replyComposerRow:has(+ .replyComment) {
-  position: relative;
-}
-
-.replyBranch:has(+ .replyComposerRow)::before,
-.replyBranch:has(+ .replyComment)::before,
-.replyComposerRow:has(+ .replyBranch)::before,
-.replyComposerRow:has(+ .replyComment)::before,
-.replyBranch:has(+ .replyComposerRow)::after,
-.replyBranch:has(+ .replyComment)::after,
-.replyComposerRow:has(+ .replyBranch)::after,
-.replyComposerRow:has(+ .replyComment)::after {
-  content: "";
-  position: absolute;
-  inset-inline-start: calc(var(--space-4) + (var(--target-size) / 2));
-  inline-size: 2px;
-  background: var(--border-subtle);
-}
-
-.replyComposerRow:has(+ .replyBranch)::before,
-.replyComposerRow:has(+ .replyComment)::before {
-  inset-block-start: 0;
-  block-size: var(--space-3);
-}
-
-.replyComposerRow:has(+ .replyBranch)::after,
-.replyComposerRow:has(+ .replyComment)::after {
-  inset-block-start: calc(var(--space-3) + var(--target-size));
-  inset-block-end: 0;
-}
-
-/*
- * The branch row has no avatar to route the line around, so it carries one
- * unbroken segment instead of the composer's two.
- */
-.replyBranch:has(+ .replyComposerRow)::before,
-.replyBranch:has(+ .replyComment)::before {
-  inset-block: 0;
-}
-
-.replyBranch:has(+ .replyComposerRow)::after,
-.replyBranch:has(+ .replyComment)::after {
-  content: none;
 }
 
 .commentActionsMenu {
@@ -1158,8 +1056,6 @@
 }
 
 .replyComment .commentAvatar {
-  inline-size: var(--target-size);
-  block-size: var(--target-size);
   font-size: var(--text-sm);
 }
 
@@ -1518,16 +1414,6 @@
   }
 }
 
-@keyframes comment-flash-target {
-  from {
-    background: var(--accent-soft);
-  }
-
-  to {
-    background: transparent;
-  }
-}
-
 @keyframes comment-reveal-fade {
   from {
     opacity: 0;
@@ -1595,7 +1481,9 @@
   }
 
   .replyComment {
-    padding-inline-start: var(--space-3);
+    padding-inline-start: calc(
+      var(--space-3) + var(--target-size) + var(--space-3)
+    );
   }
 
   .replyBranch {
@@ -1607,20 +1495,6 @@
   .replyDialogPopup > .formSurface,
   .replyDialogPopup > .signInNotice {
     padding-inline: var(--space-4);
-  }
-
-  .replyComment::before {
-    inset-inline-start: calc(var(--space-3) + (var(--target-size) / 2));
-  }
-
-  .commentItem:has(+ .replyBranch)::after,
-  .commentItem:has(+ .replyComposerRow)::after,
-  .commentItem:has(+ .replyComment)::after,
-  .replyBranch:has(+ .replyComposerRow)::before,
-  .replyBranch:has(+ .replyComment)::before,
-  .replyComposerRow:has(+ .replyComment)::before,
-  .replyComposerRow:has(+ .replyComment)::after {
-    inset-inline-start: calc(var(--space-3) + (var(--target-size) / 2));
   }
 
   .formMeta span:first-child {
@@ -1664,11 +1538,6 @@
 
   .commentItem {
     transition: none;
-  }
-
-  .commentItem[data-comment-flash="true"] {
-    animation: none;
-    background: var(--accent-soft);
   }
 
   .commentBodyFaded {

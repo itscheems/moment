@@ -14,6 +14,7 @@ import {
 import {
   PublicApiError,
   type PublicComment,
+  type PublicCommentAuthor,
   type SiteIdentity,
 } from "../../api/public";
 import { InternalLink } from "../../app/navigation";
@@ -386,14 +387,6 @@ function CommentModerationMenu({
 }
 
 /**
- * How long the reply-target highlight stays on after the prefix is followed.
- *
- * Long enough to find the row with your eyes, short enough that it is gone
- * before it starts reading as a permanent state of that comment.
- */
-const REPLY_TARGET_FLASH_MS = 1400;
-
-/**
  * Clip the comment body and report whether anything is actually hidden.
  *
  * The clip is unconditional — it lives in CSS and is on from the first paint —
@@ -503,6 +496,23 @@ function SignInToReplyPopover({
   );
 }
 
+export function CommentIdentity({ author }: { author: PublicCommentAuthor }) {
+  if (!author.username || !author.profileUrl)
+    return <strong>{author.displayName}</strong>;
+  return (
+    <>
+      <AccountIdentityPreview author={author}>
+        <InternalLink className={styles.commentAuthor} href={author.profileUrl}>
+          {author.displayName}
+        </InternalLink>
+      </AccountIdentityPreview>
+      <InternalLink className={styles.commentHandle} href={author.profileUrl}>
+        @{author.username}
+      </InternalLink>
+    </>
+  );
+}
+
 export function CommentItem({
   active = true,
   comment,
@@ -511,7 +521,8 @@ export function CommentItem({
   canModerate,
   canDelete = false,
   pinned,
-  replyRoot,
+  replyRootId,
+  presentation = "list",
   canReply = true,
   replyBlockedBy = "signed-out",
   replyCount,
@@ -527,7 +538,8 @@ export function CommentItem({
   canModerate: boolean;
   canDelete?: boolean;
   pinned: boolean;
-  replyRoot: PublicComment | null;
+  replyRootId: string | null;
+  presentation?: "list" | "focused";
   /**
    * Whether this reader may actually reply. It is deliberately separate from
    * replyRoot: a null root means there is nothing to reply to and the action
@@ -542,7 +554,7 @@ export function CommentItem({
   replyBlockedBy?: ReplyBlock;
   replyCount: number;
   focusTarget: RefObject<HTMLElement | null>;
-  onReply: (root: PublicComment, target: PublicComment) => void;
+  onReply: (rootId: string, target: PublicComment) => void;
   onDeleted: (deleted: PublicComment, repliesAffected: number) => void;
   onPinChange: (pinnedCommentId: string | null) => void;
 }) {
@@ -581,7 +593,6 @@ export function CommentItem({
   );
   const headerRef = useRef<HTMLElement>(null);
   const restoreScrollRef = useRef(false);
-  const flashTimerRef = useRef<number | null>(null);
   const { bodyRef, expanded, overflowing, setExpanded } = useFoldedBody(
     comment.contentHtml,
     active,
@@ -589,34 +600,7 @@ export function CommentItem({
   const bodyId = `comment-${comment.id}-body`;
 
   const replyTo = comment.replyTo;
-  // Answering the root is what the reply's position already says. Repeat it and
-  // the prefix becomes noise on every single reply; judge by target comment
-  // rather than target author, because when the root's author has written
-  // several replies their name is precisely what stops telling you which one.
-  const namesReplyTarget =
-    replyTo !== null && replyTo.commentId !== comment.parentId;
-  const [replyTargetOnPage, setReplyTargetOnPage] = useState(false);
-
-  useEffect(() => {
-    if (!namesReplyTarget || replyTo === null) return;
-    // Deliberately no dependency list. Whether the target is mounted changes
-    // when the thread pages more replies in, and that reaches this item as a
-    // re-render rather than as a change to any prop it is given.
-    const present =
-      document.querySelector(`[data-comment-id="${replyTo.commentId}"]`) !==
-      null;
-    setReplyTargetOnPage((current) =>
-      current === present ? current : present,
-    );
-  });
-
-  useEffect(
-    () => () => {
-      if (flashTimerRef.current !== null)
-        window.clearTimeout(flashTimerRef.current);
-    },
-    [],
-  );
+  const bodyExpanded = presentation === "focused" || expanded;
 
   // Collapsing pulls everything below it upward. If the comment's own top has
   // already scrolled past, the page jumps and the reader loses the row they
@@ -629,31 +613,16 @@ export function CommentItem({
     header.scrollIntoView?.({ block: "nearest" });
   }, [expanded]);
 
-  const revealReplyTarget = () => {
-    if (replyTo === null) return;
-    const target = document.querySelector<HTMLElement>(
-      `[data-comment-id="${replyTo.commentId}"]`,
-    );
-    if (!target) return;
-    target.focus();
-    target.dataset.commentFlash = "true";
-    if (flashTimerRef.current !== null)
-      window.clearTimeout(flashTimerRef.current);
-    flashTimerRef.current = window.setTimeout(() => {
-      flashTimerRef.current = null;
-      delete target.dataset.commentFlash;
-    }, REPLY_TARGET_FLASH_MS);
-  };
-
   // Keep the folded-body state, but release the row's portals and scroll locks
   // while its conversation is suspended for focused article reading.
   if (!active) return null;
 
   return (
     <li
-      className={`${styles.commentItem} ${root ? "" : styles.replyComment}`}
+      className={`${styles.commentItem} ${!root && presentation === "list" ? styles.replyComment : ""}`}
       data-comment-id={comment.id}
       data-depth={comment.depth}
+      data-presentation={presentation}
       tabIndex={-1}
     >
       <article aria-label={`${authorName}的回复`}>
@@ -679,27 +648,17 @@ export function CommentItem({
           </p>
         ) : null}
         <header className={styles.commentByline} ref={headerRef}>
-          {account ? (
-            <>
-              {}
-              <AccountIdentityPreview author={author}>
-                <InternalLink
-                  className={styles.commentAuthor}
-                  href={account.profileUrl}
-                >
-                  {authorName}
-                </InternalLink>
-              </AccountIdentityPreview>
-              <InternalLink
-                className={styles.commentHandle}
-                href={account.profileUrl}
-              >
-                @{account.username}
-              </InternalLink>
-            </>
-          ) : (
-            <strong>{authorName}</strong>
-          )}
+          <CommentIdentity author={author} />
+          {!root ? (
+            replyTo ? (
+              <span className={styles.commentReplyTo}>
+                <span>回复</span>
+                <CommentIdentity author={replyTo.author} />
+              </span>
+            ) : (
+              <span className={styles.commentReplyUnknown}>楼内回复</span>
+            )
+          ) : null}
           {isPostAuthor ? (
             <span className={styles.authorBadge}>作者</span>
           ) : null}
@@ -708,42 +667,15 @@ export function CommentItem({
             <time dateTime={comment.createdAt}>{created.relative}</time>
           </ExactTimeTooltip>
         </header>
-        {namesReplyTarget && replyTo ? (
-          <p className={styles.commentReplyTo}>
-            <span>回复</span>{" "}
-            {replyTo.author.username !== null && replyTargetOnPage ? (
-              // A button, not an anchor: this moves focus inside the page and
-              // has no address of its own to offer. Cross-page targets are a
-              // later lane, so an off-page target stays plain text rather than
-              // becoming a control that does nothing.
-              <button
-                className={styles.commentReplyToLink}
-                onClick={revealReplyTarget}
-                type="button"
-              >
-                @{replyTo.author.username}
-              </button>
-            ) : (
-              // Display names are not unique and a legacy guest target has no
-              // username at all, so the handle is the identifying form wherever
-              // there is one.
-              <span>
-                {replyTo.author.username !== null
-                  ? `@${replyTo.author.username}`
-                  : replyTo.author.displayName}
-              </span>
-            )}
-          </p>
-        ) : null}
         {comment.contentHtml ? (
           <div
             className={[
               styles.commentBody,
-              expanded ? "" : styles.commentBodyClipped,
+              bodyExpanded ? "" : styles.commentBodyClipped,
               // Only where the control exists to answer it: a fade with no
               // "展开全文" beside it tells the reader something is missing and
               // then offers them no way to reach it.
-              overflowing && !expanded ? styles.commentBodyFaded : "",
+              overflowing && !bodyExpanded ? styles.commentBodyFaded : "",
             ]
               .filter(Boolean)
               .join(" ")}
@@ -760,7 +692,7 @@ export function CommentItem({
             />
           </div>
         ) : null}
-        {overflowing ? (
+        {overflowing && presentation !== "focused" ? (
           <button
             aria-controls={bodyId}
             aria-expanded={expanded}
@@ -799,14 +731,14 @@ export function CommentItem({
          * would leave them guessing why replies exist but no way to make one,
          * so the button stays and says so when pressed.
          */}
-        {replyRoot ? (
+        {replyRootId ? (
           <footer className={styles.commentActions}>
             {canReply ? (
               <ActionTooltip label="回复">
                 <button
                   aria-label={`回复 ${authorName}`}
                   className={styles.commentAction}
-                  onClick={() => onReply(replyRoot, comment)}
+                  onClick={() => onReply(replyRootId, comment)}
                   type="button"
                 >
                   <Icon name="reply" />

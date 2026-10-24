@@ -775,6 +775,17 @@ describe("public comment thread", () => {
       document.querySelectorAll<HTMLElement>("[data-comment-id]"),
     ).map((node) => node.dataset.commentId);
     expect(ordered).toEqual([rootId, replyId, laterReplyId]);
+    const requestsBefore = fetcher.mock.calls.filter(([url]) =>
+      String(url).includes("/replies"),
+    ).length;
+    fireEvent.click(screen.getByRole("button", { name: "收起回复" }));
+    expect(screen.queryByText("第二条回复")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "展开其余 1 条回复" }));
+    expect(screen.getByText("第二条回复")).toBeInTheDocument();
+    expect(
+      fetcher.mock.calls.filter(([url]) => String(url).includes("/replies"))
+        .length,
+    ).toBe(requestsBefore);
   });
 
   it("recovers a nested reply page automatically without reloading its root", async () => {
@@ -1392,7 +1403,7 @@ describe("public comment thread", () => {
     );
   });
 
-  it("uses consistent connector, divider, hover, and motion contracts for comment rows", () => {
+  it("preserves hover and reduced-motion declarations for comment rows", () => {
     const itemRule = commentsCss.match(
       /\._commentItem_[\w-]+\s*\{[^}]*\}/s,
     )?.[0];
@@ -1401,9 +1412,6 @@ describe("public comment thread", () => {
     expect(itemRule).toContain("transition: background-color 0.2s ease");
     expect(commentsCss).toMatch(
       /\._commentItem_[\w-]+:hover\s*\{[^}]*#f7f7f7/s,
-    );
-    expect(commentsCss).toMatch(
-      /\._commentItem_[\w-]+:has\(\+ \._replyComment_[\w-]+\)::after\s*\{[^}]*inset-block-start: calc\(var\(--space-3\) \+ var\(--target-size\)\);[^}]*inset-block-end: 0;/s,
     );
     expect(commentsCss).toMatch(
       /@media \(prefers-reduced-motion: reduce\)[\s\S]*\._commentItem_[\w-]+\s*\{[^}]*transition: none;/s,

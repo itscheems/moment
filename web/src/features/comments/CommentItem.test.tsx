@@ -173,7 +173,7 @@ function renderItem(
             pinned={overrides.pinned ?? false}
             replyCount={0}
             canReply={overrides.canReply ?? true}
-            replyRoot={overrides.replyRoot ?? null}
+            replyRootId={overrides.replyRoot?.id ?? null}
             site={site}
             postAuthorUserId={overrides.postAuthorUserId ?? profileUserId}
           />
@@ -455,62 +455,38 @@ describe("long comment folding", () => {
   });
 });
 
-describe("the reply target prefix", () => {
-  const sibling = comment(siblingId, "先来的兄弟回复", { parentId: rootId });
-
+describe("the reply target identity", () => {
   function replyNaming(targetId: string, author = ownerAuthor) {
     return comment(replyId, "接着说", {
       parentId: rootId,
       replyTo: { commentId: targetId, author },
     });
   }
-
-  it("names the target when the reply answers a sibling", () => {
-    renderItem(replyNaming(siblingId), [sibling]);
-
-    expect(screen.getByText("回复")).toBeInTheDocument();
-    expect(
-      screen.getByRole("button", { name: "@itscheems" }),
-    ).toBeInTheDocument();
-  });
-
-  it("stays quiet when the reply answers the root its position already names", () => {
-    renderItem(replyNaming(rootId), [comment(rootId, "楼主")]);
-
-    expect(screen.queryByText("回复")).not.toBeInTheDocument();
-  });
-
-  it("stays quiet when the comment names nobody", () => {
+  it.each([rootId, siblingId, offPageId])(
+    "shows the target's name and profile even when it is the root or off-page: %s",
+    (targetId) => {
+      renderItem(replyNaming(targetId));
+      const target = document.querySelector(
+        `.${styles.commentReplyTo}`,
+      ) as HTMLElement;
+      expect(target).toHaveTextContent("回复Cheems@itscheems");
+      expect(
+        within(target).getByRole("link", { name: "Cheems" }),
+      ).toHaveAttribute("href", "/itscheems");
+      expect(target.querySelector("img")).toBeNull();
+    },
+  );
+  it("labels unaddressed replies without inventing a target", () => {
     renderItem(comment(replyId, "接着说", { parentId: rootId }));
-
-    expect(screen.queryByText("回复")).not.toBeInTheDocument();
+    expect(screen.getByText("楼内回复")).toBeInTheDocument();
   });
-
-  it("focuses and highlights a target that is on the page", () => {
-    renderItem(replyNaming(siblingId), [sibling]);
-    const target = document.querySelector(`[data-comment-id="${siblingId}"]`);
-
-    fireEvent.click(screen.getByRole("button", { name: "@itscheems" }));
-
-    expect(target).toHaveFocus();
-    expect(target).toHaveAttribute("data-comment-flash", "true");
-  });
-
-  it("degrades to plain text when the target is not on the page", () => {
-    renderItem(replyNaming(offPageId));
-
-    const prefix = document.querySelector(`.${styles.commentReplyTo}`);
-    expect(prefix).toHaveTextContent("回复 @itscheems");
-    expect(prefix?.querySelector("button")).toBeNull();
-  });
-
-  it("falls back to the stored name for a legacy guest target", () => {
-    // Not `@undefined`, and not a control either: a row with no account has no
-    // handle to print and nothing to open.
-    renderItem(replyNaming(siblingId, guestAuthor), [sibling]);
-
-    expect(screen.getByText("路过的人")).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /路过的人/ })).toBeNull();
+  it("preserves a historical signature without inventing an account", () => {
+    renderItem(replyNaming(siblingId, guestAuthor));
+    const target = document.querySelector(
+      `.${styles.commentReplyTo}`,
+    ) as HTMLElement;
+    expect(target).toHaveTextContent("路过的人");
+    expect(target.querySelector("a")).toBeNull();
   });
 });
 

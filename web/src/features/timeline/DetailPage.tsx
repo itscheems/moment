@@ -158,6 +158,7 @@ export function DetailPage({
         />
       )}
       <CommentThread
+        key={post.id}
         active={!focusReading}
         api={api}
         onCountChange={handleCommentCountChange}

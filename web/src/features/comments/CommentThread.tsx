@@ -139,6 +139,9 @@ export function CommentThread({
     (auth.state === "signed-in" || auth.state === "expired") &&
     isAdministrator(auth.account);
   const [items, setItems] = useState<PublicComment[] | null>(null);
+  const [expandedRoots, setExpandedRoots] = useState<Set<string>>(
+    () => new Set(),
+  );
   const [pinnedCommentId, setPinnedCommentId] = useState<string | null>(null);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -389,6 +392,10 @@ export function CommentThread({
   }, [active, items]);
 
   const created = (comment: PublicComment) => {
+    if (comment.parentId)
+      setExpandedRoots((current) =>
+        new Set(current).add(comment.parentId as string),
+      );
     focusCommentRef.current = comment.id;
     setItems((current) => {
       if (!current) return [comment];
@@ -424,52 +431,51 @@ export function CommentThread({
 
   const replyCounts = useMemo(() => countReplies(items ?? []), [items]);
 
-  const rootsById = useMemo(
-    () =>
-      new Map<string, PublicComment>(
-        (items ?? [])
-          .filter((comment) => comment.parentId === null)
-          .map((comment) => [comment.id, comment]),
-      ),
-    [items],
-  );
-
   const displayedItems = useMemo(
     () => orderPinnedConversation(items ?? [], pinnedCommentId),
     [items, pinnedCommentId],
   );
 
-  // A root's branch ends where the next root begins. Marking the last row of
-  // each run is what lets the "more replies" control sit at the bottom of the
-  // branch it belongs to instead of being attached to the root itself, which
-  // would put it above the replies it continues.
-  const hiddenReplies = useMemo(() => {
-    const loaded = countReplies(displayedItems);
-    const hidden = new Map<string, number>();
-    for (const comment of displayedItems) {
-      if (comment.parentId !== null) continue;
-      const remaining = comment.replyCount - (loaded.get(comment.id) ?? 0);
-      // The count is a snapshot and the cursor is the truth about what is left
-      // to fetch. A reply deleted after the page was built makes the count
-      // read high; without this the branch would keep offering replies that a
-      // press could never produce.
-      if (remaining > 0 && replyPaging.get(comment.id)?.cursor) {
-        hidden.set(comment.id, remaining);
-      }
-    }
-    return hidden;
-  }, [displayedItems, replyPaging]);
+  const loadedReplies = useMemo(
+    () => countReplies(displayedItems),
+    [displayedItems],
+  );
+  const visibleItems = useMemo(() => {
+    const first = new Set<string>();
+    return displayedItems.filter((comment) => {
+      if (!comment.parentId || expandedRoots.has(comment.parentId)) return true;
+      if (first.has(comment.parentId)) return false;
+      first.add(comment.parentId);
+      return true;
+    });
+  }, [displayedItems, expandedRoots]);
+  const visibleIds = useMemo(
+    () => new Set(visibleItems.map((comment) => comment.id)),
+    [visibleItems],
+  );
+  const branchTotals = useMemo(
+    () =>
+      new Map(
+        displayedItems
+          .filter((comment) => comment.parentId === null)
+          .map((comment) => [
+            comment.id,
+            Math.max(comment.replyCount, loadedReplies.get(comment.id) ?? 0),
+          ]),
+      ),
+    [displayedItems, loadedReplies],
+  );
 
   const branchEnds = useMemo(() => {
     const ends = new Map<string, string>();
-    displayedItems.forEach((comment, index) => {
+    visibleItems.forEach((comment, index) => {
       const rootId = comment.parentId ?? comment.id;
-      const next = displayedItems[index + 1];
+      const next = visibleItems[index + 1];
       const continues = next && (next.parentId ?? next.id) === rootId;
       if (!continues) ends.set(comment.id, rootId);
     });
     return ends;
-  }, [displayedItems]);
+  }, [visibleItems]);
 
   return (
     <section
@@ -561,7 +567,7 @@ export function CommentThread({
                 <Fragment key={comment.id}>
                   <CommentItem
                     postAuthorUserId={post?.author?.userId ?? null}
-                    active={active}
+                    active={active && visibleIds.has(comment.id)}
                     comment={comment}
                     focusTarget={headingRef}
                     onDeleted={deleted}
@@ -571,7 +577,7 @@ export function CommentThread({
                         nextPinnedCommentId ? "回复已置顶" : "已取消置顶回复",
                       );
                     }}
-                    onReply={(root, target) => {
+                    onReply={(rootId, target) => {
                       // The handle the server resolved, not the site identity
                       // overlaid on an author kind. That overlay is the exact
                       // thing author_user_id replaced: it made the composer
@@ -582,7 +588,7 @@ export function CommentThread({
                         ? `@${target.author.username}`
                         : target.author.displayName;
                       setReply({
-                        rootId: root.id,
+                        rootId,
                         targetId: target.id,
                         targetAuthor,
                         content: "",
@@ -607,11 +613,7 @@ export function CommentThread({
                     // no visible way to make one.
                     canReply={canCompose}
                     replyBlockedBy={replyBlock ?? "signed-out"}
-                    replyRoot={
-                      comment.parentId === null
-                        ? comment
-                        : (rootsById.get(comment.parentId) ?? null)
-                    }
+                    replyRootId={comment.parentId ?? comment.id}
                     // The root's own total, not the rows on screen: the
                     // delete confirmation is describing an irreversible
                     // cascade, and a page holds only part of a conversation.
@@ -624,9 +626,12 @@ export function CommentThread({
                     site={site}
                   />
                   {reply?.targetId === comment.id ? (
-                    <li className={styles.replyComposerRow}>
+                    <li
+                      className={styles.replyComposerRow}
+                      hidden={!visibleIds.has(comment.id)}
+                    >
                       <CommentForm
-                        active={active}
+                        active={active && visibleIds.has(comment.id)}
                         api={api}
                         commentsEnabled={commentsEnabled}
                         content={reply.content}
@@ -656,25 +661,49 @@ export function CommentThread({
                     </li>
                   ) : null}
                   {branchEnds.has(comment.id) &&
-                  hiddenReplies.has(branchEnds.get(comment.id) as string) ? (
-                    <ReplyBranch
-                      active={active}
-                      hidden={
-                        hiddenReplies.get(
-                          branchEnds.get(comment.id) as string,
-                        ) as number
-                      }
-                      onLoad={(source) =>
-                        recoverReplies(
-                          branchEnds.get(comment.id) as string,
-                          source,
-                        )
-                      }
-                      paging={replyPaging.get(
-                        branchEnds.get(comment.id) as string,
-                      )}
-                    />
-                  ) : null}
+                  (branchTotals.get(branchEnds.get(comment.id)!) ?? 0) > 1
+                    ? (() => {
+                        const rootId = branchEnds.get(comment.id)!;
+                        const expanded = expandedRoots.has(rootId);
+                        return (
+                          <ReplyBranch
+                            active={active}
+                            expanded={expanded}
+                            hidden={Math.max(
+                              0,
+                              (branchTotals.get(rootId) ?? 0) -
+                                (expanded
+                                  ? (loadedReplies.get(rootId) ?? 0)
+                                  : 1),
+                            )}
+                            onExpand={() => {
+                              setExpandedRoots((current) =>
+                                new Set(current).add(rootId),
+                              );
+                              if ((loadedReplies.get(rootId) ?? 0) <= 1)
+                                recoverReplies(rootId, "manual");
+                            }}
+                            onCollapse={() => {
+                              setExpandedRoots((current) => {
+                                const next = new Set(current);
+                                next.delete(rootId);
+                                return next;
+                              });
+                              window.requestAnimationFrame(() => {
+                                const row = document.querySelector<HTMLElement>(
+                                  `[data-comment-id="${rootId}"]`,
+                                );
+                                row?.focus({ preventScroll: true });
+                                if (row && row.getBoundingClientRect().top < 0)
+                                  row.scrollIntoView?.({ block: "nearest" });
+                              });
+                            }}
+                            onLoad={(source) => recoverReplies(rootId, source)}
+                            paging={replyPaging.get(rootId)}
+                          />
+                        );
+                      })()
+                    : null}
                 </Fragment>
               ))}
             </ol>
@@ -709,11 +738,17 @@ export function CommentThread({
 function ReplyBranch({
   active,
   hidden,
+  expanded,
+  onExpand,
+  onCollapse,
   onLoad,
   paging,
 }: {
   active: boolean;
   hidden: number;
+  expanded: boolean;
+  onExpand: () => void;
+  onCollapse: () => void;
   onLoad: (source: LoadSource) => void;
   paging?: ReplyPaging;
 }) {
@@ -725,13 +760,23 @@ function ReplyBranch({
   });
   return (
     <li className={styles.replyBranch}>
-      {!paging?.error ? (
+      {!paging?.error && (!expanded || paging?.cursor) ? (
         <button
           disabled={paging?.loading}
-          onClick={() => onLoad("manual")}
+          aria-expanded={expanded}
+          onClick={() => (expanded ? onLoad("manual") : onExpand())}
           type="button"
         >
-          {paging?.loading ? "正在加载…" : `展开其余 ${hidden} 条回复`}
+          {paging?.loading
+            ? "正在加载…"
+            : expanded
+              ? "加载更多回复"
+              : `展开其余 ${hidden} 条回复`}
+        </button>
+      ) : null}
+      {expanded ? (
+        <button type="button" onClick={onCollapse}>
+          收起回复
         </button>
       ) : null}
       {paging?.error ? (
