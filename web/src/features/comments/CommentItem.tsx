@@ -17,7 +17,8 @@ import {
   type PublicCommentAuthor,
   type SiteIdentity,
 } from "../../api/public";
-import { InternalLink } from "../../app/navigation";
+import { InternalLink, useOptionalNavigation } from "../../app/navigation";
+import { commentDetailPath } from "../../app/routes";
 import { SiteAvatar } from "../../components/SiteIdentity";
 import {
   ActionTooltip,
@@ -523,6 +524,7 @@ export function CommentItem({
   pinned,
   replyRootId,
   presentation = "list",
+  navigable = false,
   canReply = true,
   replyBlockedBy = "signed-out",
   replyCount,
@@ -540,6 +542,7 @@ export function CommentItem({
   pinned: boolean;
   replyRootId: string | null;
   presentation?: "list" | "focused";
+  navigable?: boolean;
   /**
    * Whether this reader may actually reply. It is deliberately separate from
    * replyRoot: a null root means there is nothing to reply to and the action
@@ -559,6 +562,8 @@ export function CommentItem({
   onPinChange: (pinnedCommentId: string | null) => void;
 }) {
   const created = formatMomentDate(comment.createdAt, site.timezone);
+  const navigation = useOptionalNavigation();
+  const detailHref = commentDetailPath(comment.postId, comment.id);
   const root = comment.parentId === null;
   const author = comment.author;
   const authorName = author.displayName;
@@ -625,7 +630,30 @@ export function CommentItem({
       data-presentation={presentation}
       tabIndex={-1}
     >
-      <article aria-label={`${authorName}的回复`}>
+      <article
+        aria-label={`${authorName}的回复`}
+        onClick={(event) => {
+          if (
+            !navigable ||
+            event.button !== 0 ||
+            event.metaKey ||
+            event.ctrlKey ||
+            event.shiftKey ||
+            event.altKey ||
+            window.getSelection()?.toString()
+          )
+            return;
+          const target = event.target;
+          if (
+            target instanceof Element &&
+            target.closest(
+              "a,button,input,textarea,select,[role='button'],[contenteditable='true']",
+            )
+          )
+            return;
+          navigation?.navigate(detailHref);
+        }}
+      >
         {canModerate || canDelete ? (
           <CommentModerationMenu
             canModerate={canModerate}
@@ -664,7 +692,17 @@ export function CommentItem({
           ) : null}
           <span aria-hidden="true">·</span>
           <ExactTimeTooltip exact={created.absolute}>
-            <time dateTime={comment.createdAt}>{created.relative}</time>
+            {navigable ? (
+              <InternalLink
+                aria-label={"查看" + authorName + "的评论详情"}
+                className={styles.commentPermalink}
+                href={detailHref}
+              >
+                <time dateTime={comment.createdAt}>{created.relative}</time>
+              </InternalLink>
+            ) : (
+              <time dateTime={comment.createdAt}>{created.relative}</time>
+            )}
           </ExactTimeTooltip>
         </header>
         {comment.contentHtml ? (
@@ -711,8 +749,16 @@ export function CommentItem({
          * half-cropped photo grid only reads as broken, and a comment can be
          * nothing but a location or a picture.
          */}
-        {comment.location ? <PostLocation location={comment.location} /> : null}
-        <ImageGrid media={comment.media} />
+        {comment.location ? (
+          <div className={styles.commentAttachment}>
+            <PostLocation location={comment.location} />
+          </div>
+        ) : null}
+        {comment.media.length ? (
+          <div className={styles.commentAttachment}>
+            <ImageGrid media={comment.media} />
+          </div>
+        ) : null}
         {/*
          * No actions, no footer. The empty <span> this used to fall back to was
          * a spacer for a `space-between` row, and it was almost unreachable

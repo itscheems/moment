@@ -18,6 +18,11 @@ import {
 import { isAdministrator, useSession } from "../auth/SessionProvider";
 import { CommentForm, SignInToReply, useReplyBlock } from "./CommentComposer";
 import { CommentItem } from "./CommentItem";
+import {
+  clearReplyTarget,
+  type CommentMutation,
+  type DiscussionChange,
+} from "./discussionChanges";
 import { PostReplyDialog } from "./PostReplyDialog";
 import {
   appendRepliesToRoot,
@@ -117,6 +122,8 @@ export function CommentThread({
   replyDialogOpen = false,
   onReplyDialogOpenChange,
   replyDialogTriggerRef,
+  change,
+  onMutation,
 }: {
   api: PublicApi;
   postId: string;
@@ -133,6 +140,8 @@ export function CommentThread({
   replyDialogOpen?: boolean;
   onReplyDialogOpenChange?: (open: boolean) => void;
   replyDialogTriggerRef?: RefObject<HTMLButtonElement | null>;
+  change?: DiscussionChange | null;
+  onMutation?: (mutation: CommentMutation) => void;
 }) {
   const auth = useSession();
   const canModerate =
@@ -410,6 +419,7 @@ export function CommentThread({
       setReplyPaging((current) => mergeReplyPaging(current, [comment]));
     }
     onCountChange?.(1);
+    onMutation?.({ kind: "created", comment });
     setReply(null);
     setAnnouncement("回复已发表");
   };
@@ -422,12 +432,55 @@ export function CommentThread({
       setReply(null);
     if (pinnedCommentId === comment.id) setPinnedCommentId(null);
     onCountChange?.(-(1 + repliesAffected));
+    onMutation?.({ kind: "deleted", comment, repliesAffected });
     setAnnouncement(
       repliesAffected > 0
         ? `回复和 ${repliesAffected} 条后续回复已删除`
         : "回复已删除",
     );
   };
+
+  useEffect(() => {
+    if (!change || change.source === "post") return;
+    if (change.kind === "pin") {
+      setPinnedCommentId(change.pinnedCommentId);
+      return;
+    }
+    const comment = change.comment;
+    if (comment.postId !== postId) return;
+    setItems((current) => {
+      if (!current) return current;
+      if (change.kind === "created") {
+        if (
+          comment.parentId &&
+          !current.some((item) => item.id === comment.parentId)
+        )
+          return current;
+        return reconcileCreatedComment(current, comment);
+      }
+      const absent = !current.some((item) => item.id === comment.id);
+      const next = reconcileDeletedComment(current, comment).map((item) =>
+        clearReplyTarget(item, comment.id),
+      );
+      return absent && comment.parentId
+        ? next.map((item) =>
+            item.id === comment.parentId
+              ? { ...item, replyCount: Math.max(0, item.replyCount - 1) }
+              : item,
+          )
+        : next;
+    });
+    if (change.kind === "deleted") {
+      setReply((current) =>
+        current?.rootId === comment.id || current?.targetId === comment.id
+          ? null
+          : current,
+      );
+      setPinnedCommentId((current) =>
+        current === comment.id ? null : current,
+      );
+    }
+  }, [change, postId]);
 
   const replyCounts = useMemo(() => countReplies(items ?? []), [items]);
 
@@ -569,10 +622,15 @@ export function CommentThread({
                     postAuthorUserId={post?.author?.userId ?? null}
                     active={active && visibleIds.has(comment.id)}
                     comment={comment}
+                    navigable
                     focusTarget={headingRef}
                     onDeleted={deleted}
                     onPinChange={(nextPinnedCommentId) => {
                       setPinnedCommentId(nextPinnedCommentId);
+                      onMutation?.({
+                        kind: "pin",
+                        pinnedCommentId: nextPinnedCommentId,
+                      });
                       setAnnouncement(
                         nextPinnedCommentId ? "回复已置顶" : "已取消置顶回复",
                       );

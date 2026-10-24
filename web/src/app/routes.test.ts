@@ -7,6 +7,8 @@ import {
   articleDraftPath,
   articleFocusPath,
   articleFocusIdFromPath,
+  commentDetailFromPath,
+  commentDetailPath,
   isComposePath,
   profileFeedPath,
   profileFromPath,
@@ -14,6 +16,22 @@ import {
 } from "./routes";
 
 describe("route boundaries", () => {
+  it("opens comment permalinks independently from post editing and profiles", () => {
+    const path = commentDetailPath("post", "reply");
+    expect(path).toBe("/m/post/comments/reply");
+    expect(commentDetailFromPath(path)).toEqual({
+      postId: "post",
+      commentId: "reply",
+    });
+    expect(resolveRoute(path)).toMatchObject({
+      id: "comment-detail",
+      href: "/m/post",
+    });
+    expect(commentDetailPath("post", "root", true)).toBe(
+      "/m/post/comments/root?view=thread",
+    );
+    expect(commentDetailFromPath("/m/post/edit")).toBeNull();
+  });
   it.each([
     ["/", "home"],
     ["/m/01JABC", "detail"],

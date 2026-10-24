@@ -50,6 +50,7 @@ import {
   COMPOSE_PATH,
   COMPOSE_MEDIA_PATH,
   articleFocusIdFromPath,
+  commentDetailFromPath,
   isComposeDraftsPath,
   profileFromPath,
   resolveRoute,
@@ -76,6 +77,8 @@ const fallbackSite: SiteIdentity = {
 };
 
 function detailId(pathname: string): string {
+  const commentRoute = commentDetailFromPath(pathname);
+  if (commentRoute) return commentRoute.postId;
   const raw = pathname.match(/^\/m\/([^/]+)\/?$/)?.[1] ?? "";
   try {
     return decodeURIComponent(raw);
@@ -162,6 +165,24 @@ function PublicApp() {
     ? (new URLSearchParams(contentLocation.search).get("quote") ?? undefined)
     : undefined;
   const route = resolveRoute(displayLocation.pathname);
+  const discussionActive =
+    route.id === "detail" ||
+    route.id === "comment-detail" ||
+    route.id === "article-focus";
+  const [retainedDiscussion, setRetainedDiscussion] = useState<{
+    pathname: string;
+    search: string;
+  } | null>(null);
+  useEffect(() => {
+    if (discussionActive)
+      setRetainedDiscussion({
+        pathname: displayLocation.pathname,
+        search: displayLocation.search,
+      });
+  }, [discussionActive, displayLocation.pathname, displayLocation.search]);
+  const discussionLocation = discussionActive
+    ? displayLocation
+    : retainedDiscussion;
   const state =
     route.id === "search" ||
     route.id === "archive" ||
@@ -487,6 +508,7 @@ function PublicApp() {
   const placeholderRoute =
     route.id !== "home" &&
     route.id !== "detail" &&
+    route.id !== "comment-detail" &&
     route.id !== "article-focus" &&
     route.id !== "login" &&
     route.id !== "register" &&
@@ -552,16 +574,36 @@ function PublicApp() {
             />
           </div>
         ) : null}
-        {route.id === "detail" || route.id === "article-focus" ? (
-          <div data-detail-content>
+        {discussionLocation ? (
+          <div data-detail-content hidden={!discussionActive}>
             <DetailPage
-              key={auth.account?.userId ?? "guest"}
+              key={
+                (site.instanceId ?? "") +
+                ":" +
+                (auth.account?.userId ?? "guest") +
+                ":" +
+                (articleFocusIdFromPath(discussionLocation.pathname) ??
+                  detailId(discussionLocation.pathname))
+              }
               api={api}
               id={
-                articleFocusIdFromPath(displayLocation.pathname) ??
-                detailId(displayLocation.pathname)
+                articleFocusIdFromPath(discussionLocation.pathname) ??
+                detailId(discussionLocation.pathname)
               }
-              focusReading={route.id === "article-focus"}
+              active={discussionActive}
+              commentId={
+                commentDetailFromPath(discussionLocation.pathname)?.commentId ??
+                null
+              }
+              commentScope={
+                new URLSearchParams(discussionLocation.search).get("view") ===
+                "thread"
+                  ? "thread"
+                  : "direct"
+              }
+              focusReading={
+                resolveRoute(discussionLocation.pathname).id === "article-focus"
+              }
               canPublish={siteIdentityReady && canPublish}
               onSiteChanged={setSite}
               site={site}

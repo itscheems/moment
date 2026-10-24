@@ -1,4 +1,5 @@
 import { type PublicComment } from "../../api/public";
+import { clearReplyTarget } from "./discussionChanges";
 
 function orderComments(left: PublicComment, right: PublicComment): number {
   const time = Date.parse(left.createdAt) - Date.parse(right.createdAt);
@@ -69,7 +70,9 @@ export function reconcileDeletedComment(
 ): PublicComment[] {
   if (deleted.parentId !== null) {
     const present = current.some((comment) => comment.id === deleted.id);
-    const remaining = current.filter((comment) => comment.id !== deleted.id);
+    const remaining = current
+      .filter((comment) => comment.id !== deleted.id)
+      .map((comment) => clearReplyTarget(comment, deleted.id));
     return present
       ? shiftRootReplyCount(remaining, deleted.parentId, -1)
       : remaining;

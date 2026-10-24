@@ -1,6 +1,7 @@
 import {
   useCallback,
   useEffect,
+  useLayoutEffect,
   useRef,
   useState,
   type MouseEvent,
@@ -19,6 +20,11 @@ import { HeaderActions } from "../../components/headerActions";
 import { postAuthorSite } from "../../components/SiteIdentity";
 import { PostPresentation } from "../posts/PostPresentation";
 import { CommentThread } from "../comments/CommentThread";
+import { CommentDetailPage } from "../comments/CommentDetailPage";
+import {
+  type CommentMutation,
+  type DiscussionChange,
+} from "../comments/discussionChanges";
 import { useNavigation } from "../../app/navigation";
 import { useReadRecovery } from "../../components/useReadRecovery";
 import {
@@ -42,6 +48,9 @@ export function DetailPage({
   canPublish = false,
   onSiteChanged,
   focusReading = false,
+  active = true,
+  commentId = null,
+  commentScope = "direct",
 }: {
   api: PublicApi;
   id: string;
@@ -49,14 +58,42 @@ export function DetailPage({
   canPublish?: boolean;
   onSiteChanged?: (site: SiteIdentity) => void;
   focusReading?: boolean;
+  active?: boolean;
+  commentId?: string | null;
+  commentScope?: "direct" | "thread";
 }) {
-  const { navigate } = useNavigation();
+  const navigation = useNavigation();
+  const { navigate } = navigation;
   const [post, setPost] = useState<PublicPost | null>(null);
   const [error, setError] = useState<unknown>(null);
   const [loading, setLoading] = useState(true);
   const [replyDialogOpen, setReplyDialogOpen] = useState(false);
   const activeRequest = useRef<AbortController | null>(null);
   const replyTriggerRef = useRef<HTMLButtonElement>(null);
+  const [visitedComments, setVisitedComments] = useState<
+    Array<{ id: string; scope: "direct" | "thread" }>
+  >([]);
+  const [change, setChange] = useState<DiscussionChange | null>(null);
+  const revision = useRef(0);
+  const publishMutation = (source: string, mutation: CommentMutation) =>
+    setChange({ ...mutation, source, revision: ++revision.current });
+  useEffect(() => {
+    if (commentId)
+      setVisitedComments((current) =>
+        current.some(
+          (view) => view.id === commentId && view.scope === commentScope,
+        )
+          ? current
+          : [...current, { id: commentId, scope: commentScope }],
+      );
+  }, [commentId, commentScope]);
+  const commentViews =
+    commentId &&
+    !visitedComments.some(
+      (view) => view.id === commentId && view.scope === commentScope,
+    )
+      ? [...visitedComments, { id: commentId, scope: commentScope }]
+      : visitedComments;
 
   const load = useCallback(async () => {
     activeRequest.current?.abort();
@@ -78,17 +115,23 @@ export function DetailPage({
     loading,
     onRetry: load,
     scope: id,
+    enabled: active,
   });
 
   useEffect(() => {
-    void load();
+    if (active) void load();
     return () => activeRequest.current?.abort();
-  }, [load]);
+  }, [load, active]);
 
   useEffect(() => {
     setReplyDialogOpen(false);
     replyTriggerRef.current = null;
-  }, [focusReading, id]);
+  }, [focusReading, id, commentId]);
+
+  useLayoutEffect(() => {
+    if (active && !commentId && !focusReading && post?.id === id && !loading)
+      navigation.restoreCurrentEntry();
+  }, [active, commentId, focusReading, post?.id, id, loading, navigation]);
 
   // The thread reports how the total moved, not what it is. It only ever holds
   // one page of a conversation now, so counting its rows would replace a real
@@ -125,7 +168,7 @@ export function DetailPage({
   return (
     <>
       {loading || error ? <ReadRecoveryNotice /> : null}
-      {isReadArticlePost(post) && !focusReading ? (
+      {active && !commentId && isReadArticlePost(post) && !focusReading ? (
         <HeaderActions>
           <ArticleFocusLink
             id={post.id}
@@ -133,33 +176,35 @@ export function DetailPage({
           />
         </HeaderActions>
       ) : null}
-      {isReadArticlePost(post) ? (
-        <ArticlePage
-          focusReading={focusReading}
-          layout={focusReading ? "document" : "detail"}
-          onDeleted={() => navigate("/")}
-          onReply={openReply}
-          onReposted={setPost}
-          onSiteChanged={onSiteChanged}
-          canPublish={canPublish}
-          post={post}
-          site={site}
-        />
-      ) : (
-        <PostPresentation
-          detail
-          onDeleted={() => navigate("/")}
-          onReply={openReply}
-          onReposted={setPost}
-          onSiteChanged={onSiteChanged}
-          canPublish={canPublish}
-          post={post}
-          site={site}
-        />
-      )}
+      {active && !commentId ? (
+        isReadArticlePost(post) ? (
+          <ArticlePage
+            focusReading={focusReading}
+            layout={focusReading ? "document" : "detail"}
+            onDeleted={() => navigate("/")}
+            onReply={openReply}
+            onReposted={setPost}
+            onSiteChanged={onSiteChanged}
+            canPublish={canPublish}
+            post={post}
+            site={site}
+          />
+        ) : (
+          <PostPresentation
+            detail
+            onDeleted={() => navigate("/")}
+            onReply={openReply}
+            onReposted={setPost}
+            onSiteChanged={onSiteChanged}
+            canPublish={canPublish}
+            post={post}
+            site={site}
+          />
+        )
+      ) : null}
       <CommentThread
         key={post.id}
-        active={!focusReading}
+        active={active && !focusReading && !commentId}
         api={api}
         onCountChange={handleCommentCountChange}
         onReplyDialogOpenChange={setReplyDialogOpen}
@@ -168,7 +213,27 @@ export function DetailPage({
         replyDialogOpen={replyDialogOpen}
         replyDialogTriggerRef={replyTriggerRef}
         site={site}
+        change={change}
+        onMutation={(mutation) => publishMutation("post", mutation)}
       />
+      {commentViews.map((view) => (
+        <CommentDetailPage
+          key={view.id + ":" + view.scope}
+          api={api}
+          post={post}
+          site={site}
+          commentId={view.id}
+          scope={view.scope}
+          active={
+            active && commentId === view.id && commentScope === view.scope
+          }
+          change={change}
+          onMutation={(mutation) =>
+            publishMutation(view.id + ":" + view.scope, mutation)
+          }
+          onCountChange={handleCommentCountChange}
+        />
+      ))}
     </>
   );
 }

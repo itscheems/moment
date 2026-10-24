@@ -49,7 +49,12 @@ const DEFAULT_PROFILE_HREF = "/profile";
 
 function primaryNavFor(profileHref: string): NavItem[] {
   return [
-    { label: "首页", href: "/", icon: "home", active: ["home", "detail"] },
+    {
+      label: "首页",
+      href: "/",
+      icon: "home",
+      active: ["home", "detail", "comment-detail"],
+    },
     { label: "搜索", href: "/search", icon: "search", active: ["search"] },
     { label: "归档", href: "/archive", icon: "archive", active: ["archive"] },
     {
@@ -547,7 +552,7 @@ export function AppShell({
           style={focusReading ? readingLayoutStyle(readingLayout) : undefined}
         >
           <div
-            className={`${styles.shell} ${route.id === "detail" ? styles.detailShell : ""} ${focusReading ? styles.focusShell : ""} ${workspace ? styles.workspaceShell : ""} ${focusWriting ? styles.workspaceFocusShell : ""}`}
+            className={`${styles.shell} ${route.id === "detail" || route.id === "comment-detail" ? styles.detailShell : ""} ${focusReading ? styles.focusShell : ""} ${workspace ? styles.workspaceShell : ""} ${focusWriting ? styles.workspaceFocusShell : ""}`}
           >
             {!focusReading && !focusWriting ? (
               <LeftRail
@@ -564,17 +569,28 @@ export function AppShell({
                 <header
                   className={`${styles.timelineHeader} ${
                     route.id === "home" ? styles.homeHeader : ""
-                  } ${route.id === "detail" ? styles.detailHeader : ""} ${route.id === "profile" ? styles.profileHeader : ""} ${workspace ? styles.workspaceHiddenHeader : ""}`}
+                  } ${route.id === "detail" || route.id === "comment-detail" ? styles.detailHeader : ""} ${route.id === "profile" ? styles.profileHeader : ""} ${workspace ? styles.workspaceHiddenHeader : ""}`}
                 >
                   {route.id === "detail" ||
+                  route.id === "comment-detail" ||
                   focusReading ||
                   route.id === "profile" ||
                   route.id === "edit" ||
                   route.id === "compose" ? (
                     <InternalLink
-                      aria-label={focusReading ? "退出全屏阅读" : "返回时间流"}
+                      aria-label={
+                        focusReading
+                          ? "退出全屏阅读"
+                          : route.id === "comment-detail"
+                            ? "返回上一级"
+                            : "返回时间流"
+                      }
                       className={styles.backLink}
-                      href={focusReading ? route.href : "/"}
+                      href={
+                        focusReading || route.id === "comment-detail"
+                          ? route.href
+                          : "/"
+                      }
                       onClick={(event) => {
                         if (
                           event.button !== 0 ||
@@ -585,7 +601,11 @@ export function AppShell({
                         )
                           return;
                         event.preventDefault();
-                        goBack(focusReading ? route.href : "/");
+                        goBack(
+                          focusReading || route.id === "comment-detail"
+                            ? route.href
+                            : "/",
+                        );
                       }}
                     >
                       <Icon
@@ -643,6 +663,7 @@ export function AppShell({
                     {focusReading ? <ThemeToggle headerAction /> : null}
                   </span>
                   {route.id !== "detail" &&
+                  route.id !== "comment-detail" &&
                   route.id !== "profile" &&
                   route.id !== "edit" &&
                   !focusReading ? (
