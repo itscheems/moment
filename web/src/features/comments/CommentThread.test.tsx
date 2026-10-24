@@ -475,6 +475,7 @@ describe("public comment thread", () => {
             active={active}
             api={api}
             postId={postId}
+            post={post}
             site={site}
           />
         </SessionProvider>
@@ -522,6 +523,7 @@ describe("public comment thread", () => {
             active={active}
             api={api}
             postId={postId}
+            post={post}
             site={site}
           />
         </SessionProvider>
@@ -564,6 +566,7 @@ describe("public comment thread", () => {
             active={active}
             api={api}
             postId={postId}
+            post={post}
             site={site}
           />
         </SessionProvider>
@@ -1563,7 +1566,7 @@ describe("public comment thread", () => {
     ).toBeNull();
   });
 
-  it("keeps a flat one-level presentation and places reply composition after its root", async () => {
+  it("keeps a flat one-level presentation and reuses the reply dialog for a child", async () => {
     preauthenticate();
     const fetcher = installApi((url, init) => {
       if (url.endsWith("/comments") && init?.method !== "POST") {
@@ -1601,9 +1604,8 @@ describe("public comment thread", () => {
     expect(screen.getAllByRole("form", { name: "回复 @owner" })).toHaveLength(
       1,
     );
-    expect(replyForm.closest("li")?.previousElementSibling).toHaveAttribute(
-      "data-comment-id",
-      replyId,
+    expect(replyForm.closest('[role="dialog"]')).toHaveAccessibleName(
+      "回复这条 Moment",
     );
     // Previously this read "@Moment" — the display name wearing an @ as though
     // it were a handle, from the site overlay this branch retired everywhere
@@ -2072,7 +2074,8 @@ describe("public comment thread", () => {
       const form = screen.getByRole("form", { name: formName });
       const field = within(form).getByRole("textbox", { name: fieldName });
       fireEvent.change(field, { target: { value: content } });
-      fireEvent.click(screen.getByRole("button", { name: "使会话过期" }));
+      // This harness control simulates expiration outside the modal.
+      fireEvent.click(screen.getByText("使会话过期"));
 
       expect(field).toHaveValue(content);
       const surface = form.parentElement!;
@@ -2303,7 +2306,8 @@ describe("public comment thread", () => {
     renderThread(site, true);
 
     await screen.findByText("顶级回应");
-    fireEvent.click(screen.getByRole("button", { name: "使会话过期" }));
+    // This harness control simulates expiration outside the modal.
+    fireEvent.click(screen.getByText("使会话过期"));
     await chooseFirstCommentAction("删除");
     const dialog = await screen.findByRole("dialog");
     expect(dialog).toHaveTextContent("刷新身份后可在这里重新删除");

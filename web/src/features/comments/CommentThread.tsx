@@ -20,6 +20,8 @@ import { CommentForm, SignInToReply, useReplyBlock } from "./CommentComposer";
 import { CommentItem } from "./CommentItem";
 import {
   clearReplyTarget,
+  isDirectReply,
+  mergeCommentReplies,
   type CommentMutation,
   type DiscussionChange,
 } from "./discussionChanges";
@@ -106,9 +108,7 @@ function withReplyPaging(
 }
 
 interface ReplyDraft {
-  rootId: string;
-  targetId: string;
-  targetAuthor: string;
+  comment: PublicComment;
   content: string;
 }
 
@@ -124,10 +124,11 @@ export function CommentThread({
   replyDialogTriggerRef,
   change,
   onMutation,
+  conversation,
 }: {
   api: PublicApi;
   postId: string;
-  post?: PublicPost;
+  post: PublicPost;
   site: SiteIdentity;
   /** Pause fetching and interaction while preserving the conversation drafts. */
   active?: boolean;
@@ -142,6 +143,7 @@ export function CommentThread({
   replyDialogTriggerRef?: RefObject<HTMLButtonElement | null>;
   change?: DiscussionChange | null;
   onMutation?: (mutation: CommentMutation) => void;
+  conversation?: PublicComment;
 }) {
   const auth = useSession();
   const canModerate =
@@ -172,6 +174,7 @@ export function CommentThread({
   const [topContent, setTopContent] = useState("");
   const [dialogContent, setDialogContent] = useState("");
   const [reply, setReply] = useState<ReplyDraft | null>(null);
+  const [replyOpen, setReplyOpen] = useState(false);
   const [closedByServer, setClosedByServer] = useState(false);
   const [announcement, setAnnouncement] = useState("");
   const headingRef = useRef<HTMLHeadingElement>(null);
@@ -179,6 +182,21 @@ export function CommentThread({
   const commentsEnabled = site.commentsEnabled && !closedByServer;
   const replyBlock = useReplyBlock();
   const canCompose = replyBlock === null;
+  const conversationId = conversation?.id;
+  const sourceKey = conversationId ? conversationId + ":direct" : "post";
+  const commentsId = conversationId ? "comments-" + conversationId : "comments";
+  const headingId = commentsId + "-heading";
+  const readPage = useCallback(
+    async (options: { cursor?: string; signal?: AbortSignal }) => {
+      if (!conversationId) return api.comments(postId, options);
+      const page = await api.commentReplies(postId, conversationId, {
+        ...options,
+        scope: "direct",
+      });
+      return { ...page, pinned: [], pinnedCommentId: null };
+    },
+    [api, postId, conversationId],
+  );
 
   const load = useCallback(() => setAttempt((value) => value + 1), []);
   const recoveringThread = useReadRecovery({
@@ -232,8 +250,7 @@ export function CommentThread({
     setLoadError(null);
     setMoreError(null);
     visitedCursors.current = new Set();
-    void api
-      .comments(postId, { signal: controller.signal })
+    void readPage({ signal: controller.signal })
       .then((thread) => {
         if (controller.signal.aborted) return;
         loadedThread.current = { api, postId, attempt };
@@ -255,7 +272,7 @@ export function CommentThread({
         if (!controller.signal.aborted) setThreadLoading(false);
       });
     return () => controller.abort();
-  }, [active, api, attempt, postId]);
+  }, [active, api, attempt, postId, readPage]);
 
   const loadMoreRoots = useCallback(
     (source: "automatic" | "manual") => {
@@ -278,14 +295,17 @@ export function CommentThread({
       visited.add(cursor);
       setLoadingMore(true);
       setMoreError(null);
-      void api
-        .comments(postId, { cursor, signal: controller.signal })
+      void readPage({ cursor, signal: controller.signal })
         .then((page) => {
           if (controller.signal.aborted) return;
           validateCursorPage(page, cursor, visited, "comment");
           visitedCursors.current = visited;
           const firstNewId = page.items[0]?.id;
-          setItems((current) => appendRoots(current ?? [], page.items));
+          setItems((current) =>
+            conversationId
+              ? mergeCommentReplies(current ?? [], page.items)
+              : appendRoots(current ?? [], page.items),
+          );
           setReplyPaging((current) => mergeReplyPaging(current, page.items));
           setNextCursor(page.nextCursor);
           // Only a deliberate press moves focus. An observer-triggered load is
@@ -309,7 +329,7 @@ export function CommentThread({
           }
         });
     },
-    [active, api, loadingMore, nextCursor, postId, threadLoading],
+    [active, loadingMore, nextCursor, readPage, conversationId, threadLoading],
   );
 
   const loadMoreReplies = useCallback(
@@ -407,6 +427,10 @@ export function CommentThread({
       );
     focusCommentRef.current = comment.id;
     setItems((current) => {
+      if (conversationId)
+        return isDirectReply(comment, conversationId)
+          ? mergeCommentReplies(current ?? [], [comment])
+          : current;
       if (!current) return [comment];
       try {
         return reconcileCreatedComment(current, comment);
@@ -421,6 +445,7 @@ export function CommentThread({
     onCountChange?.(1);
     onMutation?.({ kind: "created", comment });
     setReply(null);
+    setReplyOpen(false);
     setAnnouncement("回复已发表");
   };
 
@@ -428,7 +453,10 @@ export function CommentThread({
     setItems((current) =>
       current ? reconcileDeletedComment(current, comment) : current,
     );
-    if (reply?.rootId === comment.id || reply?.targetId === comment.id)
+    if (
+      reply?.comment.parentId === comment.id ||
+      reply?.comment.id === comment.id
+    )
       setReply(null);
     if (pinnedCommentId === comment.id) setPinnedCommentId(null);
     onCountChange?.(-(1 + repliesAffected));
@@ -438,10 +466,11 @@ export function CommentThread({
         ? `回复和 ${repliesAffected} 条后续回复已删除`
         : "回复已删除",
     );
+    if (conversationId && comment.parentId === conversationId) load();
   };
 
   useEffect(() => {
-    if (!change || change.source === "post") return;
+    if (!change || change.source === sourceKey) return;
     if (change.kind === "pin") {
       setPinnedCommentId(change.pinnedCommentId);
       return;
@@ -450,6 +479,14 @@ export function CommentThread({
     if (comment.postId !== postId) return;
     setItems((current) => {
       if (!current) return current;
+      if (conversationId)
+        return change.kind === "created"
+          ? isDirectReply(comment, conversationId)
+            ? mergeCommentReplies(current, [comment])
+            : current
+          : current
+              .filter((item) => item.id !== comment.id)
+              .map((item) => clearReplyTarget(item, comment.id));
       if (change.kind === "created") {
         if (
           comment.parentId &&
@@ -472,7 +509,8 @@ export function CommentThread({
     });
     if (change.kind === "deleted") {
       setReply((current) =>
-        current?.rootId === comment.id || current?.targetId === comment.id
+        current?.comment.parentId === comment.id ||
+        current?.comment.id === comment.id
           ? null
           : current,
       );
@@ -480,13 +518,22 @@ export function CommentThread({
         current === comment.id ? null : current,
       );
     }
-  }, [change, postId]);
+    if (
+      conversationId &&
+      change.kind === "deleted" &&
+      comment.parentId === conversationId
+    )
+      load();
+  }, [change, postId, sourceKey, conversationId, load]);
 
   const replyCounts = useMemo(() => countReplies(items ?? []), [items]);
 
   const displayedItems = useMemo(
-    () => orderPinnedConversation(items ?? [], pinnedCommentId),
-    [items, pinnedCommentId],
+    () =>
+      conversationId
+        ? (items ?? [])
+        : orderPinnedConversation(items ?? [], pinnedCommentId),
+    [items, pinnedCommentId, conversationId],
   );
 
   const loadedReplies = useMemo(
@@ -496,12 +543,13 @@ export function CommentThread({
   const visibleItems = useMemo(() => {
     const first = new Set<string>();
     return displayedItems.filter((comment) => {
+      if (conversationId) return true;
       if (!comment.parentId || expandedRoots.has(comment.parentId)) return true;
       if (first.has(comment.parentId)) return false;
       first.add(comment.parentId);
       return true;
     });
-  }, [displayedItems, expandedRoots]);
+  }, [displayedItems, expandedRoots, conversationId]);
   const visibleIds = useMemo(
     () => new Set(visibleItems.map((comment) => comment.id)),
     [visibleItems],
@@ -532,15 +580,15 @@ export function CommentThread({
 
   return (
     <section
-      aria-labelledby="comments-heading"
+      aria-labelledby={headingId}
       className={styles.thread}
       hidden={!active}
-      id="comments"
+      id={commentsId}
       inert={!active}
     >
       <h2
         className={styles.srOnly}
-        id="comments-heading"
+        id={headingId}
         ref={headingRef}
         tabIndex={-1}
       >
@@ -562,8 +610,26 @@ export function CommentThread({
           onOpenChange={(open) => onReplyDialogOpenChange?.(open)}
           open={replyDialogOpen}
           post={post}
+          comment={conversation}
           site={site}
           triggerRef={replyDialogTriggerRef}
+        />
+      ) : null}
+      {post && reply && active ? (
+        <PostReplyDialog
+          api={api}
+          commentsEnabled={commentsEnabled}
+          content={reply.content}
+          onClosed={() => setClosedByServer(true)}
+          onContentChange={(content) =>
+            setReply((current) => (current ? { ...current, content } : current))
+          }
+          onCreated={created}
+          onOpenChange={setReplyOpen}
+          open={replyOpen}
+          post={post}
+          comment={reply.comment}
+          site={site}
         />
       ) : null}
 
@@ -604,11 +670,22 @@ export function CommentThread({
               content={topContent}
               onClosed={() => setClosedByServer(true)}
               onCreated={created}
-              parentId={null}
+              parentId={
+                conversation ? (conversation.parentId ?? conversation.id) : null
+              }
+              replyTargetId={conversation?.id}
+              replyTargetAuthor={
+                conversation?.author.username
+                  ? "@" + conversation.author.username
+                  : conversation?.author.displayName
+              }
+              formId={conversationId ? "comment-" + conversationId : undefined}
               postId={postId}
               setContent={setTopContent}
               site={site}
-              topLevelTargetUsername={post?.author?.username ?? ""}
+              topLevelTargetUsername={
+                (conversation?.author ?? post?.author)?.username ?? ""
+              }
             />
           ) : (
             <SignInToReply />
@@ -623,6 +700,7 @@ export function CommentThread({
                     active={active && visibleIds.has(comment.id)}
                     comment={comment}
                     navigable
+                    presentation={conversationId ? "direct-reply" : "list"}
                     focusTarget={headingRef}
                     onDeleted={deleted}
                     onPinChange={(nextPinnedCommentId) => {
@@ -635,27 +713,13 @@ export function CommentThread({
                         nextPinnedCommentId ? "回复已置顶" : "已取消置顶回复",
                       );
                     }}
-                    onReply={(rootId, target) => {
-                      // The handle the server resolved, not the site identity
-                      // overlaid on an author kind. That overlay is the exact
-                      // thing author_user_id replaced: it made the composer
-                      // claim one name while the byline above it showed
-                      // another. A legacy row with no account keeps its stored
-                      // name, which the composer renders unprefixed.
-                      const targetAuthor = target.author.username
-                        ? `@${target.author.username}`
-                        : target.author.displayName;
-                      setReply({
-                        rootId,
-                        targetId: target.id,
-                        targetAuthor,
-                        content: "",
-                      });
-                      window.requestAnimationFrame(() =>
-                        document
-                          .getElementById(`reply-${target.id}-content`)
-                          ?.focus(),
+                    onReply={(_rootId, target) => {
+                      setReply((current) =>
+                        current?.comment.id === target.id
+                          ? current
+                          : { comment: target, content: "" },
                       );
+                      setReplyOpen(true);
                     }}
                     canModerate={canModerate}
                     canDelete={
@@ -683,41 +747,6 @@ export function CommentThread({
                     )}
                     site={site}
                   />
-                  {reply?.targetId === comment.id ? (
-                    <li
-                      className={styles.replyComposerRow}
-                      hidden={!visibleIds.has(comment.id)}
-                    >
-                      <CommentForm
-                        active={active && visibleIds.has(comment.id)}
-                        api={api}
-                        commentsEnabled={commentsEnabled}
-                        content={reply.content}
-                        onCancel={() => setReply(null)}
-                        onClosed={() => setClosedByServer(true)}
-                        onCreated={created}
-                        onPromote={() => {
-                          setTopContent(reply.content);
-                          setReply(null);
-                          window.requestAnimationFrame(() =>
-                            document
-                              .getElementById("top-level-comment-content")
-                              ?.focus(),
-                          );
-                        }}
-                        parentId={reply.rootId}
-                        postId={postId}
-                        replyTargetAuthor={reply.targetAuthor}
-                        replyTargetId={reply.targetId}
-                        setContent={(content) =>
-                          setReply((current) =>
-                            current ? { ...current, content } : current,
-                          )
-                        }
-                        site={site}
-                      />
-                    </li>
-                  ) : null}
                   {branchEnds.has(comment.id) &&
                   (branchTotals.get(branchEnds.get(comment.id)!) ?? 0) > 1
                     ? (() => {

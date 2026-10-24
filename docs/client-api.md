@@ -275,7 +275,7 @@ Full-site archives now export format 3 and read formats 2 and 3. Maps survive re
 
 ## Comment conversations
 
-`GET /posts/:post_id/comments/:comment_id` reads a comment without scanning preceding pages. Its data contains `comment`, nullable `reply_target` (the full safe projection of the immediate target), `root_comment_id`, and nullable `pinned_comment_id`. The post visibility rule applies to every context read. Missing or cross-post comments return `COMMENT_NOT_FOUND`; an unreadable post returns `POST_NOT_FOUND`.
+`GET /posts/:post_id/comments/:comment_id` reads a comment without scanning preceding pages. Its data contains `comment`, nullable `reply_target` (the full safe projection of the immediate target), `root_comment_id`, nullable `pinned_comment_id`, and `direct_reply_count` (the total number of replies addressing this comment, independent of the loaded page). The post visibility rule applies to every context read. Missing or cross-post comments return `COMMENT_NOT_FOUND`; an unreadable post returns `POST_NOT_FOUND`.
 
 `GET /posts/:post_id/comments/:comment_id/replies` accepts `scope=thread|direct`, `cursor`, and `limit`. Omitted scope retains the existing whole-floor `thread` behavior and requires a root comment. `direct` accepts any comment and lists only replies explicitly addressing it; a root also includes historical replies with no saved target. Reply pages remain oldest first, default to 10, and cap at 100. Direct cursors cannot be used for a different comment or in thread scope. `reply_count` continues to describe the whole floor on roots and remains zero on replies.
 

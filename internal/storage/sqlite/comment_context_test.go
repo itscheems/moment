@@ -28,7 +28,7 @@ func TestCommentContextAndDirectReplyPaging(t *testing.T) {
 		expected[reply.Comment.Comment.ID] = true
 	}
 	detail, err := service.GetContext(testAccountContext(), postID, target, app.AccountViewer(author.ID))
-	if err != nil || detail.RootCommentID != root || detail.ReplyTarget == nil || detail.ReplyTarget.Comment.ID != root || detail.Comment.Comment.ID != target {
+	if err != nil || detail.DirectReplyCount != 103 || detail.RootCommentID != root || detail.ReplyTarget == nil || detail.ReplyTarget.Comment.ID != root || detail.Comment.Comment.ID != target {
 		t.Fatalf("context=%+v err=%v", detail, err)
 	}
 	cursor := ""
@@ -63,6 +63,10 @@ func TestCommentContextAndDirectReplyPaging(t *testing.T) {
 	roots, err := service.ListReplies(testAccountContext(), app.ListRepliesInput{EntryID: postID, RootID: root, Scope: app.CommentRepliesDirect})
 	if err != nil || len(roots.Items) != 2 {
 		t.Fatalf("root direct=%+v %v", roots, err)
+	}
+	rootContext, err := service.GetContext(testAccountContext(), postID, root, app.AccountViewer(author.ID))
+	if err != nil || rootContext.DirectReplyCount != 2 || rootContext.Comment.ReplyCount != 105 {
+		t.Fatalf("root direct/whole counts: %+v %v", rootContext, err)
 	}
 	for _, item := range roots.Items {
 		if item.Comment.ID != target && item.Comment.ID != legacy {

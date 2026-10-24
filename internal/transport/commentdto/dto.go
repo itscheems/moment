@@ -84,15 +84,16 @@ type ReplyPage struct {
 
 // Context is the current comment and the content it directly answers.
 type Context struct {
-	Comment         Comment  `json:"comment"`
-	ReplyTarget     *Comment `json:"reply_target"`
-	RootCommentID   string   `json:"root_comment_id"`
-	PinnedCommentID *string  `json:"pinned_comment_id"`
+	Comment          Comment  `json:"comment"`
+	ReplyTarget      *Comment `json:"reply_target"`
+	RootCommentID    string   `json:"root_comment_id"`
+	PinnedCommentID  *string  `json:"pinned_comment_id"`
+	DirectReplyCount int      `json:"direct_reply_count"`
 }
 
 // FromContext maps a selected comment and its safe conversation context.
 func FromContext(result app.CommentContext) Context {
-	projection := Context{Comment: FromComment(result.Comment), RootCommentID: result.RootCommentID.String()}
+	projection := Context{Comment: FromComment(result.Comment), RootCommentID: result.RootCommentID.String(), DirectReplyCount: result.DirectReplyCount}
 	if result.PinnedCommentID != nil {
 		value := result.PinnedCommentID.String()
 		projection.PinnedCommentID = &value
@@ -106,6 +107,9 @@ func FromContext(result app.CommentContext) Context {
 
 // ValidateContext refuses inconsistent comment ownership or reply relationships.
 func ValidateContext(context Context) error {
+	if context.DirectReplyCount < 0 {
+		return errors.New("comment reply count cannot be negative")
+	}
 	if err := ValidateComment(context.Comment); err != nil {
 		return err
 	}

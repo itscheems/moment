@@ -164,7 +164,7 @@ export function isComposeDraftsPath(pathname: string): boolean {
 const routes: Array<AppRoute & { match: (pathname: string) => boolean }> = [
   {
     id: "comment-detail",
-    title: "评论",
+    title: "Moment",
     eyebrow: "",
     href: "/",
     match: (pathname) => commentDetailFromPath(pathname) !== null,

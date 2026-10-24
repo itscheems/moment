@@ -196,6 +196,9 @@ export function PostPresentation({
   eagerVideo = false,
   compactTallVideo,
   timelineDensity = false,
+  href,
+  actions,
+  commentsId = "comments",
 }: {
   post: PublicPost;
   site: SiteIdentity;
@@ -212,6 +215,9 @@ export function PostPresentation({
   eagerVideo?: boolean;
   compactTallVideo?: boolean;
   timelineDensity?: boolean;
+  href?: string;
+  actions?: import("react").ReactNode;
+  commentsId?: string;
 }) {
   const { navigate } = useNavigation();
   const [expandedPostId, setExpandedPostId] = useState<string | null>(null);
@@ -231,7 +237,7 @@ export function PostPresentation({
   const previewHtml = collapsed ? preview.html : post.contentHtml;
   const linkCard =
     post.linkCards.length > 0 ? <LinkCard card={post.linkCards[0]} /> : null;
-  const detailHref = `/m/${encodeURIComponent(post.id)}`;
+  const detailHref = href ?? `/m/${encodeURIComponent(post.id)}`;
   const timelineKey = `${post.id}:${post.timelineItemKind}`;
   const useTimelineDensity = timelineDensity && !detail;
 
@@ -249,7 +255,7 @@ export function PostPresentation({
     navigate(detailHref);
   };
 
-  const avatar = (
+  const avatar = site.username ? (
     <AccountIdentityPreview
       author={post.author ?? { userId: null, username: null }}
       children={
@@ -262,6 +268,10 @@ export function PostPresentation({
         </InternalLink>
       }
     />
+  ) : (
+    <span className={styles.identityLink}>
+      <SiteAvatar eager={detail} site={site} />
+    </span>
   );
   const pinLabel = pinned ? (
     <div className={styles.pinnedLabel}>
@@ -280,23 +290,29 @@ export function PostPresentation({
   const byline = (
     <header className={`${styles.byline} ${detail ? styles.detailByline : ""}`}>
       <div className={styles.bylineIdentity}>
-        <AccountIdentityPreview
-          author={post.author ?? { userId: null, username: null }}
-          children={
-            <InternalLink
-              className={styles.nameLink}
-              href={siteProfileHref(site)}
-            >
-              <strong>{site.displayName}</strong>
-            </InternalLink>
-          }
-        />
-        <InternalLink
-          className={styles.usernameLink}
-          href={siteProfileHref(site)}
-        >
-          @{site.username}
-        </InternalLink>
+        {site.username ? (
+          <AccountIdentityPreview
+            author={post.author ?? { userId: null, username: null }}
+            children={
+              <InternalLink
+                className={styles.nameLink}
+                href={siteProfileHref(site)}
+              >
+                <strong>{site.displayName}</strong>
+              </InternalLink>
+            }
+          />
+        ) : (
+          <strong>{site.displayName}</strong>
+        )}
+        {site.username ? (
+          <InternalLink
+            className={styles.usernameLink}
+            href={siteProfileHref(site)}
+          >
+            @{site.username}
+          </InternalLink>
+        ) : null}
         {!detail ? (
           <>
             <span aria-hidden="true">·</span>
@@ -326,14 +342,15 @@ export function PostPresentation({
           </>
         ) : null}
       </div>
-      {canPublish ? (
-        <PostActions
-          onDeleted={onDeleted}
-          onSiteChanged={onSiteChanged}
-          post={post}
-          site={site}
-        />
-      ) : null}
+      {actions ??
+        (canPublish ? (
+          <PostActions
+            onDeleted={onDeleted}
+            onSiteChanged={onSiteChanged}
+            post={post}
+            site={site}
+          />
+        ) : null)}
     </header>
   );
   const share = (align: "start" | "end") => (
@@ -478,7 +495,7 @@ export function PostPresentation({
             ) : null}
           </p>
           {post.commentCount > 0 ? (
-            <a className={styles.detailStats} href="#comments">
+            <a className={styles.detailStats} href={"#" + commentsId}>
               <strong>{post.commentCount}</strong>
               <span>条回复</span>
             </a>

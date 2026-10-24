@@ -1630,33 +1630,11 @@
   .commentPermalink:hover {
     text-decoration: underline;
   }
-  .commentItem[data-presentation="focused"]:hover {
-    background: var(--surface);
-  }
 }
 
 .commentAttachment {
   grid-column: 2;
   min-inline-size: 0;
-}
-
-.commentItem[data-presentation="focused"] {
-  scroll-margin-block-start: 4rem;
-}
-.commentItem[data-presentation="focused"] .commentAvatar {
-  grid-row: 1;
-}
-.commentItem[data-presentation="focused"] .commentBody {
-  grid-column: 1 / -1;
-  margin-block-start: var(--space-3);
-}
-.commentItem[data-presentation="focused"] .commentMarkdown {
-  font-size: 1.25rem;
-  line-height: 1.5rem;
-}
-.commentItem[data-presentation="focused"] .commentAttachment,
-.commentItem[data-presentation="focused"] .commentActions {
-  grid-column: 1 / -1;
 }
 
 .discussionDetail {
@@ -1715,49 +1693,6 @@
   outline: 2px solid var(--accent);
   outline-offset: 3px;
 }
-.discussionHeading {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-3);
-  margin: 0;
-  min-block-size: var(--target-size);
-  padding-inline: var(--space-4);
-  font-size: 1rem;
-  scroll-margin-block-start: 4rem;
-}
-.discussionHeading a {
-  display: inline-flex;
-  align-items: center;
-  min-block-size: var(--target-size);
-  color: var(--accent);
-  font-size: 0.875rem;
-  font-weight: 400;
-  text-decoration: none;
-}
-.discussionHeading a:hover,
-.discussionHeading a:focus-visible {
-  text-decoration: underline;
-}
-.directReplyPaging {
-  padding-inline-start: var(--discussion-inline-padding);
-}
-.recentReply {
-  margin: 0;
-  padding: var(--space-3) var(--space-4);
-}
-.recentReply a {
-  color: var(--accent);
-}
-
-.targetNotice {
-  margin: 0;
-  padding: var(--space-3) var(--space-4);
-  color: var(--text-secondary);
-  font-size: 0.875rem;
-}
-
 @media (max-width: 719px) {
   .discussionDetail {
     --discussion-inline-padding: var(--space-3);

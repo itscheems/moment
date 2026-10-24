@@ -1205,7 +1205,7 @@ export async function renderShareCard(
   const dotWidth = ctx.measureText("·").width + 8;
   const handle = truncate(
     ctx,
-    `@${input.username}`,
+    input.username ? `@${input.username}` : "",
     nameWidth - dotWidth - followWidth,
   );
   const handleY = y + 25 + baseline(ctx, handle, 20);

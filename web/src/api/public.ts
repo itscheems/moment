@@ -493,6 +493,7 @@ export interface CommentContext {
   replyTarget: PublicComment | null;
   rootCommentId: string;
   pinnedCommentId: string | null;
+  directReplyCount: number;
 }
 
 export interface UploadedMedia {
@@ -2745,6 +2746,7 @@ export class PublicApi {
         "reply_target",
         "root_comment_id",
         "pinned_comment_id",
+        "direct_reply_count",
       ])
     )
       throw invalidResponse("comment context is invalid");
@@ -2769,7 +2771,13 @@ export class PublicApi {
           replyTarget.parentId !== rootCommentId))
     )
       throw invalidResponse("comment context reply target is invalid");
-    return { comment, replyTarget, rootCommentId, pinnedCommentId };
+    return {
+      comment,
+      replyTarget,
+      rootCommentId,
+      pinnedCommentId,
+      directReplyCount: nonNegativeIntegerField(data, "direct_reply_count"),
+    };
   }
 }
 

@@ -35,7 +35,7 @@ func TestCommentContextAndDirectRepliesTransportParity(t *testing.T) {
 		}
 	}
 	context := commandData(t, execute(application, "", "--url", fixture.server.URL, "comment", "get", fixture.postID, child, "--json"))
-	if context["root_comment_id"] != root || context["reply_target"].(map[string]any)["id"] != target {
+	if context["root_comment_id"] != root || context["reply_target"].(map[string]any)["id"] != target || context["direct_reply_count"] != float64(0) {
 		t.Fatalf("context=%#v", context)
 	}
 	replies := commandData(t, execute(application, "", "--url", fixture.server.URL, "comment", "replies", fixture.postID, target, "--scope", "direct", "--json"))

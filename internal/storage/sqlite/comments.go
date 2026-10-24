@@ -199,6 +199,13 @@ WHERE comments.entry_id = ? AND (comments.reply_to_comment_id = ? OR
 	return store.queryCommentPage(ctx, query, append(append([]any{entryID.String(), targetID.String(), targetID.String()}, arguments...), limit)...)
 }
 
+func (store commentStore) CountDirectCommentReplies(ctx context.Context, entryID, targetID domain.ID) (int, error) {
+	var count int
+	err := store.queries.QueryRowContext(ctx, `SELECT COUNT(*) FROM comments WHERE entry_id = ? AND
+	 (reply_to_comment_id = ? OR (parent_id = ? AND reply_to_comment_id IS NULL))`, entryID.String(), targetID.String(), targetID.String()).Scan(&count)
+	return count, err
+}
+
 func (store commentStore) queryCommentPage(ctx context.Context, query string, arguments ...any) ([]domain.Comment, error) {
 	rows, err := store.queries.QueryContext(ctx, query, arguments...)
 	if err != nil {

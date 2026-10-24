@@ -115,6 +115,7 @@
   ],
   "commentdto.Context": [
     "comment",
+    "direct_reply_count",
     "pinned_comment_id",
     "reply_target",
     "root_comment_id"

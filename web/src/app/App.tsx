@@ -616,12 +616,7 @@ function PublicApp() {
                 commentDetailFromPath(discussionLocation.pathname)?.commentId ??
                 null
               }
-              commentScope={
-                new URLSearchParams(discussionLocation.search).get("view") ===
-                "thread"
-                  ? "thread"
-                  : "direct"
-              }
+
               focusReading={
                 resolveRoute(discussionLocation.pathname).id === "article-focus"
               }

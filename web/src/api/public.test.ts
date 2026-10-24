@@ -83,6 +83,7 @@ describe("public API client", () => {
     const payload = {
       comment: reply,
       reply_target: rootComment,
+      direct_reply_count: 1,
       root_comment_id: rootComment.id,
       pinned_comment_id: null,
     };
@@ -93,9 +94,17 @@ describe("public API client", () => {
     expect(context.comment.id).toBe(reply.id);
     expect(context.replyTarget?.id).toBe(rootComment.id);
     expect(context.rootCommentId).toBe(rootComment.id);
+    expect(context.directReplyCount).toBe(1);
     const invalid = new PublicApi(
       vi.fn(async () =>
-        json({ data: { ...payload, root_comment_id: reply.id }, meta: {} }),
+        json({
+          data: {
+            ...payload,
+            direct_reply_count: 1,
+            root_comment_id: reply.id,
+          },
+          meta: {},
+        }),
       ) as typeof fetch,
     );
     await expect(

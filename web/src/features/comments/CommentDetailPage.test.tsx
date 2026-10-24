@@ -136,6 +136,7 @@ function setup(
     return response({
       comment: options.scope === "thread" ? root : selected,
       reply_target: options.scope === "thread" ? null : target,
+      direct_reply_count: 1,
       root_comment_id: rootId,
       pinned_comment_id: null,
     });
@@ -219,14 +220,13 @@ describe("focused comment reading", () => {
       screen.queryByRole("link", { name: "返回原帖" }),
     ).not.toBeInTheDocument();
     expect(
-      within(screen.getByRole("list", { name: "直接回复列表" })).getByText(
-        "直接回答当前评论",
-      ),
+      within(await screen.findByRole("list")).getByText("直接回答当前评论"),
     ).toBeVisible();
-    expect(screen.getByRole("link", { name: "查看整层讨论" })).toHaveAttribute(
-      "href",
-      "/m/" + postId + "/comments/" + rootId + "?view=thread",
-    );
+    expect(
+      screen.getByRole("button", { name: "分享这条 Moment" }),
+    ).toBeVisible();
+    expect(screen.queryByText("直接回复")).not.toBeInTheDocument();
+    expect(screen.queryByText("查看整层讨论")).not.toBeInTheDocument();
     expect(
       fetcher.mock.calls.some(([url]) =>
         String(url).endsWith("/replies?scope=direct"),
@@ -245,13 +245,13 @@ describe("focused comment reading", () => {
       "data-presentation",
       "direct-reply",
     );
-    expect(screen.getByText("当前评论全文").closest("li")).toHaveAttribute(
-      "data-depth",
-      "0",
+    expect(screen.getByText("当前评论全文").closest("article")).toHaveAttribute(
+      "data-post-id",
+      selectedId,
     );
   });
   it.each([false, true])(
-    "only offers a separate destination when a new reply belongs to a child discussion: %s",
+    "reuses the reply dialog and preserves the selected conversation when replying to a child: %s",
     async (answerChild) => {
       const { wrapper, mutation } = setup();
       const target = answerChild ? answerId : selectedId;
@@ -286,42 +286,42 @@ describe("focused comment reading", () => {
         }),
       );
       render(wrapper());
-      const textbox = await screen.findByRole("textbox", { name: "回复内容" });
-      if (answerChild)
-        fireEvent.click(
-          within(screen.getByRole("list", { name: "直接回复列表" })).getByRole(
-            "button",
-            { name: "回复 Alice" },
-          ),
-        );
-      fireEvent.change(textbox, { target: { value: "刚发表的回复" } });
-      fireEvent.click(screen.getByRole("button", { name: "发表回复" }));
-      await waitFor(() => expect(mutation).toHaveBeenCalled());
+      const inline = await screen.findByRole("textbox", { name: "回复内容" });
+      expect(inline.closest("[data-comment-layout-frame]")).toHaveAttribute(
+        "data-comment-layout-state",
+        "collapsed",
+      );
       if (answerChild) {
-        expect(
-          screen.getByRole("link", { name: "查看刚发布的回复" }),
-        ).toHaveAttribute("href", "/m/" + postId + "/comments/" + secondId);
-        expect(
-          within(
-            screen.getByRole("list", { name: "直接回复列表" }),
-          ).queryByText("刚发表的回复"),
-        ).not.toBeInTheDocument();
+        fireEvent.click(
+          within(screen.getByRole("list")).getByRole("button", {
+            name: "回复 Alice",
+          }),
+        );
       } else {
-        expect(
-          screen.queryByRole("link", { name: "查看刚发布的回复" }),
-        ).not.toBeInTheDocument();
-        expect(
-          within(screen.getByRole("list", { name: "直接回复列表" })).getByText(
-            "刚发表的回复",
-          ),
-        ).toBeVisible();
+        fireEvent.click(
+          screen.getByRole("button", { name: /回复这条 Moment/ }),
+        );
       }
+      const dialog = await screen.findByRole("dialog", {
+        name: "回复这条 Moment",
+      });
+      const dialogBox = within(dialog).getByRole("textbox", {
+        name: "回复内容",
+      });
+      fireEvent.change(dialogBox, { target: { value: "刚发表的回复" } });
+      fireEvent.click(within(dialog).getByRole("button", { name: "发表回复" }));
+      await waitFor(() => expect(mutation).toHaveBeenCalled());
+      expect(screen.queryByText("查看刚发布的回复")).not.toBeInTheDocument();
+      const list = within(screen.getByRole("list"));
+      if (answerChild)
+        expect(list.queryByText("刚发表的回复")).not.toBeInTheDocument();
+      else expect(list.getByText("刚发表的回复")).toBeVisible();
     },
   );
-  it("pages forward, folds and reopens cached replies, including after suspension", async () => {
+  it("pages through the normal comment section and retains it after suspension", async () => {
     const { fetcher, wrapper } = setup();
     const view = render(wrapper());
-    await screen.findByText("当前评论全文");
+    await screen.findByText("直接回答当前评论");
     fetcher.mockImplementationOnce(async () =>
       response({
         items: [
@@ -335,33 +335,34 @@ describe("focused comment reading", () => {
     fireEvent.click(screen.getByRole("button", { name: "加载更多回复" }));
     await screen.findByText("第二批回复");
     const loadedCalls = fetcher.mock.calls.length;
-    fireEvent.click(screen.getByRole("button", { name: "收起回复" }));
-    expect(screen.queryByText("第二批回复")).not.toBeInTheDocument();
     view.rerender(wrapper(false));
     view.rerender(wrapper(true));
-    fireEvent.click(screen.getByRole("button", { name: "展开已读取的回复" }));
     expect(screen.getByText("第二批回复")).toBeVisible();
     expect(fetcher.mock.calls.length).toBe(loadedCalls);
   });
-  it("reads a whole floor using the existing thread scope", async () => {
-    const { fetcher, wrapper } = setup({ scope: "thread" });
-    render(wrapper());
-    await screen.findByText("整层主评论");
-    expect(
-      screen.queryByRole("region", { name: "被回复评论引用" }),
-    ).not.toBeInTheDocument();
-    expect(
-      fetcher.mock.calls.some(([url]) =>
-        String(url).endsWith("/replies?scope=thread"),
-      ),
-    ).toBe(true);
-    expect(screen.getByRole("link", { name: "只看直接回复" })).toHaveAttribute(
-      "href",
-      "/m/" + postId + "/comments/" + rootId,
+  it("reuses the normal post share menu for the comment body", async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    vi.stubGlobal(
+      "navigator",
+      Object.assign(Object.create(window.navigator), {
+        clipboard: { writeText },
+      }),
     );
-    expect(screen.getByText("直接回答当前评论").closest("li")).toHaveAttribute(
-      "data-depth",
-      "1",
+    const { wrapper } = setup();
+    render(wrapper());
+    await screen.findByText("当前评论全文");
+    fireEvent.click(screen.getByRole("button", { name: "分享这条 Moment" }));
+    await waitFor(() =>
+      expect(
+        screen.getByRole("menuitem", { name: "生成分享图片" }),
+      ).toBeVisible(),
+    );
+    expect(screen.getByRole("menuitem", { name: "复制链接" })).toBeVisible();
+    fireEvent.click(screen.getByRole("menuitem", { name: "复制链接" }));
+    await waitFor(() =>
+      expect(writeText).toHaveBeenCalledWith(
+        window.location.origin + "/m/" + postId + "/comments/" + selectedId,
+      ),
     );
   });
   it("shows a missing comment without rendering unavailable context", async () => {
@@ -384,7 +385,7 @@ describe("focused comment reading", () => {
     );
   });
   it("clears an externally deleted target instead of retaining a stale quote", async () => {
-    const { wrapper } = setup();
+    const { wrapper, fetcher } = setup();
     const view = render(wrapper());
     await screen.findByText("当前评论全文");
     const context = await new PublicApi(
@@ -392,11 +393,23 @@ describe("focused comment reading", () => {
         response({
           comment: wire(targetId, "被回复者的评论", rootId),
           reply_target: wire(rootId, "root", null, null),
+          direct_reply_count: 1,
           root_comment_id: rootId,
           pinned_comment_id: null,
         }),
       ) as typeof fetch,
     ).commentContext(postId, targetId);
+    fetcher.mockImplementation(async (input) =>
+      String(input).includes("/replies")
+        ? response({ items: [] })
+        : response({
+            comment: wire(selectedId, "当前评论全文", null),
+            reply_target: null,
+            root_comment_id: rootId,
+            pinned_comment_id: null,
+            direct_reply_count: 0,
+          }),
+    );
     view.rerender(
       wrapper(true, {
         kind: "deleted",

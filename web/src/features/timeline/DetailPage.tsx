@@ -50,7 +50,6 @@ export function DetailPage({
   focusReading = false,
   active = true,
   commentId = null,
-  commentScope = "direct",
 }: {
   api: PublicApi;
   id: string;
@@ -60,7 +59,6 @@ export function DetailPage({
   focusReading?: boolean;
   active?: boolean;
   commentId?: string | null;
-  commentScope?: "direct" | "thread";
 }) {
   const navigation = useNavigation();
   const { navigate } = navigation;
@@ -70,9 +68,7 @@ export function DetailPage({
   const [replyDialogOpen, setReplyDialogOpen] = useState(false);
   const activeRequest = useRef<AbortController | null>(null);
   const replyTriggerRef = useRef<HTMLButtonElement>(null);
-  const [visitedComments, setVisitedComments] = useState<
-    Array<{ id: string; scope: "direct" | "thread" }>
-  >([]);
+  const [visitedComments, setVisitedComments] = useState<string[]>([]);
   const [change, setChange] = useState<DiscussionChange | null>(null);
   const revision = useRef(0);
   const publishMutation = (source: string, mutation: CommentMutation) =>
@@ -80,19 +76,12 @@ export function DetailPage({
   useEffect(() => {
     if (commentId)
       setVisitedComments((current) =>
-        current.some(
-          (view) => view.id === commentId && view.scope === commentScope,
-        )
-          ? current
-          : [...current, { id: commentId, scope: commentScope }],
+        current.includes(commentId) ? current : [...current, commentId],
       );
-  }, [commentId, commentScope]);
+  }, [commentId]);
   const commentViews =
-    commentId &&
-    !visitedComments.some(
-      (view) => view.id === commentId && view.scope === commentScope,
-    )
-      ? [...visitedComments, { id: commentId, scope: commentScope }]
+    commentId && !visitedComments.includes(commentId)
+      ? [...visitedComments, commentId]
       : visitedComments;
 
   const load = useCallback(async () => {
@@ -218,19 +207,14 @@ export function DetailPage({
       />
       {commentViews.map((view) => (
         <CommentDetailPage
-          key={view.id + ":" + view.scope}
+          key={view}
           api={api}
           post={post}
           site={site}
-          commentId={view.id}
-          scope={view.scope}
-          active={
-            active && commentId === view.id && commentScope === view.scope
-          }
+          commentId={view}
+          active={active && commentId === view}
           change={change}
-          onMutation={(mutation) =>
-            publishMutation(view.id + ":" + view.scope, mutation)
-          }
+          onMutation={(mutation) => publishMutation(view + ":direct", mutation)}
           onCountChange={handleCommentCountChange}
         />
       ))}

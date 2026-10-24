@@ -46,6 +46,7 @@ type CommentStore interface {
 	ListCommentRoots(context.Context, domain.ID, *CommentPosition, int) ([]domain.Comment, error)
 	ListCommentReplies(context.Context, domain.ID, *CommentPosition, int) ([]domain.Comment, error)
 	ListDirectCommentReplies(context.Context, domain.ID, domain.ID, *CommentPosition, int) ([]domain.Comment, error)
+	CountDirectCommentReplies(context.Context, domain.ID, domain.ID) (int, error)
 	ReplyPreviews(context.Context, []domain.ID, int) (map[domain.ID][]domain.Comment, error)
 	CommentMediaUsagesByComment(context.Context, []domain.ID) (map[domain.ID][]MediaUsageProjection, error)
 	ReplyCounts(context.Context, []domain.ID) (map[domain.ID]int, error)
@@ -175,10 +176,11 @@ const (
 
 // CommentContext supports a permalink without reading every preceding floor.
 type CommentContext struct {
-	Comment         Comment
-	ReplyTarget     *Comment
-	RootCommentID   domain.ID
-	PinnedCommentID *domain.ID
+	Comment          Comment
+	ReplyTarget      *Comment
+	RootCommentID    domain.ID
+	PinnedCommentID  *domain.ID
+	DirectReplyCount int
 }
 
 // CommentPin is the singleton top-level comment selected for one post.
@@ -701,6 +703,10 @@ func (service *CommentService) GetContext(ctx context.Context, entryID, commentI
 			}
 		}
 		result.Comment = rendered[0]
+		result.DirectReplyCount, err = store.CountDirectCommentReplies(ctx, entryID, commentID)
+		if err != nil {
+			return err
+		}
 		pinned, err := store.PinnedCommentID(ctx, entryID)
 		if err != nil {
 			return err

@@ -187,7 +187,7 @@ function DeleteCommentDialog({
   );
 }
 
-function CommentModerationMenu({
+export function CommentModerationMenu({
   comment,
   focusTarget,
   pinned,
@@ -565,7 +565,7 @@ export function CommentItem({
   canDelete?: boolean;
   pinned: boolean;
   replyRootId: string | null;
-  presentation?: "list" | "focused" | "direct-reply";
+  presentation?: "list" | "direct-reply";
   navigable?: boolean;
   /**
    * Whether this reader may actually reply. It is deliberately separate from
@@ -602,7 +602,7 @@ export function CommentItem({
   const bodyId = `comment-${comment.id}-body`;
 
   const replyTo = comment.replyTo;
-  const bodyExpanded = presentation === "focused" || expanded;
+  const bodyExpanded = expanded;
 
   // Collapsing pulls everything below it upward. If the comment's own top has
   // already scrolled past, the page jumps and the reader loses the row they
@@ -727,7 +727,7 @@ export function CommentItem({
             />
           </div>
         ) : null}
-        {overflowing && presentation !== "focused" ? (
+        {overflowing ? (
           <button
             aria-controls={bodyId}
             aria-expanded={expanded}

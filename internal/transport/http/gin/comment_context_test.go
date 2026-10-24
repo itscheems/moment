@@ -15,7 +15,7 @@ func TestCommentContextHTTPAndScopeValidation(t *testing.T) {
 		t.Fatalf("context=%d %s", response.Code, response.Body.String())
 	}
 	context := commentData(t, response)
-	if context["root_comment_id"] != root || context["reply_target"].(map[string]any)["id"] != root {
+	if context["root_comment_id"] != root || context["reply_target"].(map[string]any)["id"] != root || context["direct_reply_count"] != float64(0) {
 		t.Fatalf("context=%#v", context)
 	}
 	for _, query := range []string{"scope=wrong", "scope=", "scope=direct&scope=thread", "scope=direct&extra=1"} {

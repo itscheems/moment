@@ -1557,7 +1557,7 @@ func validPostAPIRawData(data json.RawMessage, destination any) bool {
 	case *commentdto.Comment:
 		return typed != nil && validRawAPIComment(data, *typed)
 	case *commentdto.Context:
-		if typed == nil || !hasRequiredAPIDataFields(data, "comment", "reply_target", "root_comment_id", "pinned_comment_id") {
+		if typed == nil || !hasRequiredAPIDataFields(data, "comment", "reply_target", "root_comment_id", "pinned_comment_id", "direct_reply_count") {
 			return false
 		}
 		fields, ok := apiDataFields(data)
