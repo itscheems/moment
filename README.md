@@ -103,6 +103,15 @@ MOMENT_USERNAME=writer mise exec -- task run
 mise exec -- task ci
 ```
 
+检查评论交互时，可以使用独立的测试实例和多账号讨论样本：
+
+```sh
+mise exec -- task playground
+mise exec -- task playground:comments
+```
+
+样本覆盖评论详情、楼内回复、分页、折叠、文章评论和私密内容；重复运行会复用同一实例的样本。
+
 </details>
 
 ---

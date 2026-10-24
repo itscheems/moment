@@ -456,6 +456,31 @@ describe("long comment folding", () => {
 });
 
 describe("the reply target identity", () => {
+  it("distinguishes matching display names by username and profile", () => {
+    renderItem(
+      comment(replyId, "同名用户之间的回复", {
+        parentId: rootId,
+        author: { ...strangerAuthor, displayName: "Cheems" },
+        replyTo: { commentId: rootId, author: ownerAuthor },
+      }),
+    );
+    const header = document.querySelector(
+      "[data-comment-id='" + replyId + "'] header",
+    ) as HTMLElement;
+    expect(within(header).getByText("@someone")).toHaveAttribute(
+      "href",
+      "/someone",
+    );
+    expect(within(header).getByText("@itscheems")).toHaveAttribute(
+      "href",
+      "/itscheems",
+    );
+    expect(
+      within(header)
+        .getAllByRole("link", { name: "Cheems" })
+        .map((link) => link.getAttribute("href")),
+    ).toEqual(["/someone", "/itscheems"]);
+  });
   function replyNaming(targetId: string, author = ownerAuthor) {
     return comment(replyId, "接着说", {
       parentId: rootId,
