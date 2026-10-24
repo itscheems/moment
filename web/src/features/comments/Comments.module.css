@@ -1646,21 +1646,23 @@
   position: relative;
 }
 .contextQuote {
-  --comment-avatar-size: var(--target-size);
+  --comment-avatar-size: 2.5rem;
   position: relative;
   display: grid;
   grid-template-columns: var(--comment-avatar-size) minmax(0, 1fr);
-  column-gap: var(--space-3);
+  column-gap: var(--space-2);
   min-inline-size: 0;
   padding: var(--space-3) var(--discussion-inline-padding);
 }
 .contextQuote[data-connected]::after {
   content: "";
   position: absolute;
-  inset-block-start: calc(var(--space-3) + var(--target-size) + var(--space-2));
+  inset-block-start: calc(
+    var(--space-3) + var(--comment-avatar-size) + var(--space-2)
+  );
   inset-block-end: calc(-1 * var(--space-1));
   inset-inline-start: calc(
-    var(--discussion-inline-padding) + var(--target-size) / 2 - 1px
+    var(--discussion-inline-padding) + var(--comment-avatar-size) / 2 - 1px
   );
   inline-size: 2px;
   background: var(--border-subtle);
@@ -1692,9 +1694,4 @@
 .contextExcerpt:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 3px;
-}
-@media (max-width: 719px) {
-  .discussionDetail {
-    --discussion-inline-padding: var(--space-3);
-  }
 }
