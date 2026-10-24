@@ -738,7 +738,10 @@ export function CommentThread({
                               setExpandedRoots((current) =>
                                 new Set(current).add(rootId),
                               );
-                              if ((loadedReplies.get(rootId) ?? 0) <= 1)
+                              if (
+                                (replyPaging.get(rootId)?.visited.length ??
+                                  0) === 0
+                              )
                                 recoverReplies(rootId, "manual");
                             }}
                             onCollapse={() => {

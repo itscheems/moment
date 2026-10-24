@@ -15,12 +15,14 @@ import { mediaPreviewUrl } from "../../api/mediaUrls";
 import {
   PublicApi,
   PublicApiError,
+  parseComment,
   type PublicPost,
   type SiteIdentity,
 } from "../../api/public";
 import { NavigationProvider } from "../../app/navigation";
 import { SessionProvider, useSession } from "../auth/SessionProvider";
 import { CommentThread } from "./CommentThread";
+import type { DiscussionChange } from "./discussionChanges";
 import commentsCss from "./Comments.module.css?inline";
 import { makeAccountLimits } from "../../test/accountFixtures";
 
@@ -786,6 +788,89 @@ describe("public comment thread", () => {
       fetcher.mock.calls.filter(([url]) => String(url).includes("/replies"))
         .length,
     ).toBe(requestsBefore);
+  });
+
+  it("loads the first continuation even when a newer detail reply is already cached", async () => {
+    const oldSecondId = "01K2ABCDEF0123456789ABCDE4";
+    const serverRoot = {
+      ...comment(rootId, "原有楼层"),
+      reply_count: 2,
+      replies_next_cursor: "first-unread",
+    };
+    const first = comment(replyId, "第一条旧回复", {
+      parentId: rootId,
+      canPublish: true,
+    });
+    const fromDetail = parseComment(
+      comment(createdId, "刚从详情发表的回复", {
+        parentId: rootId,
+        canPublish: true,
+        createdAt: "2026-08-10T01:06:00Z",
+      }),
+    );
+    const fetcher = installApi((url, init) => {
+      if (init?.method === "POST") return undefined;
+      if (url.includes("/replies"))
+        return json({
+          data: {
+            items: [
+              comment(oldSecondId, "第二条旧回复", {
+                parentId: rootId,
+                canPublish: true,
+                createdAt: "2026-08-10T01:04:00Z",
+              }),
+            ],
+          },
+          meta: { request_id: "test", next_cursor: null },
+        });
+      if (url.includes("/comments"))
+        return success({ items: [serverRoot, first] });
+      return undefined;
+    });
+    function CachedThread() {
+      const api = useRef(new PublicApi());
+      const [change, setChange] = useState<DiscussionChange | null>(null);
+      return (
+        <>
+          <button
+            onClick={() =>
+              setChange({
+                kind: "created",
+                comment: fromDetail,
+                source: "other-detail",
+                revision: 1,
+              })
+            }
+          >
+            模拟详情发表回复
+          </button>
+          <CommentThread
+            api={api.current}
+            postId={postId}
+            post={post}
+            site={site}
+            change={change}
+          />
+        </>
+      );
+    }
+    render(
+      <NavigationProvider>
+        <SessionProvider>
+          <CachedThread />
+        </SessionProvider>
+      </NavigationProvider>,
+    );
+    await screen.findByText("第一条旧回复");
+    fireEvent.click(screen.getByRole("button", { name: "模拟详情发表回复" }));
+    fireEvent.click(screen.getByRole("button", { name: "展开其余 2 条回复" }));
+    await screen.findByText("第二条旧回复");
+    expect(
+      fetcher.mock.calls.some(([url]) =>
+        String(url).includes("/replies?cursor=first-unread"),
+      ),
+    ).toBe(true);
+    expect(screen.getByText("刚从详情发表的回复")).toBeVisible();
   });
 
   it("recovers a nested reply page automatically without reloading its root", async () => {
