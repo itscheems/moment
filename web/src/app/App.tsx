@@ -16,6 +16,7 @@ import { Icon } from "../components/icons";
 import { ShellState } from "../components/ShellState";
 import { ArticleWorkspacePage } from "../features/article/editor";
 import { DetailPage } from "../features/timeline/DetailPage";
+import { useDiscussionIdentity } from "../features/comments/useDiscussionIdentity";
 import { TimelinePage } from "../features/timeline/TimelinePage";
 import { Composer, type ComposerHandle } from "../features/compose/Composer";
 import { ComposeDrafts } from "../features/compose/ComposeDrafts";
@@ -165,22 +166,28 @@ function PublicApp() {
     ? (new URLSearchParams(contentLocation.search).get("quote") ?? undefined)
     : undefined;
   const route = resolveRoute(displayLocation.pathname);
-  const discussionActive =
+  const discussionRouteActive =
     route.id === "detail" ||
     route.id === "comment-detail" ||
     route.id === "article-focus";
+  const discussionIdentity = useDiscussionIdentity(
+    auth.account?.userId ?? null,
+    auth.state,
+  );
+  const discussionActive =
+    discussionRouteActive && !discussionIdentity.confirming;
   const [retainedDiscussion, setRetainedDiscussion] = useState<{
     pathname: string;
     search: string;
   } | null>(null);
   useEffect(() => {
-    if (discussionActive)
+    if (discussionRouteActive)
       setRetainedDiscussion({
         pathname: displayLocation.pathname,
         search: displayLocation.search,
       });
-  }, [discussionActive, displayLocation.pathname, displayLocation.search]);
-  const discussionLocation = discussionActive
+  }, [discussionRouteActive, displayLocation.pathname, displayLocation.search]);
+  const discussionLocation = discussionRouteActive
     ? displayLocation
     : retainedDiscussion;
   const state =
@@ -574,13 +581,27 @@ function PublicApp() {
             />
           </div>
         ) : null}
+        {discussionRouteActive && discussionIdentity.confirming ? (
+          <div className={styles.siteError} role="status">
+            <span>
+              {auth.state === "unavailable"
+                ? "暂时无法确认登录身份。"
+                : "正在确认登录身份…"}
+            </span>
+            {auth.state === "unavailable" ? (
+              <button type="button" onClick={auth.retryStatus}>
+                重试
+              </button>
+            ) : null}
+          </div>
+        ) : null}
         {discussionLocation ? (
           <div data-detail-content hidden={!discussionActive}>
             <DetailPage
               key={
                 (site.instanceId ?? "") +
                 ":" +
-                (auth.account?.userId ?? "guest") +
+                (discussionIdentity.accountKey ?? "guest") +
                 ":" +
                 (articleFocusIdFromPath(discussionLocation.pathname) ??
                   detailId(discussionLocation.pathname))
