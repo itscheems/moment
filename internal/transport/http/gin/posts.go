@@ -512,7 +512,7 @@ func writePostError(ctx *gin.Context, err error) {
 		Failure(ctx, http.StatusBadRequest, string(domainErr.Code), domainErr.Message, domainErr.Details)
 	case domain.CodeContentEmpty, domain.CodeContentTooLarge, domain.CodeExternalImageNotAllowed:
 		Failure(ctx, http.StatusUnprocessableEntity, string(domainErr.Code), domainErr.Message, domainErr.Details)
-	case domain.CodePostNotFound, domain.CodeMediaNotFound:
+	case domain.CodePostNotFound, domain.CodeCommentNotFound, domain.CodeMediaNotFound:
 		Failure(ctx, http.StatusNotFound, string(domainErr.Code), domainErr.Message, domainErr.Details)
 	case domain.CodeMediaTooLarge:
 		Failure(ctx, http.StatusUnprocessableEntity, string(domainErr.Code), domainErr.Message, domainErr.Details)
