@@ -102,8 +102,8 @@
 }
 
 .inlineTopLevelForm .commentComposerLayout {
-  grid-template-columns: 2.5rem minmax(0, 1fr);
-  gap: 0.5rem;
+  grid-template-columns: var(--target-size) minmax(0, 1fr);
+  gap: var(--space-3);
 }
 
 .inlineTopLevelForm .commentForm {
@@ -126,6 +126,7 @@
 }
 
 .inlineTopLevelForm .composerAvatar {
+  justify-self: center;
   inline-size: 2.5rem;
   block-size: 2.5rem;
   box-sizing: border-box;
@@ -395,6 +396,7 @@
 .inlineTopLevelForm .commentForm textarea {
   min-block-size: 3.5rem;
   border: 0.125rem solid transparent;
+  margin-inline-start: -0.125rem;
   padding-block: 0.75rem;
   overflow-wrap: break-word;
   font-size: 1.25rem;
@@ -1638,60 +1640,9 @@
 }
 
 .discussionDetail {
-  --discussion-inline-padding: var(--space-4);
   background: var(--surface);
   scroll-margin-block-start: 4rem;
 }
 .discussionContext {
   position: relative;
-}
-.contextQuote {
-  --comment-avatar-size: 2.5rem;
-  position: relative;
-  display: grid;
-  grid-template-columns: var(--comment-avatar-size) minmax(0, 1fr);
-  column-gap: var(--space-2);
-  min-inline-size: 0;
-  padding: var(--space-3) var(--discussion-inline-padding);
-}
-.contextQuote[data-connected]::after {
-  content: "";
-  position: absolute;
-  inset-block-start: calc(
-    var(--space-3) + var(--comment-avatar-size) + var(--space-2)
-  );
-  inset-block-end: calc(-1 * var(--space-1));
-  inset-inline-start: calc(
-    var(--discussion-inline-padding) + var(--comment-avatar-size) / 2 - 1px
-  );
-  inline-size: 2px;
-  background: var(--border-subtle);
-  pointer-events: none;
-}
-.contextByline {
-  grid-column: 2;
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: 0.3rem;
-  color: var(--text-secondary);
-  font-size: 0.8125rem;
-}
-.contextExcerpt {
-  grid-column: 2;
-  display: -webkit-box;
-  -webkit-line-clamp: 3;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-  margin-block-start: var(--space-2);
-  color: var(--text-primary);
-  font-size: 0.9375rem;
-  line-height: 1.4;
-  overflow-wrap: anywhere;
-  white-space: pre-wrap;
-  text-decoration: none;
-}
-.contextExcerpt:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 3px;
 }

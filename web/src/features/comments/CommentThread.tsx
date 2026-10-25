@@ -26,6 +26,7 @@ import {
   type DiscussionChange,
 } from "./discussionChanges";
 import { PostReplyDialog } from "./PostReplyDialog";
+import { loadCommentShareCard } from "../share/shareCardInput";
 import {
   appendRepliesToRoot,
   appendRoots,
@@ -125,6 +126,7 @@ export function CommentThread({
   change,
   onMutation,
   conversation,
+  replyDialogComment,
 }: {
   api: PublicApi;
   postId: string;
@@ -144,6 +146,7 @@ export function CommentThread({
   change?: DiscussionChange | null;
   onMutation?: (mutation: CommentMutation) => void;
   conversation?: PublicComment;
+  replyDialogComment?: PublicComment | null;
 }) {
   const auth = useSession();
   const canModerate =
@@ -172,7 +175,7 @@ export function CommentThread({
   const recoveredCursors = useRef(new Set<string>());
   const [attempt, setAttempt] = useState(0);
   const [topContent, setTopContent] = useState("");
-  const [dialogContent, setDialogContent] = useState("");
+  const [dialogDrafts, setDialogDrafts] = useState<Record<string, string>>({});
   const [reply, setReply] = useState<ReplyDraft | null>(null);
   const [replyOpen, setReplyOpen] = useState(false);
   const [closedByServer, setClosedByServer] = useState(false);
@@ -183,6 +186,11 @@ export function CommentThread({
   const replyBlock = useReplyBlock();
   const canCompose = replyBlock === null;
   const conversationId = conversation?.id;
+  const dialogComment =
+    replyDialogComment === null
+      ? undefined
+      : (replyDialogComment ?? conversation);
+  const dialogKey = dialogComment?.id ?? post.id;
   const sourceKey = conversationId ? conversationId + ":direct" : "post";
   const commentsId = conversationId ? "comments-" + conversationId : "comments";
   const headingId = commentsId + "-heading";
@@ -603,14 +611,16 @@ export function CommentThread({
         <PostReplyDialog
           api={api}
           commentsEnabled={commentsEnabled}
-          content={dialogContent}
+          content={dialogDrafts[dialogKey] ?? ""}
           onClosed={() => setClosedByServer(true)}
-          onContentChange={setDialogContent}
+          onContentChange={(content) =>
+            setDialogDrafts((current) => ({ ...current, [dialogKey]: content }))
+          }
           onCreated={created}
           onOpenChange={(open) => onReplyDialogOpenChange?.(open)}
           open={replyDialogOpen}
           post={post}
-          comment={conversation}
+          comment={dialogComment}
           site={site}
           triggerRef={replyDialogTriggerRef}
         />
@@ -696,10 +706,15 @@ export function CommentThread({
               {displayedItems.map((comment) => (
                 <Fragment key={comment.id}>
                   <CommentItem
-                    postAuthorUserId={post?.author?.userId ?? null}
+                    postAuthorUserId={
+                      (conversation?.author ?? post.author)?.userId ?? null
+                    }
                     active={active && visibleIds.has(comment.id)}
                     comment={comment}
                     navigable
+                    shareCard={(signal) =>
+                      loadCommentShareCard(api, post, comment.id, site, signal)
+                    }
                     presentation={conversationId ? "direct-reply" : "list"}
                     focusTarget={headingRef}
                     onDeleted={deleted}

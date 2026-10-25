@@ -217,6 +217,62 @@ describe("drawing the card", () => {
     ...over,
   });
 
+  it("draws the parent in the same font family at 15/20 and the current post at 20/24", async () => {
+    const parent = input({
+      displayName: "Parent",
+      username: "parent",
+      blocks: [{ kind: "text", text: "PARENT_BODY" }],
+    });
+    await renderShareCard(
+      input({
+        blocks: [{ kind: "text", text: "CURRENT_BODY" }],
+        context: [parent],
+        replyCount: 52,
+      }),
+    );
+    const calls = recording.of("fillText");
+    const ancestor = calls.find((call) => call.args[0] === "PARENT_BODY");
+    const current = calls.find((call) => call.args[0] === "CURRENT_BODY");
+    expect(ancestor?.font).toMatch(/^400 15px /);
+    expect(current?.font).toMatch(/^400 20px /);
+    expect(ancestor?.font.replace("15px", "20px")).toBe(current?.font);
+    expect(ancestor?.args[1]).toBe(69);
+    expect(current?.args[1]).toBe(17);
+    expect(Number(current?.args[2])).toBeGreaterThan(Number(ancestor?.args[2]));
+    expect(recording.text()).toContain("查看 52 条回复");
+    expect(
+      recording
+        .of("fillRect")
+        .some((call) => call.args[0] === 40 && call.args[2] === 2),
+    ).toBe(true);
+  });
+
+  it("keeps full ancestor and current bodies beyond the ordinary 60-line preview", async () => {
+    const paragraphs = (prefix: string) =>
+      shareCardBlocks(
+        Array.from(
+          { length: 80 },
+          (_, index) => `<p>${prefix}_${index}</p>`,
+        ).join(""),
+      );
+    await renderShareCard(
+      input({
+        blocks: paragraphs("CURRENT"),
+        context: [input({ blocks: paragraphs("PARENT") })],
+      }),
+    );
+    expect(recording.text()).toContain("PARENT_79");
+    expect(recording.text()).toContain("CURRENT_79");
+    expect(recording.text()).not.toContain("Show more");
+  });
+
+  it("does not invent a profile or follow label for a legacy comment author", async () => {
+    await renderShareCard(
+      input({ username: "", context: [input({ username: "" })] }),
+    );
+    expect(recording.text()).not.toContain("关注");
+  });
+
   /** The badge's disc is the only thing filled in that particular dark. */
   const badges = () =>
     recording.of("fill").filter((call) => call.fill === "rgb(15 20 25 / 78%)")

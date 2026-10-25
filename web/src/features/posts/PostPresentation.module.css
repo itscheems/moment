@@ -95,6 +95,56 @@
   justify-content: center;
 }
 
+.post.conversation {
+  --conversation-inset: var(--space-4);
+  grid-template-columns: var(--target-size) minmax(0, 1fr);
+  column-gap: var(--space-3);
+}
+
+.post.conversation:not(.detail) {
+  border-block-end: 0;
+  content-visibility: visible;
+  contain-intrinsic-size: none;
+}
+
+.conversation[data-connected]::after {
+  content: "";
+  position: absolute;
+  inset-inline-start: calc(
+    var(--conversation-inset) + var(--target-size) / 2 - 1px
+  );
+  inset-block-start: calc(var(--space-3) + 2.5rem + var(--space-2));
+  inset-block-end: calc(-1 * var(--space-1));
+  inline-size: 2px;
+  background: var(--border-subtle);
+  pointer-events: none;
+}
+
+.conversation .byline,
+.conversation .markdown {
+  font-family: var(--font-timeline);
+  font-feature-settings: normal;
+  letter-spacing: normal;
+}
+
+.conversation .markdown {
+  font-weight: 400;
+}
+
+.conversation:not(.detail) .actionCount {
+  position: static;
+  min-inline-size: 0;
+  transform: none;
+}
+
+.post.conversation.detail {
+  padding-block-start: var(--space-3);
+}
+.conversation.detail .detailIdentity {
+  grid-template-columns: var(--target-size) minmax(0, 1fr);
+  gap: var(--space-3);
+}
+
 .identityLink {
   display: block;
   border-radius: 50%;
@@ -602,7 +652,7 @@
   justify-self: end;
 }
 
-.post:not(.detail) .postAction {
+.post:not(.detail):not(.conversation) .postAction {
   padding: calc(
     (var(--post-edge-action-size) - var(--post-action-halo-size)) / 2
   );
@@ -966,6 +1016,10 @@
 }
 
 @media (max-width: 719px) {
+  .post.conversation {
+    --conversation-inset: var(--space-3);
+    padding-inline: var(--space-3);
+  }
   .post {
     grid-template-columns: 2.5rem minmax(0, 1fr);
     column-gap: 0.7rem;

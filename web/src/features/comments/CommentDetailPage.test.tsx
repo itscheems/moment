@@ -194,6 +194,13 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
+function currentPost() {
+  const element = screen.getByText("当前评论全文").closest("article");
+  if (!element)
+    throw new Error("Current comment is not using the post renderer");
+  return within(element);
+}
+
 describe("focused comment reading", () => {
   it("loads a deep permalink with the post, immediate target and only its direct replies", async () => {
     const { fetcher, wrapper } = setup();
@@ -209,12 +216,17 @@ describe("focused comment reading", () => {
         "被回复者的评论",
       ),
     ).toBeVisible();
-    expect(screen.getByRole("link", { name: "原始帖子内容" })).toHaveAttribute(
-      "href",
-      "/m/" + postId,
-    );
     expect(
-      screen.getByRole("link", { name: "被回复者的评论" }),
+      within(screen.getByRole("region", { name: "原帖引用" })).getByRole(
+        "link",
+        { name: "打开这条 Moment 详情" },
+      ),
+    ).toHaveAttribute("href", "/m/" + postId);
+    expect(
+      within(screen.getByRole("region", { name: "被回复评论引用" })).getByRole(
+        "link",
+        { name: "打开这条 Moment 详情" },
+      ),
     ).toHaveAttribute("href", "/m/" + postId + "/comments/" + targetId);
     expect(
       screen.queryByRole("link", { name: "返回原帖" }),
@@ -223,7 +235,7 @@ describe("focused comment reading", () => {
       within(await screen.findByRole("list")).getByText("直接回答当前评论"),
     ).toBeVisible();
     expect(
-      screen.getByRole("button", { name: "分享这条 Moment" }),
+      currentPost().getByRole("button", { name: "分享这条 Moment" }),
     ).toBeVisible();
     expect(screen.queryByText("直接回复")).not.toBeInTheDocument();
     expect(screen.queryByText("查看整层讨论")).not.toBeInTheDocument();
@@ -249,6 +261,36 @@ describe("focused comment reading", () => {
       "data-post-id",
       selectedId,
     );
+  });
+  it("uses the selected comment author for reply badges rather than the original post author", async () => {
+    const { fetcher, wrapper } = setup();
+    fetcher.mockImplementation(async (input) =>
+      String(input).includes("/replies")
+        ? response({
+            items: [
+              {
+                ...wire(answerId, "原帖作者的回答", selectedId),
+                reply_to: { comment_id: selectedId, author: replyAuthor },
+              },
+            ],
+          })
+        : response({
+            comment: {
+              ...wire(selectedId, "当前评论全文", targetId),
+              author: replyAuthor,
+              author_name: "Bob",
+            },
+            reply_target: wire(targetId, "被回复者的评论", rootId),
+            root_comment_id: rootId,
+            pinned_comment_id: null,
+            direct_reply_count: 1,
+          }),
+    );
+    render(wrapper());
+    await screen.findByText("原帖作者的回答");
+    expect(
+      within(screen.getByRole("list")).queryByText("作者"),
+    ).not.toBeInTheDocument();
   });
   it.each([false, true])(
     "reuses the reply dialog and preserves the selected conversation when replying to a child: %s",
@@ -299,7 +341,7 @@ describe("focused comment reading", () => {
         );
       } else {
         fireEvent.click(
-          screen.getByRole("button", { name: /回复这条 Moment/ }),
+          currentPost().getByRole("button", { name: /回复这条 Moment/ }),
         );
       }
       const dialog = await screen.findByRole("dialog", {
@@ -351,7 +393,9 @@ describe("focused comment reading", () => {
     const { wrapper } = setup();
     render(wrapper());
     await screen.findByText("当前评论全文");
-    fireEvent.click(screen.getByRole("button", { name: "分享这条 Moment" }));
+    fireEvent.click(
+      currentPost().getByRole("button", { name: "分享这条 Moment" }),
+    );
     await waitFor(() =>
       expect(
         screen.getByRole("menuitem", { name: "生成分享图片" }),

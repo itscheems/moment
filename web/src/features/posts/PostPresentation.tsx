@@ -17,7 +17,6 @@ import {
   type PublicPost,
   type SiteIdentity,
 } from "../../api/public";
-import { mediaPreviewUrl } from "../../api/mediaUrls";
 import { InternalLink, useNavigation } from "../../app/navigation";
 import { Icon } from "../../components/icons";
 import {
@@ -34,15 +33,13 @@ import {
 import { formatMomentDate } from "./dates";
 import { PostActions } from "./PostActions";
 import { RepostAction } from "./RepostAction";
-import {
-  ArticleCard,
-  QuotedArticle,
-  articleShareBlocks,
-} from "../article/ArticleCard";
+import { ArticleCard, QuotedArticle } from "../article/ArticleCard";
 import { LinkCard } from "../links/LinkCard";
-import { shareCardBlocks, shareCardLink } from "../share/shareCard";
+import { postShareCard } from "../share/shareCardInput";
+import type { ShareCardSource } from "../share/shareCard";
 import { ImageGrid } from "../media/ImageGrid";
 import styles from "./PostPresentation.module.css";
+import rowStyles from "./PostActionRow.module.css";
 
 export { SiteAvatar } from "../../components/SiteIdentity";
 
@@ -199,6 +196,9 @@ export function PostPresentation({
   href,
   actions,
   commentsId = "comments",
+  conversation = false,
+  connected = false,
+  shareCard,
 }: {
   post: PublicPost;
   site: SiteIdentity;
@@ -218,6 +218,9 @@ export function PostPresentation({
   href?: string;
   actions?: import("react").ReactNode;
   commentsId?: string;
+  conversation?: boolean;
+  connected?: boolean;
+  shareCard?: ShareCardSource;
 }) {
   const { navigate } = useNavigation();
   const [expandedPostId, setExpandedPostId] = useState<string | null>(null);
@@ -233,7 +236,8 @@ export function PostPresentation({
     () => timelinePreview(post),
     [post.contentHtml, post.contentMd],
   );
-  const collapsed = !detail && preview.long && expandedPostId !== post.id;
+  const collapsed =
+    !detail && !conversation && preview.long && expandedPostId !== post.id;
   const previewHtml = collapsed ? preview.html : post.contentHtml;
   const linkCard =
     post.linkCards.length > 0 ? <LinkCard card={post.linkCards[0]} /> : null;
@@ -243,6 +247,7 @@ export function PostPresentation({
 
   const openFromSurface = (event: MouseEvent<HTMLElement>) => {
     if (detail) return;
+    if (window.getSelection()?.toString()) return;
     const target = event.target;
     if (!(target instanceof Element)) return;
     // A portal puts its markup under the body and still leaves it a descendant
@@ -357,35 +362,20 @@ export function PostPresentation({
     <ShareMenu
       align={align}
       baseUrl={site.publicBaseUrl}
-      card={async () => ({
-        displayName: site.displayName,
-        username: site.username,
-        avatarUrl: site.avatarMediaId
-          ? mediaPreviewUrl(site.avatarMediaId)
-          : null,
-        publishedLabel: published.absolute,
-        // An article's pictures belong to its body, and in a list its body has
-        // not been rendered at all, so the card is built from the title and
-        // the excerpt the server already wrote for exactly this purpose.
-        blocks: isArticlePost(post)
-          ? articleShareBlocks(post.article)
-          : shareCardBlocks(post.contentHtml),
-        media: isArticlePost(post) ? [] : post.media,
-        mapCard: post.mapCard,
-        mapViewport: post.mapCard
-          ? mapViews.current.get(mapViewKey(post.id, post.mapCard))
-          : undefined,
-        location:
-          post.location?.name?.trim() ||
-          post.location?.displayName?.trim() ||
-          null,
-        link:
-          post.linkCards.length > 0 ? shareCardLink(post.linkCards[0]) : null,
-      })}
+      card={
+        shareCard ??
+        (async () => ({
+          ...postShareCard(post, site),
+          mapViewport: post.mapCard
+            ? mapViews.current.get(mapViewKey(post.id, post.mapCard))
+            : undefined,
+        }))
+      }
       href={detailHref}
       title={`${title} 的 Moment`}
       trigger={
         <button
+          data-post-action="share"
           aria-label="分享这条 Moment"
           className={`${styles.postAction} ${styles.shareAction}`}
           type="button"
@@ -451,7 +441,8 @@ export function PostPresentation({
     return (
       <article
         aria-label={`${title}发布的 Moment，${published.absolute}`}
-        className={`${styles.post} ${styles.detail} ${fresh ? styles.fresh : ""}`}
+        className={`${styles.post} ${styles.detail} ${conversation ? styles.conversation : ""} ${fresh ? styles.fresh : ""}`}
+        data-connected={connected || undefined}
         data-post-id={post.id}
         data-timeline-item-key={timelineKey}
         tabIndex={-1}
@@ -500,9 +491,13 @@ export function PostPresentation({
               <span>条回复</span>
             </a>
           ) : null}
-          <div className={styles.postActions}>
+          <div
+            data-post-actions=""
+            className={`${styles.postActions} ${conversation && !detail ? rowStyles.row : ""}`}
+          >
             <ActionTooltip label="回复">
               <button
+                data-post-action="reply"
                 aria-label={`回复这条 Moment${post.commentCount > 0 ? `，${post.commentCount} 条回复` : ""}`}
                 className={`${styles.postAction} ${styles.replyAction}`}
                 onClick={onReply}
@@ -529,7 +524,8 @@ export function PostPresentation({
   return (
     <article
       aria-label={`${title}发布的 Moment，${published.absolute}`}
-      className={`${styles.post} ${useTimelineDensity ? styles.timelineDensity : ""} ${fresh ? styles.fresh : ""}`}
+      className={`${styles.post} ${conversation ? styles.conversation : ""} ${useTimelineDensity ? styles.timelineDensity : ""} ${fresh ? styles.fresh : ""}`}
+      data-connected={connected || undefined}
       data-post-id={post.id}
       data-timeline-item-key={timelineKey}
       onClick={openFromSurface}
@@ -594,10 +590,14 @@ export function PostPresentation({
           />
         )}
         {quoteCard}
-        <div className={styles.postActions}>
+        <div
+          data-post-actions=""
+          className={`${styles.postActions} ${conversation && !detail ? rowStyles.row : ""}`}
+        >
           <ActionTooltip label="回复">
             {onReply ? (
               <button
+                data-post-action="reply"
                 aria-label="回复这条 Moment"
                 className={`${styles.postAction} ${styles.replyAction}`}
                 data-focus-key={`${timelineKey}:reply`}

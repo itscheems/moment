@@ -10,7 +10,6 @@ import {
   PublicApi,
   PublicApiError,
   type CommentContext,
-  type PublicCommentAuthor,
   type PublicPost,
   type SiteIdentity,
 } from "../../api/public";
@@ -20,53 +19,15 @@ import { useReadRecovery } from "../../components/useReadRecovery";
 import { isAdministrator, useSession } from "../auth/SessionProvider";
 import { ReadRecoveryNotice } from "../timeline/PublicStates";
 import { PostPresentation } from "../posts/PostPresentation";
+import { CommentModerationMenu } from "./CommentItem";
 import {
-  CommentAuthorAvatar,
-  CommentIdentity,
-  CommentModerationMenu,
-} from "./CommentItem";
+  commentAsPost,
+  commentShareCard,
+  loadCommentShareCard,
+} from "../share/shareCardInput";
 import { CommentThread } from "./CommentThread";
 import type { CommentMutation, DiscussionChange } from "./discussionChanges";
 import styles from "./Comments.module.css";
-
-function plainSummary(html: string): string {
-  return (
-    new DOMParser()
-      .parseFromString(html, "text/html")
-      .body.textContent?.trim() ?? ""
-  );
-}
-
-function ContextQuote({
-  label,
-  author,
-  href,
-  summary,
-  connected,
-}: {
-  label: string;
-  author: PublicCommentAuthor;
-  href: string;
-  summary: string;
-  connected: boolean;
-}) {
-  return (
-    <section
-      aria-label={label + "引用"}
-      className={styles.contextQuote}
-      data-connected={connected || undefined}
-    >
-      <CommentAuthorAvatar author={author} />
-      <div className={styles.contextByline}>
-        <span>{label === "被回复评论" ? "回复的评论" : label}</span>
-        <CommentIdentity author={author} />
-      </div>
-      <InternalLink href={href} className={styles.contextExcerpt}>
-        {summary}
-      </InternalLink>
-    </section>
-  );
-}
 
 export function CommentDetailPage({
   api,
@@ -77,6 +38,8 @@ export function CommentDetailPage({
   change,
   onMutation,
   onCountChange,
+  onPostChanged,
+  onSiteChanged,
 }: {
   api: PublicApi;
   post: PublicPost;
@@ -86,6 +49,8 @@ export function CommentDetailPage({
   change?: DiscussionChange | null;
   onMutation: (mutation: CommentMutation) => void;
   onCountChange: (delta: number) => void;
+  onPostChanged?: (post: PublicPost) => void;
+  onSiteChanged?: (site: SiteIdentity) => void;
 }) {
   const navigation = useNavigation();
   const auth = useSession();
@@ -93,6 +58,9 @@ export function CommentDetailPage({
   const [error, setError] = useState<unknown>(null);
   const [loading, setLoading] = useState(true);
   const [replyOpen, setReplyOpen] = useState(false);
+  const [dialogTarget, setDialogTarget] = useState<
+    import("../../api/public").PublicComment | null | undefined
+  >(undefined);
   const sectionRef = useRef<HTMLElement>(null);
   const missingRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
@@ -157,44 +125,34 @@ export function CommentDetailPage({
     loaded.current = false;
     if (active) void load();
   };
-  const postAuthor = post.author ?? {
-    userId: null,
-    username: null,
-    displayName: site.displayName,
-    avatarMediaId: null,
-    profileUrl: null,
-  };
-  const postSummary = post.article
-    ? post.article.title +
-      (post.article.excerpt ? " — " + post.article.excerpt : "")
-    : plainSummary(post.contentHtml) || post.location?.displayName || "图片";
   const selected = context?.comment;
-  const selectedPost: PublicPost | null = selected
-    ? {
-        id: selected.id,
-        author: selected.author,
-        kind: "moment",
-        article: null,
-        contentMd: selected.contentMd,
-        contentHtml: selected.contentHtml,
-        createdAt: selected.createdAt,
-        updatedAt: selected.createdAt,
-        publishedAt: selected.createdAt,
-        repostedAt: null,
-        timelineItemKind: "original",
-        visibility: post.visibility,
-        commentCount: context.directReplyCount,
-        media: selected.media,
-        linkCards: [],
-        location: selected.location,
-      }
+  const replyTarget = context?.replyTarget;
+  const selectedPost = selected
+    ? commentAsPost(selected, post, context.directReplyCount)
     : null;
+  const canCompose = auth.account?.status === "active";
   const canModerate =
     (auth.state === "signed-in" || auth.state === "expired") &&
     isAdministrator(auth.account);
-  const canDelete =
-    auth.account?.status === "active" &&
-    auth.account.userId === selected?.author.userId;
+  const actionsFor = (comment: import("../../api/public").PublicComment) =>
+    canModerate ||
+    (auth.account?.status === "active" &&
+      auth.account.userId === comment.author.userId) ? (
+      <CommentModerationMenu
+        comment={comment}
+        focusTarget={missingRef}
+        pinned={context?.pinnedCommentId === comment.id}
+        replyCount={comment.replyCount}
+        canModerate={canModerate}
+        onDeleted={(deleted, repliesAffected) => {
+          mutation({ kind: "deleted", comment: deleted, repliesAffected });
+          onCountChange(-(1 + repliesAffected));
+        }}
+        onPinChange={(pinnedCommentId) =>
+          mutation({ kind: "pin", pinnedCommentId })
+        }
+      />
+    ) : undefined;
   return (
     <section
       className={styles.discussionDetail}
@@ -205,25 +163,42 @@ export function CommentDetailPage({
     >
       {active ? (
         <div className={styles.discussionContext}>
-          <ContextQuote
-            label="原帖"
-            author={postAuthor}
-            href={"/m/" + post.id}
-            summary={postSummary}
-            connected={!!selected && !missing}
-          />
-          {selected && !missing && context.replyTarget ? (
-            <ContextQuote
-              label="被回复评论"
-              author={context.replyTarget.author}
-              href={commentDetailPath(post.id, context.replyTarget.id)}
-              summary={
-                plainSummary(context.replyTarget.contentHtml) ||
-                context.replyTarget.location?.displayName ||
-                "图片"
-              }
-              connected
+          <section aria-label="原帖引用">
+            <PostPresentation
+              post={post}
+              site={site}
+              conversation
+              connected={!!selected && !missing}
+              canPublish={canCompose}
+              onReposted={onPostChanged}
+              onSiteChanged={onSiteChanged}
+              onReply={(event) => {
+                triggerRef.current = event.currentTarget;
+                setDialogTarget(null);
+                setReplyOpen(true);
+              }}
+              onDeleted={() => navigation.navigate("/")}
             />
+          </section>
+          {selected && !missing && replyTarget ? (
+            <section aria-label="被回复评论引用">
+              <PostPresentation
+                post={commentAsPost(replyTarget, post)}
+                site={site}
+                conversation
+                connected
+                actions={actionsFor(replyTarget)}
+                href={commentDetailPath(post.id, replyTarget.id)}
+                shareCard={(signal) =>
+                  loadCommentShareCard(api, post, replyTarget.id, site, signal)
+                }
+                onReply={(event) => {
+                  triggerRef.current = event.currentTarget;
+                  setDialogTarget(replyTarget);
+                  setReplyOpen(true);
+                }}
+              />
+            </section>
           ) : null}
         </div>
       ) : null}
@@ -256,32 +231,18 @@ export function CommentDetailPage({
           {active ? (
             <PostPresentation
               detail
+              conversation
+              shareCard={commentShareCard(context, post, site)}
               commentsId={"comments-" + selected.id}
               post={selectedPost}
               site={site}
               href={commentDetailPath(post.id, selected.id)}
               onReply={(event: MouseEvent<HTMLButtonElement>) => {
                 triggerRef.current = event.currentTarget;
+                setDialogTarget(selected);
                 setReplyOpen(true);
               }}
-              actions={
-                canModerate || canDelete ? (
-                  <CommentModerationMenu
-                    comment={selected}
-                    focusTarget={missingRef}
-                    pinned={context.pinnedCommentId === selected.id}
-                    replyCount={selected.replyCount}
-                    canModerate={canModerate}
-                    onDeleted={(comment, repliesAffected) => {
-                      mutation({ kind: "deleted", comment, repliesAffected });
-                      onCountChange(-(1 + repliesAffected));
-                    }}
-                    onPinChange={(pinnedCommentId) =>
-                      mutation({ kind: "pin", pinnedCommentId })
-                    }
-                  />
-                ) : undefined
-              }
+              actions={actionsFor(selected)}
             />
           ) : null}
           <CommentThread
@@ -295,6 +256,7 @@ export function CommentDetailPage({
             onMutation={mutation}
             onCountChange={onCountChange}
             replyDialogOpen={replyOpen}
+            replyDialogComment={dialogTarget}
             onReplyDialogOpenChange={setReplyOpen}
             replyDialogTriggerRef={triggerRef}
           />

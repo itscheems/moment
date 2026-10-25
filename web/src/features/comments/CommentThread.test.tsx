@@ -1030,7 +1030,7 @@ describe("public comment thread", () => {
       /\._inlineTopLevelForm_[\w-]+\._commentLayoutFrame_[\w-]+\s*\{[^}]*transition:\s*none;/s,
     );
     expect(commentsCss).toMatch(
-      /\._inlineTopLevelForm_[\w-]+ \._commentComposerLayout_[\w-]+\s*\{[^}]*grid-template-columns:\s*2\.5rem minmax\(0, 1fr\);[^}]*gap:\s*0\.5rem;/s,
+      /\._inlineTopLevelForm_[\w-]+ \._commentComposerLayout_[\w-]+\s*\{[^}]*grid-template-columns:\s*var\(--target-size\) minmax\(0, 1fr\);[^}]*gap:\s*var\(--space-3\);/s,
     );
     // The folded geometry — the placeholder on the centre line of a 3.5rem
     // row under 0.25rem of form padding, the avatar 0.875rem down — comes

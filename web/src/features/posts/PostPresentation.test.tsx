@@ -123,6 +123,32 @@ function makePost(
 }
 
 describe("shared post presentation", () => {
+  it("shows full ancestor content with the existing action menu and no Show more", () => {
+    const html = Array.from(
+      { length: 80 },
+      (_, index) => `<p>对话节点正文 ${index}</p>`,
+    ).join("");
+    render(
+      <NavigationProvider>
+        <PostPresentation
+          conversation
+          connected
+          post={makePost("完整正文", html)}
+          site={site}
+        />
+      </NavigationProvider>,
+    );
+    expect(screen.getByText("对话节点正文 79")).toBeVisible();
+    expect(
+      screen.queryByRole("button", { name: "显示更多" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "分享这条 Moment" }),
+    ).toBeVisible();
+    expect(
+      screen.getByText("对话节点正文 79").closest("article"),
+    ).toHaveAttribute("data-connected", "true");
+  });
   it("keeps a legacy comment author unlinked in the shared detail renderer", () => {
     const post = makePost("旧留言", "<p>旧留言</p>");
     render(

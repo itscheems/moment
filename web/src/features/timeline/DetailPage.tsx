@@ -216,6 +216,8 @@ export function DetailPage({
           change={change}
           onMutation={(mutation) => publishMutation(view + ":direct", mutation)}
           onCountChange={handleCommentCountChange}
+          onPostChanged={setPost}
+          onSiteChanged={onSiteChanged}
         />
       ))}
     </>

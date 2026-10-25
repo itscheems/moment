@@ -66,6 +66,7 @@ export function RepostAction({
     <Menu.Root>
       <ActionTooltip label={active ? "转发选项" : "转发"}>
         <Menu.Trigger
+          data-post-action="repost"
           aria-label="转发这条 Moment"
           aria-pressed={active}
           className={`${postStyles.postAction} ${postStyles.repostAction} ${active ? postStyles.repostActive : ""}`}

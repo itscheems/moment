@@ -23,6 +23,7 @@ import { SiteAvatar } from "../../components/SiteIdentity";
 import {
   ActionTooltip,
   ExactTimeTooltip,
+  ShareMenu,
 } from "../../components/TimelineInteractions";
 import { Icon } from "../../components/icons";
 import { notify } from "../../components/Feedback";
@@ -34,7 +35,10 @@ import { ImageGrid } from "../media/ImageGrid";
 import { useSession } from "../auth/SessionProvider";
 import { Reauthenticate, type ReplyBlock } from "./CommentComposer";
 import styles from "./Comments.module.css";
+import rowStyles from "../posts/PostActionRow.module.css";
+import postStyles from "../posts/PostPresentation.module.css";
 import formStyles from "../../components/Forms.module.css";
+import type { ShareCardSource } from "../share/shareCard";
 
 function DeleteCommentDialog({
   postId,
@@ -458,8 +462,9 @@ function SignInToReplyPopover({
   return (
     <Popover.Root>
       <Popover.Trigger
+        data-post-action="reply"
         aria-label={`回复 ${authorName}`}
-        className={styles.commentAction}
+        className={`${styles.commentAction} ${postStyles.postAction} ${postStyles.replyAction}`}
         onClick={(event) => event.stopPropagation()}
       >
         <Icon name="reply" />
@@ -556,6 +561,7 @@ export function CommentItem({
   onReply,
   onDeleted,
   onPinChange,
+  shareCard,
 }: {
   active?: boolean;
   comment: PublicComment;
@@ -567,6 +573,7 @@ export function CommentItem({
   replyRootId: string | null;
   presentation?: "list" | "direct-reply";
   navigable?: boolean;
+  shareCard?: ShareCardSource;
   /**
    * Whether this reader may actually reply. It is deliberately separate from
    * replyRoot: a null root means there is nothing to reply to and the action
@@ -642,6 +649,8 @@ export function CommentItem({
           )
             return;
           const target = event.target;
+          if (target instanceof Node && !event.currentTarget.contains(target))
+            return;
           if (
             target instanceof Element &&
             target.closest(
@@ -775,12 +784,16 @@ export function CommentItem({
          * so the button stays and says so when pressed.
          */}
         {replyRootId ? (
-          <footer className={styles.commentActions}>
+          <footer
+            data-post-actions=""
+            className={`${styles.commentActions} ${rowStyles.row}`}
+          >
             {canReply ? (
               <ActionTooltip label="回复">
                 <button
+                  data-post-action="reply"
                   aria-label={`回复 ${authorName}`}
-                  className={styles.commentAction}
+                  className={`${styles.commentAction} ${postStyles.postAction} ${postStyles.replyAction}`}
                   onClick={() => onReply(replyRootId, comment)}
                   type="button"
                 >
@@ -793,6 +806,26 @@ export function CommentItem({
                 reason={replyBlockedBy}
               />
             )}
+            {shareCard ? (
+              <>
+                <ShareMenu
+                  baseUrl={site.publicBaseUrl}
+                  card={shareCard}
+                  href={detailHref}
+                  title={authorName + " 的 Moment"}
+                  trigger={
+                    <button
+                      type="button"
+                      className={`${styles.commentAction} ${postStyles.postAction} ${postStyles.shareAction}`}
+                      data-post-action="share"
+                      aria-label={"分享 " + authorName + " 的评论"}
+                    >
+                      <Icon name="share" />
+                    </button>
+                  }
+                />
+              </>
+            ) : null}
           </footer>
         ) : null}
       </article>

@@ -146,7 +146,7 @@ function hostOf(url: string): string {
   }
 }
 
-export interface ShareCardInput {
+export interface ShareCardPost {
   displayName: string;
   username: string;
   /** Same-origin URL, or null to draw the initial instead. */
@@ -171,6 +171,12 @@ export interface ShareCardInput {
   link: ShareCardLink | null;
   /** Present only for an exact article excerpt; never silently truncate it. */
   articleTitle?: string;
+  replyTo?: string;
+}
+
+export interface ShareCardInput extends ShareCardPost {
+  context?: ShareCardPost[];
+  replyCount?: number;
 }
 
 export type ShareCardSource =
@@ -881,7 +887,10 @@ function layOutBody(
   blocks: ShareCardBlock[],
   contentWidth: number,
   exactExcerpt = false,
+  context = false,
+  full = false,
 ): LaidBlock[] {
+  const maxLines = full ? Infinity : MAX_BODY_LINES;
   const laid: LaidBlock[] = [];
   let used = 0;
   let clipped = false;
@@ -893,7 +902,7 @@ function layOutBody(
         ruler,
         block,
         contentWidth,
-        Math.max(0, MAX_BODY_LINES - used),
+        Math.max(0, maxLines - used),
         exactExcerpt,
       );
       laid.push(result.table);
@@ -902,9 +911,9 @@ function layOutBody(
       continue;
     }
     if (block.kind === "code") {
-      if (exactExcerpt && used + block.lines.length > MAX_BODY_LINES)
+      if (exactExcerpt && used + block.lines.length > maxLines)
         throw new ShareCardTooLongError();
-      const shown = block.lines.slice(0, Math.max(MAX_BODY_LINES - used, 0));
+      const shown = block.lines.slice(0, Math.max(maxLines - used, 0));
       if (shown.length < block.lines.length) clipped = true;
       if (shown.length === 0) break;
       ruler.font = monoFont(CODE_SIZE);
@@ -912,15 +921,27 @@ function layOutBody(
         kind: "code",
         // A fenced block is written with its line breaks meant; wrapping them
         // would reflow somebody's code. Anything too wide is cut instead.
-        lines: shown.map((line) =>
-          truncateSpans(ruler, line, contentWidth - CODE_PAD * 2),
-        ),
+        lines: full
+          ? shown.flatMap((line) => {
+              const lines = wrapRuns(ruler, line, contentWidth - CODE_PAD * 2);
+              return lines.length
+                ? lines.map((runs) =>
+                    runs.map((run) => ({
+                      text: run.text,
+                      colour: run.colour ?? INK,
+                    })),
+                  )
+                : [[]];
+            })
+          : shown.map((line) =>
+              truncateSpans(ruler, line, contentWidth - CODE_PAD * 2),
+            ),
       });
       used += shown.length;
       continue;
     }
     const heading = block.kind === "text" ? block.heading : undefined;
-    const size = heading ? HEADING_SIZES[heading] : BODY_SIZE;
+    const size = heading ? HEADING_SIZES[heading] : context ? 15 : BODY_SIZE;
     const weight = heading ? 700 : 400;
     const indent =
       block.kind === "item"
@@ -935,9 +956,9 @@ function layOutBody(
     const wrapped = runs
       ? runs.map((line) => line.map((run) => run.text).join(""))
       : wrap(ruler, block.text, contentWidth - indent);
-    if (exactExcerpt && used + wrapped.length > MAX_BODY_LINES)
+    if (exactExcerpt && used + wrapped.length > maxLines)
       throw new ShareCardTooLongError();
-    const shown = wrapped.slice(0, Math.max(MAX_BODY_LINES - used, 0));
+    const shown = wrapped.slice(0, Math.max(maxLines - used, 0));
     if (shown.length < wrapped.length) clipped = true;
     if (shown.length === 0) break;
     if (clipped) {
@@ -951,7 +972,7 @@ function layOutBody(
       kind: "lines",
       lines: shown,
       size,
-      leading: heading ? Math.round(size * 1.35) : BODY_LINE,
+      leading: heading ? Math.round(size * 1.35) : context ? 20 : BODY_LINE,
       weight,
       indent,
       marker: block.kind === "item" ? block.marker : undefined,
@@ -1004,7 +1025,12 @@ function baseline(
 }
 
 /** These are part of the exported image, so they never handle user input. */
-function drawFooter(ctx: CanvasRenderingContext2D, label: string, y: number) {
+function drawFooter(
+  ctx: CanvasRenderingContext2D,
+  label: string,
+  y: number,
+  replyCount?: number,
+) {
   const width = WIDTH - PAD * 2;
   ctx.font = font(400, FOOT_SIZE);
   ctx.fillStyle = MUTED;
@@ -1038,12 +1064,356 @@ function drawFooter(ctx: CanvasRenderingContext2D, label: string, y: number) {
   ctx.stroke();
   ctx.fillStyle = LINK_INK;
   ctx.textAlign = "center";
-  ctx.fillText(
-    "Read More on Moment",
-    WIDTH / 2,
-    y + 87 + baseline(ctx, "Read More on Moment", 16),
-  );
+  const action =
+    replyCount === undefined
+      ? "Read More on Moment"
+      : replyCount > 0
+        ? "查看 " + replyCount + " 条回复"
+        : "在 Moment 查看";
+  ctx.fillText(action, WIDTH / 2, y + 87 + baseline(ctx, action, 16));
   ctx.textAlign = "left";
+}
+
+function bodyGapBefore(laid: LaidBlock[], index: number): number {
+  if (index === 0) return 0;
+  const previous = laid[index - 1];
+  const current = laid[index];
+  const bothItems =
+    previous?.kind === "lines" &&
+    previous.item &&
+    current?.kind === "lines" &&
+    current.item;
+  return bothItems ? ITEM_GAP : BLOCK_GAP;
+}
+
+function drawShareBody(
+  ctx: CanvasRenderingContext2D,
+  laid: LaidBlock[],
+  left: number,
+  y: number,
+  contentWidth: number,
+): number {
+  laid.forEach((piece, index) => {
+    y += bodyGapBefore(laid, index);
+    if (piece.kind === "table") {
+      drawTable(ctx, piece, left, y);
+      y += blockHeight(piece);
+      return;
+    }
+    if (piece.kind === "code") {
+      ctx.fillStyle = HAIRLINE;
+      ctx.beginPath();
+      ctx.roundRect(left, y, contentWidth, blockHeight(piece), 10);
+      ctx.fill();
+      ctx.font = monoFont(CODE_SIZE);
+      piece.lines.forEach((line, row) => {
+        const baseline = y + CODE_PAD + row * CODE_LINE + CODE_SIZE;
+        let x = left + CODE_PAD;
+        for (const span of line) {
+          ctx.fillStyle = span.colour;
+          ctx.fillText(span.text, x, baseline);
+          x += ctx.measureText(span.text).width;
+        }
+      });
+      y += blockHeight(piece);
+      return;
+    }
+    if (piece.quote) {
+      ctx.fillStyle = HAIRLINE;
+      ctx.fillRect(left, y + 2, 3, blockHeight(piece) - 4);
+    }
+    if (piece.marker !== undefined) {
+      ctx.fillStyle = MUTED;
+      ctx.font = font(400, BODY_SIZE);
+      ctx.fillText(piece.marker, left, y + piece.size);
+    }
+    const defaultColour = piece.quote ? MUTED : INK;
+    ctx.fillStyle = defaultColour;
+    ctx.font = font(piece.weight, piece.size);
+    piece.lines.forEach((line, row) => {
+      const x = left + piece.indent;
+      const lineBaseline =
+        y + row * piece.leading + baseline(ctx, line, piece.leading);
+      const runs = piece.runs?.[row];
+      if (!runs) {
+        ctx.fillText(line, x, lineBaseline);
+        return;
+      }
+      let prefix = "";
+      const positions = runs.map((run) => {
+        const left = ctx.measureText(prefix).width;
+        prefix += run.text;
+        return { run, left, width: ctx.measureText(prefix).width - left };
+      });
+      for (const { run, left, width } of positions) {
+        if (!run.background) continue;
+        ctx.fillStyle = run.background;
+        ctx.fillRect(
+          x + left,
+          lineBaseline - piece.size,
+          width,
+          piece.size * 1.25,
+        );
+      }
+      for (const { run, left } of positions) {
+        ctx.fillStyle = run.colour ?? defaultColour;
+        ctx.fillText(run.text, x + left, lineBaseline);
+      }
+    });
+    y += blockHeight(piece);
+  });
+  return y;
+}
+
+function drawShareIdentity(
+  ctx: CanvasRenderingContext2D,
+  input: ShareCardPost,
+  avatar: HTMLImageElement | null,
+  y: number,
+  context = false,
+) {
+  if (avatar) {
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(PAD + AVATAR / 2, y + AVATAR / 2, AVATAR / 2, 0, Math.PI * 2);
+    ctx.clip();
+    ctx.drawImage(avatar, PAD, y, AVATAR, AVATAR);
+    ctx.restore();
+  } else {
+    ctx.fillStyle = HAIRLINE;
+    ctx.beginPath();
+    ctx.arc(PAD + AVATAR / 2, y + AVATAR / 2, AVATAR / 2, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = MUTED;
+    ctx.font = font(700, 22);
+    ctx.textAlign = "center";
+    ctx.fillText(
+      [...(input.displayName.trim() || "M")][0]?.toLocaleUpperCase() ?? "M",
+      PAD + AVATAR / 2,
+      y + AVATAR / 2 + 8,
+    );
+    ctx.textAlign = "left";
+  }
+
+  const textLeft = PAD + AVATAR + 4;
+  const nameWidth = WIDTH - PAD - 25 - 12 - textLeft;
+  ctx.fillStyle = INK;
+  ctx.font = font(700, NAME_SIZE);
+  const name = truncate(ctx, input.displayName, nameWidth);
+  ctx.fillText(name, textLeft, y + (context ? 0 : 3) + baseline(ctx, name, 20));
+  if (context) {
+    const next = textLeft + ctx.measureText(name).width + 6;
+    ctx.fillStyle = MUTED;
+    ctx.font = font(400, HANDLE_SIZE);
+    const stamp = truncate(
+      ctx,
+      "· " + input.publishedLabel,
+      WIDTH - PAD - 40 - next,
+    );
+    ctx.fillText(stamp, next, y + baseline(ctx, stamp, 20));
+  }
+  ctx.fillStyle = MUTED;
+  ctx.font = font(700, HANDLE_SIZE);
+  const followWidth = ctx.measureText("关注").width;
+  ctx.font = font(400, HANDLE_SIZE);
+  const dotWidth = ctx.measureText("·").width + 8;
+  const handle = truncate(
+    ctx,
+    input.username ? `@${input.username}` : "",
+    nameWidth - dotWidth - followWidth,
+  );
+  const handleY = y + (context ? 20 : 25) + baseline(ctx, handle, 20);
+  ctx.fillText(handle, textLeft, handleY);
+  if (input.username) {
+    const dotX = textLeft + ctx.measureText(handle).width + 4;
+    ctx.fillText("·", dotX, handleY);
+    ctx.fillStyle = LINK_INK;
+    ctx.font = font(700, HANDLE_SIZE);
+    ctx.fillText("关注", dotX + dotWidth - 4, handleY);
+  }
+  if (context && input.replyTo) {
+    ctx.fillStyle = MUTED;
+    ctx.font = font(400, HANDLE_SIZE);
+    const target = truncate(
+      ctx,
+      "回复 " + input.replyTo,
+      WIDTH - PAD - textLeft,
+    );
+    ctx.fillText(target, textLeft, y + 40 + baseline(ctx, target, 20));
+  }
+}
+
+function drawShareLocation(
+  ctx: CanvasRenderingContext2D,
+  location: string,
+  left: number,
+  y: number,
+  contentWidth: number,
+): number {
+  y += 14;
+  const iconSize = 16;
+  const textOffset = iconSize + 4.8;
+  ctx.save();
+  ctx.translate(left, y + 4);
+  ctx.scale(iconSize / 24, iconSize / 24);
+  ctx.strokeStyle = ACCENT;
+  ctx.lineWidth = 1.7;
+  ctx.lineCap = "round";
+  ctx.lineJoin = "round";
+  ctx.stroke(new Path2D(locationIconArtwork.outline));
+  ctx.beginPath();
+  ctx.arc(
+    locationIconArtwork.center.x,
+    locationIconArtwork.center.y,
+    locationIconArtwork.center.radius,
+    0,
+    Math.PI * 2,
+  );
+  ctx.stroke();
+  ctx.restore();
+  ctx.fillStyle = MUTED;
+  ctx.font = font(400, PLACE_SIZE);
+  ctx.fillText(
+    truncate(ctx, location, contentWidth - textOffset),
+    left + textOffset,
+    y + 17,
+  );
+  y += 26;
+  return y;
+}
+
+function shareBodyHeight(laid: LaidBlock[]): number {
+  return laid.reduce(
+    (height, piece, index) =>
+      height + blockHeight(piece) + bodyGapBefore(laid, index),
+    0,
+  );
+}
+
+async function prepareShareContext(
+  input: ShareCardPost,
+  ruler: CanvasRenderingContext2D,
+  signal?: AbortSignal,
+) {
+  const left = PAD + AVATAR + 4;
+  const width = WIDTH - PAD - left;
+  const mapCard = input.mapCard;
+  const [avatar, thumbnail, mapImage, media] = await Promise.all([
+    input.avatarUrl ? loadImage(input.avatarUrl) : null,
+    input.link?.thumbnailUrl ? loadImage(input.link.thumbnailUrl) : null,
+    mapCard
+      ? import("../maps/mapSnapshot").then(({ renderMapSnapshot }) =>
+          renderMapSnapshot(mapCard, width, 340, signal),
+        )
+      : null,
+    Promise.all(
+      input.media.slice(0, 4).map(async (item) => ({
+        image: await loadImage(shareCardMediaUrl(item)),
+        video: item.mimeType.startsWith("video/"),
+      })),
+    ),
+  ]);
+  signal?.throwIfAborted();
+  const drawable = media.filter(
+    (item): item is { image: HTMLImageElement; video: boolean } =>
+      item.image !== null,
+  );
+  const laid = layOutBody(ruler, input.blocks, width, false, true, true);
+  const shape = drawable.length
+    ? mediaLayout(
+        drawable.map((item) => item.image),
+        width,
+      )
+    : null;
+  const linkShape = input.link
+    ? linkLayout(ruler, input.link, thumbnail, width)
+    : null;
+  const location = input.mapCard ? null : input.location;
+  const headerHeight = input.replyTo ? 60 : 40;
+  const height = Math.max(
+    AVATAR,
+    headerHeight +
+      shareBodyHeight(laid) +
+      (linkShape ? 18 + linkShape.height : 0) +
+      (shape ? 22 + shape.height : 0) +
+      (mapImage ? 22 + 340 : 0) +
+      (location ? 40 : 0),
+  );
+  return {
+    input,
+    avatar,
+    thumbnail,
+    mapImage,
+    drawable,
+    laid,
+    shape,
+    linkShape,
+    location,
+    headerHeight,
+    height,
+    left,
+    width,
+  };
+}
+
+function drawShareContext(
+  ctx: CanvasRenderingContext2D,
+  value: Awaited<ReturnType<typeof prepareShareContext>>,
+  top: number,
+) {
+  const {
+    input,
+    avatar,
+    laid,
+    drawable,
+    shape,
+    linkShape,
+    thumbnail,
+    mapImage,
+    location,
+    left,
+    width,
+  } = value;
+  drawShareIdentity(ctx, input, avatar, top, true);
+  let y = drawShareBody(ctx, laid, left, top + value.headerHeight, width);
+  if (linkShape && input.link) {
+    y += 18;
+    drawLinkCard(ctx, input.link, thumbnail, linkShape, left, y, width);
+    y += linkShape.height;
+  }
+  if (shape) {
+    y += 22;
+    shape.boxes.forEach((box, index) => {
+      const item = drawable[index];
+      drawCover(
+        ctx,
+        item.image,
+        left + box[0],
+        y + box[1],
+        box[2],
+        box[3],
+        MEDIA_RADIUS,
+      );
+      if (item.video)
+        drawPlayBadge(ctx, left + box[0], y + box[1], box[2], box[3]);
+    });
+    y += shape.height;
+  }
+  if (mapImage) {
+    y += 22;
+    ctx.save();
+    ctx.beginPath();
+    ctx.roundRect(left, y, width, 340, MEDIA_RADIUS);
+    ctx.clip();
+    ctx.drawImage(mapImage, left, y, width, 340);
+    ctx.restore();
+    y += 340;
+  }
+  if (location) drawShareLocation(ctx, location, left, y, width);
+  const start = top + AVATAR + 8;
+  const end = top + value.height + BLOCK_GAP - 8;
+  ctx.fillStyle = LINK_BORDER;
+  if (end > start) ctx.fillRect(PAD + AVATAR / 2 - 1, start, 2, end - start);
 }
 
 /** Render the card and hand back the bytes. */
@@ -1100,6 +1470,8 @@ export async function renderShareCard(
     input.blocks,
     contentWidth,
     input.articleTitle !== undefined,
+    false,
+    Boolean(input.context?.length),
   );
   const titleSize = HEADING_SIZES[1];
   const titleLine = Math.round(titleSize * 1.35);
@@ -1110,22 +1482,7 @@ export async function renderShareCard(
       : wrap(ruler, input.articleTitle, contentWidth, true);
   const titleHeight =
     titleLines.length > 0 ? 24 + titleLines.length * titleLine : 0;
-  /** The air before a block, which a list closes up within itself. */
-  const gapBefore = (index: number) => {
-    if (index === 0) return 0;
-    const previous = laid[index - 1];
-    const current = laid[index];
-    const bothItems =
-      previous?.kind === "lines" &&
-      previous.item &&
-      current?.kind === "lines" &&
-      current.item;
-    return bothItems ? ITEM_GAP : BLOCK_GAP;
-  };
-  const bodyHeight = laid.reduce(
-    (total, piece, index) => total + blockHeight(piece) + gapBefore(index),
-    0,
-  );
+  const bodyHeight = shareBodyHeight(laid);
   // A one-pixel rule with 16px of air on either side separates the source title.
   const bodyGap = titleLines.length > 0 ? 33 : 12;
 
@@ -1139,8 +1496,18 @@ export async function renderShareCard(
           contentWidth,
         )
       : null;
+  const contexts = await Promise.all(
+    (input.context ?? []).map((parent) =>
+      prepareShareContext(parent, ruler, signal),
+    ),
+  );
+  const contextHeight = contexts.reduce(
+    (height, item) => height + item.height + BLOCK_GAP,
+    0,
+  );
   const height =
     HEADER_TOP +
+    contextHeight +
     AVATAR +
     titleHeight +
     (bodyHeight > 0 ? bodyGap + bodyHeight : 0) +
@@ -1168,53 +1535,12 @@ export async function renderShareCard(
 
   drawLogo(ctx);
   let y = HEADER_TOP;
-
-  if (avatar) {
-    ctx.save();
-    ctx.beginPath();
-    ctx.arc(PAD + AVATAR / 2, y + AVATAR / 2, AVATAR / 2, 0, Math.PI * 2);
-    ctx.clip();
-    ctx.drawImage(avatar, PAD, y, AVATAR, AVATAR);
-    ctx.restore();
-  } else {
-    ctx.fillStyle = HAIRLINE;
-    ctx.beginPath();
-    ctx.arc(PAD + AVATAR / 2, y + AVATAR / 2, AVATAR / 2, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.fillStyle = MUTED;
-    ctx.font = font(700, 22);
-    ctx.textAlign = "center";
-    ctx.fillText(
-      [...(input.displayName.trim() || "M")][0]?.toLocaleUpperCase() ?? "M",
-      PAD + AVATAR / 2,
-      y + AVATAR / 2 + 8,
-    );
-    ctx.textAlign = "left";
+  for (const item of contexts) {
+    drawShareContext(ctx, item, y);
+    y += item.height + BLOCK_GAP;
   }
 
-  const textLeft = PAD + AVATAR + 4;
-  const nameWidth = WIDTH - PAD - 25 - 12 - textLeft;
-  ctx.fillStyle = INK;
-  ctx.font = font(700, NAME_SIZE);
-  const name = truncate(ctx, input.displayName, nameWidth);
-  ctx.fillText(name, textLeft, y + 3 + baseline(ctx, name, 20));
-  ctx.fillStyle = MUTED;
-  ctx.font = font(700, HANDLE_SIZE);
-  const followWidth = ctx.measureText("关注").width;
-  ctx.font = font(400, HANDLE_SIZE);
-  const dotWidth = ctx.measureText("·").width + 8;
-  const handle = truncate(
-    ctx,
-    input.username ? `@${input.username}` : "",
-    nameWidth - dotWidth - followWidth,
-  );
-  const handleY = y + 25 + baseline(ctx, handle, 20);
-  ctx.fillText(handle, textLeft, handleY);
-  const dotX = textLeft + ctx.measureText(handle).width + 4;
-  ctx.fillText("·", dotX, handleY);
-  ctx.fillStyle = LINK_INK;
-  ctx.font = font(700, HANDLE_SIZE);
-  ctx.fillText("关注", dotX + dotWidth - 4, handleY);
+  drawShareIdentity(ctx, input, avatar, y);
   y += AVATAR;
 
   if (titleLines.length > 0) {
@@ -1237,75 +1563,7 @@ export async function renderShareCard(
       ctx.stroke();
     }
     y += bodyGap;
-    laid.forEach((piece, index) => {
-      y += gapBefore(index);
-      if (piece.kind === "table") {
-        drawTable(ctx, piece, PAD, y);
-        y += blockHeight(piece);
-        return;
-      }
-      if (piece.kind === "code") {
-        ctx.fillStyle = HAIRLINE;
-        ctx.beginPath();
-        ctx.roundRect(PAD, y, contentWidth, blockHeight(piece), 10);
-        ctx.fill();
-        ctx.font = monoFont(CODE_SIZE);
-        piece.lines.forEach((line, row) => {
-          const baseline = y + CODE_PAD + row * CODE_LINE + CODE_SIZE;
-          let x = PAD + CODE_PAD;
-          for (const span of line) {
-            ctx.fillStyle = span.colour;
-            ctx.fillText(span.text, x, baseline);
-            x += ctx.measureText(span.text).width;
-          }
-        });
-        y += blockHeight(piece);
-        return;
-      }
-      if (piece.quote) {
-        ctx.fillStyle = HAIRLINE;
-        ctx.fillRect(PAD, y + 2, 3, blockHeight(piece) - 4);
-      }
-      if (piece.marker !== undefined) {
-        ctx.fillStyle = MUTED;
-        ctx.font = font(400, BODY_SIZE);
-        ctx.fillText(piece.marker, PAD, y + piece.size);
-      }
-      const defaultColour = piece.quote ? MUTED : INK;
-      ctx.fillStyle = defaultColour;
-      ctx.font = font(piece.weight, piece.size);
-      piece.lines.forEach((line, row) => {
-        const x = PAD + piece.indent;
-        const lineBaseline =
-          y + row * piece.leading + baseline(ctx, line, piece.leading);
-        const runs = piece.runs?.[row];
-        if (!runs) {
-          ctx.fillText(line, x, lineBaseline);
-          return;
-        }
-        let prefix = "";
-        const positions = runs.map((run) => {
-          const left = ctx.measureText(prefix).width;
-          prefix += run.text;
-          return { run, left, width: ctx.measureText(prefix).width - left };
-        });
-        for (const { run, left, width } of positions) {
-          if (!run.background) continue;
-          ctx.fillStyle = run.background;
-          ctx.fillRect(
-            x + left,
-            lineBaseline - piece.size,
-            width,
-            piece.size * 1.25,
-          );
-        }
-        for (const { run, left } of positions) {
-          ctx.fillStyle = run.colour ?? defaultColour;
-          ctx.fillText(run.text, x + left, lineBaseline);
-        }
-      });
-      y += blockHeight(piece);
-    });
+    y = drawShareBody(ctx, laid, PAD, y, contentWidth);
   }
 
   if (linkShape && input.link) {
@@ -1346,39 +1604,9 @@ export async function renderShareCard(
     y += mapHeight;
   }
 
-  if (location) {
-    y += 14;
-    const iconSize = 16;
-    const textOffset = iconSize + 4.8;
-    ctx.save();
-    ctx.translate(PAD, y + 4);
-    ctx.scale(iconSize / 24, iconSize / 24);
-    ctx.strokeStyle = ACCENT;
-    ctx.lineWidth = 1.7;
-    ctx.lineCap = "round";
-    ctx.lineJoin = "round";
-    ctx.stroke(new Path2D(locationIconArtwork.outline));
-    ctx.beginPath();
-    ctx.arc(
-      locationIconArtwork.center.x,
-      locationIconArtwork.center.y,
-      locationIconArtwork.center.radius,
-      0,
-      Math.PI * 2,
-    );
-    ctx.stroke();
-    ctx.restore();
-    ctx.fillStyle = MUTED;
-    ctx.font = font(400, PLACE_SIZE);
-    ctx.fillText(
-      truncate(ctx, location, contentWidth - textOffset),
-      PAD + textOffset,
-      y + 17,
-    );
-    y += 26;
-  }
+  if (location) y = drawShareLocation(ctx, location, PAD, y, contentWidth);
 
-  drawFooter(ctx, input.publishedLabel, y);
+  drawFooter(ctx, input.publishedLabel, y, input.replyCount);
 
   return new Promise((settle, reject) => {
     canvas.toBlob(
