@@ -1,9 +1,12 @@
 import { MapCard } from "../maps/MapCard";
+import type { MapViewport } from "../maps/MapCanvas";
+import type { MapCardData } from "../maps/types";
 import { AccountIdentityPreview } from "../../components/AccountIdentityPreview";
 import { postAuthorSite } from "../../components/SiteIdentity";
 import { Popover } from "@base-ui/react/popover";
 import {
   useMemo,
+  useRef,
   useState,
   type MouseEvent,
   type MouseEventHandler,
@@ -55,6 +58,10 @@ const interactiveSurfaceSelector = [
   '[role="menuitem"]',
   "[data-popup-open]",
 ].join(", ");
+
+function mapViewKey(postId: string, card: MapCardData): string {
+  return JSON.stringify([postId, card]);
+}
 
 function weightedTextLength(text: string): number {
   let weight = 0;
@@ -208,6 +215,11 @@ export function PostPresentation({
 }) {
   const { navigate } = useNavigation();
   const [expandedPostId, setExpandedPostId] = useState<string | null>(null);
+  const mapViews = useRef(new Map<string, MapViewport>());
+  const rememberMapView =
+    (postId: string, card: MapCardData) => (viewport: MapViewport) => {
+      mapViews.current.set(mapViewKey(postId, card), viewport);
+    };
   site = postAuthorSite(post, site);
   const title = siteDisplayName(site);
   const published = formatMomentDate(post.publishedAt, site.timezone, now);
@@ -328,7 +340,7 @@ export function PostPresentation({
     <ShareMenu
       align={align}
       baseUrl={site.publicBaseUrl}
-      card={{
+      card={async () => ({
         displayName: site.displayName,
         username: site.username,
         avatarUrl: site.avatarMediaId
@@ -343,13 +355,16 @@ export function PostPresentation({
           : shareCardBlocks(post.contentHtml),
         media: isArticlePost(post) ? [] : post.media,
         mapCard: post.mapCard,
+        mapViewport: post.mapCard
+          ? mapViews.current.get(mapViewKey(post.id, post.mapCard))
+          : undefined,
         location:
           post.location?.name?.trim() ||
           post.location?.displayName?.trim() ||
           null,
         link:
           post.linkCards.length > 0 ? shareCardLink(post.linkCards[0]) : null,
-      }}
+      })}
       href={detailHref}
       title={`${title} 的 Moment`}
       trigger={
@@ -438,7 +453,12 @@ export function PostPresentation({
             html={post.contentHtml}
             searchQuery={searchQuery}
           />
-          {post.mapCard ? <MapCard card={post.mapCard} /> : null}
+          {post.mapCard ? (
+            <MapCard
+              card={post.mapCard}
+              onViewport={rememberMapView(post.id, post.mapCard)}
+            />
+          ) : null}
           {linkCard}
           {post.location ? <PostLocation location={post.location} /> : null}
           {/* See the timeline branch: an article's pictures are already in its
@@ -536,7 +556,13 @@ export function PostPresentation({
             显示更多
           </button>
         ) : null}
-        {post.mapCard ? <MapCard card={post.mapCard} preview /> : null}
+        {post.mapCard ? (
+          <MapCard
+            card={post.mapCard}
+            preview
+            onViewport={rememberMapView(post.id, post.mapCard)}
+          />
+        ) : null}
         {linkCard}
         {post.location ? <PostLocation location={post.location} /> : null}
         {/* An article's `media` is the pictures its body places, projected

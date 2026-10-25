@@ -246,6 +246,7 @@ describe("drawing the card", () => {
       516,
       340,
       controller.signal,
+      undefined,
     );
     expect(
       recording
@@ -260,6 +261,29 @@ describe("drawing the card", () => {
     await renderShareCard(input({ location: "东京" }));
     expect(renderMapSnapshot).not.toHaveBeenCalled();
     expect(recording.text()).toContain("东京");
+  });
+
+  it("shares the current map viewport and its aspect ratio", async () => {
+    const mapViewport = {
+      longitude: 121.45,
+      latitude: 31.21,
+      zoom: 15,
+      bearing: 0,
+      pitch: 0,
+      width: 300,
+      height: 250,
+    };
+    await renderShareCard(input({ mapCard, mapViewport }));
+    expect(renderMapSnapshot).toHaveBeenCalledWith(
+      mapCard,
+      516,
+      430,
+      undefined,
+      mapViewport,
+    );
+    expect(recording.of("drawImage").some((call) => call.args[4] === 430)).toBe(
+      true,
+    );
   });
 
   it("keeps ordinary photos alongside the map", async () => {

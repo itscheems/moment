@@ -19,6 +19,7 @@ import { highlightCodeBlocks } from "../../components/codeHighlight";
 import { locationIconArtwork } from "../../components/locationIcon";
 import logoSvg from "../../assets/logo.svg?raw";
 import type { MapCardData } from "../maps/types";
+import type { MapViewport } from "../maps/MapCanvas";
 
 const FACE =
   '-apple-system, "system-ui", "Segoe UI", Roboto, Helvetica, Arial, sans-serif';
@@ -156,6 +157,7 @@ export interface ShareCardInput {
   /** At most four are drawn, in order. */
   media: ShareCardMedia[];
   mapCard?: MapCardData | null;
+  mapViewport?: MapViewport;
   /**
    * The place, named the way the page names it.
    *
@@ -170,6 +172,9 @@ export interface ShareCardInput {
   /** Present only for an exact article excerpt; never silently truncate it. */
   articleTitle?: string;
 }
+
+export type ShareCardSource =
+  ShareCardInput | ((signal: AbortSignal) => Promise<ShareCardInput>);
 
 const INK = "#0f1419";
 const MUTED = "#536471";
@@ -1065,14 +1070,22 @@ export async function renderShareCard(
   );
   // One batch: the avatar used to wait for the stills to finish before it even
   // started, and a link thumbnail would have waited behind both.
-  const mapHeight = 340;
+  const mapHeight = input.mapViewport
+    ? (contentWidth * input.mapViewport.height) / input.mapViewport.width
+    : 340;
   const mapCard = input.mapCard;
   const [avatar, thumbnail, mapImage] = await Promise.all([
     input.avatarUrl ? loadImage(input.avatarUrl) : null,
     input.link?.thumbnailUrl ? loadImage(input.link.thumbnailUrl) : null,
     mapCard
       ? import("../maps/mapSnapshot").then(({ renderMapSnapshot }) =>
-          renderMapSnapshot(mapCard, contentWidth, mapHeight, signal),
+          renderMapSnapshot(
+            mapCard,
+            contentWidth,
+            mapHeight,
+            signal,
+            input.mapViewport,
+          ),
         )
       : null,
   ]);

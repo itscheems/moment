@@ -1,5 +1,6 @@
 import "@testing-library/jest-dom/vitest";
 import {
+  act,
   cleanup,
   fireEvent,
   render,
@@ -43,6 +44,41 @@ afterEach(() => {
 });
 
 describe("sharing an exact excerpt", () => {
+  it("resolves deferred input through the same sharing preview", async () => {
+    const source = vi.fn(async () => input);
+    render(<ShareCardDialog input={source} open onOpenChange={vi.fn()} />);
+    expect(
+      await screen.findByRole("img", { name: "分享图片预览" }),
+    ).toBeVisible();
+    expect(source).toHaveBeenCalledExactlyOnceWith(expect.any(AbortSignal));
+    expect(cards.renderShareCard).toHaveBeenCalledExactlyOnceWith(
+      input,
+      expect.any(AbortSignal),
+    );
+  });
+
+  it("cancels an unfinished input read when the preview closes", async () => {
+    let finish: (value: cards.ShareCardInput) => void = () => {};
+    let signal: AbortSignal | undefined;
+    const source = vi.fn((value: AbortSignal) => {
+      signal = value;
+      return new Promise<cards.ShareCardInput>((resolve) => {
+        finish = resolve;
+      });
+    });
+    const mounted = render(
+      <ShareCardDialog input={source} open onOpenChange={vi.fn()} />,
+    );
+    await waitFor(() => expect(source).toHaveBeenCalledOnce());
+    mounted.rerender(
+      <ShareCardDialog input={source} open={false} onOpenChange={vi.fn()} />,
+    );
+    expect(signal?.aborted).toBe(true);
+    await act(async () => {
+      finish(input);
+    });
+    expect(cards.renderShareCard).not.toHaveBeenCalled();
+  });
   it("reuses one generated preview across ordinary rerenders", async () => {
     const onOpenChange = vi.fn();
     const show = (open: boolean) => (

@@ -17,7 +17,7 @@ import { ActionTooltip } from "../../components/TimelineInteractions";
 import { MapPlaces } from "./MapPlaces";
 import { MapPlaceDisclosure } from "./MapPlaceDisclosure";
 import type { MapCardData, MapPlace } from "./types";
-import type { MapCamera, MapPlaceFocus } from "./MapCanvas";
+import type { MapCamera, MapPlaceFocus, MapViewport } from "./MapCanvas";
 import styles from "./Maps.module.css";
 
 const Canvas = lazy(() => import("./MapCanvas"));
@@ -43,6 +43,7 @@ export function MapCard({
   onChange,
   disabled,
   footer,
+  onViewport,
 }: {
   card: MapCardData;
   deferMap?: boolean;
@@ -51,6 +52,7 @@ export function MapCard({
   onChange?: (card: MapCardData | null) => void;
   disabled?: boolean;
   footer?: ReactNode;
+  onViewport?: (viewport: MapViewport) => void;
 }) {
   const container = useRef<HTMLElement>(null);
   const [visible, setVisible] = useState(false);
@@ -143,6 +145,7 @@ export function MapCard({
                 setCamera(next);
                 setFocusTarget(null);
               }}
+              onViewport={onViewport}
               focusTarget={focusTarget}
               placeFocus={placeFocus}
               fullscreen={large}

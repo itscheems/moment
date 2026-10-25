@@ -8,6 +8,7 @@ import {
   renderShareCard,
   ShareCardTooLongError,
   type ShareCardInput,
+  type ShareCardSource,
 } from "./shareCard";
 import styles from "./ShareCard.module.css";
 
@@ -40,7 +41,7 @@ export function ShareCardDialog({
   finalFocus,
   onOpenChangeComplete,
 }: {
-  input: ShareCardInput;
+  input: ShareCardSource;
   onOpenChange: (open: boolean) => void;
   open: boolean;
   finalFocus?: ComponentProps<typeof Dialog.Popup>["finalFocus"];
@@ -52,13 +53,22 @@ export function ShareCardDialog({
   // Object URLs outlive the render that made them, so the last one is kept in
   // hand to be revoked when it is replaced or the dialog closes.
   const objectUrl = useRef<string | null>(null);
+  const resolvedInput = useRef<ShareCardInput | null>(null);
 
   useEffect(() => {
     if (!open) return;
     let live = true;
     const controller = new AbortController();
     setStage({ kind: "drawing" });
-    void renderShareCard(input, controller.signal)
+    void Promise.resolve()
+      .then(() =>
+        typeof input === "function" ? input(controller.signal) : input,
+      )
+      .then((value) => {
+        controller.signal.throwIfAborted();
+        resolvedInput.current = value;
+        return renderShareCard(value, controller.signal);
+      })
       .then((blob) => {
         if (!live) return;
         if (objectUrl.current) URL.revokeObjectURL(objectUrl.current);
@@ -89,10 +99,10 @@ export function ShareCardDialog({
   );
 
   const save = () => {
-    if (stage.kind !== "ready") return;
+    if (stage.kind !== "ready" || !resolvedInput.current) return;
     const link = document.createElement("a");
     link.href = stage.url;
-    link.download = fileName(input);
+    link.download = fileName(resolvedInput.current);
     link.click();
     notify("图片已保存");
     onOpenChange(false);
