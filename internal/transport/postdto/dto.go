@@ -128,9 +128,11 @@ type ArticleCover struct {
 
 // QuotedPost is either a complete embedded target or an explicit unavailable tombstone.
 type QuotedPost struct {
-	AuthorInfo  *Author `json:"author,omitempty"`
-	Unavailable bool    `json:"unavailable"`
-	ID          *string `json:"id"`
+	CommentPostID     *string `json:"comment_post_id,omitempty"`
+	CommentAuthorName *string `json:"comment_author_name,omitempty"`
+	AuthorInfo        *Author `json:"author,omitempty"`
+	Unavailable       bool    `json:"unavailable"`
+	ID                *string `json:"id"`
 	// Kind is set whenever the target is available. Unavailable is what says a
 	// target is missing; a null ContentMD only says the target is an article.
 	Kind *string `json:"kind"`
@@ -450,6 +452,25 @@ func FromPost(post app.Post) Post {
 			ContentMD: cloneOptionalText(post.Quoted.Entry.ContentMD), ContentHTML: &contentHTML,
 			PublishedAt: &publishedAt, Media: quotedMedia, MapCard: domain.CloneMapCard(post.Quoted.Entry.MapCard),
 		}
+		if comment := post.Quoted.Comment; comment != nil {
+			parent := comment.EntryID.String()
+			id := comment.ID.String()
+			kind := string(domain.KindMoment)
+			content := comment.ContentMD
+			published := comment.CreatedAt.UTC()
+			mapped.QuotedPost.CommentPostID = &parent
+			mapped.QuotedPost.ID = &id
+			mapped.QuotedPost.Kind = &kind
+			mapped.QuotedPost.ContentMD = &content
+			mapped.QuotedPost.PublishedAt = &published
+			mapped.QuotedPost.MapCard = nil
+			mapped.QuotedPost.Article = nil
+			if comment.AuthorUserID == nil || post.Quoted.Author == nil || post.Quoted.Author.UserID == "" {
+				name := comment.AuthorName
+				mapped.QuotedPost.CommentAuthorName = &name
+				mapped.QuotedPost.AuthorInfo = nil
+			}
+		}
 		if post.Quoted.Location != nil {
 			mapped.QuotedPost.Location = &Location{Name: post.Quoted.Location.Name, DisplayName: post.Quoted.Location.DisplayName}
 		}
@@ -590,7 +611,7 @@ func ValidatePost(post Post) error {
 		if post.ContentMD == nil {
 			return errors.New("a moment must carry a Markdown body")
 		}
-		if err := validateMomentBody(*post.ContentMD, len(usages), post.MapCard); err != nil {
+		if err := validateMomentBody(*post.ContentMD, len(usages)+quoteBodyCount(post.QuotedPost), post.MapCard); err != nil {
 			return err
 		}
 		cards := make([]domain.LinkCard, 0, len(post.LinkCards))
@@ -607,7 +628,7 @@ func ValidatePost(post Post) error {
 	}
 	if post.QuotedPost != nil {
 		if post.QuotedPost.Unavailable {
-			if post.QuotedPost.AuthorInfo != nil || post.QuotedPost.ID != nil || post.QuotedPost.Kind != nil || post.QuotedPost.Article != nil || post.QuotedPost.ContentMD != nil || post.QuotedPost.ContentHTML != nil || post.QuotedPost.PublishedAt != nil || post.QuotedPost.Media != nil || post.QuotedPost.MapCard != nil || post.QuotedPost.Location != nil {
+			if post.QuotedPost.CommentPostID != nil || post.QuotedPost.CommentAuthorName != nil || post.QuotedPost.AuthorInfo != nil || post.QuotedPost.ID != nil || post.QuotedPost.Kind != nil || post.QuotedPost.Article != nil || post.QuotedPost.ContentMD != nil || post.QuotedPost.ContentHTML != nil || post.QuotedPost.PublishedAt != nil || post.QuotedPost.Media != nil || post.QuotedPost.MapCard != nil || post.QuotedPost.Location != nil {
 				return errors.New("unavailable quoted post must not contain target data")
 			}
 			return nil
@@ -618,7 +639,7 @@ func ValidatePost(post Post) error {
 		if _, err := domain.ParseID(*post.QuotedPost.ID); err != nil {
 			return err
 		}
-		if *post.QuotedPost.ID == post.ID {
+		if post.QuotedPost.CommentPostID == nil && *post.QuotedPost.ID == post.ID {
 			return errors.New("post cannot quote itself")
 		}
 		if !wireInstant(*post.QuotedPost.PublishedAt) {
@@ -631,7 +652,25 @@ func ValidatePost(post Post) error {
 	return nil
 }
 
+func quoteBodyCount(quoted *QuotedPost) int {
+	if quoted != nil {
+		return 1
+	}
+	return 0
+}
+
 func validateQuotedPost(post QuotedPost) error {
+	if post.CommentPostID != nil {
+		if _, err := domain.ParseID(*post.CommentPostID); err != nil {
+			return err
+		}
+		if post.Kind == nil || *post.Kind != string(domain.KindMoment) || post.MapCard != nil || post.Article != nil {
+			return errors.New("comment quote must carry a comment body")
+		}
+	} else if post.CommentAuthorName != nil {
+		return errors.New("legacy comment author requires a comment target")
+	}
+
 	if post.ID == nil || post.Kind == nil || post.ContentHTML == nil || post.PublishedAt == nil {
 		return errors.New("quoted post target data is incomplete")
 	}
@@ -660,6 +699,9 @@ func validateQuotedPost(post QuotedPost) error {
 			return err
 		}
 		html, renderErr := domain.RenderMarkdown(*post.ContentMD)
+		if post.CommentPostID != nil {
+			html, renderErr = domain.RenderCommentMarkdown(*post.ContentMD)
+		}
 		if renderErr != nil || html != *post.ContentHTML {
 			return errors.New("quoted post content_html does not match content_md")
 		}

@@ -671,38 +671,62 @@ WHERE entry_id = ? AND thumbnail_media_id IS NOT NULL`, entryID.String())
 }
 
 func (store postStore) EntryQuote(ctx context.Context, entryID domain.ID) (app.EntryQuoteReference, error) {
-	var raw sql.NullString
-	err := store.queries.QueryRowContext(ctx, `SELECT quoted_entry_id FROM entry_quotes WHERE entry_id = ?`, entryID.String()).Scan(&raw)
+	var post, comment sql.NullString
+	err := store.queries.QueryRowContext(ctx, `SELECT quoted_entry_id, quoted_comment_id FROM entry_quotes WHERE entry_id = ?`, entryID.String()).Scan(&post, &comment)
 	if errors.Is(err, sql.ErrNoRows) {
 		return app.EntryQuoteReference{}, nil
 	}
 	if err != nil {
 		return app.EntryQuoteReference{}, fmt.Errorf("query entry quote: %w", err)
 	}
-	if !raw.Valid {
-		return app.EntryQuoteReference{Present: true}, nil
+	result := app.EntryQuoteReference{Present: true}
+	for _, target := range []struct {
+		raw sql.NullString
+		out **domain.ID
+	}{{post, &result.TargetID}, {comment, &result.CommentID}} {
+		if target.raw.Valid {
+			id, err := domain.ParseID(target.raw.String)
+			if err != nil {
+				return app.EntryQuoteReference{}, domain.NewError(domain.CodeDataIntegrityFailed, "stored quote target is invalid", map[string]any{"post_id": entryID.String()})
+			}
+			*target.out = &id
+		}
 	}
-	id, err := domain.ParseID(raw.String)
-	if err != nil {
-		return app.EntryQuoteReference{}, domain.NewError(domain.CodeDataIntegrityFailed, "stored quote target is invalid", map[string]any{"post_id": entryID.String()})
-	}
-	return app.EntryQuoteReference{Present: true, TargetID: &id}, nil
+	return result, nil
 }
 
-func (store postStore) ReplaceEntryQuote(ctx context.Context, entryID domain.ID, quotedID *domain.ID) error {
+func (store postStore) ReplaceEntryQuote(ctx context.Context, entryID domain.ID, quotedID, commentID *domain.ID) error {
+	if quotedID != nil && commentID != nil {
+		return domain.NewError(domain.CodeInvalidArgument, "quote targets are mutually exclusive", nil)
+	}
+	if quotedID != nil && *quotedID == entryID {
+		return domain.NewError(domain.CodeInvalidArgument, "post cannot quote itself", nil)
+	}
 	if _, err := store.queries.ExecContext(ctx, `DELETE FROM entry_quotes WHERE entry_id = ?`, entryID.String()); err != nil {
 		return fmt.Errorf("clear entry quote: %w", err)
 	}
-	if quotedID == nil {
+	if quotedID == nil && commentID == nil {
 		return nil
 	}
-	if *quotedID == entryID {
-		return domain.NewError(domain.CodeInvalidArgument, "post cannot quote itself", map[string]any{"field": "quoted_post_id"})
+	var post, comment any
+	if quotedID != nil {
+		post = quotedID.String()
 	}
-	if _, err := store.queries.ExecContext(ctx, `INSERT INTO entry_quotes (entry_id, quoted_entry_id) VALUES (?, ?)`, entryID.String(), quotedID.String()); err != nil {
+	if commentID != nil {
+		comment = commentID.String()
+	}
+	_, err := store.queries.ExecContext(ctx, `INSERT INTO entry_quotes (entry_id,quoted_entry_id,quoted_comment_id) VALUES (?,?,?)`, entryID.String(), post, comment)
+	if err != nil {
 		return fmt.Errorf("insert entry quote: %w", err)
 	}
 	return nil
+}
+
+func (store postStore) CommentByID(ctx context.Context, id domain.ID) (domain.Comment, bool, error) {
+	return newCommentStore(store.queries).CommentByID(ctx, id)
+}
+func (store postStore) CommentMediaUsages(ctx context.Context, id domain.ID) ([]app.MediaUsageProjection, error) {
+	return newCommentStore(store.queries).CommentMediaUsages(ctx, id)
 }
 
 // UpdateEntry replaces a Markdown body, and the kind in its WHERE clause is

@@ -136,7 +136,7 @@ func createPost(posts *app.PostService) gin.HandlerFunc {
 			writePostError(ctx, err)
 			return
 		}
-		result, err := posts.Create(ctx.Request.Context(), app.CreatePostInput{ContentMD: input.ContentMD, MapCard: input.MapCard, Visibility: input.Visibility, Media: input.Media, Location: input.Location, LinkCards: input.LinkCards, QuotedPostID: input.QuotedPostID, IdempotencyKey: idempotencyKey})
+		result, err := posts.Create(ctx.Request.Context(), app.CreatePostInput{ContentMD: input.ContentMD, MapCard: input.MapCard, Visibility: input.Visibility, Media: input.Media, Location: input.Location, LinkCards: input.LinkCards, QuotedPostID: input.QuotedPostID, QuotedCommentID: input.QuotedCommentID, IdempotencyKey: idempotencyKey})
 		if err != nil {
 			writePostError(ctx, err)
 			return
@@ -276,6 +276,7 @@ type decodedPostWrite struct {
 	LinkCards         []domain.LinkCard
 	LinkCardPresent   bool
 	QuotedPostID      *domain.ID
+	QuotedCommentID   *domain.ID
 	QuotePresent      bool
 	Visibility        domain.Visibility
 	VisibilityPresent bool
@@ -359,20 +360,25 @@ func decodePostWrite(ctx *gin.Context, patch bool) (decodedPostWrite, error) {
 			}
 			result.Visibility = visibility
 			result.VisibilityPresent = true
-		case "quoted_post_id":
+		case "quoted_post_id", "quoted_comment_id":
 			if patch || bytes.Equal(bytes.TrimSpace(raw), []byte("null")) {
-				return decodedPostWrite{}, invalidPostArgument("quoted_post_id is only accepted for create and must be a canonical ULID", "quoted_post_id")
+				return decodedPostWrite{}, invalidPostArgument(key+" is only accepted for create and must be a canonical ULID", key)
 			}
 			var value string
 			if json.Unmarshal(raw, &value) != nil {
-				return decodedPostWrite{}, invalidPostArgument("quoted_post_id must be a string", "quoted_post_id")
+				return decodedPostWrite{}, invalidPostArgument(key+" must be a string", key)
 			}
-			id, parseErr := domain.ParseID(value)
-			if parseErr != nil {
-				return decodedPostWrite{}, invalidPostArgument("quoted_post_id must be a canonical ULID", "quoted_post_id")
+			id, err := domain.ParseID(value)
+			if err != nil {
+				return decodedPostWrite{}, invalidPostArgument(key+" must be a canonical ULID", key)
 			}
-			result.QuotedPostID = &id
+			if key == "quoted_post_id" {
+				result.QuotedPostID = &id
+			} else {
+				result.QuotedCommentID = &id
+			}
 			result.QuotePresent = true
+
 		default:
 			return decodedPostWrite{}, invalidPostArgument("request contains an unsupported field", key)
 		}
@@ -386,6 +392,9 @@ func decodePostWrite(ctx *gin.Context, patch bool) (decodedPostWrite, error) {
 	if (!patch && !result.ContentPresent && !result.MediaPresent && !result.QuotePresent && !result.MapPresent && !result.LinkCardPresent) ||
 		(patch && !result.ContentPresent && !result.MediaPresent && !result.LocationPresent && !result.MapPresent && !result.LinkCardPresent && !result.VisibilityPresent) {
 		return decodedPostWrite{}, invalidPostArgument("request must contain content_md, media, location, link_cards, or visibility", "body")
+	}
+	if result.QuotedPostID != nil && result.QuotedCommentID != nil {
+		return decodedPostWrite{}, invalidPostArgument("quote targets are mutually exclusive", "quoted_comment_id")
 	}
 	return result, nil
 }

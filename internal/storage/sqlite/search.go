@@ -450,3 +450,16 @@ func scanSearchRecord(scanner entryScanner) (app.SearchRecord, error) {
 	}
 	return app.SearchRecord{Entry: entry, ContentText: contentText, Rank: rank}, nil
 }
+
+func (store searchStore) EntryByID(ctx context.Context, id domain.ID) (domain.Entry, bool, error) {
+	return newPostStore(store.queries).EntryByID(ctx, id)
+}
+func (store searchStore) EntryQuote(ctx context.Context, id domain.ID) (app.EntryQuoteReference, error) {
+	return newPostStore(store.queries).EntryQuote(ctx, id)
+}
+func (store searchStore) CommentByID(ctx context.Context, id domain.ID) (domain.Comment, bool, error) {
+	return newCommentStore(store.queries).CommentByID(ctx, id)
+}
+func (store searchStore) CommentMediaUsages(ctx context.Context, id domain.ID) ([]app.MediaUsageProjection, error) {
+	return newCommentStore(store.queries).CommentMediaUsages(ctx, id)
+}

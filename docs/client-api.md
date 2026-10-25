@@ -129,6 +129,12 @@ Any active account may publish a post or article. Authors edit, withdraw and del
 
 CLI content writes require an explicit local actor, for example `moment --as writer post create --data-dir ./moment-data --content 'Hello'`. API mode uses the verified account credential and rejects `--as`. Direct reads may select an actor with `--as`; without one they use public visibility. `MOMENT_TOKEN` or `--token-file` selects the API account on reads as well as writes.
 
+## Quoting comments
+
+`POST /posts` accepts either `quoted_post_id` or `quoted_comment_id`, never both. Both are immutable create-only canonical ULIDs. A quote may be published with an empty body. CLI direct and API mode expose `post create --quote-comment <comment-id>`; `--quote` continues to quote a post.
+
+An available comment target uses the existing `quoted_post` projection with `id` set to the comment ID and `comment_post_id` set to its containing post ID. Link to `/m/<comment_post_id>/comments/<id>`. Registered targets carry their own `author`; historical guest targets instead carry `comment_author_name`. Comment quotes contain a Moment body, media and optional public location, with no article or map card. Every read checks the containing post's visibility. Deleted or unreadable targets become the usual `unavailable: true` tombstone without target identity, body, media or containing-post metadata.
+
 ## Timeline paging
 
 `GET /api/v1/posts` reads one page at a time, newest first. `author_user_id` filters by an immutable account ID without widening visibility; the CLI exposes the same filter as `post list --author-id`. The page's `meta`
