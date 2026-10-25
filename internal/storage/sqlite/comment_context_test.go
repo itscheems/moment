@@ -21,6 +21,8 @@ func TestCommentContextAndDirectReplyPaging(t *testing.T) {
 	postID := mustID(t, entryOne)
 	root := mustAccountComment(t, service, author, app.CreateCommentInput{EntryID: postID, ContentMD: "root"}).Comment.Comment.ID
 	target := mustAccountComment(t, service, author, app.CreateCommentInput{EntryID: postID, ParentID: &root, ReplyToCommentID: &root, ContentMD: "target"}).Comment.Comment.ID
+	// Make the inline preview deterministic; the answers below still share timestamps.
+	tick++
 	legacy := mustAccountComment(t, service, author, app.CreateCommentInput{EntryID: postID, ParentID: &root, ContentMD: "unaddressed"}).Comment.Comment.ID
 	expected := map[domain.ID]bool{}
 	for i := 0; i < 103; i++ {
@@ -28,7 +30,7 @@ func TestCommentContextAndDirectReplyPaging(t *testing.T) {
 		expected[reply.Comment.Comment.ID] = true
 	}
 	detail, err := service.GetContext(testAccountContext(), postID, target, app.AccountViewer(author.ID))
-	if err != nil || detail.DirectReplyCount != 103 || detail.RootCommentID != root || detail.ReplyTarget == nil || detail.ReplyTarget.Comment.ID != root || detail.Comment.Comment.ID != target {
+	if err != nil || detail.DirectReplyCount != 103 || detail.Comment.ReplyCount != 103 || detail.RootCommentID != root || detail.ReplyTarget == nil || detail.ReplyTarget.Comment.ID != root || detail.Comment.Comment.ID != target {
 		t.Fatalf("context=%+v err=%v", detail, err)
 	}
 	cursor := ""
@@ -72,6 +74,13 @@ func TestCommentContextAndDirectReplyPaging(t *testing.T) {
 		if item.Comment.ID != target && item.Comment.ID != legacy {
 			t.Fatalf("wrong root answer %s", item.Comment.ID)
 		}
+		if item.Comment.ID == target && item.ReplyCount != 103 {
+			t.Fatalf("direct page reply count=%d, want 103", item.ReplyCount)
+		}
+	}
+	preview, err := service.ListPage(testAccountContext(), app.ListCommentsInput{EntryID: postID, Viewer: app.AccountViewer(author.ID), Limit: 1})
+	if err != nil || len(preview.Items) != 2 || preview.Items[1].Comment.ID != target || preview.Items[1].ReplyCount != 103 {
+		t.Fatalf("preview counts=%+v err=%v", preview.Items, err)
 	}
 	thread, err := service.ListReplies(testAccountContext(), app.ListRepliesInput{EntryID: postID, RootID: root, Limit: 100})
 	if err != nil || len(thread.Items) != 100 || thread.NextCursor == "" {

@@ -80,10 +80,8 @@ type Comment struct {
 	ReplyTo     *CommentReplyTarget
 	ContentHTML string
 	Media       []MediaUsageProjection
-	// ReplyCount and RepliesNextCursor describe a root's replies and are zero
-	// on a reply. They live on the root rather than in a parallel map because
-	// they are that root's own state; kept alongside it they cannot drift out
-	// of step with it.
+	// ReplyCount is the whole-floor total on a root and the direct-answer total
+	// on a reply. RepliesNextCursor only paginates the root's whole floor.
 	ReplyCount        int
 	RepliesNextCursor string
 }
@@ -792,15 +790,23 @@ func (service *CommentService) ListReplies(ctx context.Context, input ListReplie
 }
 
 // renderCommentPage resolves everything a page of comments needs in batches:
-// attachments, author identities and reply targets each cost one query for the
+// attachments, author identities, reply targets and counts use batch queries for the
 // whole page rather than one per row.
 func (service *CommentService) renderCommentPage(ctx context.Context, store CommentStore, records []domain.Comment) ([]Comment, error) {
 	if len(records) == 0 {
 		return []Comment{}, nil
 	}
 	ids := make([]domain.ID, len(records))
+	replyIDs := make([]domain.ID, 0, len(records))
 	for index, record := range records {
 		ids[index] = record.ID
+		if record.ParentID != nil {
+			replyIDs = append(replyIDs, record.ID)
+		}
+	}
+	replyCounts, err := store.ReplyCounts(ctx, replyIDs)
+	if err != nil {
+		return nil, err
 	}
 	mediaByComment, err := store.CommentMediaUsagesByComment(ctx, ids)
 	if err != nil {
@@ -820,6 +826,7 @@ func (service *CommentService) renderCommentPage(ctx context.Context, store Comm
 		if renderErr != nil {
 			return nil, corruptComment(record.ID)
 		}
+		comment.ReplyCount = replyCounts[record.ID]
 		rendered = append(rendered, comment)
 	}
 	return rendered, nil

@@ -78,6 +78,7 @@ describe("public API client", () => {
   it("reads a comment context and rejects a target from another conversation", async () => {
     const reply = {
       ...replyComment,
+      reply_count: 1,
       reply_to: { comment_id: rootComment.id, author: rootComment.author },
     };
     const payload = {
@@ -92,6 +93,7 @@ describe("public API client", () => {
     );
     const context = await api.commentContext(post.id, reply.id);
     expect(context.comment.id).toBe(reply.id);
+    expect(context.comment.replyCount).toBe(1);
     expect(context.replyTarget?.id).toBe(rootComment.id);
     expect(context.rootCommentId).toBe(rootComment.id);
     expect(context.directReplyCount).toBe(1);

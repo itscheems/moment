@@ -393,20 +393,25 @@ export function CommentModerationMenu({
 function SignInToReplyPopover({
   authorName,
   reason,
+  count,
 }: {
   authorName: string;
   reason: ReplyBlock;
+  count: number;
 }) {
   const pending = reason === "pending";
   return (
     <Popover.Root>
       <Popover.Trigger
         data-post-action="reply"
-        aria-label={`回复 ${authorName}`}
+        aria-label={`回复 ${authorName}${count > 0 ? `，${count} 条回复` : ""}`}
         className={`${postStyles.postAction} ${postStyles.replyAction}`}
         onClick={(event) => event.stopPropagation()}
       >
         <Icon name="reply" />
+        {count > 0 ? (
+          <span className={postStyles.actionCount}>{count}</span>
+        ) : null}
       </Popover.Trigger>
       <Popover.Portal>
         <Popover.Positioner
@@ -578,6 +583,7 @@ export function CommentItem({
             <SignInToReplyPopover
               authorName={authorName}
               reason={replyBlockedBy}
+              count={projected.commentCount}
             />
           ) : undefined
         }

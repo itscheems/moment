@@ -21,9 +21,9 @@ import { isAdministrator, useSession } from "../auth/SessionProvider";
 import { CommentForm, SignInToReply, useReplyBlock } from "./CommentComposer";
 import { CommentItem } from "./CommentItem";
 import {
-  clearReplyTarget,
-  isDirectReply,
   mergeCommentReplies,
+  reconcileConversationComment,
+  shiftReplyCounts,
   type CommentMutation,
   type DiscussionChange,
 } from "./discussionChanges";
@@ -532,9 +532,11 @@ export function CommentThread({
     focusCommentRef.current = comment.id;
     setItems((current) => {
       if (conversationId)
-        return isDirectReply(comment, conversationId)
-          ? mergeCommentReplies(current ?? [], [comment])
-          : current;
+        return reconcileConversationComment(
+          current ?? [],
+          { kind: "created", comment },
+          conversationId,
+        );
       if (!current) return [comment];
       try {
         return reconcileCreatedComment(current, comment);
@@ -584,13 +586,7 @@ export function CommentThread({
     setItems((current) => {
       if (!current) return current;
       if (conversationId)
-        return change.kind === "created"
-          ? isDirectReply(comment, conversationId)
-            ? mergeCommentReplies(current, [comment])
-            : current
-          : current
-              .filter((item) => item.id !== comment.id)
-              .map((item) => clearReplyTarget(item, comment.id));
+        return reconcileConversationComment(current, change, conversationId);
       if (change.kind === "created") {
         if (
           comment.parentId &&
@@ -600,15 +596,9 @@ export function CommentThread({
         return reconcileCreatedComment(current, comment);
       }
       const absent = !current.some((item) => item.id === comment.id);
-      const next = reconcileDeletedComment(current, comment).map((item) =>
-        clearReplyTarget(item, comment.id),
-      );
+      const next = reconcileDeletedComment(current, comment);
       return absent && comment.parentId
-        ? next.map((item) =>
-            item.id === comment.parentId
-              ? { ...item, replyCount: Math.max(0, item.replyCount - 1) }
-              : item,
-          )
+        ? shiftReplyCounts(next, comment, -1)
         : next;
     });
     if (change.kind === "deleted") {

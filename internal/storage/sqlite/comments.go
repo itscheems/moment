@@ -287,27 +287,31 @@ ORDER BY comments.parent_id, comments.created_at_ms ASC, comments.id ASC`, argum
 	return previews, nil
 }
 
-// ReplyCounts totals the replies under each root in one query.
+// ReplyCounts totals a whole floor for roots and direct answers for replies.
 //
 // The client used to derive this by counting a fully loaded thread. Once only
 // part of a thread is loaded that arithmetic is no longer available to it, and
 // asking per root would put a query behind every row on the page.
-func (store commentStore) ReplyCounts(ctx context.Context, rootIDs []domain.ID) (map[domain.ID]int, error) {
-	counts := make(map[domain.ID]int, len(rootIDs))
-	if len(rootIDs) == 0 {
+// Both edges stay in one conversation by database guard; each has an index.
+func (store commentStore) ReplyCounts(ctx context.Context, commentIDs []domain.ID) (map[domain.ID]int, error) {
+	counts := make(map[domain.ID]int, len(commentIDs))
+	if len(commentIDs) == 0 {
 		return counts, nil
 	}
-	placeholders := make([]string, len(rootIDs))
-	arguments := make([]any, len(rootIDs))
-	for index, id := range rootIDs {
+	placeholders := make([]string, len(commentIDs))
+	arguments := make([]any, len(commentIDs))
+	for index, id := range commentIDs {
 		placeholders[index] = "?"
 		arguments[index] = id.String()
 		counts[id] = 0
 	}
 	rows, err := store.queries.QueryContext(ctx, `
-SELECT parent_id, count(*) FROM comments
-WHERE parent_id IN (`+strings.Join(placeholders, ", ")+`)
-GROUP BY parent_id`, arguments...)
+SELECT target.id, count(response.id)
+FROM comments AS target
+LEFT JOIN comments AS response
+ ON response.parent_id = target.id OR response.reply_to_comment_id = target.id
+WHERE target.id IN (`+strings.Join(placeholders, ", ")+`)
+GROUP BY target.id`, arguments...)
 	if err != nil {
 		return nil, fmt.Errorf("query reply counts: %w", err)
 	}
@@ -320,7 +324,7 @@ GROUP BY parent_id`, arguments...)
 		}
 		id, parseErr := domain.ParseID(rawID)
 		if parseErr != nil {
-			return nil, domain.NewError(domain.CodeDataIntegrityFailed, "stored reply has an invalid parent ID", nil)
+			return nil, domain.NewError(domain.CodeDataIntegrityFailed, "stored comment has an invalid reply-count target ID", nil)
 		}
 		counts[id] = total
 	}

@@ -1,31 +1,9 @@
 import { type PublicComment } from "../../api/public";
-import { clearReplyTarget } from "./discussionChanges";
+import { clearReplyTarget, shiftReplyCounts } from "./discussionChanges";
 
 function orderComments(left: PublicComment, right: PublicComment): number {
   const time = Date.parse(left.createdAt) - Date.parse(right.createdAt);
   return time || left.id.localeCompare(right.id);
-}
-
-/**
- * Move a root's reply total by one.
- *
- * replyCount is a server snapshot of how many replies a root has, and it is
- * what both the "展开其余 N 条回复" control and the delete confirmation are
- * derived from. An optimistic insert or removal changes that total for real,
- * so leaving the snapshot alone makes the control vanish while replies are
- * still unfetched, and makes the delete dialog understate what a cascading
- * delete is about to destroy.
- */
-function shiftRootReplyCount(
-  items: PublicComment[],
-  rootId: string,
-  delta: number,
-): PublicComment[] {
-  return items.map((comment) =>
-    comment.id === rootId && comment.parentId === null
-      ? { ...comment, replyCount: Math.max(0, comment.replyCount + delta) }
-      : comment,
-  );
 }
 
 export function reconcileCreatedComment(
@@ -61,7 +39,7 @@ export function reconcileCreatedComment(
     created,
     ...current.slice(index),
   ];
-  return shiftRootReplyCount(inserted, created.parentId, 1);
+  return shiftReplyCounts(inserted, created, 1);
 }
 
 export function reconcileDeletedComment(
@@ -73,9 +51,7 @@ export function reconcileDeletedComment(
     const remaining = current
       .filter((comment) => comment.id !== deleted.id)
       .map((comment) => clearReplyTarget(comment, deleted.id));
-    return present
-      ? shiftRootReplyCount(remaining, deleted.parentId, -1)
-      : remaining;
+    return present ? shiftReplyCounts(remaining, deleted, -1) : remaining;
   }
   const rootIndex = current.findIndex((comment) => comment.id === deleted.id);
   if (rootIndex < 0) return current;

@@ -921,7 +921,7 @@ export function parseComment(
       ? null
       : stringField(value, "replies_next_cursor");
   const replyCount = nonNegativeIntegerField(value, "reply_count");
-  if (parentId !== null && (replyCount !== 0 || repliesNextCursor !== null)) {
+  if (parentId !== null && repliesNextCursor !== null) {
     throw invalidResponse("a reply cannot carry reply pagination");
   }
   return {

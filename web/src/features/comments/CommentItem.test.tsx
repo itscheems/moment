@@ -506,6 +506,19 @@ describe("comment action bar", () => {
 
   // Being signed out is not the same as having nothing to reply to. The action
   // still means something, so it stays and explains itself when pressed.
+  it("keeps a child reply count visible while signed out", () => {
+    const root = comment(rootId, "楼层");
+    renderItem(
+      comment(replyId, "已有回复", { parentId: rootId, replyCount: 3 }),
+      [],
+      { replyRoot: root, canReply: false },
+    );
+    expect(
+      within(
+        screen.getByRole("button", { name: "回复 Cheems，3 条回复" }),
+      ).getByText("3"),
+    ).toBeVisible();
+  });
   it("keeps the reply action while signed out and answers with a sign-in card", async () => {
     const root = comment(rootId, "顶级回应");
     renderItem(root, [], { replyRoot: root, canReply: false });

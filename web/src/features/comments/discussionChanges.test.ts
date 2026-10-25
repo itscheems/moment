@@ -4,8 +4,12 @@ import {
   clearReplyTarget,
   isDirectReply,
   mergeCommentReplies,
+  reconcileConversationComment,
 } from "./discussionChanges";
-import { reconcileDeletedComment } from "./commentOrdering";
+import {
+  reconcileCreatedComment,
+  reconcileDeletedComment,
+} from "./commentOrdering";
 
 function comment(
   id: string,
@@ -48,6 +52,41 @@ function comment(
   };
 }
 describe("discussion updates", () => {
+  it("updates a visible child's count without appending its indirect answer", () => {
+    const target = {
+      ...comment("target", "root", "selected", 1),
+      replyCount: 2,
+    };
+    const sibling = comment("sibling", "root", "selected", 2);
+    const answer = comment("answer", "root", "target", 3);
+    const after = reconcileConversationComment(
+      [target, sibling],
+      { kind: "created", comment: answer },
+      "selected",
+    );
+    expect(after.map((item) => item.id)).toEqual(["target", "sibling"]);
+    expect(after[0].replyCount).toBe(3);
+    expect(after[1].replyCount).toBe(0);
+    const removed = reconcileConversationComment(
+      after,
+      { kind: "deleted", comment: answer },
+      "selected",
+    );
+    expect(removed[0].replyCount).toBe(2);
+  });
+
+  it("updates floor and child counters once when adding and removing an answer", () => {
+    const root = comment("root", null, null, 0);
+    const target = { ...comment("target", "root", "root", 1), replyCount: 3 };
+    const answer = comment("answer", "root", "target", 2);
+    const created = reconcileCreatedComment([root, target], answer);
+    expect(created[0].replyCount).toBe(3);
+    expect(created[1].replyCount).toBe(4);
+    expect(reconcileCreatedComment(created, answer)[1].replyCount).toBe(4);
+    const deleted = reconcileDeletedComment(created, answer);
+    expect(deleted[0].replyCount).toBe(2);
+    expect(deleted[1].replyCount).toBe(3);
+  });
   it("distinguishes direct answers from other replies in the same floor", () => {
     const child = comment("child", "root", "target", 2);
     expect(isDirectReply(child, "target")).toBe(true);

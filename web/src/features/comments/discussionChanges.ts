@@ -43,3 +43,38 @@ export function clearReplyTarget(
     ? { ...comment, replyTo: null }
     : comment;
 }
+
+/** Roots count their whole floor; child rows count answers addressed to them. */
+export function shiftReplyCounts(
+  items: PublicComment[],
+  reply: PublicComment,
+  delta: number,
+): PublicComment[] {
+  return items.map((item) =>
+    (
+      item.parentId === null
+        ? item.id === reply.parentId
+        : isDirectReply(reply, item.id)
+    )
+      ? { ...item, replyCount: Math.max(0, item.replyCount + delta) }
+      : item,
+  );
+}
+
+export function reconcileConversationComment(
+  current: PublicComment[],
+  change: { kind: "created" | "deleted"; comment: PublicComment },
+  conversationId: string,
+): PublicComment[] {
+  const { comment } = change;
+  if (change.kind === "created") {
+    if (current.some((item) => item.id === comment.id)) return current;
+    const updated = shiftReplyCounts(current, comment, 1);
+    return isDirectReply(comment, conversationId)
+      ? mergeCommentReplies(updated, [comment])
+      : updated;
+  }
+  return shiftReplyCounts(current, comment, -1)
+    .filter((item) => item.id !== comment.id)
+    .map((item) => clearReplyTarget(item, comment.id));
+}
