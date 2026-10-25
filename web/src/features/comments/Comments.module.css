@@ -935,10 +935,6 @@
   white-space: nowrap;
 }
 
-.commentReplyUnknown {
-  color: var(--text-secondary);
-}
-
 .replyComment {
   --post-avatar-size: 1.5rem;
 }

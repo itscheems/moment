@@ -362,9 +362,11 @@ describe("the reply target identity", () => {
       expect(target.querySelector("img")).toBeNull();
     },
   );
-  it("labels unaddressed replies without inventing a target", () => {
+  it("omits a reply label when no specific target is recorded", () => {
     renderItem(comment(replyId, "接着说", { parentId: rootId }));
-    expect(screen.getByText("楼内回复")).toBeInTheDocument();
+    expect(screen.queryByText("楼内回复")).not.toBeInTheDocument();
+    expect(document.querySelector(`.${styles.commentReplyTo}`)).toBeNull();
+    expect(screen.getByText("接着说")).toBeInTheDocument();
   });
   it("preserves a historical signature without inventing an account", () => {
     renderItem(replyNaming(siblingId, guestAuthor));
