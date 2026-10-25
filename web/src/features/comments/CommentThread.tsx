@@ -1,6 +1,7 @@
 import postStyles from "../posts/PostPresentation.module.css";
-import { AnimatePresence, useReducedMotion } from "motion/react";
+import { AnimatePresence, cancelFrame, frame } from "motion/react";
 import {
+  type MouseEvent,
   type RefObject,
   useCallback,
   useEffect,
@@ -114,6 +115,90 @@ interface ReplyDraft {
   content: string;
 }
 
+/** Keep the end of the folding replies in view, rather than their root. */
+function followReplyCollapse(preview: HTMLElement, last: HTMLElement) {
+  const next = last.nextElementSibling;
+  const navigation = document
+    .querySelector('nav[aria-label="移动导航"]')
+    ?.getBoundingClientRect();
+  const viewportBottom = navigation?.height
+    ? Math.min(window.innerHeight, navigation.top)
+    : window.innerHeight;
+  const target = Math.min(
+    next?.getBoundingClientRect().top ?? last.getBoundingClientRect().bottom,
+    viewportBottom -
+      Math.min(next?.getBoundingClientRect().height ?? 0, viewportBottom / 3),
+  );
+  const scrollStyle = document.documentElement.style;
+  const previousAnchor = scrollStyle.getPropertyValue("overflow-anchor");
+  scrollStyle.setProperty("overflow-anchor", "none");
+  let finishFrame = 0;
+  let stopped = false;
+  const cancel = () => {
+    if (stopped) return;
+    stopped = true;
+    cancelFrame(update);
+    window.cancelAnimationFrame(finishFrame);
+    if (previousAnchor)
+      scrollStyle.setProperty("overflow-anchor", previousAnchor);
+    else scrollStyle.removeProperty("overflow-anchor");
+    for (const event of ["wheel", "touchstart", "pointerdown"])
+      window.removeEventListener(event, cancel);
+    window.removeEventListener("keydown", interrupt);
+  };
+  const interrupt = (event: KeyboardEvent) => {
+    if (
+      [
+        "ArrowUp",
+        "ArrowDown",
+        "PageUp",
+        "PageDown",
+        "Home",
+        "End",
+        "Tab",
+        "Escape",
+      ].includes(event.key)
+    )
+      cancel();
+  };
+  const update = () => {
+    if (!preview.isConnected) {
+      cancel();
+      return;
+    }
+    const boundary = next?.isConnected
+      ? next.getBoundingClientRect().top
+      : last.isConnected
+        ? last.getBoundingClientRect().bottom
+        : preview.getBoundingClientRect().bottom;
+    const delta = boundary - target;
+    if (Math.abs(delta) > 0.5)
+      window.scrollBy({ top: delta, behavior: "instant" });
+  };
+  for (const event of ["wheel", "touchstart", "pointerdown"])
+    window.addEventListener(event, cancel, { passive: true });
+  window.addEventListener("keydown", interrupt);
+  // Read after Motion has written every row's height, in the same frame.
+  frame.postRender(update, true);
+  return {
+    cancel,
+    finish: () => {
+      if (stopped) return;
+      window.cancelAnimationFrame(finishFrame);
+      finishFrame = window.requestAnimationFrame(() => {
+        update();
+        cancel();
+        if (preview.isConnected)
+          (
+            preview.querySelector<HTMLElement>(
+              `.${styles.replyBranch} button:not(:disabled)`,
+            ) ?? preview
+          ).focus({ preventScroll: true });
+      });
+    },
+  };
+}
+
 export function CommentThread({
   api,
   postId,
@@ -150,7 +235,16 @@ export function CommentThread({
   replyDialogComment?: PublicComment | null;
 }) {
   const auth = useSession();
-  const reduceMotion = useReducedMotion();
+  const collapseFollow = useRef<ReturnType<typeof followReplyCollapse> | null>(
+    null,
+  );
+  useEffect(
+    () => () => {
+      collapseFollow.current?.cancel();
+      collapseFollow.current = null;
+    },
+    [active, postId, conversation?.id],
+  );
   const canModerate =
     (auth.state === "signed-in" || auth.state === "expired") &&
     isAdministrator(auth.account);
@@ -701,7 +795,10 @@ export function CommentThread({
 
           {items.length > 0 ? (
             <ol className={styles.commentList}>
-              <AnimatePresence initial={false}>
+              <AnimatePresence
+                initial={false}
+                onExitComplete={() => collapseFollow.current?.finish()}
+              >
                 {visibleItems.map((comment) => (
                   <CommentItem
                     key={comment.id}
@@ -779,6 +876,7 @@ export function CommentThread({
                                       : 1),
                                 )}
                                 onExpand={() => {
+                                  collapseFollow.current?.cancel();
                                   setExpandedRoots((current) =>
                                     new Set(current).add(rootId),
                                   );
@@ -788,29 +886,34 @@ export function CommentThread({
                                   )
                                     recoverReplies(rootId, "manual");
                                 }}
-                                onCollapse={() => {
+                                onCollapse={(event) => {
+                                  collapseFollow.current?.cancel();
+                                  const first = displayedItems.find(
+                                    (item) => item.parentId === rootId,
+                                  );
+                                  const preview =
+                                    first &&
+                                    document.querySelector<HTMLElement>(
+                                      `[data-comment-id="${first.id}"]`,
+                                    );
+                                  const last =
+                                    event.currentTarget.closest<HTMLElement>(
+                                      "[data-comment-id]",
+                                    );
+                                  const follow =
+                                    preview && last
+                                      ? followReplyCollapse(preview, last)
+                                      : null;
+                                  collapseFollow.current = follow;
                                   setExpandedRoots((current) => {
                                     const next = new Set(current);
                                     next.delete(rootId);
                                     return next;
                                   });
-                                  window.requestAnimationFrame(() => {
-                                    const row =
-                                      document.querySelector<HTMLElement>(
-                                        `[data-comment-id="${rootId}"]`,
-                                      );
-                                    row?.focus({ preventScroll: true });
-                                    if (
-                                      row &&
-                                      row.getBoundingClientRect().top < 0
-                                    )
-                                      row.scrollIntoView?.({
-                                        block: "nearest",
-                                        behavior: reduceMotion
-                                          ? "instant"
-                                          : "smooth",
-                                      });
-                                  });
+                                  // A pending first page can leave only its
+                                  // preview on screen, with no exiting rows.
+                                  if (preview === last && follow)
+                                    queueMicrotask(follow.finish);
                                 }}
                                 onLoad={(source) =>
                                   recoverReplies(rootId, source)
@@ -866,7 +969,7 @@ function ReplyBranch({
   hidden: number;
   expanded: boolean;
   onExpand: () => void;
-  onCollapse: () => void;
+  onCollapse: (event: MouseEvent<HTMLButtonElement>) => void;
   onLoad: (source: LoadSource) => void;
   paging?: ReplyPaging;
 }) {

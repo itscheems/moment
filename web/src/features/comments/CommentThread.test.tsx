@@ -799,12 +799,51 @@ describe("public comment thread", () => {
     await waitFor(() =>
       expect(screen.queryByText("第二条回复")).not.toBeInTheDocument(),
     );
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: "展开其余 1 条回复" }),
+      ).toHaveFocus(),
+    );
     fireEvent.click(screen.getByRole("button", { name: "展开其余 1 条回复" }));
     expect(screen.getByText("第二条回复")).toBeInTheDocument();
     expect(
       fetcher.mock.calls.filter(([url]) => String(url).includes("/replies"))
         .length,
     ).toBe(requestsBefore);
+  });
+
+  it("collapses while the first reply page is still pending", async () => {
+    installApi((url) => {
+      if (url.includes("/replies")) return new Promise<Response>(() => {});
+      if (url.includes("/comments"))
+        return success({
+          items: [
+            {
+              ...comment(rootId, "楼层"),
+              reply_count: 2,
+              replies_next_cursor: "replies2",
+            },
+            comment(replyId, "预览回复", { parentId: rootId }),
+          ],
+        });
+      return undefined;
+    });
+    renderThread();
+    fireEvent.click(
+      await screen.findByRole("button", { name: "展开其余 1 条回复" }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "收起" }));
+    await waitFor(() =>
+      expect(
+        document.documentElement.style.getPropertyValue("overflow-anchor"),
+      ).toBe(""),
+    );
+    expect(
+      screen.queryByRole("button", { name: "收起" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByText("预览回复").closest("[data-comment-id]"),
+    ).toHaveFocus();
   });
 
   it("loads the first continuation even when a newer detail reply is already cached", async () => {

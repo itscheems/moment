@@ -526,9 +526,9 @@ export function CommentItem({
   };
   return (
     <motion.li
-      initial={{ height: 0 }}
-      animate={{ height: "auto" }}
-      exit={{ height: 0 }}
+      initial={{ height: 0, borderBottomWidth: 0 }}
+      animate={{ height: "auto", borderBottomWidth: 1 }}
+      exit={{ height: 0, borderBottomWidth: 0 }}
       transition={{ duration: reduceMotion ? 0 : 0.24, ease: [0.2, 0, 0, 1] }}
       style={{ overflow: "hidden" }}
       inert={!isPresent}
