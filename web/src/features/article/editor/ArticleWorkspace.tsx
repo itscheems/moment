@@ -707,7 +707,7 @@ export default function ArticleWorkspace({ site }: { site: SiteIdentity }) {
                   })
                 }
               >
-                <Icon name="back" />
+                <Icon name="arrow-left" />
               </button>
               <span className={styles.publishedBadge}>Published</span>
               {reading ? (
