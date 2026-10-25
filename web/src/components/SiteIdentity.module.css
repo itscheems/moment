@@ -1,5 +1,4 @@
-.avatar,
-.avatarFallback {
+.avatar {
   inline-size: 2.5rem;
   block-size: 2.5rem;
   display: block;
@@ -24,18 +23,4 @@
 
 .avatar {
   object-fit: cover;
-}
-
-.avatarFallback {
-  container-type: inline-size;
-  display: grid;
-  place-items: center;
-  color: var(--accent);
-  font-family: var(--font-body);
-  font-weight: 750;
-}
-
-.avatarInitial {
-  font-size: 42cqi;
-  line-height: 1;
 }

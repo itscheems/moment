@@ -566,15 +566,11 @@ export function CommentItem({
             {isPostAuthor ? (
               <span className={styles.authorBadge}>作者</span>
             ) : null}
-            {!root ? (
-              comment.replyTo ? (
-                <span className={styles.commentReplyTo}>
-                  <span>回复</span>
-                  <CommentIdentity author={comment.replyTo.author} />
-                </span>
-              ) : (
-                <span className={styles.commentReplyUnknown}>楼内回复</span>
-              )
+            {!root && comment.replyTo ? (
+              <span className={styles.commentReplyTo}>
+                <span>回复</span>
+                <CommentIdentity author={comment.replyTo.author} />
+              </span>
             ) : null}
           </>
         }

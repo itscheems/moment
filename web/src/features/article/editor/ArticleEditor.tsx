@@ -915,7 +915,7 @@ export function ArticleEditor({
             onClick={() => (onBack ? onBack() : location.goBack("/"))}
             type="button"
           >
-            <Icon name="back" />
+            <Icon name="arrow-left" />
           </button>
           {!embedded ? (
             <button

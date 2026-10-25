@@ -215,8 +215,10 @@ describe("visual foundation contract", () => {
     expect(commentsCss).toMatch(
       /\._commentForm_[\w-]+ textarea\s*\{[^}]*font-family:\s*var\(--font-timeline\);[^}]*font-feature-settings:\s*normal;[^}]*font-size:\s*1\.25rem;[^}]*letter-spacing:\s*normal;[^}]*line-height:\s*1\.5rem;[^}]*text-rendering:\s*auto;/s,
     );
-    expect(commentsCss).toMatch(
-      /\._commentMarkdown_[\w-]+\s*\{[^}]*font-family:\s*var\(--font-timeline\);[^}]*font-size:\s*0\.9375rem;[^}]*line-height:\s*1\.25rem;[^}]*overflow-wrap:\s*break-word;/s,
+    // Comments use the shared post renderer; its font and density rules above
+    // now own comment-body typography instead of the removed comment class.
+    expect(postCss).toMatch(
+      /\._timelineDensity_[\w-]+ \._markdown_[\w-]+\s*\{[^}]*font-family:\s*var\(--font-timeline\);/s,
     );
   });
 
@@ -231,7 +233,7 @@ describe("visual foundation contract", () => {
       /\._detail_[\w-]+ \._postActions_[\w-]+\s*\{[^}]*min-block-size:\s*3rem;[^}]*grid-template-columns:\s*1\.90625rem 1\.90625rem 1\.90625rem 1\.90625rem 1\.40625rem;[^}]*padding-inline:\s*var\(--space-1\);/s,
     );
     expect(commentsCss).toMatch(
-      /\._formSurface_[\w-]+\._inlineTopLevelForm_[\w-]+\s*\{[^}]*border-block-end:\s*0;[^}]*padding:\s*0\.25rem var\(--space-4\) 0\.75rem;/s,
+      /\._formSurface_[\w-]+\._inlineTopLevelForm_[\w-]+\s*\{[^}]*border-block-end:\s*1px solid var\(--border-subtle\);[^}]*padding:\s*0\.25rem var\(--space-4\) 0\.75rem;/s,
     );
     // Folded, the form is 0.25rem of padding over one 3.5rem row (its
     // 4.25rem comes from that, not from a fixed height, so that opening it is
@@ -405,7 +407,7 @@ describe("visual foundation contract", () => {
 
   it("keeps the inline composer avatar on the timeline avatar rail", () => {
     expect(identityCss).toMatch(
-      /\._avatar_[\w-]+,\s*\._avatarFallback_[\w-]+\s*\{[^}]*inline-size: 2\.5rem;[^}]*block-size: 2\.5rem;/s,
+      /\._avatar_[\w-]+\s*\{[^}]*inline-size: 2\.5rem;[^}]*block-size: 2\.5rem;/s,
     );
     expect(formsCss).toMatch(
       /\._inlineComposer_[\w-]+\s*\{[^}]*grid-template-columns: 2\.5rem minmax\(0, 1fr\)/s,

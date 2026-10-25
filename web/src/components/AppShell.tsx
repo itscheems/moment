@@ -608,9 +608,7 @@ export function AppShell({
                         );
                       }}
                     >
-                      <Icon
-                        name={route.id === "profile" ? "arrow-left" : "back"}
-                      />
+                      <Icon name="arrow-left" />
                     </InternalLink>
                   ) : (
                     <MobileAccountMenu

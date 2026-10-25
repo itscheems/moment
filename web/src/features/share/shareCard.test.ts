@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { renderMapSnapshot } from "../maps/mapSnapshot";
+import defaultAvatarUrl from "../../assets/default-avatar.png";
 
 vi.mock("../maps/mapSnapshot", () => ({
   renderMapSnapshot: vi.fn(async () => document.createElement("canvas")),
@@ -215,6 +216,29 @@ describe("drawing the card", () => {
     location: null,
     link: null,
     ...over,
+  });
+
+  it("uses the same default image for missing current, context and quote avatars", async () => {
+    await renderShareCard(
+      input({
+        displayName: "Moment Dev",
+        context: [input({ displayName: "北纬三十一度的小北" })],
+        quote: input({ displayName: "Other" }),
+      }),
+    );
+    const avatars = recording
+      .of("drawImage")
+      .filter(
+        (call) =>
+          call.args[0] instanceof HTMLImageElement &&
+          call.args[0].src === defaultAvatarUrl,
+      );
+    expect(avatars).toHaveLength(3);
+    expect(
+      recording
+        .of("fillText")
+        .some((call) => ["M", "北", "O"].includes(String(call.args[0]))),
+    ).toBe(false);
   });
 
   it("includes a quoted comment when the wrapper has no body", async () => {
@@ -437,7 +461,11 @@ describe("drawing the card", () => {
       );
       const image = recording
         .of("drawImage")
-        .find((call) => call.args[0] instanceof HTMLImageElement)!;
+        .find(
+          (call) =>
+            call.args[0] instanceof HTMLImageElement &&
+            call.args[0].src !== defaultAvatarUrl,
+        )!;
       const [, x, y, width, height] = image.args as [
         HTMLImageElement,
         number,
@@ -587,7 +615,7 @@ describe("drawing the card", () => {
     ).toHaveLength(3);
   });
 
-  it("exports an excerpt with the existing avatar fallback when its image fails to load", async () => {
+  it("exports an excerpt without a letter avatar when its image fails to load", async () => {
     Object.defineProperty(HTMLImageElement.prototype, "src", {
       configurable: true,
       set(this: HTMLImageElement) {
@@ -600,7 +628,10 @@ describe("drawing the card", () => {
       ),
     ).resolves.toBeInstanceOf(Blob);
     expect(recording.of("drawImage")).toHaveLength(0);
-    expect(recording.text()).toContain("CCheems@itscheems·关注来源在场");
+    expect(recording.text()).toContain("Cheems@itscheems·关注来源在场");
+    expect(recording.of("fillText").some((call) => call.args[0] === "C")).toBe(
+      false,
+    );
   });
 
   it("wraps a long article title completely rather than truncating it", async () => {

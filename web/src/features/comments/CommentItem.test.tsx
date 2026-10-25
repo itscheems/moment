@@ -8,6 +8,7 @@ import {
   within,
 } from "@testing-library/react";
 import { createRef } from "react";
+import defaultAvatarUrl from "../../assets/default-avatar.png";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
@@ -235,15 +236,18 @@ describe("comment identity", () => {
     expect(avatar.querySelector("img")).toBeInTheDocument();
   });
 
-  it("falls back to the initial for a member who has no picture", () => {
+  it("uses the default avatar image for a member who has no picture", () => {
     renderItem(
       comment(rootId, "别人写的", {
         author: { ...strangerAuthor, avatarMediaId: null },
       }),
     );
 
-    expect(document.querySelector("img")).toBeNull();
-    expect(screen.getByText("别")).toBeInTheDocument();
+    expect(document.querySelector("img")).toHaveAttribute(
+      "src",
+      defaultAvatarUrl,
+    );
+    expect(screen.queryByText("别")).not.toBeInTheDocument();
   });
 });
 
@@ -358,9 +362,11 @@ describe("the reply target identity", () => {
       expect(target.querySelector("img")).toBeNull();
     },
   );
-  it("labels unaddressed replies without inventing a target", () => {
+  it("omits a reply label when no specific target is recorded", () => {
     renderItem(comment(replyId, "接着说", { parentId: rootId }));
-    expect(screen.getByText("楼内回复")).toBeInTheDocument();
+    expect(screen.queryByText("楼内回复")).not.toBeInTheDocument();
+    expect(document.querySelector(`.${styles.commentReplyTo}`)).toBeNull();
+    expect(screen.getByText("接着说")).toBeInTheDocument();
   });
   it("preserves a historical signature without inventing an account", () => {
     renderItem(replyNaming(siblingId, guestAuthor));

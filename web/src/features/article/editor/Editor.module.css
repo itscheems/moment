@@ -92,6 +92,11 @@
   block-size: 1.125rem;
 }
 
+.toolButton > svg[data-icon="arrow-left"] {
+  inline-size: 20px;
+  block-size: 20px;
+}
+
 /* Article focus control: measured 36px circle / 20px filled glyph. */
 .focusModeButton,
 .focusTooltip {

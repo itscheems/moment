@@ -9,6 +9,7 @@ import {
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { PublicApi } from "../../api/public";
+import defaultAvatarUrl from "../../assets/default-avatar.png";
 import { NavigationProvider } from "../../app/navigation";
 import { FeedbackProvider } from "../../components/Feedback";
 import { SessionProvider } from "../auth/SessionProvider";
@@ -163,7 +164,10 @@ describe("member profile", () => {
     // No cover of their own falls back to the same colour band the site page
     // uses, rather than to an empty strip that reads as a failed image.
     expect(container.querySelector('[class*="coverFallback"]')).not.toBeNull();
-    expect(container.querySelector("img[alt='']")).toBeNull();
+    expect(container.querySelector("img[alt='']")).toHaveAttribute(
+      "src",
+      defaultAvatarUrl,
+    );
     expect(requested[0]).toBe("/api/v1/users/linlin");
     await waitFor(() =>
       expect(
