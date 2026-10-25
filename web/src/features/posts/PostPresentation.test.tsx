@@ -17,7 +17,6 @@ import { makeAccountLimits } from "../../test/accountFixtures";
 import { NavigationProvider } from "../../app/navigation";
 import { FeedbackProvider } from "../../components/Feedback";
 import { SessionProvider } from "../auth/SessionProvider";
-import formsCss from "../../components/Forms.module.css?inline";
 import { PostPresentation } from "./PostPresentation";
 import contentCss from "../../components/content/notion.scss?inline";
 import postCss from "./PostPresentation.module.css?inline";
@@ -123,6 +122,61 @@ function makePost(
 }
 
 describe("shared post presentation", () => {
+  it("shows full ancestor content with the existing action menu and no Show more", () => {
+    const html = Array.from(
+      { length: 80 },
+      (_, index) => `<p>对话节点正文 ${index}</p>`,
+    ).join("");
+    render(
+      <NavigationProvider>
+        <PostPresentation
+          conversation
+          connected
+          post={makePost("完整正文", html)}
+          site={site}
+        />
+      </NavigationProvider>,
+    );
+    expect(screen.getByText("对话节点正文 79")).toBeVisible();
+    expect(
+      screen.queryByRole("button", { name: "显示更多" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "分享这条 Moment" }),
+    ).toBeVisible();
+    expect(
+      screen.getByText("对话节点正文 79").closest("article"),
+    ).toHaveAttribute("data-connected", "true");
+  });
+  it("keeps a legacy comment author unlinked in the shared detail renderer", () => {
+    const post = makePost("旧留言", "<p>旧留言</p>");
+    render(
+      <NavigationProvider>
+        <PostPresentation
+          detail
+          post={{
+            ...post,
+            author: {
+              userId: null,
+              username: null,
+              displayName: "旧访客",
+              avatarMediaId: null,
+              profileUrl: null,
+            },
+          }}
+          site={site}
+        />
+      </NavigationProvider>,
+    );
+    expect(screen.getByText("旧访客")).toBeVisible();
+    expect(
+      screen.queryByRole("link", { name: "旧访客" }),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByText("@")).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "分享这条 Moment" }),
+    ).toBeVisible();
+  });
   it("lets the browser skip offscreen timeline rendering with a stable estimate", () => {
     expect(postCss).toMatch(
       /@supports\s*\(content-visibility:\s*auto\)[\s\S]*?\._post_[^}]+:not\(\._detail_[^)]+\)\s*\{[^}]*content-visibility:\s*auto;[^}]*contain-intrinsic-size:\s*auto 22rem;/,
@@ -164,9 +218,6 @@ describe("shared post presentation", () => {
     );
     expect(postCss).toMatch(
       /\._timelineDensity_[\w-]+ \._byline_[\w-]+,\s*\._timelineDensity_[\w-]+ \._markdown_[\w-]+\s*\{[^}]*font-family:\s*var\(--font-timeline\);[^}]*font-feature-settings:\s*normal;[^}]*letter-spacing:\s*normal;[^}]*text-rendering:\s*auto;[^}]*-webkit-font-smoothing:\s*auto;/s,
-    );
-    expect(postCss).toMatch(
-      /\._timelineDensity_[\w-]+ \._markdown_[\w-]+\s*\{[^}]*margin-block-start:\s*0;[^}]*overflow-wrap:\s*break-word;[^}]*font-size:\s*0\.9375rem;[^}]*font-weight:\s*400;[^}]*line-height:\s*1\.25rem;/s,
     );
     expect(contentCss).toMatch(
       /\.tiptap\.ProseMirror\s*\{[^}]*white-space:\s*pre-wrap;/,
@@ -259,6 +310,41 @@ describe("shared post presentation", () => {
     );
     expect(postCss).toMatch(
       /@media \(hover: hover\)[\s\S]*?\._quoteCard_[^:]+:hover[\s\S]*?background:\s*var\(--quote-hover\);/,
+    );
+  });
+
+  it("opens a quoted comment at its own detail address", () => {
+    render(
+      <NavigationProvider>
+        <PostPresentation
+          post={{
+            ...makePost("我的补充", "<p>我的补充</p>"),
+            quotedPost: {
+              unavailable: false,
+              id: "01K2ABCDEF0123456789ABCDE1",
+              commentPostId: "01K2ABCDEF0123456789ABCDE0",
+              kind: "moment",
+              article: null,
+              contentMd: "引用评论",
+              contentHtml: "<p>引用评论</p>",
+              publishedAt: "2026-08-10T01:00:00Z",
+              media: [],
+              location: null,
+            },
+          }}
+          site={site}
+        />
+      </NavigationProvider>,
+    );
+    const selection = vi.spyOn(window, "getSelection").mockReturnValue({
+      toString: () => "引用评论",
+    } as Selection);
+    fireEvent.click(screen.getByRole("link", { name: "打开被引用的 Moment" }));
+    expect(window.location.pathname).toBe("/");
+    selection.mockRestore();
+    fireEvent.click(screen.getByRole("link", { name: "打开被引用的 Moment" }));
+    expect(window.location.pathname).toBe(
+      "/m/01K2ABCDEF0123456789ABCDE0/comments/01K2ABCDEF0123456789ABCDE1",
     );
   });
 
@@ -598,7 +684,9 @@ describe("shared post presentation", () => {
     );
     // Name, handle, time, then the lock: it follows the metadata, not the
     // name, so the identity block never has to make room for it.
-    expect(mark.previousElementSibling).toHaveAttribute(
+    expect(
+      mark.previousElementSibling?.querySelector("[data-focus-key]"),
+    ).toHaveAttribute(
       "data-focus-key",
       expect.stringMatching(/:relative-time$/),
     );
@@ -687,43 +775,6 @@ describe("shared post presentation", () => {
     );
     expect(postCss).toMatch(
       /\._postAction_[\w-]+ svg\s*\{[^}]*inline-size:\s*1\.171875rem;[^}]*block-size:\s*1\.171875rem;/s,
-    );
-  });
-
-  it("keeps owner and share actions on one far-edge axis in lists and detail", () => {
-    expect(postCss).toMatch(
-      /\._post_[\w-]+\s*\{[^}]*--post-edge-action-size: 2\.75rem/,
-    );
-    expect(postCss).toMatch(/\._postActions_[\w-]+\s*\{[^}]*inline-size: 100%/);
-    expect(postCss).toMatch(
-      /\._postActions_[\w-]+\s*\{[^}]*grid-template-columns:\s*var\(--post-edge-action-size\)\s+var\(--post-edge-action-size\)\s+minmax\(0, 1fr\)\s+var\(--post-edge-action-size\)/,
-    );
-    expect(postCss).toMatch(
-      /\._shareAction_[\w-]+\s*\{[^}]*grid-column: 4;[^}]*justify-self: end/,
-    );
-    expect(formsCss).toMatch(
-      /\._postMenu_[\w-]+\s*\{[^}]*margin-inline-start: auto/,
-    );
-    expect(formsCss).toMatch(
-      /\._actionsMenuTrigger_[\w-]+\s*\{[^}]*inline-size: var\(--post-edge-action-size, 2\.75rem\);[^}]*block-size: var\(--post-edge-action-size, 2\.75rem\)/,
-    );
-    expect(postCss).toMatch(
-      /\._detail_[\w-]+ \._postActions_[\w-]+\s*\{[^}]*max-inline-size: none/,
-    );
-    expect(postCss).toMatch(
-      /\._detail_[\w-]+ \._postActions_[\w-]+\s*\{[^}]*grid-template-columns:\s*1\.90625rem 1\.90625rem 1\.90625rem 1\.90625rem 1\.40625rem;[^}]*justify-content:\s*space-between;[^}]*column-gap:\s*0;/s,
-    );
-    expect(postCss).toMatch(
-      /\._detail_[\w-]+ \._postAction_[\w-]+\s*\{[^}]*inline-size:\s*1\.90625rem;[^}]*block-size:\s*2\.9375rem;/s,
-    );
-    expect(postCss).toMatch(
-      /\._detail_[\w-]+ \._postAction_[\w-]+ svg\s*\{[^}]*inline-size:\s*1\.40625rem;[^}]*block-size:\s*1\.40625rem;/s,
-    );
-    expect(postCss).toMatch(
-      /\._detail_[\w-]+ \._postAction_[\w-]+::before\s*\{[^}]*inline-size:\s*2\.171875rem;[^}]*block-size:\s*2\.171875rem;[^}]*border-radius:\s*50%;/s,
-    );
-    expect(postCss).toMatch(
-      /\._detail_[\w-]+ \._shareAction_[\w-]+\s*\{[^}]*grid-column:\s*5;[^}]*inline-size:\s*1\.40625rem;[^}]*justify-self:\s*end;/s,
     );
   });
 

@@ -1,6 +1,7 @@
 export type RouteId =
   | "home"
   | "detail"
+  | "comment-detail"
   | "article-focus"
   | "search"
   | "archive"
@@ -23,6 +24,35 @@ export interface AppRoute {
 }
 
 export const PROFILE_EDIT_PATH = "/settings/profile";
+
+export function commentDetailPath(
+  postId: string,
+  commentId: string,
+  wholeThread = false,
+): string {
+  return (
+    "/m/" +
+    encodeURIComponent(postId) +
+    "/comments/" +
+    encodeURIComponent(commentId) +
+    (wholeThread ? "?view=thread" : "")
+  );
+}
+
+export function commentDetailFromPath(
+  pathname: string,
+): { postId: string; commentId: string } | null {
+  const match = /^\/m\/([^/]+)\/comments\/([^/]+)\/?$/.exec(pathname);
+  if (!match) return null;
+  try {
+    return {
+      postId: decodeURIComponent(match[1]),
+      commentId: decodeURIComponent(match[2]),
+    };
+  } catch {
+    return null;
+  }
+}
 export function isProfileEditPath(pathname: string): boolean {
   return pathname === PROFILE_EDIT_PATH || pathname === `${PROFILE_EDIT_PATH}/`;
 }
@@ -132,6 +162,13 @@ export function isComposeDraftsPath(pathname: string): boolean {
 }
 
 const routes: Array<AppRoute & { match: (pathname: string) => boolean }> = [
+  {
+    id: "comment-detail",
+    title: "Moment",
+    eyebrow: "",
+    href: "/",
+    match: (pathname) => commentDetailFromPath(pathname) !== null,
+  },
   {
     id: "home",
     title: "时间流",
@@ -251,7 +288,10 @@ export function resolveRoute(pathname: string): AppRoute {
     href:
       route.id === "article-focus"
         ? `/m/${encodeURIComponent(articleFocusIdFromPath(pathname) ?? "")}`
-        : route.href,
+        : route.id === "comment-detail"
+          ? "/m/" +
+            encodeURIComponent(commentDetailFromPath(pathname)?.postId ?? "")
+          : route.href,
     activeAccountOnly: route.activeAccountOnly,
   };
 }

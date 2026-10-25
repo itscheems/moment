@@ -3,36 +3,29 @@ import { commentsApi } from "../../api/comments";
 import { Dialog } from "../../components/Dialog";
 import { Menu } from "@base-ui/react/menu";
 import { Popover } from "@base-ui/react/popover";
-import {
-  type RefObject,
-  useEffect,
-  useLayoutEffect,
-  useRef,
-  useState,
-} from "react";
+import { motion, useIsPresent, useReducedMotion } from "motion/react";
+import { type RefObject, useEffect, useRef, useState } from "react";
 
 import {
   PublicApiError,
   type PublicComment,
+  type PublicCommentAuthor,
+  type PublicPost,
   type SiteIdentity,
 } from "../../api/public";
 import { InternalLink } from "../../app/navigation";
-import { SiteAvatar } from "../../components/SiteIdentity";
-import {
-  ActionTooltip,
-  ExactTimeTooltip,
-} from "../../components/TimelineInteractions";
+import { commentDetailPath } from "../../app/routes";
 import { Icon } from "../../components/icons";
 import { notify } from "../../components/Feedback";
 import { useDocumentScrollLock } from "../../components/useDocumentScrollLock";
-import { MarkdownBody } from "../../components/content/MarkdownBody";
-import { formatMomentDate } from "../posts/dates";
-import { PostLocation } from "../posts/PostPresentation";
-import { ImageGrid } from "../media/ImageGrid";
+import { PostPresentation } from "../posts/PostPresentation";
+import { commentAsPost } from "../share/shareCardInput";
 import { useSession } from "../auth/SessionProvider";
 import { Reauthenticate, type ReplyBlock } from "./CommentComposer";
 import styles from "./Comments.module.css";
+import postStyles from "../posts/PostPresentation.module.css";
 import formStyles from "../../components/Forms.module.css";
+import type { ShareCardSource } from "../share/shareCard";
 
 function DeleteCommentDialog({
   postId,
@@ -185,7 +178,7 @@ function DeleteCommentDialog({
   );
 }
 
-function CommentModerationMenu({
+export function CommentModerationMenu({
   comment,
   focusTarget,
   pinned,
@@ -386,62 +379,6 @@ function CommentModerationMenu({
 }
 
 /**
- * How long the reply-target highlight stays on after the prefix is followed.
- *
- * Long enough to find the row with your eyes, short enough that it is gone
- * before it starts reading as a permanent state of that comment.
- */
-const REPLY_TARGET_FLASH_MS = 1400;
-
-/**
- * Clip the comment body and report whether anything is actually hidden.
- *
- * The clip is unconditional — it lives in CSS and is on from the first paint —
- * so a body that fits is simply never touched by a maximum it does not reach,
- * and nothing on screen ever expands and then snaps shut. All this hook
- * decides is whether to offer the control, and it decides that from the
- * rendered box rather than from the text. Character counts cannot answer it:
- * the same 535 characters of Chinese are 16 lines in the desktop column and 34
- * on a phone, and Latin text of that length is a fraction of either. So it
- * measures, and measures again whenever the box or the font metrics change.
- *
- * Measuring is skipped while expanded, where the clip is off and `scrollHeight`
- * necessarily equals `clientHeight`: believing that reading would decide the
- * body fits and withdraw the control that puts it back.
- */
-function useFoldedBody(contentHtml: string, active: boolean) {
-  const bodyRef = useRef<HTMLDivElement>(null);
-  const [expanded, setExpanded] = useState(false);
-  const [overflowing, setOverflowing] = useState(false);
-
-  useEffect(() => {
-    const body = bodyRef.current;
-    if (!active || !body || expanded) return;
-    let live = true;
-    const measure = () => {
-      if (!live) return;
-      setOverflowing(body.scrollHeight > body.clientHeight);
-    };
-    measure();
-    // Web fonts land after first paint and change the line box under the clip.
-    void document.fonts?.ready.then(measure);
-    if (typeof ResizeObserver === "undefined") {
-      return () => {
-        live = false;
-      };
-    }
-    const observer = new ResizeObserver(measure);
-    observer.observe(body);
-    return () => {
-      live = false;
-      observer.disconnect();
-    };
-  }, [active, contentHtml, expanded]);
-
-  return { bodyRef, expanded, overflowing, setExpanded };
-}
-
-/**
  * The reply action for a reader who is not signed in.
  *
  * It keeps the affordance and answers on press rather than disappearing.
@@ -456,19 +393,25 @@ function useFoldedBody(contentHtml: string, active: boolean) {
 function SignInToReplyPopover({
   authorName,
   reason,
+  count,
 }: {
   authorName: string;
   reason: ReplyBlock;
+  count: number;
 }) {
   const pending = reason === "pending";
   return (
     <Popover.Root>
       <Popover.Trigger
-        aria-label={`回复 ${authorName}`}
-        className={styles.commentAction}
+        data-post-action="reply"
+        aria-label={`回复 ${authorName}${count > 0 ? `，${count} 条回复` : ""}`}
+        className={`${postStyles.postAction} ${postStyles.replyAction}`}
         onClick={(event) => event.stopPropagation()}
       >
         <Icon name="reply" />
+        {count > 0 ? (
+          <span className={postStyles.actionCount}>{count}</span>
+        ) : null}
       </Popover.Trigger>
       <Popover.Portal>
         <Popover.Positioner
@@ -503,6 +446,18 @@ function SignInToReplyPopover({
   );
 }
 
+export function CommentIdentity({ author }: { author: PublicCommentAuthor }) {
+  if (!author.username || !author.profileUrl)
+    return <span>{author.displayName}</span>;
+  return (
+    <AccountIdentityPreview author={author}>
+      <InternalLink className={styles.commentAuthor} href={author.profileUrl}>
+        {author.displayName}
+      </InternalLink>
+    </AccountIdentityPreview>
+  );
+}
+
 export function CommentItem({
   active = true,
   comment,
@@ -511,7 +466,9 @@ export function CommentItem({
   canModerate,
   canDelete = false,
   pinned,
-  replyRoot,
+  replyRootId,
+  presentation = "list",
+  navigable = false,
   canReply = true,
   replyBlockedBy = "signed-out",
   replyCount,
@@ -519,6 +476,9 @@ export function CommentItem({
   onReply,
   onDeleted,
   onPinChange,
+  shareCard,
+  repostTarget,
+  replyBranch,
 }: {
   active?: boolean;
   comment: PublicComment;
@@ -527,7 +487,12 @@ export function CommentItem({
   canModerate: boolean;
   canDelete?: boolean;
   pinned: boolean;
-  replyRoot: PublicComment | null;
+  replyRootId: string | null;
+  presentation?: "list" | "direct-reply";
+  navigable?: boolean;
+  shareCard?: ShareCardSource;
+  repostTarget?: PublicPost;
+  replyBranch?: import("react").ReactNode;
   /**
    * Whether this reader may actually reply. It is deliberately separate from
    * replyRoot: a null root means there is nothing to reply to and the action
@@ -542,285 +507,92 @@ export function CommentItem({
   replyBlockedBy?: ReplyBlock;
   replyCount: number;
   focusTarget: RefObject<HTMLElement | null>;
-  onReply: (root: PublicComment, target: PublicComment) => void;
+  onReply: (rootId: string, target: PublicComment) => void;
   onDeleted: (deleted: PublicComment, repliesAffected: number) => void;
   onPinChange: (pinnedCommentId: string | null) => void;
 }) {
-  const created = formatMomentDate(comment.createdAt, site.timezone);
   const root = comment.parentId === null;
   const author = comment.author;
   const authorName = author.displayName;
   const isPostAuthor =
     author.userId !== null && author.userId === postAuthorUserId;
-  // A legacy guest row carries a free-text name and nothing else — no profile
-  // to open, so no links and no preview card. The parser guarantees the three
-  // reference fields arrive together; this narrows them for the renderer.
-  const account =
-    author.username !== null && author.profileUrl !== null
-      ? { profileUrl: author.profileUrl, username: author.username }
-      : null;
-  const authorFace = {
-    displayName: authorName,
-    avatarMediaId: author.avatarMediaId,
-    coverMediaId: null,
-  };
-  const avatar = account ? (
-    <InternalLink
-      aria-label={`查看 ${authorName} 的个人资料`}
-      className={styles.commentAvatar}
-      href={account.profileUrl}
-    >
-      <SiteAvatar site={authorFace} />
-    </InternalLink>
-  ) : (
-    // A legacy guest row has no account behind it and never had a picture, so
-    // the name the visitor typed is the only thing left to draw with.
-    <span aria-hidden="true" className={styles.commentAvatar}>
-      {Array.from(authorName)[0]?.toLocaleUpperCase() ?? "M"}
-    </span>
-  );
-  const headerRef = useRef<HTMLElement>(null);
-  const restoreScrollRef = useRef(false);
-  const flashTimerRef = useRef<number | null>(null);
-  const { bodyRef, expanded, overflowing, setExpanded } = useFoldedBody(
-    comment.contentHtml,
-    active,
-  );
-  const bodyId = `comment-${comment.id}-body`;
-
-  const replyTo = comment.replyTo;
-  // Answering the root is what the reply's position already says. Repeat it and
-  // the prefix becomes noise on every single reply; judge by target comment
-  // rather than target author, because when the root's author has written
-  // several replies their name is precisely what stops telling you which one.
-  const namesReplyTarget =
-    replyTo !== null && replyTo.commentId !== comment.parentId;
-  const [replyTargetOnPage, setReplyTargetOnPage] = useState(false);
-
-  useEffect(() => {
-    if (!namesReplyTarget || replyTo === null) return;
-    // Deliberately no dependency list. Whether the target is mounted changes
-    // when the thread pages more replies in, and that reaches this item as a
-    // re-render rather than as a change to any prop it is given.
-    const present =
-      document.querySelector(`[data-comment-id="${replyTo.commentId}"]`) !==
-      null;
-    setReplyTargetOnPage((current) =>
-      current === present ? current : present,
-    );
-  });
-
-  useEffect(
-    () => () => {
-      if (flashTimerRef.current !== null)
-        window.clearTimeout(flashTimerRef.current);
-    },
-    [],
-  );
-
-  // Collapsing pulls everything below it upward. If the comment's own top has
-  // already scrolled past, the page jumps and the reader loses the row they
-  // were reading; put it back where it was.
-  useLayoutEffect(() => {
-    if (!restoreScrollRef.current) return;
-    restoreScrollRef.current = false;
-    const header = headerRef.current;
-    if (!header || header.getBoundingClientRect().top >= 0) return;
-    header.scrollIntoView?.({ block: "nearest" });
-  }, [expanded]);
-
-  const revealReplyTarget = () => {
-    if (replyTo === null) return;
-    const target = document.querySelector<HTMLElement>(
-      `[data-comment-id="${replyTo.commentId}"]`,
-    );
-    if (!target) return;
-    target.focus();
-    target.dataset.commentFlash = "true";
-    if (flashTimerRef.current !== null)
-      window.clearTimeout(flashTimerRef.current);
-    flashTimerRef.current = window.setTimeout(() => {
-      flashTimerRef.current = null;
-      delete target.dataset.commentFlash;
-    }, REPLY_TARGET_FLASH_MS);
-  };
-
-  // Keep the folded-body state, but release the row's portals and scroll locks
-  // while its conversation is suspended for focused article reading.
+  const isPresent = useIsPresent();
+  const reduceMotion = useReducedMotion();
   if (!active) return null;
-
+  const projected = {
+    ...(repostTarget ??
+      commentAsPost(comment, { id: comment.postId, visibility: "everyone" })),
+    commentCount: root ? replyCount : comment.replyCount,
+  };
   return (
-    <li
-      className={`${styles.commentItem} ${root ? "" : styles.replyComment}`}
+    <motion.li
+      initial={{ height: 0, borderBottomWidth: 0 }}
+      animate={{ height: "auto", borderBottomWidth: 1 }}
+      exit={{ height: 0, borderBottomWidth: 0 }}
+      transition={{ duration: reduceMotion ? 0 : 0.24, ease: [0.2, 0, 0, 1] }}
+      style={{ overflow: "hidden" }}
+      inert={!isPresent}
+      aria-hidden={!isPresent || undefined}
+      className={`${styles.commentItem} ${!root && presentation === "list" ? styles.replyComment : ""}`}
       data-comment-id={comment.id}
-      data-depth={comment.depth}
+      data-focus-key={"comment-row-" + comment.id}
+      data-depth={presentation === "list" ? comment.depth : 0}
+      data-presentation={presentation}
       tabIndex={-1}
     >
-      <article aria-label={`${authorName}的回复`}>
-        {canModerate || canDelete ? (
-          <CommentModerationMenu
-            canModerate={canModerate}
-            comment={comment}
-            focusTarget={focusTarget}
-            onDeleted={onDeleted}
-            onPinChange={onPinChange}
-            pinned={pinned}
-            replyCount={replyCount}
-          />
-        ) : null}
-        {}
-        <AccountIdentityPreview author={author}>
-          {avatar}
-        </AccountIdentityPreview>
-        {pinned ? (
-          <p className={styles.pinnedCommentMark}>
-            <Icon name="pin" />
-            <span>已置顶</span>
-          </p>
-        ) : null}
-        <header className={styles.commentByline} ref={headerRef}>
-          {account ? (
-            <>
-              {}
-              <AccountIdentityPreview author={author}>
-                <InternalLink
-                  className={styles.commentAuthor}
-                  href={account.profileUrl}
-                >
-                  {authorName}
-                </InternalLink>
-              </AccountIdentityPreview>
-              <InternalLink
-                className={styles.commentHandle}
-                href={account.profileUrl}
-              >
-                @{account.username}
-              </InternalLink>
-            </>
-          ) : (
-            <strong>{authorName}</strong>
-          )}
-          {isPostAuthor ? (
-            <span className={styles.authorBadge}>作者</span>
-          ) : null}
-          <span aria-hidden="true">·</span>
-          <ExactTimeTooltip exact={created.absolute}>
-            <time dateTime={comment.createdAt}>{created.relative}</time>
-          </ExactTimeTooltip>
-        </header>
-        {namesReplyTarget && replyTo ? (
-          <p className={styles.commentReplyTo}>
-            <span>回复</span>{" "}
-            {replyTo.author.username !== null && replyTargetOnPage ? (
-              // A button, not an anchor: this moves focus inside the page and
-              // has no address of its own to offer. Cross-page targets are a
-              // later lane, so an off-page target stays plain text rather than
-              // becoming a control that does nothing.
-              <button
-                className={styles.commentReplyToLink}
-                onClick={revealReplyTarget}
-                type="button"
-              >
-                @{replyTo.author.username}
-              </button>
-            ) : (
-              // Display names are not unique and a legacy guest target has no
-              // username at all, so the handle is the identifying form wherever
-              // there is one.
-              <span>
-                {replyTo.author.username !== null
-                  ? `@${replyTo.author.username}`
-                  : replyTo.author.displayName}
-              </span>
-            )}
-          </p>
-        ) : null}
-        {comment.contentHtml ? (
-          <div
-            className={[
-              styles.commentBody,
-              expanded ? "" : styles.commentBodyClipped,
-              // Only where the control exists to answer it: a fade with no
-              // "展开全文" beside it tells the reader something is missing and
-              // then offers them no way to reach it.
-              overflowing && !expanded ? styles.commentBodyFaded : "",
-            ]
-              .filter(Boolean)
-              .join(" ")}
-            id={bodyId}
-            // A clipped link is still in the tab order — `overflow: hidden` only
-            // hides it. Opening the body on focus keeps the reader from tabbing
-            // into something they cannot see.
-            onFocusCapture={() => setExpanded(true)}
-            ref={bodyRef}
-          >
-            <MarkdownBody
-              className={styles.commentMarkdown}
-              html={comment.contentHtml}
+      <PostPresentation
+        post={projected}
+        site={site}
+        timelineDensity
+        embedded
+        navigable={navigable}
+        href={commentDetailPath(comment.postId, comment.id)}
+        pinned={pinned}
+        actions={
+          canModerate || canDelete ? (
+            <CommentModerationMenu
+              canModerate={canModerate}
+              comment={comment}
+              focusTarget={focusTarget}
+              onDeleted={onDeleted}
+              onPinChange={onPinChange}
+              pinned={pinned}
+              replyCount={replyCount}
             />
-          </div>
-        ) : null}
-        {overflowing ? (
-          <button
-            aria-controls={bodyId}
-            aria-expanded={expanded}
-            className={styles.commentFoldToggle}
-            onClick={() => {
-              restoreScrollRef.current = expanded;
-              setExpanded(!expanded);
-            }}
-            type="button"
-          >
-            {expanded ? "收起" : "展开全文"}
-          </button>
-        ) : null}
-        {/*
-         * Media and location stay whole. Folding is about a wall of text; a
-         * half-cropped photo grid only reads as broken, and a comment can be
-         * nothing but a location or a picture.
-         */}
-        {comment.location ? <PostLocation location={comment.location} /> : null}
-        <ImageGrid media={comment.media} />
-        {/*
-         * No actions, no footer. The empty <span> this used to fall back to was
-         * a spacer for a `space-between` row, and it was almost unreachable
-         * while every reader could reply. Now that a signed-out reader has no
-         * reply button, keeping it left a 44px band of dead space under every
-         * comment in the thread — a gap that reads as something failing to
-         * load rather than as nothing being on offer.
-         */}
-        {/*
-         * No root, no footer: there is genuinely nothing to reply to, and an
-         * empty action bar still claims its full target height, leaving a band
-         * of dead space that reads as something failing to load.
-         *
-         * Being signed out is a different thing. The action still means
-         * something; the reader just has to sign in first. Removing it there
-         * would leave them guessing why replies exist but no way to make one,
-         * so the button stays and says so when pressed.
-         */}
-        {replyRoot ? (
-          <footer className={styles.commentActions}>
-            {canReply ? (
-              <ActionTooltip label="回复">
-                <button
-                  aria-label={`回复 ${authorName}`}
-                  className={styles.commentAction}
-                  onClick={() => onReply(replyRoot, comment)}
-                  type="button"
-                >
-                  <Icon name="reply" />
-                </button>
-              </ActionTooltip>
-            ) : (
-              <SignInToReplyPopover
-                authorName={authorName}
-                reason={replyBlockedBy}
-              />
-            )}
-          </footer>
-        ) : null}
-      </article>
-    </li>
+          ) : undefined
+        }
+        bylineContext={
+          <>
+            {isPostAuthor ? (
+              <span className={styles.authorBadge}>作者</span>
+            ) : null}
+            {!root ? (
+              comment.replyTo ? (
+                <span className={styles.commentReplyTo}>
+                  <span>回复</span>
+                  <CommentIdentity author={comment.replyTo.author} />
+                </span>
+              ) : (
+                <span className={styles.commentReplyUnknown}>楼内回复</span>
+              )
+            ) : null}
+          </>
+        }
+        replyControl={
+          !replyRootId ? null : !canReply ? (
+            <SignInToReplyPopover
+              authorName={authorName}
+              reason={replyBlockedBy}
+              count={projected.commentCount}
+            />
+          ) : undefined
+        }
+        onReply={() => {
+          if (replyRootId) onReply(replyRootId, comment);
+        }}
+        shareCard={shareCard}
+      />
+      {replyBranch}
+    </motion.li>
   );
 }

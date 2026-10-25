@@ -16,6 +16,7 @@ import { Icon } from "../components/icons";
 import { ShellState } from "../components/ShellState";
 import { ArticleWorkspacePage } from "../features/article/editor";
 import { DetailPage } from "../features/timeline/DetailPage";
+import { useDiscussionIdentity } from "../features/comments/useDiscussionIdentity";
 import { TimelinePage } from "../features/timeline/TimelinePage";
 import { Composer, type ComposerHandle } from "../features/compose/Composer";
 import { ComposeDrafts } from "../features/compose/ComposeDrafts";
@@ -50,6 +51,7 @@ import {
   COMPOSE_PATH,
   COMPOSE_MEDIA_PATH,
   articleFocusIdFromPath,
+  commentDetailFromPath,
   isComposeDraftsPath,
   profileFromPath,
   resolveRoute,
@@ -76,6 +78,8 @@ const fallbackSite: SiteIdentity = {
 };
 
 function detailId(pathname: string): string {
+  const commentRoute = commentDetailFromPath(pathname);
+  if (commentRoute) return commentRoute.postId;
   const raw = pathname.match(/^\/m\/([^/]+)\/?$/)?.[1] ?? "";
   try {
     return decodeURIComponent(raw);
@@ -161,7 +165,36 @@ function PublicApp() {
   const quotedPostId = hasValidRawQueryEncoding(contentLocation.search)
     ? (new URLSearchParams(contentLocation.search).get("quote") ?? undefined)
     : undefined;
+  const quoteParams = hasValidRawQueryEncoding(contentLocation.search)
+    ? new URLSearchParams(contentLocation.search)
+    : null;
+  const quotedCommentId = quoteParams?.get("quoteComment") ?? undefined;
+  const quotedCommentPostId = quoteParams?.get("quotePost") ?? undefined;
   const route = resolveRoute(displayLocation.pathname);
+  const discussionRouteActive =
+    route.id === "detail" ||
+    route.id === "comment-detail" ||
+    route.id === "article-focus";
+  const discussionIdentity = useDiscussionIdentity(
+    auth.account?.userId ?? null,
+    auth.state,
+  );
+  const discussionActive =
+    discussionRouteActive && !discussionIdentity.confirming;
+  const [retainedDiscussion, setRetainedDiscussion] = useState<{
+    pathname: string;
+    search: string;
+  } | null>(null);
+  useEffect(() => {
+    if (discussionRouteActive)
+      setRetainedDiscussion({
+        pathname: displayLocation.pathname,
+        search: displayLocation.search,
+      });
+  }, [discussionRouteActive, displayLocation.pathname, displayLocation.search]);
+  const discussionLocation = discussionRouteActive
+    ? displayLocation
+    : retainedDiscussion;
   const state =
     route.id === "search" ||
     route.id === "archive" ||
@@ -487,6 +520,7 @@ function PublicApp() {
   const placeholderRoute =
     route.id !== "home" &&
     route.id !== "detail" &&
+    route.id !== "comment-detail" &&
     route.id !== "article-focus" &&
     route.id !== "login" &&
     route.id !== "register" &&
@@ -552,16 +586,45 @@ function PublicApp() {
             />
           </div>
         ) : null}
-        {route.id === "detail" || route.id === "article-focus" ? (
-          <div data-detail-content>
+        {discussionRouteActive && discussionIdentity.confirming ? (
+          <div className={styles.siteError} role="status">
+            <span>
+              {auth.state === "unavailable"
+                ? "暂时无法确认登录身份。"
+                : "正在确认登录身份…"}
+            </span>
+            {auth.state === "unavailable" ? (
+              <button type="button" onClick={auth.retryStatus}>
+                重试
+              </button>
+            ) : null}
+          </div>
+        ) : null}
+        {discussionLocation ? (
+          <div data-detail-content hidden={!discussionActive}>
             <DetailPage
-              key={auth.account?.userId ?? "guest"}
+              key={
+                (site.instanceId ?? "") +
+                ":" +
+                (discussionIdentity.accountKey ?? "guest") +
+                ":" +
+                (articleFocusIdFromPath(discussionLocation.pathname) ??
+                  detailId(discussionLocation.pathname))
+              }
               api={api}
               id={
-                articleFocusIdFromPath(displayLocation.pathname) ??
-                detailId(displayLocation.pathname)
+                articleFocusIdFromPath(discussionLocation.pathname) ??
+                detailId(discussionLocation.pathname)
               }
-              focusReading={route.id === "article-focus"}
+              active={discussionActive}
+              commentId={
+                commentDetailFromPath(discussionLocation.pathname)?.commentId ??
+                null
+              }
+
+              focusReading={
+                resolveRoute(discussionLocation.pathname).id === "article-focus"
+              }
               canPublish={siteIdentityReady && canPublish}
               onSiteChanged={setSite}
               site={site}
@@ -617,6 +680,8 @@ function PublicApp() {
               // opens its panel instead.
               draftsListStart={isComposeDraftsPath(displayLocation.pathname)}
               quotedPostId={quotedPostId}
+              quotedCommentId={quotedCommentId}
+              quotedCommentPostId={quotedCommentPostId}
               site={site}
               variant="page"
             />
@@ -798,6 +863,7 @@ function PublicApp() {
                         draft.contentMd,
                         draft.id,
                         draft.mapCard,
+                        draft.quote,
                       );
                       closeDrafts();
                     }}
@@ -814,6 +880,8 @@ function PublicApp() {
                       // The header above already carries it.
                       draftsEntry={false}
                       quotedPostId={quotedPostId}
+                      quotedCommentId={quotedCommentId}
+                      quotedCommentPostId={quotedCommentPostId}
                       ref={overlayComposer}
                       site={site}
                       variant="page"

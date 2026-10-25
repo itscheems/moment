@@ -43,6 +43,7 @@ var browserMirroredTypes = map[string]struct {
 	"archive.MergeReviewEntity": {archive.MergeReviewEntity{}, "web/src/api/owner.ts parseMergeReviewEntity"},
 	"postdto.Post":              {postdto.Post{}, "web/src/api/public.ts parsePost and parseSearchHit"},
 	"commentdto.Comment":        {commentdto.Comment{}, "web/src/api/public.ts parseComment"},
+	"commentdto.Context":        {commentdto.Context{}, "web/src/api/public.ts commentContext"},
 	"commentdto.Author":         {commentdto.Author{}, "web/src/api/public.ts parseCommentAuthor"},
 	"app.MentionSuggestion":     {app.MentionSuggestion{}, "web/src/api/public.ts mentionSuggestions"},
 	"app.SiteSettings":          {app.SiteSettings{}, "web/src/api/public.ts parseSiteIdentity"},

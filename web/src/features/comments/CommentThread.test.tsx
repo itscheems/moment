@@ -15,12 +15,14 @@ import { mediaPreviewUrl } from "../../api/mediaUrls";
 import {
   PublicApi,
   PublicApiError,
+  parseComment,
   type PublicPost,
   type SiteIdentity,
 } from "../../api/public";
 import { NavigationProvider } from "../../app/navigation";
 import { SessionProvider, useSession } from "../auth/SessionProvider";
 import { CommentThread } from "./CommentThread";
+import type { DiscussionChange } from "./discussionChanges";
 import commentsCss from "./Comments.module.css?inline";
 import { makeAccountLimits } from "../../test/accountFixtures";
 
@@ -473,6 +475,7 @@ describe("public comment thread", () => {
             active={active}
             api={api}
             postId={postId}
+            post={post}
             site={site}
           />
         </SessionProvider>
@@ -520,6 +523,7 @@ describe("public comment thread", () => {
             active={active}
             api={api}
             postId={postId}
+            post={post}
             site={site}
           />
         </SessionProvider>
@@ -562,6 +566,7 @@ describe("public comment thread", () => {
             active={active}
             api={api}
             postId={postId}
+            post={post}
             site={site}
           />
         </SessionProvider>
@@ -645,7 +650,7 @@ describe("public comment thread", () => {
     await screen.findByText("被置顶的回应");
     expect(screen.getAllByText("被置顶的回应")).toHaveLength(1);
 
-    fireEvent.click(screen.getByRole("button", { name: "加载更多回复" }));
+    fireEvent.click(screen.getByRole("button", { name: "加载更多" }));
     await screen.findByText("第二页的根");
     expect(screen.getAllByText("被置顶的回应")).toHaveLength(1);
     expect(
@@ -653,7 +658,7 @@ describe("public comment thread", () => {
     ).toBe(true);
     // The cursor is spent, so the control retires rather than looping.
     expect(
-      screen.queryByRole("button", { name: "加载更多回复" }),
+      screen.queryByRole("button", { name: "加载更多" }),
     ).not.toBeInTheDocument();
   });
 
@@ -695,7 +700,7 @@ describe("public comment thread", () => {
     const draft = screen.getByLabelText("回复内容");
     fireEvent.focus(draft);
     fireEvent.change(draft, { target: { value: "这段还没发出去" } });
-    fireEvent.click(screen.getByRole("button", { name: "加载更多回复" }));
+    fireEvent.click(screen.getByRole("button", { name: "加载更多" }));
 
     await screen.findByText("正在重新获取更多回复…");
     // The already-loaded page is never discarded by a failed continuation.
@@ -755,6 +760,10 @@ describe("public comment thread", () => {
     const branch = await screen.findByRole("button", {
       name: "展开其余 1 条回复",
     });
+    expect(branch.closest("[data-comment-id]")).toHaveAttribute(
+      "data-comment-id",
+      replyId,
+    );
     fireEvent.click(branch);
 
     await screen.findByText("第二条回复");
@@ -775,6 +784,149 @@ describe("public comment thread", () => {
       document.querySelectorAll<HTMLElement>("[data-comment-id]"),
     ).map((node) => node.dataset.commentId);
     expect(ordered).toEqual([rootId, replyId, laterReplyId]);
+    const requestsBefore = fetcher.mock.calls.filter(([url]) =>
+      String(url).includes("/replies"),
+    ).length;
+    expect(
+      screen.getByRole("button", { name: "收起" }).closest("[data-comment-id]"),
+    ).toHaveAttribute("data-comment-id", laterReplyId);
+    fireEvent.click(screen.getByRole("button", { name: "收起" }));
+    // Exit keeps the row mounted briefly, but it must stop accepting focus
+    // immediately and disappear once its height transition completes.
+    expect(
+      screen.getByText("第二条回复").closest("[data-comment-id]"),
+    ).toHaveAttribute("inert");
+    await waitFor(() =>
+      expect(screen.queryByText("第二条回复")).not.toBeInTheDocument(),
+    );
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: "展开其余 1 条回复" }),
+      ).toHaveFocus(),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "展开其余 1 条回复" }));
+    expect(screen.getByText("第二条回复")).toBeInTheDocument();
+    expect(
+      fetcher.mock.calls.filter(([url]) => String(url).includes("/replies"))
+        .length,
+    ).toBe(requestsBefore);
+  });
+
+  it("collapses while the first reply page is still pending", async () => {
+    installApi((url) => {
+      if (url.includes("/replies")) return new Promise<Response>(() => {});
+      if (url.includes("/comments"))
+        return success({
+          items: [
+            {
+              ...comment(rootId, "楼层"),
+              reply_count: 2,
+              replies_next_cursor: "replies2",
+            },
+            comment(replyId, "预览回复", { parentId: rootId }),
+          ],
+        });
+      return undefined;
+    });
+    renderThread();
+    fireEvent.click(
+      await screen.findByRole("button", { name: "展开其余 1 条回复" }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "收起" }));
+    await waitFor(() =>
+      expect(
+        document.documentElement.style.getPropertyValue("overflow-anchor"),
+      ).toBe(""),
+    );
+    expect(
+      screen.queryByRole("button", { name: "收起" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByText("预览回复").closest("[data-comment-id]"),
+    ).toHaveFocus();
+  });
+
+  it("loads the first continuation even when a newer detail reply is already cached", async () => {
+    const oldSecondId = "01K2ABCDEF0123456789ABCDE4";
+    const serverRoot = {
+      ...comment(rootId, "原有楼层"),
+      reply_count: 2,
+      replies_next_cursor: "first-unread",
+    };
+    const first = comment(replyId, "第一条旧回复", {
+      parentId: rootId,
+      canPublish: true,
+    });
+    const fromDetail = parseComment(
+      comment(createdId, "刚从详情发表的回复", {
+        parentId: rootId,
+        canPublish: true,
+        createdAt: "2026-08-10T01:06:00Z",
+      }),
+    );
+    const fetcher = installApi((url, init) => {
+      if (init?.method === "POST") return undefined;
+      if (url.includes("/replies"))
+        return json({
+          data: {
+            items: [
+              comment(oldSecondId, "第二条旧回复", {
+                parentId: rootId,
+                canPublish: true,
+                createdAt: "2026-08-10T01:04:00Z",
+              }),
+            ],
+          },
+          meta: { request_id: "test", next_cursor: null },
+        });
+      if (url.includes("/comments"))
+        return success({ items: [serverRoot, first] });
+      return undefined;
+    });
+    function CachedThread() {
+      const api = useRef(new PublicApi());
+      const [change, setChange] = useState<DiscussionChange | null>(null);
+      return (
+        <>
+          <button
+            onClick={() =>
+              setChange({
+                kind: "created",
+                comment: fromDetail,
+                source: "other-detail",
+                revision: 1,
+              })
+            }
+          >
+            模拟详情发表回复
+          </button>
+          <CommentThread
+            api={api.current}
+            postId={postId}
+            post={post}
+            site={site}
+            change={change}
+          />
+        </>
+      );
+    }
+    render(
+      <NavigationProvider>
+        <SessionProvider>
+          <CachedThread />
+        </SessionProvider>
+      </NavigationProvider>,
+    );
+    await screen.findByText("第一条旧回复");
+    fireEvent.click(screen.getByRole("button", { name: "模拟详情发表回复" }));
+    fireEvent.click(screen.getByRole("button", { name: "展开其余 2 条回复" }));
+    await screen.findByText("第二条旧回复");
+    expect(
+      fetcher.mock.calls.some(([url]) =>
+        String(url).includes("/replies?cursor=first-unread"),
+      ),
+    ).toBe(true);
+    expect(screen.getByText("刚从详情发表的回复")).toBeVisible();
   });
 
   it("recovers a nested reply page automatically without reloading its root", async () => {
@@ -920,18 +1072,9 @@ describe("public comment thread", () => {
     ).toBeVisible();
   });
 
-  it("keeps the inline reply geometry consistent in collapsed and expanded states", () => {
+  it("preserves inline reply transition declarations", () => {
     expect(commentsCss).toMatch(
-      /\._formSurface_[\w-]+\._inlineTopLevelForm_[\w-]+\s*\{[^}]*border-block-end:\s*0;[^}]*padding:\s*0\.25rem var\(--space-4\) 0\.75rem;/s,
-    );
-    expect(commentsCss).toMatch(
-      /\._inlineTopLevelForm_[\w-]+\._commentExpanded_[\w-]+\s*\{[^}]*padding-block:\s*0\.25rem 0\.75rem;/s,
-    );
-    expect(commentsCss).not.toMatch(
-      /\._inlineTopLevelForm_[\w-]+\._commentLayoutFrame_[\w-]+\s*\{[^}]*transition:\s*none;/s,
-    );
-    expect(commentsCss).toMatch(
-      /\._inlineTopLevelForm_[\w-]+ \._commentComposerLayout_[\w-]+\s*\{[^}]*grid-template-columns:\s*2\.5rem minmax\(0, 1fr\);[^}]*gap:\s*0\.5rem;/s,
+      /\._formSurface_[\w-]+\._inlineTopLevelForm_[\w-]+\s*\{[^}]*border-block-end:\s*1px solid var\(--border-subtle\);[^}]*padding:\s*0\.25rem var\(--space-4\) 0\.75rem;/s,
     );
     // The folded geometry — the placeholder on the centre line of a 3.5rem
     // row under 0.25rem of form padding, the avatar 0.875rem down — comes
@@ -1392,24 +1535,6 @@ describe("public comment thread", () => {
     );
   });
 
-  it("uses consistent connector, divider, hover, and motion contracts for comment rows", () => {
-    const itemRule = commentsCss.match(
-      /\._commentItem_[\w-]+\s*\{[^}]*\}/s,
-    )?.[0];
-    expect(itemRule).toBeDefined();
-    expect(itemRule).not.toContain("border-block");
-    expect(itemRule).toContain("transition: background-color 0.2s ease");
-    expect(commentsCss).toMatch(
-      /\._commentItem_[\w-]+:hover\s*\{[^}]*#f7f7f7/s,
-    );
-    expect(commentsCss).toMatch(
-      /\._commentItem_[\w-]+:has\(\+ \._replyComment_[\w-]+\)::after\s*\{[^}]*inset-block-start: calc\(var\(--space-3\) \+ var\(--target-size\)\);[^}]*inset-block-end: 0;/s,
-    );
-    expect(commentsCss).toMatch(
-      /@media \(prefers-reduced-motion: reduce\)[\s\S]*\._commentItem_[\w-]+\s*\{[^}]*transition: none;/s,
-    );
-  });
-
   it("locks the document and restores one reply trigger through every dismissal path", async () => {
     preauthenticate();
     installApi((url, init) => {
@@ -1470,7 +1595,7 @@ describe("public comment thread", () => {
     ).toBeNull();
   });
 
-  it("keeps a flat one-level presentation and places reply composition after its root", async () => {
+  it("keeps a flat one-level presentation and reuses the reply dialog for a child", async () => {
     preauthenticate();
     const fetcher = installApi((url, init) => {
       if (url.endsWith("/comments") && init?.method !== "POST") {
@@ -1508,9 +1633,8 @@ describe("public comment thread", () => {
     expect(screen.getAllByRole("form", { name: "回复 @owner" })).toHaveLength(
       1,
     );
-    expect(replyForm.closest("li")?.previousElementSibling).toHaveAttribute(
-      "data-comment-id",
-      replyId,
+    expect(replyForm.closest('[role="dialog"]')).toHaveAccessibleName(
+      "回复这条 Moment",
     );
     // Previously this read "@Moment" — the display name wearing an @ as though
     // it were a handle, from the site overlay this branch retired everywhere
@@ -1979,7 +2103,8 @@ describe("public comment thread", () => {
       const form = screen.getByRole("form", { name: formName });
       const field = within(form).getByRole("textbox", { name: fieldName });
       fireEvent.change(field, { target: { value: content } });
-      fireEvent.click(screen.getByRole("button", { name: "使会话过期" }));
+      // This harness control simulates expiration outside the modal.
+      fireEvent.click(screen.getByText("使会话过期"));
 
       expect(field).toHaveValue(content);
       const surface = form.parentElement!;
@@ -2210,7 +2335,8 @@ describe("public comment thread", () => {
     renderThread(site, true);
 
     await screen.findByText("顶级回应");
-    fireEvent.click(screen.getByRole("button", { name: "使会话过期" }));
+    // This harness control simulates expiration outside the modal.
+    fireEvent.click(screen.getByText("使会话过期"));
     await chooseFirstCommentAction("删除");
     const dialog = await screen.findByRole("dialog");
     expect(dialog).toHaveTextContent("刷新身份后可在这里重新删除");

@@ -196,6 +196,8 @@ export interface PublicArticle {
 }
 
 export interface PublicPost {
+  /** Present only on a comment projected into the shared post UI. */
+  commentPostId?: string;
   author?: PublicCommentAuthor;
   id: string;
   kind: PostKind;
@@ -310,6 +312,7 @@ export interface PublicLinkCard {
 }
 
 export interface PublicAvailableQuotedPost {
+  commentPostId?: string;
   mapCard?: MapCardData | null;
   author?: PublicCommentAuthor;
   unavailable: false;
@@ -484,6 +487,16 @@ export interface CommentThread {
 export interface CommentReplyPage {
   items: PublicComment[];
   nextCursor: string | null;
+}
+
+export type CommentReplyScope = "thread" | "direct";
+
+export interface CommentContext {
+  comment: PublicComment;
+  replyTarget: PublicComment | null;
+  rootCommentId: string;
+  pinnedCommentId: string | null;
+  directReplyCount: number;
 }
 
 export interface UploadedMedia {
@@ -908,7 +921,7 @@ export function parseComment(
       ? null
       : stringField(value, "replies_next_cursor");
   const replyCount = nonNegativeIntegerField(value, "reply_count");
-  if (parentId !== null && (replyCount !== 0 || repliesNextCursor !== null)) {
+  if (parentId !== null && repliesNextCursor !== null) {
     throw invalidResponse("a reply cannot carry reply pagination");
   }
   return {
@@ -1131,6 +1144,7 @@ function parseCommentReplyPage(
   postId: string,
   rootId: string,
   nextCursor: string | null,
+  scope: CommentReplyScope = "thread",
 ): CommentReplyPage {
   // mirrors locationdto.Results (internal/transport/locationdto/dto.go)
   if (
@@ -1143,7 +1157,13 @@ function parseCommentReplyPage(
   const items = value.items.map((item) => parseComment(item, postId));
   let previous: PublicComment | null = null;
   for (const comment of items) {
-    if (comment.parentId !== rootId) {
+    if (
+      scope === "thread"
+        ? comment.parentId !== rootId
+        : comment.parentId === null ||
+          (comment.replyTo?.commentId !== rootId &&
+            !(comment.replyTo === null && comment.parentId === rootId))
+    ) {
       throw invalidResponse("comment reply page mixes conversations");
     }
     if (previous && commentOrder(previous, comment) >= 0) {
@@ -1724,6 +1744,12 @@ export function parsePost(value: unknown): PublicPost {
       !isRecord(quoted) ||
       !hasExactKeys(quoted, [
         ...(Object.hasOwn(quoted, "author") ? ["author"] : []),
+        ...(Object.hasOwn(quoted, "comment_post_id")
+          ? ["comment_post_id"]
+          : []),
+        ...(Object.hasOwn(quoted, "comment_author_name")
+          ? ["comment_author_name"]
+          : []),
         ...(Object.hasOwn(quoted, "map_card") ? ["map_card"] : []),
         "unavailable",
         "id",
@@ -1753,7 +1779,9 @@ export function parsePost(value: unknown): PublicPost {
         quoted.media !== null ||
         quoted.location !== null ||
         quoted.map_card != null ||
-        quoted.author != null
+        quoted.author != null ||
+        quoted.comment_post_id != null ||
+        quoted.comment_author_name != null
       ) {
         throw invalidResponse(
           "unavailable quoted post must not expose deleted target data",
@@ -1789,9 +1817,43 @@ export function parsePost(value: unknown): PublicPost {
       if (quotedArticle !== null && quotedArticle.body !== null) {
         throw invalidResponse("a quote shows an article's card, not its body");
       }
+      const commentPostId =
+        quoted.comment_post_id === undefined
+          ? undefined
+          : stringField(quoted, "comment_post_id");
+      if (
+        commentPostId !== undefined &&
+        (!isCanonicalUlid(commentPostId) ||
+          quotedBody.kind !== "moment" ||
+          quoted.map_card != null ||
+          quotedArticle !== null)
+      )
+        throw invalidResponse("comment quote target is invalid");
+      if (
+        quoted.comment_author_name !== undefined &&
+        (commentPostId === undefined || quoted.author != null)
+      )
+        throw invalidResponse("legacy quote author is invalid");
+      const legacyName =
+        quoted.comment_author_name === undefined
+          ? undefined
+          : stringField(quoted, "comment_author_name");
+      if (legacyName !== undefined && !legacyName.trim())
+        throw invalidResponse("legacy quote author is empty");
       quotedPost = {
+        ...(commentPostId ? { commentPostId } : {}),
         author:
-          quoted.author == null ? undefined : parseCommentAuthor(quoted.author),
+          legacyName === undefined
+            ? quoted.author == null
+              ? undefined
+              : parseCommentAuthor(quoted.author)
+            : {
+                userId: null,
+                username: null,
+                displayName: legacyName,
+                avatarMediaId: null,
+                profileUrl: null,
+              },
         unavailable: false,
         id: stringField(quoted, "id"),
         kind: quotedBody.kind,
@@ -2682,11 +2744,16 @@ export class PublicApi {
   async commentReplies(
     postId: string,
     rootId: string,
-    options: { cursor?: string | null; signal?: AbortSignal } = {},
+    options: {
+      cursor?: string | null;
+      signal?: AbortSignal;
+      scope?: CommentReplyScope;
+    } = {},
   ): Promise<CommentReplyPage> {
-    const query = options.cursor
-      ? `?cursor=${encodeURIComponent(options.cursor)}`
-      : "";
+    const params = new URLSearchParams();
+    if (options.cursor) params.set("cursor", options.cursor);
+    if (options.scope) params.set("scope", options.scope);
+    const query = params.size ? `?${params}` : "";
     const response = await this.fetcher(
       `/api/v1/posts/${encodeURIComponent(postId)}/comments/${encodeURIComponent(rootId)}/replies${query}`,
       { headers: { Accept: "application/json" }, signal: options.signal },
@@ -2697,7 +2764,65 @@ export class PublicApi {
     if (response.status !== 200) {
       throw invalidResponse("comment replies must return HTTP 200");
     }
-    return parseCommentReplyPage(data, postId, rootId, nullableCursor(meta));
+    return parseCommentReplyPage(
+      data,
+      postId,
+      rootId,
+      nullableCursor(meta),
+      options.scope,
+    );
+  }
+
+  async commentContext(
+    postId: string,
+    commentId: string,
+    signal?: AbortSignal,
+  ): Promise<CommentContext> {
+    const response = await this.fetcher(
+      `/api/v1/posts/${encodeURIComponent(postId)}/comments/${encodeURIComponent(commentId)}`,
+      { headers: { Accept: "application/json" }, signal },
+    );
+    const { data } = await decodeResponse(response);
+    if (
+      response.status !== 200 ||
+      !isRecord(data) ||
+      !hasExactKeys(data, [
+        "comment",
+        "reply_target",
+        "root_comment_id",
+        "pinned_comment_id",
+        "direct_reply_count",
+      ])
+    )
+      throw invalidResponse("comment context is invalid");
+    const comment = parseComment(data.comment, postId);
+    const rootCommentId = stringField(data, "root_comment_id");
+    const pinnedCommentId = nullableStringField(data, "pinned_comment_id");
+    if (pinnedCommentId !== null && !isCanonicalUlid(pinnedCommentId))
+      throw invalidResponse("comment context pin is invalid");
+    if (
+      comment.id !== commentId ||
+      rootCommentId !== (comment.parentId ?? comment.id)
+    )
+      throw invalidResponse("comment context belongs to another conversation");
+    const replyTarget =
+      data.reply_target === null
+        ? null
+        : parseComment(data.reply_target, postId);
+    if (
+      replyTarget &&
+      (replyTarget.id !== comment.replyTo?.commentId ||
+        (replyTarget.id !== rootCommentId &&
+          replyTarget.parentId !== rootCommentId))
+    )
+      throw invalidResponse("comment context reply target is invalid");
+    return {
+      comment,
+      replyTarget,
+      rootCommentId,
+      pinnedCommentId,
+      directReplyCount: nonNegativeIntegerField(data, "direct_reply_count"),
+    };
   }
 }
 

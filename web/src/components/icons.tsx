@@ -290,10 +290,13 @@ const paths: Record<IconName, React.ReactNode> = {
     </>
   ),
   delete: <use href={`${iconSprite}#trash`} />,
+  // Tabler Icons pin (MIT): https://github.com/tabler/tabler-icons/blob/main/icons/outline/pin.svg
+  // License is distributed at /icons/tabler-LICENSE.txt.
   pin: (
     <>
-      <path d="M8 4.5h8M9 4.5v5l-2.5 3h11L15 9.5v-5" />
-      <path d="M12 12.5V21" />
+      <path d="M15 4.5l-4 4l-4 1.5l-1.5 1.5l7 7l1.5 -1.5l1.5 -4l4 -4" />
+      <path d="M9 15l-4.5 4.5" />
+      <path d="M14.5 4l5.5 5.5" />
     </>
   ),
   link: (

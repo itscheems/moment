@@ -47,6 +47,17 @@ tasks:
     cmds:
       - python3 scripts/dev/article-showcase.py
 
+  playground:comments:
+    desc: Add multi-account comment discussions to the running disposable playground
+    deps: [playground:articles]
+    cmds:
+      - python3 scripts/dev/comment-showcase.py
+
+  playground:comments:test:
+    desc: Check comment fixture safety and interrupted-run recovery
+    cmds:
+      - python3 scripts/dev/comment-showcase_test.py
+
   fmt:
     desc: Format Go and Web sources
     cmds:

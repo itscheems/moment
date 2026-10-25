@@ -22,6 +22,7 @@ import (
 // RegisterCommentRoutes installs public conversation reads and account-authorized mutations.
 func RegisterCommentRoutes(engine *gin.Engine, service *app.CommentService, gate *Gate) {
 	engine.GET("/api/v1/posts/:id/comments", listComments(service, gate))
+	engine.GET("/api/v1/posts/:id/comments/:comment_id", getCommentContext(service, gate))
 	engine.GET("/api/v1/posts/:id/comments/:comment_id/replies", listCommentReplies(service, gate))
 	authored := engine.Group("/api/v1")
 	authored.Use(gate.RequireActiveAccount())
@@ -85,6 +86,31 @@ func listComments(service *app.CommentService, gate *Gate) gin.HandlerFunc {
 	}
 }
 
+func getCommentContext(service *app.CommentService, gate *Gate) gin.HandlerFunc {
+	return func(ctx *gin.Context) {
+		if ctx.Request.URL.RawQuery != "" {
+			writeCommentError(ctx, invalidCommentArgument("comment context does not accept query parameters", "query"))
+			return
+		}
+		postID, err := domain.ParseID(ctx.Param("id"))
+		if err != nil {
+			writeCommentError(ctx, err)
+			return
+		}
+		commentID, err := domain.ParseID(ctx.Param("comment_id"))
+		if err != nil {
+			writeCommentError(ctx, err)
+			return
+		}
+		result, err := service.GetContext(ctx.Request.Context(), postID, commentID, gate.Viewer(ctx))
+		if err != nil {
+			writeCommentError(ctx, err)
+			return
+		}
+		Success(ctx, http.StatusOK, commentdto.FromContext(result), nil)
+	}
+}
+
 func listCommentReplies(service *app.CommentService, gate *Gate) gin.HandlerFunc {
 	return func(ctx *gin.Context) {
 		postID, err := domain.ParseID(ctx.Param("id"))
@@ -97,12 +123,12 @@ func listCommentReplies(service *app.CommentService, gate *Gate) gin.HandlerFunc
 			writeCommentError(ctx, err)
 			return
 		}
-		cursor, limit, err := commentPageQuery(ctx.Request.URL)
+		cursor, limit, err := commentPageQuery(ctx.Request.URL, "scope")
 		if err != nil {
 			writeCommentError(ctx, err)
 			return
 		}
-		page, err := service.ListReplies(ctx.Request.Context(), app.ListRepliesInput{EntryID: postID, RootID: rootID, Cursor: cursor, Limit: limit, Viewer: gate.Viewer(ctx)})
+		page, err := service.ListReplies(ctx.Request.Context(), app.ListRepliesInput{EntryID: postID, RootID: rootID, Scope: app.CommentReplyScope(ctx.Query("scope")), Cursor: cursor, Limit: limit, Viewer: gate.Viewer(ctx)})
 		if err != nil {
 			writeCommentError(ctx, err)
 			return
@@ -114,7 +140,7 @@ func listCommentReplies(service *app.CommentService, gate *Gate) gin.HandlerFunc
 // commentPageQuery accepts exactly cursor and limit, each at most once and
 // never empty. An unknown parameter is rejected rather than ignored: silently
 // dropping a filter a caller believed was applied is worse than refusing it.
-func commentPageQuery(value *url.URL) (string, int, error) {
+func commentPageQuery(value *url.URL, allowed ...string) (string, int, error) {
 	query, err := url.ParseQuery(value.RawQuery)
 	if err != nil {
 		return "", 0, invalidCommentArgument("query string is malformed", "query")
@@ -123,7 +149,15 @@ func commentPageQuery(value *url.URL) (string, int, error) {
 		switch key {
 		case "cursor", "limit":
 		default:
-			return "", 0, invalidCommentArgument("unsupported query parameter", key)
+			accepted := false
+			for _, extra := range allowed {
+				if key == extra {
+					accepted = true
+				}
+			}
+			if !accepted {
+				return "", 0, invalidCommentArgument("unsupported query parameter", key)
+			}
 		}
 		if len(values) != 1 {
 			return "", 0, invalidCommentArgument("query parameter must be supplied once", key)

@@ -518,3 +518,53 @@ func TestCommentHTTPCancellationAndRouteRequirements(t *testing.T) {
 		t.Fatal("comment routes without owner auth accepted")
 	}
 }
+
+func TestCommentQuoteHTTPValidation(t *testing.T) {
+	fixture := newCommentHTTPFixture(t, nil)
+	repository, err := sqlitestore.NewPostRepository(fixture.database, fixture.runtime.Locks)
+	if err != nil {
+		t.Fatal(err)
+	}
+	posts, err := app.NewPostService(repository)
+	if err != nil {
+		t.Fatal(err)
+	}
+	engine, err := New(Config{Assets: testAssets(), SessionSigner: fixture.manager, Accounts: fixture.accountService, SiteSettings: fixture.site, Posts: posts, Comments: fixture.comments})
+	if err != nil {
+		t.Fatal(err)
+	}
+	fixture.engine = engine
+
+	root := postAccountComment(t, fixture, `{"content_md":"quoted comment"}`)
+	id := root["id"].(string)
+	valid := jsonRequest(http.MethodPost, "/api/v1/posts", `{"quoted_comment_id":"`+id+`"}`)
+	valid.Header.Set("Authorization", "Bearer "+fixture.token)
+	response := performRequest(fixture.engine, valid)
+	if response.Code != http.StatusCreated {
+		t.Fatalf("comment quote=%d %s", response.Code, response.Body.String())
+	}
+	data := decodeDataMap(t, response)
+	quoted := data["quoted_post"].(map[string]any)
+	if quoted["id"] != id || quoted["comment_post_id"] != fixture.postID.String() || quoted["content_md"] != "quoted comment" {
+		t.Fatalf("quoted=%+v", quoted)
+	}
+	missing := jsonRequest(http.MethodPost, "/api/v1/posts", `{"quoted_comment_id":"01H00000000000000000000109"}`)
+	missing.Header.Set("Authorization", "Bearer "+fixture.token)
+	if response := performRequest(fixture.engine, missing); response.Code != http.StatusNotFound || decodeError(t, response.Body).Error.Code != "COMMENT_NOT_FOUND" {
+		t.Fatalf("missing comment target=%d %s", response.Code, response.Body.String())
+	}
+
+	for _, body := range []string{`{"quoted_comment_id":null}`, `{"quoted_comment_id":"bad"}`, `{"quoted_comment_id":"` + id + `","quoted_post_id":"` + fixture.postID.String() + `"}`} {
+		req := jsonRequest(http.MethodPost, "/api/v1/posts", body)
+		req.Header.Set("Authorization", "Bearer "+fixture.token)
+		response := performRequest(fixture.engine, req)
+		if response.Code != http.StatusBadRequest {
+			t.Fatalf("invalid quote=%d %s", response.Code, response.Body.String())
+		}
+	}
+	req := jsonRequest(http.MethodPatch, "/api/v1/posts/"+fixture.postID.String(), `{"quoted_comment_id":"`+id+`"}`)
+	req.Header.Set("Authorization", "Bearer "+fixture.token)
+	if response := performRequest(fixture.engine, req); response.Code != http.StatusBadRequest {
+		t.Fatalf("mutable quote=%d %s", response.Code, response.Body.String())
+	}
+}

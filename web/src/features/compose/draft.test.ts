@@ -378,3 +378,25 @@ describe("instance-scoped compose draft", () => {
     ).toBeNull();
   });
 });
+
+it("preserves a comment quote in recovery and fingerprints its target", () => {
+  const quote = {
+    id: "01K2ABCDEF0123456789ABCDE1",
+    commentPostId: "01K2ABCDEF0123456789ABCDE0",
+  };
+  const current = createComposeDraft(
+    "",
+    undefined,
+    new Date(),
+    undefined,
+    quote,
+  );
+  expect(saveComposeDraft(instance, current)).toBe(true);
+  expect(loadComposeDraft(instance)?.quote).toEqual(quote);
+  expect(current.fingerprint).not.toBe(
+    createComposeDraft("", undefined, new Date(), undefined, {
+      ...quote,
+      id: "01K2ABCDEF0123456789ABCDE2",
+    }).fingerprint,
+  );
+});

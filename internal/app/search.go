@@ -123,6 +123,7 @@ func derivedSearchText(contentMD, cardText string) (string, error) {
 
 // SearchStore is valid only for its transaction callback.
 type SearchStore interface {
+	QuoteReadStore
 	ContentAuthorStore
 	Timezone(context.Context) (string, error)
 	SearchEntries(context.Context, SearchRepositoryQuery, int) ([]SearchRecord, error)
@@ -272,6 +273,7 @@ func (service *SearchService) Search(ctx context.Context, input SearchInput) (Se
 	commentCounts := make(map[domain.ID]int)
 	authors := make(map[string]CommentAuthorIdentity)
 	articleCards := make(map[domain.ID]ArticleCard)
+	quoted := make(map[domain.ID]*QuotedPost)
 	locations := make(map[domain.ID]*domain.Location)
 	linkCards := make(map[domain.ID][]LinkCardProjection)
 	err = service.transactions.Read(ctx, func(store SearchStore) error {
@@ -317,6 +319,10 @@ func (service *SearchService) Search(ctx context.Context, input SearchInput) (Se
 			return storeErr
 		}
 		for index := range records {
+			quoted[records[index].Entry.ID], storeErr = loadEntryQuote(ctx, store, input.Viewer, records[index].Entry.ID)
+			if storeErr != nil {
+				return storeErr
+			}
 			records[index].Media, storeErr = store.EntryMediaUsages(ctx, records[index].Entry.ID)
 			if storeErr != nil {
 				return storeErr
@@ -360,10 +366,11 @@ func (service *SearchService) Search(ctx context.Context, input SearchInput) (Se
 		YearCounts: aggregateYears(instants, location),
 	}
 	for _, record := range records {
-		post, renderErr := renderPost(record.Entry, articleView{Card: articleCardFor(articleCards, record.Entry)}, record.Media, locations[record.Entry.ID], linkCards[record.Entry.ID], commentCounts[record.Entry.ID])
+		post, renderErr := renderPost(record.Entry, articleView{Card: articleCardFor(articleCards, record.Entry)}, record.Media, locations[record.Entry.ID], linkCards[record.Entry.ID], commentCounts[record.Entry.ID], quoted[record.Entry.ID] != nil)
 		if renderErr != nil {
 			return SearchPage{}, renderErr
 		}
+		post.Quoted = quoted[record.Entry.ID]
 		post.Author = contentAuthor(authors, record.Entry.AuthorUserID)
 		page.Items = append(page.Items, SearchHit{Post: post, Snippet: searchSnippet(record.ContentText, normalized)})
 	}

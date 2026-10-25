@@ -736,6 +736,99 @@ describe("owner composing flow", () => {
     });
   });
 
+  it.each(["", "我的评论补充"])(
+    "publishes a comment quote with body %j through the normal composer",
+    async (content) => {
+      preauthenticate();
+      const originalId = "01K2ABCDEF0123456789ABCDE9",
+        commentId = "01K2ABCDEF0123456789ABCDE7";
+      window.history.replaceState(
+        {},
+        "",
+        `/compose?quoteComment=${commentId}&quotePost=${originalId}`,
+      );
+      const comment = {
+        id: commentId,
+        post_id: originalId,
+        parent_id: null,
+        depth: 0,
+        author_name: "乔乔",
+        author: post().author,
+        reply_to: null,
+        content_md: "被引用评论",
+        content_html: "<p>被引用评论</p>\n",
+        created_at: "2026-08-10T01:00:00Z",
+        media: [],
+        reply_count: 0,
+      };
+      const fetcher = installApi((url, init) => {
+        if (url === `/api/v1/posts/${originalId}` && !init?.method)
+          return json({ data: post("原帖", originalId), meta: {} });
+        if (
+          url === `/api/v1/posts/${originalId}/comments/${commentId}` &&
+          !init?.method
+        )
+          return json({
+            data: {
+              comment,
+              reply_target: null,
+              direct_reply_count: 0,
+              root_comment_id: commentId,
+              pinned_comment_id: null,
+            },
+            meta: {},
+          });
+        if (url === "/api/v1/posts" && init?.method === "POST")
+          return json(
+            {
+              data: {
+                ...post(content),
+                content_html: content ? `<p>${content}</p>` : "",
+                quoted_post: {
+                  id: commentId,
+                  comment_post_id: originalId,
+                  author: post().author,
+                  unavailable: false,
+                  kind: "moment",
+                  article: null,
+                  content_md: comment.content_md,
+                  content_html: comment.content_html,
+                  published_at: comment.created_at,
+                  media: [],
+                  location: null,
+                  map_card: null,
+                },
+              },
+              meta: {},
+            },
+            201,
+          );
+      });
+      render(<App />);
+      expect(await screen.findByText("被引用评论")).toBeInTheDocument();
+      if (content)
+        fireEvent.change(screen.getByLabelText("此刻想到什么？"), {
+          target: { value: content },
+        });
+      fireEvent.click(screen.getByRole("button", { name: "发布" }));
+      await waitFor(() => expect(window.location.pathname).toBe("/"));
+      const call = fetcher.mock.calls.find(
+        ([url, init]) =>
+          String(url) === "/api/v1/posts" && init?.method === "POST",
+      );
+      expect(JSON.parse(String(call?.[1]?.body))).toMatchObject({
+        content_md: content,
+        quoted_comment_id: commentId,
+      });
+      expect(JSON.parse(String(call?.[1]?.body))).not.toHaveProperty(
+        "quoted_post_id",
+      );
+      expect(
+        fetcher.mock.calls.some(([url]) => String(url).endsWith("/repost")),
+      ).toBe(false);
+    },
+  );
+
   it("reuses an uploaded media ID when post submission fails and retries", async () => {
     preauthenticate();
     window.history.replaceState({}, "", "/compose");
@@ -847,7 +940,10 @@ describe("owner composing flow", () => {
     });
     fireEvent(textarea, imagePaste);
     expect(imagePaste.defaultPrevented).toBe(true);
-    expect(await screen.findByText("1 / 9")).toBeInTheDocument();
+    expect(
+      await screen.findByRole("button", { name: "预览第 1 张图片，共 1 张" }),
+    ).toBeInTheDocument();
+    expect(screen.queryByText("1 / 9")).not.toBeInTheDocument();
 
     const mixedImage = new File(["image"], "mixed.png", {
       type: "image/png",
@@ -864,7 +960,9 @@ describe("owner composing flow", () => {
     fireEvent(textarea, mixedPaste);
     expect(mixedPaste.defaultPrevented).toBe(true);
     expect(textarea).toHaveValue("");
-    expect(await screen.findByText("2 / 9")).toBeInTheDocument();
+    expect(
+      await screen.findByRole("button", { name: "预览第 2 张图片，共 2 张" }),
+    ).toBeInTheDocument();
 
     const overLimitPaste = createEvent.paste(textarea, {
       bubbles: true,
@@ -883,7 +981,10 @@ describe("owner composing flow", () => {
     });
     fireEvent(textarea, overLimitPaste);
     expect(overLimitPaste.defaultPrevented).toBe(true);
-    expect(await screen.findByText("9 / 9")).toBeInTheDocument();
+    expect(
+      await screen.findByRole("button", { name: "预览第 9 张图片，共 9 张" }),
+    ).toBeInTheDocument();
+    expect(screen.queryByText("9 / 9")).not.toBeInTheDocument();
     expect(
       screen.getByText("每条Moment最多附加 9 张图片；多出的文件没有加入。"),
     ).toBeInTheDocument();
@@ -899,7 +1000,9 @@ describe("owner composing flow", () => {
     });
     fireEvent(textarea, rejectedMixedPaste);
     expect(rejectedMixedPaste.defaultPrevented).toBe(false);
-    expect(screen.getByText("9 / 9")).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "预览第 9 张图片，共 9 张" }),
+    ).toBeInTheDocument();
   });
 
   it("publishes a Moment that contains only an image", async () => {

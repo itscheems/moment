@@ -348,7 +348,8 @@ export function CommentForm({
   const [error, setError] = useState<string | null>(null);
   const [authExpired, setAuthExpired] = useState(false);
   const [activated, setActivated] = useState(
-    parentId !== null || initialExpanded,
+    (parentId !== null && topLevelTargetUsername === undefined) ||
+      initialExpanded,
   );
   const [mediaItems, setMediaItems] = useState<ComposerMediaItem[]>([]);
   const [commentLocation, setCommentLocation] = useState<LocationInput | null>(
@@ -380,8 +381,7 @@ export function CommentForm({
   // never carries one; a reply with no explicit target is answering its root.
   const replyToCommentId =
     parentId === null ? null : (replyTargetId ?? parentId);
-  const inlineTopLevel =
-    parentId === null && topLevelTargetUsername !== undefined;
+  const inlineTopLevel = topLevelTargetUsername !== undefined;
   const displayReauth =
     authExpired || (auth.state === "expired" && !auth.session);
   const displayedError =
@@ -390,7 +390,7 @@ export function CommentForm({
       ? "当前写入会话已失效。文字已保留，刷新身份后可以重试。"
       : null);
   const expanded =
-    parentId !== null ||
+    (parentId !== null && !inlineTopLevel) ||
     activated ||
     content.trim().length > 0 ||
     mediaItems.length > 0 ||
@@ -616,7 +616,7 @@ export function CommentForm({
       replaceMedia([]);
       mediaHistory.clear();
       setCommentLocation(null);
-      setActivated(parentId !== null || initialExpanded);
+      setActivated((parentId !== null && !inlineTopLevel) || initialExpanded);
     } catch (nextError) {
       if (auth.expireIfInvalidSession(nextError)) {
         setAuthExpired(true);
@@ -659,7 +659,7 @@ export function CommentForm({
 
   return (
     <div
-      className={`${styles.formSurface} ${styles.commentLayoutFrame} ${inlineTopLevel ? styles.inlineTopLevelForm : ""} ${parentId ? styles.replyForm : ""} ${expanded ? styles.commentExpanded : styles.commentCollapsed}`}
+      className={`${styles.formSurface} ${styles.commentLayoutFrame} ${inlineTopLevel ? styles.inlineTopLevelForm : ""} ${parentId && !inlineTopLevel ? styles.replyForm : ""} ${expanded ? styles.commentExpanded : styles.commentCollapsed}`}
       data-comment-layout-frame="true"
       data-comment-layout-state={expanded ? "expanded" : "collapsed"}
       data-comment-top-level={inlineTopLevel ? "true" : undefined}
@@ -700,7 +700,7 @@ export function CommentForm({
               </h3>
             </div>
           </header>
-          {parentId && replyTargetAuthor ? (
+          {!inlineTopLevel && parentId && replyTargetAuthor ? (
             <p className={styles.replyTarget}>
               正在回复{" "}
               {/*
@@ -712,7 +712,7 @@ export function CommentForm({
               <span>{replyTargetAuthor}</span>
             </p>
           ) : null}
-          {!parentId && topLevelTargetUsername ? (
+          {inlineTopLevel && topLevelTargetUsername ? (
             /* Always mounted so the line can grow in as the composer opens.
                Folded, it is hidden from assistive tech, exactly as it was
                when it was not rendered at all. */
@@ -787,7 +787,7 @@ export function CommentForm({
               placeholder="发布你的回复"
               ref={textareaRef}
               required={commentLocation === null}
-              rows={parentId ? 1 : 2}
+              rows={inlineTopLevel ? 2 : parentId ? 1 : 2}
               value={content}
             />
             {!expanded ? (

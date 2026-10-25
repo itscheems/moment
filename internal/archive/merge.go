@@ -546,6 +546,9 @@ func entryDependencies(value sqlitestore.ArchiveEntry, mediaIDBySHA map[string]s
 	if value.QuotedEntryID != nil {
 		result = append(result, MergeRef{Kind: MergeEntry, ID: *value.QuotedEntryID})
 	}
+	if value.QuotedCommentID != nil {
+		result = append(result, MergeRef{Kind: MergeComment, ID: *value.QuotedCommentID})
+	}
 	for _, usage := range value.Media {
 		result = append(result, MergeRef{Kind: MergeMedia, ID: usage.MediaID})
 	}
@@ -636,6 +639,9 @@ func entryChangedFields(local, incoming sqlitestore.ArchiveEntry, localSHA, inco
 	}
 	if !reflect.DeepEqual(local.QuotedEntryID, incoming.QuotedEntryID) {
 		fields = append(fields, "quoted_entry_id")
+	}
+	if !reflect.DeepEqual(local.QuotedCommentID, incoming.QuotedCommentID) {
+		fields = append(fields, "quoted_comment_id")
 	}
 	if local.QuoteUnavailable != incoming.QuoteUnavailable {
 		fields = append(fields, "quote_unavailable")
@@ -930,6 +936,7 @@ func cloneArchiveEntry(value sqlitestore.ArchiveEntry) sqlitestore.ArchiveEntry 
 		value.EditedAtMS = &edited
 	}
 	value.QuotedEntryID = cloneString(value.QuotedEntryID)
+	value.QuotedCommentID = cloneString(value.QuotedCommentID)
 	value.Media = cloneUsages(value.Media)
 	if value.Location != nil {
 		location := *value.Location

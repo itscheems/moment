@@ -45,6 +45,8 @@ type CommentStore interface {
 	CommentsByID(context.Context, []domain.ID) (map[domain.ID]domain.Comment, error)
 	ListCommentRoots(context.Context, domain.ID, *CommentPosition, int) ([]domain.Comment, error)
 	ListCommentReplies(context.Context, domain.ID, *CommentPosition, int) ([]domain.Comment, error)
+	ListDirectCommentReplies(context.Context, domain.ID, domain.ID, *CommentPosition, int) ([]domain.Comment, error)
+	CountDirectCommentReplies(context.Context, domain.ID, domain.ID) (int, error)
 	ReplyPreviews(context.Context, []domain.ID, int) (map[domain.ID][]domain.Comment, error)
 	CommentMediaUsagesByComment(context.Context, []domain.ID) (map[domain.ID][]MediaUsageProjection, error)
 	ReplyCounts(context.Context, []domain.ID) (map[domain.ID]int, error)
@@ -78,10 +80,8 @@ type Comment struct {
 	ReplyTo     *CommentReplyTarget
 	ContentHTML string
 	Media       []MediaUsageProjection
-	// ReplyCount and RepliesNextCursor describe a root's replies and are zero
-	// on a reply. They live on the root rather than in a parallel map because
-	// they are that root's own state; kept alongside it they cannot drift out
-	// of step with it.
+	// ReplyCount is the whole-floor total on a root and the direct-answer total
+	// on a reply. RepliesNextCursor only paginates the root's whole floor.
 	ReplyCount        int
 	RepliesNextCursor string
 }
@@ -157,9 +157,28 @@ type ListCommentsInput struct {
 type ListRepliesInput struct {
 	EntryID domain.ID
 	RootID  domain.ID
+	Scope   CommentReplyScope
 	Cursor  string
 	Limit   int
 	Viewer  Viewer
+}
+
+// CommentReplyScope selects a whole floor or only answers to the selected comment.
+type CommentReplyScope string
+
+// Reply collection scopes keep the whole floor distinct from direct answers.
+const (
+	CommentRepliesThread CommentReplyScope = "thread"
+	CommentRepliesDirect CommentReplyScope = "direct"
+)
+
+// CommentContext supports a permalink without reading every preceding floor.
+type CommentContext struct {
+	Comment          Comment
+	ReplyTarget      *Comment
+	RootCommentID    domain.ID
+	PinnedCommentID  *domain.ID
+	DirectReplyCount int
 }
 
 // CommentPin is the singleton top-level comment selected for one post.
@@ -632,7 +651,74 @@ func (service *CommentService) ListPage(ctx context.Context, input ListCommentsI
 	return thread, nil
 }
 
-// ListReplies returns one keyset page of replies under a single root.
+// GetContext reads the selected comment and its immediate reply target atomically.
+func (service *CommentService) GetContext(ctx context.Context, entryID, commentID domain.ID, viewer Viewer) (CommentContext, error) {
+	if err := contextError(ctx); err != nil {
+		return CommentContext{}, err
+	}
+	for _, id := range []domain.ID{entryID, commentID} {
+		if err := validateCommentID(id); err != nil {
+			return CommentContext{}, err
+		}
+	}
+	var result CommentContext
+	err := service.transactions.Read(ctx, func(store CommentStore) error {
+		if err := requireReadableEntry(ctx, store, viewer, entryID); err != nil {
+			return err
+		}
+		comment, found, err := store.CommentByID(ctx, commentID)
+		if err != nil {
+			return err
+		}
+		if !found || comment.EntryID != entryID {
+			return commentNotFound(commentID)
+		}
+		result.RootCommentID = comment.ID
+		if comment.ParentID != nil {
+			result.RootCommentID = *comment.ParentID
+		}
+		records := []domain.Comment{comment}
+		if comment.ReplyToCommentID != nil {
+			target, exists, err := store.CommentByID(ctx, *comment.ReplyToCommentID)
+			if err != nil {
+				return err
+			}
+			if exists && target.EntryID == entryID && (target.ID == result.RootCommentID || (target.ParentID != nil && *target.ParentID == result.RootCommentID)) {
+				records = append(records, target)
+			}
+		}
+		rendered, err := service.renderCommentPage(ctx, store, records)
+		if err != nil {
+			return err
+		}
+		for index := range rendered {
+			if rendered[index].Comment.ParentID == nil {
+				count, err := store.CountCommentReplies(ctx, rendered[index].Comment.ID)
+				if err != nil {
+					return err
+				}
+				rendered[index].ReplyCount = count
+			}
+		}
+		result.Comment = rendered[0]
+		result.DirectReplyCount, err = store.CountDirectCommentReplies(ctx, entryID, commentID)
+		if err != nil {
+			return err
+		}
+		pinned, err := store.PinnedCommentID(ctx, entryID)
+		if err != nil {
+			return err
+		}
+		result.PinnedCommentID = cloneCommentID(pinned)
+		if len(rendered) > 1 {
+			result.ReplyTarget = &rendered[1]
+		}
+		return nil
+	})
+	return result, normalizeCommentRepositoryError(err)
+}
+
+// ListReplies returns a keyset page in the selected conversation scope.
 func (service *CommentService) ListReplies(ctx context.Context, input ListRepliesInput) (CommentReplyPage, error) {
 	if err := contextError(ctx); err != nil {
 		return CommentReplyPage{}, err
@@ -647,7 +733,13 @@ func (service *CommentService) ListReplies(ctx context.Context, input ListReplie
 	if err != nil {
 		return CommentReplyPage{}, err
 	}
-	after, err := decodeCommentReplyCursor(input.Cursor, input.RootID)
+	if input.Scope == "" {
+		input.Scope = CommentRepliesThread
+	}
+	if input.Scope != CommentRepliesThread && input.Scope != CommentRepliesDirect {
+		return CommentReplyPage{}, domain.NewError(domain.CodeInvalidArgument, "scope must be thread or direct", map[string]any{"field": "scope"})
+	}
+	after, err := decodeScopedCommentReplyCursor(input.Cursor, input.RootID, input.Scope)
 	if err != nil {
 		return CommentReplyPage{}, err
 	}
@@ -664,10 +756,15 @@ func (service *CommentService) ListReplies(ctx context.Context, input ListReplie
 		// The root has to belong to the post named in the request. Without
 		// that check a caller could page any thread through any post's URL,
 		// and the reply cursor alone would not catch it.
-		if !found || root.EntryID != input.EntryID || root.ParentID != nil {
+		if !found || root.EntryID != input.EntryID || (input.Scope == CommentRepliesThread && root.ParentID != nil) {
 			return commentNotFound(input.RootID)
 		}
-		replies, storeErr := store.ListCommentReplies(ctx, input.RootID, after, limit+1)
+		var replies []domain.Comment
+		if input.Scope == CommentRepliesDirect {
+			replies, storeErr = store.ListDirectCommentReplies(ctx, input.EntryID, input.RootID, after, limit+1)
+		} else {
+			replies, storeErr = store.ListCommentReplies(ctx, input.RootID, after, limit+1)
+		}
 		if storeErr != nil {
 			return storeErr
 		}
@@ -682,7 +779,7 @@ func (service *CommentService) ListReplies(ctx context.Context, input ListReplie
 		page.Items = rendered
 		if hasNext && len(replies) > 0 {
 			last := replies[len(replies)-1]
-			page.NextCursor = encodeCommentReplyCursor(input.RootID, CommentPosition{CreatedAtMS: domain.TimeToMillis(last.CreatedAt), ID: last.ID})
+			page.NextCursor = encodeScopedCommentReplyCursor(input.RootID, CommentPosition{CreatedAtMS: domain.TimeToMillis(last.CreatedAt), ID: last.ID}, input.Scope)
 		}
 		return nil
 	})
@@ -693,15 +790,23 @@ func (service *CommentService) ListReplies(ctx context.Context, input ListReplie
 }
 
 // renderCommentPage resolves everything a page of comments needs in batches:
-// attachments, author identities and reply targets each cost one query for the
+// attachments, author identities, reply targets and counts use batch queries for the
 // whole page rather than one per row.
 func (service *CommentService) renderCommentPage(ctx context.Context, store CommentStore, records []domain.Comment) ([]Comment, error) {
 	if len(records) == 0 {
 		return []Comment{}, nil
 	}
 	ids := make([]domain.ID, len(records))
+	replyIDs := make([]domain.ID, 0, len(records))
 	for index, record := range records {
 		ids[index] = record.ID
+		if record.ParentID != nil {
+			replyIDs = append(replyIDs, record.ID)
+		}
+	}
+	replyCounts, err := store.ReplyCounts(ctx, replyIDs)
+	if err != nil {
+		return nil, err
 	}
 	mediaByComment, err := store.CommentMediaUsagesByComment(ctx, ids)
 	if err != nil {
@@ -721,6 +826,7 @@ func (service *CommentService) renderCommentPage(ctx context.Context, store Comm
 		if renderErr != nil {
 			return nil, corruptComment(record.ID)
 		}
+		comment.ReplyCount = replyCounts[record.ID]
 		rendered = append(rendered, comment)
 	}
 	return rendered, nil

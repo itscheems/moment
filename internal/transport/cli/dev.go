@@ -15,6 +15,7 @@ import (
 func registerDev(application *Application) {
 	commonFlags := func(flags *pflag.FlagSet) {
 		flags.Int64("seed", 1, "deterministic signed 64-bit fixture seed")
+		flags.String("account-token-file", "", "reuse a locally saved development account token")
 	}
 	policy := SafetyPolicy{
 		Destructive: true, SupportsDryRun: true,
@@ -30,14 +31,14 @@ func registerDev(application *Application) {
 		Example:    "moment dev reset --data-dir ./moment-dev --dry-run --json\nmoment dev reset --data-dir ./moment-dev --yes --no-input --json",
 		Capability: CapabilityDirectOnly, Policy: policy, Args: cobra.NoArgs,
 		Run: func(ctx context.Context, invocation Invocation, _ CommandInput) (Result, error) {
-			return runDev(ctx, invocation, devtools.OperationReset, "", 0)
+			return runDev(ctx, invocation, devtools.OperationReset, "", 0, "")
 		},
 	})
 	application.MustRegisterLeaf(LeafSpec{
 		Path: []string{"dev", "seed"}, Short: "Build the deterministic mixed development fixture",
 		Long:       "Atomically seed one marked development instance, or initialize development metadata only when --data-dir names an existing canonical and strictly empty directory.",
-		Inputs:     "Requires explicit --data-dir. --seed controls logical IDs, timestamps, content, comments, and media. The default is 1.",
-		Output:     "The recipe version, exact counts, doctor status, and a cryptographically random account token exactly once for a fresh instance.",
+		Inputs:     "Requires explicit --data-dir. --seed controls logical IDs, timestamps, content, comments, and media. The default is 1. --account-token-file reuses a local development credential.",
+		Output:     "The recipe version, exact counts, doctor status, and an account token (random unless --account-token-file supplies an existing local credential).",
 		Errors:     "Unknown or unsafe input exits 2, active service exits 4, I/O exits 6, integrity exits 7, cancellation exits 9.",
 		Safety:     "Strictly empty bootstrap and marked reset both require confirmation. --dry-run is fully read-only.",
 		Example:    "mkdir ./moment-dev && moment dev seed --data-dir ./moment-dev --seed 42 --yes --no-input --json",
@@ -47,7 +48,11 @@ func registerDev(application *Application) {
 			if err != nil {
 				return Result{}, err
 			}
-			return runDev(ctx, invocation, devtools.OperationSeed, "", seed)
+			tokenFile, err := input.String("account-token-file")
+			if err != nil {
+				return Result{}, err
+			}
+			return runDev(ctx, invocation, devtools.OperationSeed, "", seed, tokenFile)
 		},
 	})
 	application.MustRegisterLeaf(LeafSpec{
@@ -64,18 +69,29 @@ func registerDev(application *Application) {
 			if err != nil {
 				return Result{}, err
 			}
-			return runDev(ctx, invocation, devtools.OperationScenario, input.Args()[0], seed)
+			tokenFile, err := input.String("account-token-file")
+			if err != nil {
+				return Result{}, err
+			}
+			return runDev(ctx, invocation, devtools.OperationScenario, input.Args()[0], seed, tokenFile)
 		},
 	})
 }
 
-func runDev(ctx context.Context, invocation Invocation, operation devtools.Operation, scenario string, seed int64) (Result, error) {
+func runDev(ctx context.Context, invocation Invocation, operation devtools.Operation, scenario string, seed int64, tokenFile string) (Result, error) {
 	target, err := invocation.DirectTransport()
 	if err != nil {
 		return Result{}, err
 	}
+	token := ""
+	if tokenFile != "" {
+		token, err = readAPIToken(apiTarget{tokenFile: tokenFile})
+		if err != nil {
+			return Result{}, err
+		}
+	}
 	result, err := devtools.Execute(ctx, devtools.Request{
-		DataDir: target.DataDirectory(), Operation: operation, Scenario: scenario, Seed: seed,
+		DataDir: target.DataDirectory(), Operation: operation, Scenario: scenario, Seed: seed, APIToken: token,
 		DryRun: invocation.Safety().DryRun,
 		Progress: func(progress devtools.Progress) {
 			invocation.LogEvent("info", "dev_fixture_progress", map[string]any{
@@ -94,7 +110,7 @@ func runDev(ctx context.Context, invocation Invocation, operation devtools.Opera
 		text += fmt.Sprintf("\nShowcase anchored at %s: %d cases listed under data.showcase", result.Showcase.AnchoredAt, len(result.Showcase.Cases))
 	}
 	if result.APIToken != "" {
-		text += "\nAccount API token (shown once): " + result.APIToken
+		text += "\nAccount API token: " + result.APIToken
 	}
 	return Result{Data: result, Text: text}, nil
 }

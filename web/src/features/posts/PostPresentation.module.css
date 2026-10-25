@@ -24,13 +24,36 @@
   }
 }
 
+.post[data-embedded] {
+  border-block-end: 0;
+  background: transparent;
+  content-visibility: visible;
+  contain-intrinsic-size: none;
+}
+
+.post[data-embedded] .bylineIdentity {
+  flex-wrap: wrap;
+  overflow: visible;
+  white-space: normal;
+  row-gap: 0;
+}
+
+.post[data-embedded] .nameLink,
+.post[data-embedded] .usernameLink {
+  flex: 0 0 auto;
+  max-inline-size: 100%;
+  white-space: nowrap;
+}
+
 @media (hover: hover) {
-  .post:not(.detail):hover {
+  .post:not(.detail):not([data-embedded]):hover {
     background: #f7f7f7;
   }
 
-  :global(:root[data-theme="dim"]) .post:not(.detail):hover,
-  :global(:root[data-theme="lights-out"]) .post:not(.detail):hover {
+  :global(:root[data-theme="dim"])
+    .post:not(.detail):not([data-embedded]):hover,
+  :global(:root[data-theme="lights-out"])
+    .post:not(.detail):not([data-embedded]):hover {
     background: var(--surface-hover);
   }
 }
@@ -42,20 +65,25 @@
     (var(--post-menu-icon-size) - var(--post-edge-action-size)) / 2
   );
 
-  grid-template-columns: 2.5rem minmax(0, 1fr);
+  grid-template-columns: var(--post-avatar-size, 2.5rem) minmax(0, 1fr);
   column-gap: var(--space-2);
   padding: 0.75rem var(--space-4);
 }
 
 .timelineDensity .avatar,
-.timelineDensity .avatarFallback {
-  inline-size: 2.5rem;
-  block-size: 2.5rem;
+.timelineDensity .avatarFallback,
+.timelineDensity .identityLink > :first-child {
+  inline-size: var(--post-avatar-size, 2.5rem);
+  block-size: var(--post-avatar-size, 2.5rem);
 }
 
 .timelineDensity .repostedLabel {
   grid-template-columns: 2.5rem minmax(0, 1fr);
   column-gap: var(--space-2);
+}
+
+.timelineDensity .pinnedLabel {
+  padding-inline-start: calc(2.5rem + var(--space-2));
 }
 
 .surfaceLink {
@@ -93,6 +121,58 @@
   display: flex;
   align-items: flex-start;
   justify-content: center;
+}
+
+.post.conversation {
+  --conversation-inset: var(--space-4);
+  grid-template-columns: 2.5rem minmax(0, 1fr);
+  column-gap: var(--space-2);
+}
+
+.post.conversation:not(.detail) {
+  border-block-end: 0;
+  margin-block-end: -1px;
+  content-visibility: visible;
+  contain-intrinsic-size: none;
+}
+
+.conversation[data-connected]::after,
+.conversation[data-connected-from]::before {
+  content: "";
+  position: absolute;
+  inset-inline-start: calc(var(--conversation-inset) + 1.25rem - 1px);
+  inline-size: 2px;
+  background: var(--border-strong);
+  pointer-events: none;
+}
+
+.conversation[data-connected]::after {
+  inset-block-start: calc(var(--space-3) + 2.5rem + var(--space-1));
+  inset-block-end: 0;
+}
+
+.conversation[data-connected-from]::before {
+  inset-block-start: 0;
+  block-size: var(--space-2);
+}
+
+.conversation .byline,
+.conversation .markdown {
+  font-family: var(--font-timeline);
+  font-feature-settings: normal;
+  letter-spacing: normal;
+}
+
+.conversation .markdown {
+  font-weight: 400;
+}
+
+.post.conversation.detail {
+  padding-block-start: var(--space-3);
+}
+.conversation.detail .detailIdentity {
+  grid-template-columns: 2.5rem minmax(0, 1fr);
+  gap: var(--space-2);
 }
 
 .identityLink {
@@ -142,18 +222,21 @@
 }
 
 .pinnedLabel {
+  grid-column: 1 / -1;
   display: flex;
   align-items: center;
-  gap: 0.35rem;
-  margin-block-end: 0.25rem;
+  gap: var(--space-1);
+  padding-inline-start: calc(3rem + var(--space-3));
   color: var(--text-secondary);
-  font-size: var(--text-sm);
-  font-weight: 650;
+  font-size: 0.75rem;
+  font-weight: 500;
+  line-height: 1rem;
 }
 
 .pinnedLabel svg {
-  inline-size: 1rem;
-  block-size: 1rem;
+  flex: none;
+  inline-size: 0.8125rem;
+  block-size: 0.8125rem;
 }
 
 .byline {
@@ -173,6 +256,14 @@
   align-items: baseline;
   gap: 0.28rem;
   overflow: hidden;
+  white-space: nowrap;
+}
+
+.bylineTime {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: baseline;
+  gap: 0.28rem;
   white-space: nowrap;
 }
 
@@ -326,7 +417,7 @@
 
 .timelineDensity .markdown {
   min-inline-size: 0;
-  margin-block-start: 0;
+  margin-block-start: 0.125rem;
   overflow-wrap: break-word;
   font-size: 0.9375rem;
   font-weight: 400;
@@ -602,7 +693,7 @@
   justify-self: end;
 }
 
-.post:not(.detail) .postAction {
+.post:not(.detail):not(.timelineDensity) .postAction {
   padding: calc(
     (var(--post-edge-action-size) - var(--post-action-halo-size)) / 2
   );
@@ -627,10 +718,10 @@
   padding: 0;
   font-family: var(--font-timeline);
   font-feature-settings: normal;
-  font-size: 0.8125rem;
+  font-size: 0.9375rem;
   font-weight: 400;
   letter-spacing: normal;
-  line-height: 1rem;
+  line-height: 1.25rem;
   transition: color 200ms;
 }
 
@@ -674,7 +765,7 @@
   min-inline-size: 0;
   padding-inline: var(--space-1);
   font-variant-numeric: normal;
-  line-height: 1rem;
+  line-height: 1.25rem;
   transform: none;
 }
 
@@ -768,10 +859,27 @@
   color: var(--text-primary);
 }
 .quoteMarkdown {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 4;
+  overflow: hidden;
+  max-block-size: 80px;
   margin-block-start: var(--space-2);
+  font-size: 15px;
+  line-height: 20px;
+}
+
+/* Keep inherited document paragraph spacing from consuming the quote preview. */
+.quoteCard .quoteMarkdown:global(.tiptap.ProseMirror) p {
+  margin: 0;
+  font: inherit;
 }
 
 .detail {
+  --post-menu-icon-size: 1.171875rem;
+  --post-menu-inline-offset: calc(
+    (1.40625rem - var(--post-edge-action-size)) / 2 + var(--space-1)
+  );
   display: block;
   padding-block: var(--space-4) 0;
   cursor: default;
@@ -786,6 +894,11 @@
   display: grid;
   grid-template-columns: 2.5rem minmax(0, 1fr);
   gap: var(--space-2);
+}
+
+.detail .pinnedLabel {
+  padding-inline-start: calc(2.5rem + var(--space-2));
+  margin-block-end: var(--space-1);
 }
 
 .detailHeading {
@@ -828,7 +941,9 @@
 
 .detail .postAction {
   isolation: isolate;
-  inline-size: 1.90625rem;
+  inline-size: max-content;
+  min-inline-size: 1.90625rem;
+  justify-content: flex-start;
   block-size: 2.9375rem;
   min-block-size: 2.9375rem;
   border-radius: 0;
@@ -841,10 +956,11 @@
 }
 
 .detail .postAction::before {
+  inset-inline-start: -0.5rem;
   position: absolute;
   z-index: 0;
-  inline-size: 2.171875rem;
-  block-size: 2.171875rem;
+  inline-size: 2.40625rem;
+  block-size: 2.40625rem;
   border-radius: 50%;
   background: transparent;
   content: "";
@@ -879,26 +995,27 @@
 }
 
 .detail .postAction.replyAction:focus-visible::before {
-  background: #e8f5fd;
+  background: rgb(29 155 240 / 10%);
 }
 
 @media (hover: hover) {
   .detail .postAction.replyAction:hover::before {
-    background: #e8f5fd;
+    background: rgb(29 155 240 / 10%);
   }
 }
 
 .detail .postAction.repostAction:focus-visible::before {
-  background: #e3f1eb;
+  background: rgb(0 186 124 / 10%);
 }
 
 @media (hover: hover) {
   .detail .postAction.repostAction:hover::before {
-    background: #e3f1eb;
+    background: rgb(0 186 124 / 10%);
   }
 }
 
 .detail .shareAction {
+  min-inline-size: 0;
   grid-column: 5;
   inline-size: 1.40625rem;
   justify-self: end;
@@ -1006,4 +1123,14 @@
   .post {
     transition: none;
   }
+}
+
+.detail .actionCount {
+  font-size: 0.9375rem;
+  font-variant-numeric: normal;
+  line-height: 1.25rem;
+  position: static;
+  inset: auto;
+  padding-inline: var(--space-1);
+  transform: none;
 }

@@ -25,7 +25,7 @@ export class PostsApi extends ApiClient {
     idempotencyKey: string,
     media: PostMediaInput[] = [],
     location?: LocationInput | null,
-    quotedPostId?: string,
+    quoteTarget?: string | { commentId: string },
     linkCards?: LinkCardInput[] | null,
     visibility?: PostVisibility,
     mapCard?: MapCardData | null,
@@ -38,7 +38,8 @@ export class PostsApi extends ApiClient {
       body.location = location === null ? null : locationPayload(location);
     }
     if (linkCards !== undefined) body.link_cards = linkCards ?? [];
-    if (quotedPostId !== undefined) body.quoted_post_id = quotedPostId;
+    if (typeof quoteTarget === "string") body.quoted_post_id = quoteTarget;
+    else if (quoteTarget) body.quoted_comment_id = quoteTarget.commentId;
     if (visibility !== undefined) body.visibility = visibility;
     if (mapCard !== undefined)
       body.map_card = mapCard === null ? null : mapCardPayload(mapCard);

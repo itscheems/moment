@@ -22,6 +22,15 @@ import (
 
 func registerComments(application *Application) {
 	application.MustRegisterLeaf(LeafSpec{
+		Path: []string{"comment", "get"}, ArgsUsage: "<post-id> <comment-id>", Short: "Read a comment and its reply context",
+		Long:    "Read one comment, its immediate reply target and the root comment ID without paging the full conversation.",
+		Inputs:  "Provide a canonical post ULID and comment ULID. Reads obey the selected account's post visibility.",
+		Output:  "data.comment, nullable data.reply_target and data.root_comment_id.",
+		Errors:  "Invalid IDs, missing comments and unreadable posts return stable codes and non-zero exit statuses.",
+		Example: "moment comment get 01ARZ3NDEKTSV4RRFFQ69G5FAV 01ARZ3NDEKTSV4RRFFQ69G5FAW --data-dir ./moment-data --json",
+		Args:    cobra.ExactArgs(2), Capability: CapabilityBoth, Run: runCommentGet,
+	})
+	application.MustRegisterLeaf(LeafSpec{
 		Path: []string{"comment", "list"}, ArgsUsage: "<post-id>", Short: "List one page of a comment thread",
 		Long:    "Read one keyset page of a flattened one-level thread through the selected local instance or public HTTP API.",
 		Inputs:  "Provide one canonical post ULID plus optional --cursor and --limit. Public API reads do not require an account token.",
@@ -35,14 +44,15 @@ func registerComments(application *Application) {
 		},
 	})
 	application.MustRegisterLeaf(LeafSpec{
-		Path: []string{"comment", "replies"}, ArgsUsage: "<post-id> <root-comment-id>", Short: "List one page of replies",
-		Long:    "Read one keyset page of the replies under a single top-level comment.",
-		Inputs:  "Provide a post ULID, a top-level comment ULID, and optional --cursor and --limit.",
+		Path: []string{"comment", "replies"}, ArgsUsage: "<post-id> <comment-id>", Short: "List one page of replies",
+		Long:    "Read one keyset page. The default thread scope reads a whole top-level floor; direct reads only replies to the selected comment.",
+		Inputs:  "Provide a post ULID, comment ULID, optional --scope thread|direct, --cursor and --limit. Thread scope requires a top-level comment.",
 		Output:  "An ordered data.items array of replies and nullable meta.next_cursor.",
 		Errors:  "Invalid IDs, invalid cursors, and comments that are not roots of the named post return stable codes.",
 		Example: "moment comment replies 01ARZ3NDEKTSV4RRFFQ69G5FAV 01ARZ3NDEKTSV4RRFFQ69G5FAW --data-dir ./moment-data --json",
 		Args:    cobra.ExactArgs(2), Capability: CapabilityBoth, Run: runCommentReplies,
 		Flags: func(flags *pflag.FlagSet) {
+			flags.String("scope", "thread", "reply collection: thread or direct")
 			flags.String("cursor", "", "opaque keyset cursor from a previous page")
 			flags.Int("limit", 0, "maximum replies to return (1-100)")
 		},
@@ -167,7 +177,7 @@ func runCommentList(ctx context.Context, invocation Invocation, input CommandInp
 			return Result{}, commentCLIError(err)
 		}
 		defer func() { _ = database.Close() }()
-		result, err := service.ListPage(ctx, app.ListCommentsInput{EntryID: postID, Cursor: cursor, Limit: limit})
+		result, err := service.ListPage(ctx, app.ListCommentsInput{EntryID: postID, Cursor: cursor, Limit: limit, Viewer: app.ViewerFromContext(ctx)})
 		if err != nil {
 			return Result{}, commentCLIError(err)
 		}
@@ -188,6 +198,42 @@ func runCommentList(ctx context.Context, invocation Invocation, input CommandInp
 	return Result{Data: thread, Text: commentThreadText(thread), Meta: meta}, nil
 }
 
+func runCommentGet(ctx context.Context, invocation Invocation, input CommandInput) (Result, error) {
+	postID, err := domain.ParseID(input.Args()[0])
+	if err != nil {
+		return Result{}, commentCLIError(err)
+	}
+	commentID, err := domain.ParseID(input.Args()[1])
+	if err != nil {
+		return Result{}, commentCLIError(err)
+	}
+	var result commentdto.Context
+	switch invocation.Mode() {
+	case ModeDirect:
+		service, database, err := openDirectCommentRead(ctx, invocation)
+		if err != nil {
+			return Result{}, commentCLIError(err)
+		}
+		defer func() { _ = database.Close() }()
+		context, err := service.GetContext(ctx, postID, commentID, app.ViewerFromContext(ctx))
+		if err != nil {
+			return Result{}, commentCLIError(err)
+		}
+		result = commentdto.FromContext(context)
+	case ModeAPI:
+		_, status, err := commentAPIRequest(ctx, invocation, http.MethodGet, "/api/v1/posts/"+postID.String()+"/comments/"+commentID.String(), nil, nil, "", false, &result)
+		if err != nil {
+			return Result{}, commentCLIError(err)
+		}
+		if status != http.StatusOK {
+			return Result{}, invalidAPIResponse()
+		}
+	default:
+		return Result{}, errors.New("unsupported comment get transport")
+	}
+	return Result{Data: result, Text: commentListText([]commentdto.Comment{result.Comment}, "")}, nil
+}
+
 func runCommentReplies(ctx context.Context, invocation Invocation, input CommandInput) (Result, error) {
 	postID, err := domain.ParseID(input.Args()[0])
 	if err != nil {
@@ -202,6 +248,16 @@ func runCommentReplies(ctx context.Context, invocation Invocation, input Command
 		return Result{}, err
 	}
 	var page commentdto.ReplyPage
+	scope, err := input.String("scope")
+	if err != nil {
+		return Result{}, err
+	}
+	if scope != "thread" && scope != "direct" {
+		return Result{}, commentCLIError(domain.NewError(domain.CodeInvalidArgument, "scope must be thread or direct", map[string]any{"field": "scope"}))
+	}
+	if scope != "thread" {
+		query.Set("scope", scope)
+	}
 	var meta map[string]any
 	switch invocation.Mode() {
 	case ModeDirect:
@@ -210,7 +266,7 @@ func runCommentReplies(ctx context.Context, invocation Invocation, input Command
 			return Result{}, commentCLIError(err)
 		}
 		defer func() { _ = database.Close() }()
-		result, err := service.ListReplies(ctx, app.ListRepliesInput{EntryID: postID, RootID: rootID, Cursor: cursor, Limit: limit})
+		result, err := service.ListReplies(ctx, app.ListRepliesInput{EntryID: postID, RootID: rootID, Scope: app.CommentReplyScope(scope), Cursor: cursor, Limit: limit, Viewer: app.ViewerFromContext(ctx)})
 		if err != nil {
 			return Result{}, commentCLIError(err)
 		}
@@ -549,6 +605,10 @@ func commentAPIRequest(ctx context.Context, invocation Invocation, method, endpo
 		return nil, status, err
 	}
 	switch typed := destination.(type) {
+	case *commentdto.Context:
+		if err := commentdto.ValidateContext(*typed); err != nil {
+			return nil, status, invalidAPIResponse()
+		}
 	case *commentdto.Comment:
 		if err := commentdto.ValidateComment(*typed); err != nil {
 			return nil, status, invalidAPIResponse()

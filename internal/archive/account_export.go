@@ -20,7 +20,7 @@ import (
 )
 
 // AccountFormatHeaderValue distinguishes personal portability from site recovery.
-const AccountFormatHeaderValue = "moment-account-export-v1"
+const AccountFormatHeaderValue = "moment-account-export-v2"
 const accountFormatName = "moment-account-export"
 
 type accountManifest struct {
@@ -82,7 +82,7 @@ func (exporter *Exporter) ExportAccount(ctx context.Context, destination io.Writ
 	}()
 	now := domain.NormalizeTime(exporter.clock())
 	protocol := &protocolWriter{zip: writer, createdAt: now}
-	if err := protocol.bytesMember("README.txt", zip.Deflate, []byte("Moment personal data export v1\nThis is not a site backup and cannot be imported.\nOnly this account's content is included; referenced posts/replies may be absent.\nChecksums cover every member except checksums.sha256 itself.\n")); err != nil {
+	if err := protocol.bytesMember("README.txt", zip.Deflate, []byte("Moment personal data export v2\nThis is not a site backup and cannot be imported.\nOnly this account's content is included; referenced posts/replies may be absent.\nChecksums cover every member except checksums.sha256 itself.\n")); err != nil {
 		return Summary{}, err
 	}
 	if err := protocol.jsonMember("data/account.json", portableUserRecord(*account)); err != nil {
@@ -259,7 +259,7 @@ func (exporter *Exporter) ExportAccount(ctx context.Context, destination io.Writ
 	if err != nil {
 		return Summary{}, err
 	}
-	manifest := accountManifest{Format: accountFormatName, FormatVersion: 1, CreatedAt: now.Format(time.RFC3339Nano), AccountID: accountID, Counts: countManifest{Users: 1, Identities: identities, Entries: entries, Comments: comments, Media: mediaCount, Articles: articles, ArticleDrafts: drafts}}
+	manifest := accountManifest{Format: accountFormatName, FormatVersion: 2, CreatedAt: now.Format(time.RFC3339Nano), AccountID: accountID, Counts: countManifest{Users: 1, Identities: identities, Entries: entries, Comments: comments, Media: mediaCount, Articles: articles, ArticleDrafts: drafts}}
 	if err := protocol.jsonMember("manifest.json", manifest); err != nil {
 		return Summary{}, err
 	}
@@ -270,7 +270,7 @@ func (exporter *Exporter) ExportAccount(ctx context.Context, destination io.Writ
 		return Summary{}, err
 	}
 	closed = true
-	return Summary{FormatVersion: 1, ArchiveBytes: counted.size, ArchiveSHA256: hex.EncodeToString(digest.Sum(nil))}, nil
+	return Summary{FormatVersion: 2, ArchiveBytes: counted.size, ArchiveSHA256: hex.EncodeToString(digest.Sum(nil))}, nil
 }
 
 // WriteAccountFile shares atomic publication with backups but validates the
@@ -336,7 +336,7 @@ func ValidateAccountFileContext(ctx context.Context, name string) error {
 	if err := json.Unmarshal(raw, &document); err != nil {
 		return err
 	}
-	if document.Format != accountFormatName || document.FormatVersion != 1 || document.AccountID == "" {
+	if document.Format != accountFormatName || (document.FormatVersion != 1 && document.FormatVersion != 2) || document.AccountID == "" {
 		return archiveInvalid("not a personal account export", nil)
 	}
 	sums, err := readChecksums(ctx, files["checksums.sha256"], len(files))

@@ -73,7 +73,7 @@ func registerPosts(application *Application) {
 		Path:   []string{"post", "create"},
 		Short:  "Publish a Moment post",
 		Long:   "Publish one Markdown post through the shared application service in direct mode or the authenticated account HTTP API.",
-		Inputs: "Provide --map-json path|-, --content, managed media, --quote, or a combination of them. Add either --location-name or a canonical --location-json path|-; media and location JSON cannot both read stdin. --visibility everyone|only_me chooses who may read the post (default everyone).",
+		Inputs: "Provide --map-json path|-, --content, managed media, --quote, --quote-comment, or a combination of them. Add either --location-name or a canonical --location-json path|-; media and location JSON cannot both read stdin. --visibility everyone|only_me chooses who may read the post (default everyone).",
 		Output: "The canonical created post and replay metadata.",
 		Errors: "Content validation, authentication, and idempotency conflicts use stable codes and exit statuses.",
 		Example: "moment --as writer post create --data-dir ./moment-data --content 'hello **moment**' --media ./cat.jpg --media-alt 'cat sleeping' --idempotency-key demo-001 --json\n" +
@@ -83,6 +83,7 @@ func registerPosts(application *Application) {
 		Flags: func(flags *pflag.FlagSet) {
 			flags.String("content", "", "authoritative UTF-8 Markdown content")
 			flags.String("quote", "", "canonical post ULID to quote")
+			flags.String("quote-comment", "", "canonical comment ULID to quote (exclusive with --quote)")
 			flags.String("idempotency-key", "", "retry key forwarded unchanged to the application service")
 			registerPostVisibilityFlag(flags)
 			registerPostMediaFlags(flags)
@@ -357,8 +358,23 @@ func runPostCreate(ctx context.Context, invocation Invocation, input CommandInpu
 		}
 		quotedPostID = &id
 	}
-	if !input.Changed("content") && !mediaInput.Present && !mapInput.Present && quotedPostID == nil {
-		return Result{}, invalidArgument("post create requires --content, media, --map-json, or --quote", "provide --content, --media, --media-manifest, --map-json, or --quote")
+	var quotedCommentID *domain.ID
+	if input.Changed("quote-comment") {
+		value, err := input.String("quote-comment")
+		if err != nil {
+			return Result{}, err
+		}
+		id, err := domain.ParseID(value)
+		if err != nil {
+			return Result{}, postCLIError(err)
+		}
+		quotedCommentID = &id
+	}
+	if quotedCommentID != nil && quotedPostID != nil {
+		return Result{}, invalidArgument("quote targets are mutually exclusive", "use either --quote or --quote-comment")
+	}
+	if !input.Changed("content") && !mediaInput.Present && !mapInput.Present && quotedPostID == nil && quotedCommentID == nil {
+		return Result{}, invalidArgument("post create requires --content, media, --map-json, or --quote/--quote-comment", "provide --content, --media, --media-manifest, --map-json, or --quote")
 	}
 	idempotencyKey, err := input.String("idempotency-key")
 	if err != nil {
@@ -385,7 +401,7 @@ func runPostCreate(ctx context.Context, invocation Invocation, input CommandInpu
 		if err != nil {
 			return Result{}, err
 		}
-		create := app.CreatePostInput{ContentMD: content, MapCard: mapInput.Card, Media: usages, Location: locationInput.Location, LinkCards: linkInput.Cards, QuotedPostID: quotedPostID, IdempotencyKey: idempotencyKey}
+		create := app.CreatePostInput{ContentMD: content, MapCard: mapInput.Card, Media: usages, Location: locationInput.Location, LinkCards: linkInput.Cards, QuotedPostID: quotedPostID, QuotedCommentID: quotedCommentID, IdempotencyKey: idempotencyKey}
 		if visibility != nil {
 			create.Visibility = *visibility
 		}
@@ -405,6 +421,10 @@ func runPostCreate(ctx context.Context, invocation Invocation, input CommandInpu
 		payload := postWritePayload{ContentMD: &content}
 		if mapInput.Present {
 			payload.MapCard = &mapInput.Card
+		}
+		if quotedCommentID != nil {
+			value := quotedCommentID.String()
+			payload.QuotedCommentID = &value
 		}
 		if quotedPostID != nil {
 			value := quotedPostID.String()
@@ -661,13 +681,14 @@ func runPostPinChange(ctx context.Context, invocation Invocation, input CommandI
 }
 
 type postWritePayload struct {
-	MapCard      **domain.MapCard       `json:"map_card,omitempty"`
-	ContentMD    *string                `json:"content_md,omitempty"`
-	Media        *[]postdto.MediaUsage  `json:"media,omitempty"`
-	Location     **locationdto.Location `json:"location,omitempty"`
-	LinkCards    *[]linkdto.Card        `json:"link_cards,omitempty"`
-	QuotedPostID *string                `json:"quoted_post_id,omitempty"`
-	Visibility   *string                `json:"visibility,omitempty"`
+	MapCard         **domain.MapCard       `json:"map_card,omitempty"`
+	ContentMD       *string                `json:"content_md,omitempty"`
+	Media           *[]postdto.MediaUsage  `json:"media,omitempty"`
+	Location        **locationdto.Location `json:"location,omitempty"`
+	LinkCards       *[]linkdto.Card        `json:"link_cards,omitempty"`
+	QuotedPostID    *string                `json:"quoted_post_id,omitempty"`
+	QuotedCommentID *string                `json:"quoted_comment_id,omitempty"`
+	Visibility      *string                `json:"visibility,omitempty"`
 }
 
 func registerPostVisibilityFlag(flags *pflag.FlagSet) {
@@ -1556,6 +1577,18 @@ func validPostAPIRawData(data json.RawMessage, destination any) bool {
 		return typed != nil && validRawAPIPostPage(data, *typed)
 	case *commentdto.Comment:
 		return typed != nil && validRawAPIComment(data, *typed)
+	case *commentdto.Context:
+		if typed == nil || !hasRequiredAPIDataFields(data, "comment", "reply_target", "root_comment_id", "pinned_comment_id", "direct_reply_count") {
+			return false
+		}
+		fields, ok := apiDataFields(data)
+		if !ok || !validRawAPIComment(fields["comment"], typed.Comment) {
+			return false
+		}
+		if typed.ReplyTarget != nil {
+			return validRawAPIComment(fields["reply_target"], *typed.ReplyTarget)
+		}
+		return bytes.Equal(bytes.TrimSpace(fields["reply_target"]), []byte("null"))
 	case *commentdto.Thread:
 		return typed != nil && validRawAPICommentThread(data, *typed)
 	case *commentdto.ReplyPage:

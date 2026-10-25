@@ -1,6 +1,6 @@
 # Moment export format
 
-Moment exports a streaming ZIP portability protocol rather than a SQLite copy. A full backup uses `format: "moment-export"`, `format_version: 3`, and the HTTP header `X-Archive-Format: moment-export-v3`. Import accepts versions 2 and 3. Version 1 and incomplete historical layouts are unsupported. Development instances using the preceding database model must first be converted offline into a separate directory, with the original retained.
+Moment exports a streaming ZIP portability protocol rather than a SQLite copy. A full backup uses `format: "moment-export"`, `format_version: 4`, and the HTTP header `X-Archive-Format: moment-export-v4`. Import accepts versions 2, 3 and 4. Version 1 and incomplete historical layouts are unsupported. Development instances using the preceding database model must first be converted offline into a separate directory, with the original retained.
 
 ## Archive layout
 
@@ -43,6 +43,8 @@ An article entry has `kind: "article"` and a null Markdown body. Its structured 
 
 Version 3 adds nullable `map_card` snapshots to ordinary entries and schema-3 `mapCard` blocks to article bodies and drafts. A snapshot preserves the ordered places, source coordinates and coordinate system, and `connect_points` setting. Replacement import and selective merge retain these values; merge review shows map changes. Version 2 retains its original contract and rejects map snapshots or schema-3 documents instead of dropping them. Both versions accept article schemas 1 and 2. See [the map API contract](client-api.md#published-map-cards) for the snapshot shape.
 
+Version 4 adds `quoted_comment_id` to entries, mutually exclusive with `quoted_entry_id` and `quote_unavailable`. The target must be a comment in the archive. Import links quotes after restoring all comments. Merge dependencies include the comment and remap its ID when keeping both versions. Versions 2 and 3 reject this field. A quote may have an empty body, including after its target becomes unavailable. Personal account exports use version 2; referenced content from other accounts may remain absent.
+
 ## Comments and media
 
 `data/comments.jsonl` preserves comment IDs, post and parent relationships, the exact reply target, account ID when known, stored author name, body, timestamps, locations, media and pins. There is no identity-kind discriminator. Historical comments without a resolvable account retain their stored signature rather than receiving a fabricated account. The public “author” badge is derived from equality with the current post author's account ID.
@@ -79,4 +81,4 @@ API mode authenticates through that account's configured token and rejects `--as
 
 Merge supports incoming-only records, explicit conflict selections and preservation of current-only content. It does not require the archives to select the same display account. User IDs and handles remain unique, at least one active administrator remains, and selected references must resolve. Per-account credential and session records stay outside the portable merge graph.
 
-`GET /api/v1/account/export` produces a separate `moment-account-export-v1` personal archive. It contains only the selected account's profile, bindings, authored content and reachable media. It does not import as a full site backup and cannot select a different account.
+`GET /api/v1/account/export` produces a separate `moment-account-export-v2` personal archive. It contains only the selected account's profile, bindings, authored content and reachable media. It does not import as a full site backup and cannot select a different account.

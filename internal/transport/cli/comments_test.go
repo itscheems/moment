@@ -382,7 +382,7 @@ func TestCommentPagingKeepsDirectAndAPIAnswersIdentical(t *testing.T) {
 			loaded++
 		}
 	}
-	if loaded != 3 {
+	if loaded != app.InlineReplyPreviewCount {
 		t.Fatalf("inline replies = %d, want the preview count", loaded)
 	}
 }
@@ -529,5 +529,35 @@ func TestDirectCommentUsesTheExplicitAccountRatherThanTheSiteProfile(t *testing.
 		return q.QueryRowContext(context.Background(), `SELECT count(*) FROM media`).Scan(&count)
 	}); err != nil || count != 0 {
 		t.Fatalf("refused write uploaded media first: %d,%v", count, err)
+	}
+}
+
+func TestCommentQuoteCLIUsesRealTargetAndAPIRead(t *testing.T) {
+	fixture := newCommentCLIFixture(t)
+	application := momentTestApplication()
+	root := commandData(t, execute(application, "", "comment", "create", fixture.postID, "--data-dir", fixture.dataDir, "--as", "writer", "--content", "quoted reply", "--json"))
+	id := root["id"].(string)
+	args := []string{"post", "create", "--data-dir", fixture.dataDir, "--as", "writer", "--quote-comment", id, "--idempotency-key", "quote-comment-cli", "--json"}
+	output := execute(application, "", args...)
+	created := commandData(t, output)
+	if output.exit != ExitSuccess {
+		t.Fatalf("create=%+v", output)
+	}
+	q := created["quoted_post"].(map[string]any)
+	if q["id"] != id || q["comment_post_id"] != fixture.postID || q["content_md"] != "quoted reply" {
+		t.Fatalf("quote=%+v", q)
+	}
+	t.Setenv("MOMENT_TOKEN", fixture.token)
+	read := commandData(t, execute(application, "", "--url", fixture.server.URL, "post", "get", created["id"].(string), "--json"))
+	if read["quoted_post"].(map[string]any)["id"] != id {
+		t.Fatalf("API read=%+v", read)
+	}
+	replay := execute(application, "", args...)
+	if replay.exit != ExitSuccess || commandData(t, replay)["id"] != created["id"] {
+		t.Fatalf("replay=%+v", replay)
+	}
+	rejected := execute(application, "", "post", "create", "--data-dir", fixture.dataDir, "--as", "writer", "--quote-comment", id, "--quote", fixture.postID, "--json")
+	if rejected.exit == ExitSuccess {
+		t.Fatal("mixed targets accepted")
 	}
 }

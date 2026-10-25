@@ -1,3 +1,4 @@
+import { commentDetailPath } from "../../app/routes";
 import { MapCard } from "../maps/MapCard";
 import type { MapViewport } from "../maps/MapCanvas";
 import type { MapCardData } from "../maps/types";
@@ -17,7 +18,6 @@ import {
   type PublicPost,
   type SiteIdentity,
 } from "../../api/public";
-import { mediaPreviewUrl } from "../../api/mediaUrls";
 import { InternalLink, useNavigation } from "../../app/navigation";
 import { Icon } from "../../components/icons";
 import {
@@ -34,13 +34,10 @@ import {
 import { formatMomentDate } from "./dates";
 import { PostActions } from "./PostActions";
 import { RepostAction } from "./RepostAction";
-import {
-  ArticleCard,
-  QuotedArticle,
-  articleShareBlocks,
-} from "../article/ArticleCard";
+import { ArticleCard, QuotedArticle } from "../article/ArticleCard";
 import { LinkCard } from "../links/LinkCard";
-import { shareCardBlocks, shareCardLink } from "../share/shareCard";
+import { postShareCard } from "../share/shareCardInput";
+import type { ShareCardSource } from "../share/shareCard";
 import { ImageGrid } from "../media/ImageGrid";
 import styles from "./PostPresentation.module.css";
 
@@ -196,6 +193,17 @@ export function PostPresentation({
   eagerVideo = false,
   compactTallVideo,
   timelineDensity = false,
+  href,
+  actions,
+  commentsId = "comments",
+  conversation = false,
+  connected = false,
+  connectedFrom = false,
+  shareCard,
+  bylineContext,
+  replyControl,
+  navigable = true,
+  embedded = false,
 }: {
   post: PublicPost;
   site: SiteIdentity;
@@ -212,6 +220,17 @@ export function PostPresentation({
   eagerVideo?: boolean;
   compactTallVideo?: boolean;
   timelineDensity?: boolean;
+  href?: string;
+  actions?: import("react").ReactNode;
+  commentsId?: string;
+  conversation?: boolean;
+  connected?: boolean;
+  connectedFrom?: boolean;
+  shareCard?: ShareCardSource;
+  bylineContext?: import("react").ReactNode;
+  replyControl?: import("react").ReactNode;
+  navigable?: boolean;
+  embedded?: boolean;
 }) {
   const { navigate } = useNavigation();
   const [expandedPostId, setExpandedPostId] = useState<string | null>(null);
@@ -227,16 +246,27 @@ export function PostPresentation({
     () => timelinePreview(post),
     [post.contentHtml, post.contentMd],
   );
-  const collapsed = !detail && preview.long && expandedPostId !== post.id;
+  const collapsed =
+    !detail && !conversation && preview.long && expandedPostId !== post.id;
   const previewHtml = collapsed ? preview.html : post.contentHtml;
   const linkCard =
     post.linkCards.length > 0 ? <LinkCard card={post.linkCards[0]} /> : null;
-  const detailHref = `/m/${encodeURIComponent(post.id)}`;
+  const detailHref = href ?? `/m/${encodeURIComponent(post.id)}`;
   const timelineKey = `${post.id}:${post.timelineItemKind}`;
-  const useTimelineDensity = timelineDensity && !detail;
+  const useTimelineDensity = (timelineDensity || conversation) && !detail;
 
   const openFromSurface = (event: MouseEvent<HTMLElement>) => {
-    if (detail) return;
+    if (
+      detail ||
+      !navigable ||
+      event.button !== 0 ||
+      event.metaKey ||
+      event.ctrlKey ||
+      event.shiftKey ||
+      event.altKey
+    )
+      return;
+    if (window.getSelection()?.toString()) return;
     const target = event.target;
     if (!(target instanceof Element)) return;
     // A portal puts its markup under the body and still leaves it a descendant
@@ -249,7 +279,7 @@ export function PostPresentation({
     navigate(detailHref);
   };
 
-  const avatar = (
+  const avatar = site.username ? (
     <AccountIdentityPreview
       author={post.author ?? { userId: null, username: null }}
       children={
@@ -262,6 +292,10 @@ export function PostPresentation({
         </InternalLink>
       }
     />
+  ) : (
+    <span className={styles.identityLink}>
+      <SiteAvatar eager={detail} site={site} />
+    </span>
   );
   const pinLabel = pinned ? (
     <div className={styles.pinnedLabel}>
@@ -280,38 +314,60 @@ export function PostPresentation({
   const byline = (
     <header className={`${styles.byline} ${detail ? styles.detailByline : ""}`}>
       <div className={styles.bylineIdentity}>
-        <AccountIdentityPreview
-          author={post.author ?? { userId: null, username: null }}
-          children={
-            <InternalLink
-              className={styles.nameLink}
-              href={siteProfileHref(site)}
-            >
-              <strong>{site.displayName}</strong>
-            </InternalLink>
-          }
-        />
-        <InternalLink
-          className={styles.usernameLink}
-          href={siteProfileHref(site)}
-        >
-          @{site.username}
-        </InternalLink>
+        {site.username ? (
+          <AccountIdentityPreview
+            author={post.author ?? { userId: null, username: null }}
+            children={
+              <InternalLink
+                className={styles.nameLink}
+                href={siteProfileHref(site)}
+              >
+                <strong>{site.displayName}</strong>
+              </InternalLink>
+            }
+          />
+        ) : (
+          <strong>{site.displayName}</strong>
+        )}
+        {site.username ? (
+          <InternalLink
+            className={styles.usernameLink}
+            href={siteProfileHref(site)}
+          >
+            @{site.username}
+          </InternalLink>
+        ) : null}
+        {bylineContext}
         {!detail ? (
           <>
-            <span aria-hidden="true">·</span>
-            <ExactTimeTooltip
-              exact={published.absolute}
-              children={
-                <InternalLink
-                  className={styles.timeLink}
-                  data-focus-key={`${timelineKey}:relative-time`}
-                  href={detailHref}
-                >
-                  <time dateTime={post.publishedAt}>{published.relative}</time>
-                </InternalLink>
-              }
-            />
+            <span className={styles.bylineTime}>
+              <span aria-hidden="true">·</span>
+              <ExactTimeTooltip
+                exact={published.absolute}
+                children={
+                  navigable ? (
+                    <InternalLink
+                      className={styles.timeLink}
+                      aria-label={
+                        post.commentPostId
+                          ? "查看" + title + "的评论详情"
+                          : undefined
+                      }
+                      data-focus-key={`${timelineKey}:relative-time`}
+                      href={detailHref}
+                    >
+                      <time dateTime={post.publishedAt}>
+                        {published.relative}
+                      </time>
+                    </InternalLink>
+                  ) : (
+                    <time dateTime={post.publishedAt}>
+                      {published.relative}
+                    </time>
+                  )
+                }
+              />
+            </span>
             {hidden ? (
               <ActionTooltip label="仅自己可见">
                 <span
@@ -326,50 +382,40 @@ export function PostPresentation({
           </>
         ) : null}
       </div>
-      {canPublish ? (
-        <PostActions
-          onDeleted={onDeleted}
-          onSiteChanged={onSiteChanged}
-          post={post}
-          site={site}
-        />
-      ) : null}
+      {actions ??
+        (canPublish ? (
+          <PostActions
+            onDeleted={onDeleted}
+            onSiteChanged={onSiteChanged}
+            post={post}
+            site={site}
+          />
+        ) : null)}
     </header>
   );
   const share = (align: "start" | "end") => (
     <ShareMenu
       align={align}
       baseUrl={site.publicBaseUrl}
-      card={async () => ({
-        displayName: site.displayName,
-        username: site.username,
-        avatarUrl: site.avatarMediaId
-          ? mediaPreviewUrl(site.avatarMediaId)
-          : null,
-        publishedLabel: published.absolute,
-        // An article's pictures belong to its body, and in a list its body has
-        // not been rendered at all, so the card is built from the title and
-        // the excerpt the server already wrote for exactly this purpose.
-        blocks: isArticlePost(post)
-          ? articleShareBlocks(post.article)
-          : shareCardBlocks(post.contentHtml),
-        media: isArticlePost(post) ? [] : post.media,
-        mapCard: post.mapCard,
-        mapViewport: post.mapCard
-          ? mapViews.current.get(mapViewKey(post.id, post.mapCard))
-          : undefined,
-        location:
-          post.location?.name?.trim() ||
-          post.location?.displayName?.trim() ||
-          null,
-        link:
-          post.linkCards.length > 0 ? shareCardLink(post.linkCards[0]) : null,
-      })}
+      card={
+        shareCard ??
+        (async () => ({
+          ...postShareCard(post, site),
+          mapViewport: post.mapCard
+            ? mapViews.current.get(mapViewKey(post.id, post.mapCard))
+            : undefined,
+        }))
+      }
       href={detailHref}
       title={`${title} 的 Moment`}
       trigger={
         <button
-          aria-label="分享这条 Moment"
+          data-post-action="share"
+          aria-label={
+            post.commentPostId && !detail
+              ? "分享 " + title + " 的评论"
+              : "分享这条 Moment"
+          }
           className={`${styles.postAction} ${styles.shareAction}`}
           type="button"
         >
@@ -389,17 +435,26 @@ export function PostPresentation({
       className={styles.quoteCard}
       onClick={(event) => {
         event.stopPropagation();
+        if (window.getSelection()?.toString()) return;
         const interactive =
           event.target instanceof Element
             ? event.target.closest(interactiveSurfaceSelector)
             : null;
         if (interactive && interactive !== event.currentTarget) return;
-        navigate(`/m/${encodeURIComponent(quoted.id)}`);
+        navigate(
+          quoted.commentPostId
+            ? commentDetailPath(quoted.commentPostId, quoted.id)
+            : `/m/${encodeURIComponent(quoted.id)}`,
+        );
       }}
       onKeyDown={(event) => {
         if (event.key === "Enter" || event.key === " ") {
           event.preventDefault();
-          navigate(`/m/${encodeURIComponent(quoted.id)}`);
+          navigate(
+            quoted.commentPostId
+              ? commentDetailPath(quoted.commentPostId, quoted.id)
+              : `/m/${encodeURIComponent(quoted.id)}`,
+          );
         }
       }}
       role="link"
@@ -408,7 +463,9 @@ export function PostPresentation({
       <header className={styles.quoteByline}>
         <SiteAvatar site={postAuthorSite(quoted, site)} />
         <strong>{postAuthorSite(quoted, site).displayName}</strong>
-        <span>@{postAuthorSite(quoted, site).username}</span>
+        {postAuthorSite(quoted, site).username ? (
+          <span>@{postAuthorSite(quoted, site).username}</span>
+        ) : null}
         <span>·</span>
         <time dateTime={quoted.publishedAt}>
           {formatMomentDate(quoted.publishedAt, site.timezone, now).relative}
@@ -433,19 +490,23 @@ export function PostPresentation({
   if (detail) {
     return (
       <article
-        aria-label={`${title}发布的 Moment，${published.absolute}`}
-        className={`${styles.post} ${styles.detail} ${fresh ? styles.fresh : ""}`}
+        aria-label={
+          post.commentPostId && !detail
+            ? `${title}的回复`
+            : `${title}发布的 Moment，${published.absolute}`
+        }
+        className={`${styles.post} ${styles.detail} ${conversation ? styles.conversation : ""} ${fresh ? styles.fresh : ""}`}
+        data-connected={connected || undefined}
+        data-connected-from={connectedFrom || undefined}
         data-post-id={post.id}
         data-timeline-item-key={timelineKey}
         tabIndex={-1}
       >
+        {pinLabel}
         {repostLabel}
         <div className={styles.detailIdentity}>
           <div className={styles.avatarColumn}>{avatar}</div>
-          <div className={styles.detailHeading}>
-            {pinLabel}
-            {byline}
-          </div>
+          <div className={styles.detailHeading}>{byline}</div>
         </div>
         <div className={styles.detailBody}>
           <MarkdownBody
@@ -478,14 +539,15 @@ export function PostPresentation({
             ) : null}
           </p>
           {post.commentCount > 0 ? (
-            <a className={styles.detailStats} href="#comments">
+            <a className={styles.detailStats} href={"#" + commentsId}>
               <strong>{post.commentCount}</strong>
               <span>条回复</span>
             </a>
           ) : null}
-          <div className={styles.postActions}>
+          <div data-post-actions="" className={styles.postActions}>
             <ActionTooltip label="回复">
               <button
+                data-post-action="reply"
                 aria-label={`回复这条 Moment${post.commentCount > 0 ? `，${post.commentCount} 条回复` : ""}`}
                 className={`${styles.postAction} ${styles.replyAction}`}
                 onClick={onReply}
@@ -499,7 +561,7 @@ export function PostPresentation({
                 ) : null}
               </button>
             </ActionTooltip>
-            {canPublish ? (
+            {canPublish || post.commentPostId ? (
               <RepostAction onChanged={onReposted} post={post} />
             ) : null}
             {share("start")}
@@ -511,25 +573,34 @@ export function PostPresentation({
 
   return (
     <article
-      aria-label={`${title}发布的 Moment，${published.absolute}`}
-      className={`${styles.post} ${useTimelineDensity ? styles.timelineDensity : ""} ${fresh ? styles.fresh : ""}`}
+      aria-label={
+        post.commentPostId && !detail
+          ? `${title}的回复`
+          : `${title}发布的 Moment，${published.absolute}`
+      }
+      className={`${styles.post} ${conversation ? styles.conversation : ""} ${useTimelineDensity ? styles.timelineDensity : ""} ${fresh ? styles.fresh : ""}`}
+      data-embedded={embedded || undefined}
+      data-connected={connected || undefined}
+      data-connected-from={connectedFrom || undefined}
       data-post-id={post.id}
       data-timeline-item-key={timelineKey}
       onClick={openFromSurface}
       tabIndex={-1}
     >
-      <InternalLink
-        aria-label="打开这条 Moment 详情"
-        className={styles.surfaceLink}
-        data-focus-key={`${timelineKey}:surface-link`}
-        href={detailHref}
-      >
-        <span className={styles.srOnly}>打开这条 Moment 详情</span>
-      </InternalLink>
+      {navigable ? (
+        <InternalLink
+          aria-label="打开这条 Moment 详情"
+          className={styles.surfaceLink}
+          data-focus-key={`${timelineKey}:surface-link`}
+          href={detailHref}
+        >
+          <span className={styles.srOnly}>打开这条 Moment 详情</span>
+        </InternalLink>
+      ) : null}
+      {pinLabel}
       {repostLabel}
       <div className={styles.avatarColumn}>{avatar}</div>
       <div className={styles.postMain}>
-        {pinLabel}
         {byline}
         {/* An article leads with its cover, title and excerpt instead of its
             prose: the body is not in a list response at all, and a card is
@@ -577,40 +648,47 @@ export function PostPresentation({
           />
         )}
         {quoteCard}
-        <div className={styles.postActions}>
-          <ActionTooltip label="回复">
-            {onReply ? (
-              <button
-                aria-label="回复这条 Moment"
-                className={`${styles.postAction} ${styles.replyAction}`}
-                data-focus-key={`${timelineKey}:reply`}
-                onClick={onReply}
-                type="button"
-              >
-                <Icon name="reply" />
-                {post.commentCount > 0 ? (
-                  <span className={styles.actionCount}>
-                    {post.commentCount}
-                  </span>
-                ) : null}
-              </button>
-            ) : (
-              <InternalLink
-                aria-label={`打开完整 Moment${post.commentCount > 0 ? `，${post.commentCount} 条回复` : ""}`}
-                className={`${styles.postAction} ${styles.replyAction}`}
-                data-focus-key={`${timelineKey}:open-post`}
-                href={detailHref}
-              >
-                <Icon name="reply" />
-                {post.commentCount > 0 ? (
-                  <span className={styles.actionCount}>
-                    {post.commentCount}
-                  </span>
-                ) : null}
-              </InternalLink>
-            )}
-          </ActionTooltip>
-          {canPublish ? (
+        <div data-post-actions="" className={styles.postActions}>
+          {replyControl !== undefined ? (
+            replyControl
+          ) : (
+            <ActionTooltip label="回复">
+              {onReply ? (
+                <button
+                  data-post-action="reply"
+                  aria-label={
+                    post.commentPostId ? "回复 " + title : "回复这条 Moment"
+                  }
+                  className={`${styles.postAction} ${styles.replyAction}`}
+                  data-focus-key={`${timelineKey}:reply`}
+                  onClick={onReply}
+                  type="button"
+                >
+                  <Icon name="reply" />
+                  {post.commentCount > 0 ? (
+                    <span className={styles.actionCount}>
+                      {post.commentCount}
+                    </span>
+                  ) : null}
+                </button>
+              ) : (
+                <InternalLink
+                  aria-label={`打开完整 Moment${post.commentCount > 0 ? `，${post.commentCount} 条回复` : ""}`}
+                  className={`${styles.postAction} ${styles.replyAction}`}
+                  data-focus-key={`${timelineKey}:open-post`}
+                  href={detailHref}
+                >
+                  <Icon name="reply" />
+                  {post.commentCount > 0 ? (
+                    <span className={styles.actionCount}>
+                      {post.commentCount}
+                    </span>
+                  ) : null}
+                </InternalLink>
+              )}
+            </ActionTooltip>
+          )}
+          {canPublish || post.commentPostId ? (
             <RepostAction onChanged={onReposted} post={post} />
           ) : null}
           {share("end")}

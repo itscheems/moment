@@ -30,6 +30,7 @@ export function PostReplyDialog({
   onOpenChange,
   open,
   post,
+  comment,
   site,
   triggerRef,
 }: {
@@ -42,11 +43,12 @@ export function PostReplyDialog({
   onOpenChange: (open: boolean) => void;
   open: boolean;
   post: PublicPost;
+  comment?: PublicComment;
   site: SiteIdentity;
   triggerRef?: RefObject<HTMLButtonElement | null>;
 }) {
   const canCompose = useCanComment();
-  const author = postAuthorSite(post, site);
+  const author = postAuthorSite(comment ?? post, site);
   const [closedByServer, setClosedByServer] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const canComment = commentsEnabled && !closedByServer;
@@ -94,15 +96,22 @@ export function PostReplyDialog({
               <div>
                 <p className={styles.replyContextByline}>
                   <strong>{author.displayName}</strong>
-                  <span>@{author.username}</span>
+                  {author.username ? <span>@{author.username}</span> : null}
                 </p>
                 <MarkdownBody
                   className={styles.replyContextContent}
-                  html={post.contentHtml}
+                  html={comment?.contentHtml ?? post.contentHtml}
                 />
-                <p className={styles.replyContextTarget}>
-                  正在回复 <span>@{author.username}</span>
-                </p>
+                {!comment ? (
+                  <p className={styles.replyContextTarget}>
+                    正在回复{" "}
+                    <span>
+                      {author.username
+                        ? "@" + author.username
+                        : author.displayName}
+                    </span>
+                  </p>
+                ) : null}
               </div>
             </article>
             {canCompose ? (
@@ -110,7 +119,11 @@ export function PostReplyDialog({
                 api={api}
                 commentsEnabled={canComment}
                 content={content}
-                formId="dialog-top-level-comment"
+                formId={
+                  comment
+                    ? "dialog-comment-" + comment.id
+                    : "dialog-top-level-comment"
+                }
                 initialExpanded
                 onClosed={() => {
                   setClosedByServer(true);
@@ -120,7 +133,15 @@ export function PostReplyDialog({
                   onCreated(comment);
                   onOpenChange(false);
                 }}
-                parentId={null}
+                parentId={comment ? (comment.parentId ?? comment.id) : null}
+                replyTargetId={comment?.id}
+                replyTargetAuthor={
+                  comment
+                    ? author.username
+                      ? "@" + author.username
+                      : author.displayName
+                    : undefined
+                }
                 postId={post.id}
                 setContent={onContentChange}
                 site={site}

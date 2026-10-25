@@ -1,5 +1,9 @@
 import { mapCardPayload, parseMapCard, type MapCardData } from "../maps/types";
-import { fingerprintComposeDraft } from "./draft";
+import {
+  fingerprintComposeDraft,
+  parseComposeQuoteTarget,
+  type ComposeQuoteTarget,
+} from "./draft";
 
 const KEPT_PREFIX = "moment.compose.kept-drafts.v2:";
 const KEPT_SCHEMA = "moment.compose-kept-drafts.v1";
@@ -9,6 +13,7 @@ const INSTANCE_PATTERN = /^[0-9a-f]{32}\.[0-9a-f]{32}$/;
 const ID_PATTERN = /^[0-9a-f]{32}$/;
 
 export interface KeptDraft {
+  quote?: ComposeQuoteTarget;
   mapCard?: MapCardData;
   id: string;
   contentMd: string;
@@ -56,19 +61,13 @@ function parseEntry(value: unknown, now: number): KeptDraft | null {
     typeof value !== "object" ||
     value === null ||
     Array.isArray(value) ||
-    !(
-      hasExactKeys(value as Record<string, unknown>, [
-        "id",
-        "content_md",
-        "saved_at",
-      ]) ||
-      hasExactKeys(value as Record<string, unknown>, [
-        "id",
-        "content_md",
-        "saved_at",
-        "map_card",
-      ])
-    )
+    !hasExactKeys(value as Record<string, unknown>, [
+      "id",
+      "content_md",
+      "saved_at",
+      ...(Object.hasOwn(value, "map_card") ? ["map_card"] : []),
+      ...(Object.hasOwn(value, "quote") ? ["quote"] : []),
+    ])
   ) {
     return null;
   }
@@ -77,15 +76,19 @@ function parseEntry(value: unknown, now: number): KeptDraft | null {
     typeof entry.id !== "string" ||
     !ID_PATTERN.test(entry.id) ||
     typeof entry.content_md !== "string" ||
-    (entry.content_md.trim().length === 0 && entry.map_card == null) ||
+    (entry.content_md.trim().length === 0 &&
+      entry.map_card == null &&
+      entry.quote == null) ||
     !isTimestamp(entry.saved_at)
   ) {
     return null;
   }
   const savedTime = Date.parse(entry.saved_at);
   if (savedTime > now + 60_000 || now - savedTime > MAX_AGE_MS) return null;
+  let quote: ComposeQuoteTarget | undefined;
   let mapCard: MapCardData | undefined;
   try {
+    quote = parseComposeQuoteTarget(entry.quote);
     mapCard = entry.map_card == null ? undefined : parseMapCard(entry.map_card);
   } catch {
     return null;
@@ -94,7 +97,8 @@ function parseEntry(value: unknown, now: number): KeptDraft | null {
     ...(mapCard ? { mapCard } : {}),
     id: entry.id,
     contentMd: entry.content_md,
-    fingerprint: fingerprintComposeDraft(entry.content_md, mapCard),
+    fingerprint: fingerprintComposeDraft(entry.content_md, mapCard, quote),
+    ...(quote ? { quote } : {}),
     savedAt: entry.saved_at,
   };
 }
@@ -156,6 +160,7 @@ function write(instanceId: string, drafts: KeptDraft[]): boolean {
         drafts: drafts.slice(0, MAX_KEPT).map((draft) => ({
           id: draft.id,
           content_md: draft.contentMd,
+          ...(draft.quote ? { quote: draft.quote } : {}),
           ...(draft.mapCard ? { map_card: mapCardPayload(draft.mapCard) } : {}),
           saved_at: draft.savedAt,
         })),
@@ -184,13 +189,15 @@ export function keepDraft(
   contentMd: string,
   now = new Date(),
   mapCard?: MapCardData | null,
+  quote?: ComposeQuoteTarget | null,
 ): KeptDraft | null {
   if (!instanceId || !INSTANCE_PATTERN.test(instanceId)) return null;
-  if (contentMd.trim().length === 0 && !mapCard) return null;
-  const fingerprint = fingerprintComposeDraft(contentMd, mapCard);
+  if (contentMd.trim().length === 0 && !mapCard && !quote) return null;
+  const fingerprint = fingerprintComposeDraft(contentMd, mapCard, quote);
   const current = read(instanceId, now.getTime());
   const existing = current.find((draft) => draft.fingerprint === fingerprint);
   const kept: KeptDraft = {
+    ...(quote ? { quote } : {}),
     ...(mapCard ? { mapCard } : {}),
     id: existing?.id ?? newDraftID(),
     contentMd,
@@ -218,9 +225,10 @@ export function dropKeptDraftByContent(
   contentMd: string,
   now = Date.now(),
   mapCard?: MapCardData | null,
+  quote?: ComposeQuoteTarget | null,
 ): void {
   if (!instanceId || !INSTANCE_PATTERN.test(instanceId)) return;
-  const fingerprint = fingerprintComposeDraft(contentMd, mapCard);
+  const fingerprint = fingerprintComposeDraft(contentMd, mapCard, quote);
   const current = read(instanceId, now);
   const next = current.filter((draft) => draft.fingerprint !== fingerprint);
   if (next.length !== current.length) write(instanceId, next);

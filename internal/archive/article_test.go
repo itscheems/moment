@@ -209,10 +209,8 @@ func TestExportPacksEveryPictureOnlyAnArticleOrADraftPointsAt(t *testing.T) {
 	}
 }
 
-// Raising the format version would make the backup a person took just before
-// upgrading unreadable by the binary they upgraded to, which is the one moment
-// a backup exists for. Articles are additive members, not a new version.
-func TestCompleteArticleGraphUsesFormatVersionThree(t *testing.T) {
+// Articles and their media remain complete under the current archive contract.
+func TestCompleteArticleGraphUsesCurrentFormatVersion(t *testing.T) {
 	fixture := newExportFixture(t, true)
 	seedArticleFixture(t, fixture)
 	members, _ := readArchive(t, exportFixtureBytes(t, fixture))
@@ -220,16 +218,15 @@ func TestCompleteArticleGraphUsesFormatVersionThree(t *testing.T) {
 	if err := json.Unmarshal(members["manifest.json"], &document); err != nil {
 		t.Fatal(err)
 	}
-	if document.FormatVersion != FormatVersion || FormatVersion != 3 || FormatHeaderValue != "moment-export-v3" {
+	if document.FormatVersion != FormatVersion || FormatVersion != 4 || FormatHeaderValue != "moment-export-v4" {
 		t.Fatalf("an archive carrying an article declared %#v", document)
 	}
 	if document.Counts.Articles != 1 || document.Counts.ArticleDrafts != 1 {
 		t.Fatalf("manifest counts = %#v", document.Counts)
 	}
-	// The README is compared byte for byte on read, so an archive written
-	// before articles existed stops being readable the moment it changes.
+	// The README identifies the same version as the manifest.
 	if !bytes.Equal(members["README.txt"], []byte(readme)) {
-		t.Fatal("the fixed v1 README was rewritten, which makes every earlier backup unreadable")
+		t.Fatal("the README does not match the current archive format")
 	}
 }
 

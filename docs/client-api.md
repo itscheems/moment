@@ -32,7 +32,7 @@ product contract. Existing authentication and CSRF requirements apply unchanged.
       "max_cursor_bytes": 512,
       "default_comment_page_size": 20,
       "default_reply_page_size": 10,
-      "inline_reply_preview_count": 3,
+      "inline_reply_preview_count": 1,
       "accepted_image_types": ["image/jpeg", "image/png", "image/webp", "image/gif", "image/heic"],
       "accepted_video_types": ["video/mp4", "video/quicktime"],
       "max_post_link_cards": 1
@@ -129,6 +129,12 @@ Any active account may publish a post or article. Authors edit, withdraw and del
 
 CLI content writes require an explicit local actor, for example `moment --as writer post create --data-dir ./moment-data --content 'Hello'`. API mode uses the verified account credential and rejects `--as`. Direct reads may select an actor with `--as`; without one they use public visibility. `MOMENT_TOKEN` or `--token-file` selects the API account on reads as well as writes.
 
+## Quoting comments
+
+`POST /posts` accepts either `quoted_post_id` or `quoted_comment_id`, never both. Both are immutable create-only canonical ULIDs. A quote may be published with an empty body. CLI direct and API mode expose `post create --quote-comment <comment-id>`; `--quote` continues to quote a post.
+
+An available comment target uses the existing `quoted_post` projection with `id` set to the comment ID and `comment_post_id` set to its containing post ID. Link to `/m/<comment_post_id>/comments/<id>`. Registered targets carry their own `author`; historical guest targets instead carry `comment_author_name`. Comment quotes contain a Moment body, media and optional public location, with no article or map card. Every read checks the containing post's visibility. Deleted or unreadable targets become the usual `unavailable: true` tombstone without target identity, body, media or containing-post metadata.
+
 ## Timeline paging
 
 `GET /api/v1/posts` reads one page at a time, newest first. `author_user_id` filters by an immutable account ID without widening visibility; the CLI exposes the same filter as `post list --author-id`. The page's `meta`
@@ -151,9 +157,9 @@ timezone, and a cursor minted under a window is valid only with that window.
 
 ## Exports
 
-`GET /backups/export` returns a complete `moment-export-v3` backup for an active administrator.
+`GET /backups/export` returns a complete `moment-export-v4` backup for an active administrator.
 `GET /account/export` returns the authenticated account's
-`moment-account-export-v1` personal archive. Pending accounts can export their own
+`moment-account-export-v2` personal archive. Pending accounts can export their own
 data; unauthenticated or revoked/suspended sessions cannot. Neither route accepts
 a body or query parameters, and personal export cannot select another account.
 
@@ -271,4 +277,12 @@ Location search accepts `GET /locations/search?q=...&scope=global|auto`. The def
 
 CLI: `moment --as writer post create --data-dir ./moment-data --map-json ./map.json --json`; `moment --as writer post update <post-id> --data-dir ./moment-data --clear-map --json`; `moment location search --query Tokyo --scope global --json`. Map JSON accepts a file or `-` for stdin; map/media/location/link JSON cannot share stdin. Post and location commands support direct and API mode.
 
-Full-site archives now export format 3 and read formats 2 and 3. Maps survive replacement import and selective merge, including article bodies and drafts. Format 2 cannot carry map cards or schema-3 article bodies; such payloads are refused instead of silently losing content. Format 1 remains unsupported. The separate account-export format also carries the map snapshot.
+Full-site archives export format 4 and read formats 2, 3 and 4. Maps survive replacement import and selective merge, including article bodies and drafts. Format 2 cannot carry map cards or schema-3 article bodies; such payloads are refused instead of silently losing content. Format 1 remains unsupported. The separate account-export format also carries the map snapshot.
+
+## Comment conversations
+
+`GET /posts/:post_id/comments/:comment_id` reads a comment without scanning preceding pages. Its data contains `comment`, nullable `reply_target` (the full safe projection of the immediate target), `root_comment_id`, nullable `pinned_comment_id`, and `direct_reply_count` (the total number of replies addressing this comment, independent of the loaded page). The post visibility rule applies to every context read. Missing or cross-post comments return `COMMENT_NOT_FOUND`; an unreadable post returns `POST_NOT_FOUND`.
+
+`GET /posts/:post_id/comments/:comment_id/replies` accepts `scope=thread|direct`, `cursor`, and `limit`. Omitted scope retains the existing whole-floor `thread` behavior and requires a root comment. `direct` accepts any comment and lists only replies explicitly addressing it; a root also includes historical replies with no saved target. Reply pages remain oldest first, default to 10, and cap at 100. Direct cursors cannot be used for a different comment or in thread scope. `reply_count` describes the whole floor on roots and the direct-answer total on replies, including answers outside the loaded page. `replies_next_cursor` remains exclusive to root whole-floor pagination.
+
+Root-list reads default to 20 roots with one inline reply preview per root. The CLI provides `comment get <post-id> <comment-id>` and `comment replies <post-id> <comment-id> --scope direct`, in both direct and API modes. Existing calls without `--scope` retain whole-floor semantics.
