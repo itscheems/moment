@@ -90,12 +90,22 @@ def print_cases(manifest):
         print(case["key"] + "\t" + ORIGIN + case["path"])
 
 
+def add_long_context_case(builder, post_id, root_id):
+    child = builder.entity("long-media.reply", "lena", "comment", "reply", post_id,
+                           root_id, "--reply-to", root_id,
+                           "--content", "完整上级节点验收：上方长正文与图片直接显示，不使用 Show more。")
+    builder.case("comments.long-context", post_id, child["id"],
+                 note="Full long ancestor with image in the conversation and share card")
+
+
 def main():
     instance = json.loads((PLAYGROUND / "data/instance.json").read_text())
     seed = json.loads((PLAYGROUND / "seed.json").read_text())["data"]
     assert_playground(instance, seed, read("/api/v1/site"))
     builder = Builder(PLAYGROUND / "comment-showcase.json", instance["instance_id"])
     if builder.manifest["complete"]:
+        add_long_context_case(builder, builder.manifest["entities"]["post"]["id"],
+                              builder.manifest["entities"]["long-media"]["id"])
         print_cases(builder.manifest)
         return
 
@@ -165,6 +175,7 @@ def main():
                                   "--content", long_body, "--media-manifest", str(media_manifest))
     builder.case("comments.long-media", post_id, long_comment["id"],
                  note="Long body, independent link and managed image")
+    add_long_context_case(builder, post_id, long_comment["id"])
 
     private_post = builder.entity("private.post", "aming", "post", "create", "--visibility", "only_me",
                                   "--content", "只给阿明查看的讨论样本。")

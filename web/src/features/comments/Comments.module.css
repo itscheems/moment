@@ -1468,6 +1468,10 @@
 }
 
 @media (max-width: 719px) {
+  .formSurface.inlineTopLevelForm {
+    padding-inline: var(--space-3);
+  }
+
   .threadHeader,
   .formSurface,
   .threadState,
