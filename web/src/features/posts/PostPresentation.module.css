@@ -127,19 +127,29 @@
 
 .post.conversation:not(.detail) {
   border-block-end: 0;
+  margin-block-end: -1px;
   content-visibility: visible;
   contain-intrinsic-size: none;
 }
 
-.conversation[data-connected]::after {
+.conversation[data-connected]::after,
+.conversation[data-connected-from]::before {
   content: "";
   position: absolute;
   inset-inline-start: calc(var(--conversation-inset) + 1.25rem - 1px);
-  inset-block-start: calc(var(--space-3) + 2.5rem + var(--space-1));
-  inset-block-end: calc(-1 * var(--space-2));
   inline-size: 2px;
   background: var(--border-strong);
   pointer-events: none;
+}
+
+.conversation[data-connected]::after {
+  inset-block-start: calc(var(--space-3) + 2.5rem + var(--space-1));
+  inset-block-end: 0;
+}
+
+.conversation[data-connected-from]::before {
+  inset-block-start: 0;
+  block-size: var(--space-2);
 }
 
 .conversation .byline,
@@ -701,10 +711,10 @@
   padding: 0;
   font-family: var(--font-timeline);
   font-feature-settings: normal;
-  font-size: 0.8125rem;
+  font-size: 0.9375rem;
   font-weight: 400;
   letter-spacing: normal;
-  line-height: 1rem;
+  line-height: 1.25rem;
   transition: color 200ms;
 }
 
@@ -748,7 +758,7 @@
   min-inline-size: 0;
   padding-inline: var(--space-1);
   font-variant-numeric: normal;
-  line-height: 1rem;
+  line-height: 1.25rem;
   transform: none;
 }
 
@@ -1091,9 +1101,9 @@
 }
 
 .detail .actionCount {
-  font-size: 0.8125rem;
+  font-size: 0.9375rem;
   font-variant-numeric: normal;
-  line-height: 1rem;
+  line-height: 1.25rem;
   position: static;
   inset: auto;
   padding-inline: var(--space-1);

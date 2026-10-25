@@ -207,6 +207,18 @@ describe("focused comment reading", () => {
     render(wrapper());
     await screen.findByText("当前评论全文");
     expect(
+      screen.getByRole("region", { name: "原帖引用" }).querySelector("article"),
+    ).not.toHaveAttribute("data-connected-from");
+    expect(
+      screen
+        .getByRole("region", { name: "被回复评论引用" })
+        .querySelector("article"),
+    ).toHaveAttribute("data-connected-from", "true");
+    expect(screen.getByText("当前评论全文").closest("article")).toHaveAttribute(
+      "data-connected-from",
+      "true",
+    );
+    expect(
       within(screen.getByRole("region", { name: "原帖引用" })).getByText(
         "原始帖子内容",
       ),

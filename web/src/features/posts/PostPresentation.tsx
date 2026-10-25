@@ -198,6 +198,7 @@ export function PostPresentation({
   commentsId = "comments",
   conversation = false,
   connected = false,
+  connectedFrom = false,
   shareCard,
   bylineContext,
   replyControl,
@@ -224,6 +225,7 @@ export function PostPresentation({
   commentsId?: string;
   conversation?: boolean;
   connected?: boolean;
+  connectedFrom?: boolean;
   shareCard?: ShareCardSource;
   bylineContext?: import("react").ReactNode;
   replyControl?: import("react").ReactNode;
@@ -495,6 +497,7 @@ export function PostPresentation({
         }
         className={`${styles.post} ${styles.detail} ${conversation ? styles.conversation : ""} ${fresh ? styles.fresh : ""}`}
         data-connected={connected || undefined}
+        data-connected-from={connectedFrom || undefined}
         data-post-id={post.id}
         data-timeline-item-key={timelineKey}
         tabIndex={-1}
@@ -580,6 +583,7 @@ export function PostPresentation({
       className={`${styles.post} ${conversation ? styles.conversation : ""} ${useTimelineDensity ? styles.timelineDensity : ""} ${fresh ? styles.fresh : ""}`}
       data-embedded={embedded || undefined}
       data-connected={connected || undefined}
+      data-connected-from={connectedFrom || undefined}
       data-post-id={post.id}
       data-timeline-item-key={timelineKey}
       onClick={openFromSurface}

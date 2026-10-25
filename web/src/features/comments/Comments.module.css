@@ -86,7 +86,7 @@
 }
 
 .formSurface.inlineTopLevelForm {
-  border-block-end: 0;
+  border-block-end: 1px solid var(--border-subtle);
   padding: 0.25rem var(--space-4) 0.75rem;
 }
 

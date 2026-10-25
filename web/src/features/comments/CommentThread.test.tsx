@@ -791,7 +791,14 @@ describe("public comment thread", () => {
       screen.getByRole("button", { name: "收起" }).closest("[data-comment-id]"),
     ).toHaveAttribute("data-comment-id", laterReplyId);
     fireEvent.click(screen.getByRole("button", { name: "收起" }));
-    expect(screen.queryByText("第二条回复")).not.toBeInTheDocument();
+    // Exit keeps the row mounted briefly, but it must stop accepting focus
+    // immediately and disappear once its height transition completes.
+    expect(
+      screen.getByText("第二条回复").closest("[data-comment-id]"),
+    ).toHaveAttribute("inert");
+    await waitFor(() =>
+      expect(screen.queryByText("第二条回复")).not.toBeInTheDocument(),
+    );
     fireEvent.click(screen.getByRole("button", { name: "展开其余 1 条回复" }));
     expect(screen.getByText("第二条回复")).toBeInTheDocument();
     expect(
@@ -1028,7 +1035,7 @@ describe("public comment thread", () => {
 
   it("preserves inline reply transition declarations", () => {
     expect(commentsCss).toMatch(
-      /\._formSurface_[\w-]+\._inlineTopLevelForm_[\w-]+\s*\{[^}]*border-block-end:\s*0;[^}]*padding:\s*0\.25rem var\(--space-4\) 0\.75rem;/s,
+      /\._formSurface_[\w-]+\._inlineTopLevelForm_[\w-]+\s*\{[^}]*border-block-end:\s*1px solid var\(--border-subtle\);[^}]*padding:\s*0\.25rem var\(--space-4\) 0\.75rem;/s,
     );
     // The folded geometry — the placeholder on the centre line of a 3.5rem
     // row under 0.25rem of form padding, the avatar 0.875rem down — comes

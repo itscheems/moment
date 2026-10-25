@@ -3,6 +3,7 @@ import { commentsApi } from "../../api/comments";
 import { Dialog } from "../../components/Dialog";
 import { Menu } from "@base-ui/react/menu";
 import { Popover } from "@base-ui/react/popover";
+import { motion, useIsPresent, useReducedMotion } from "motion/react";
 import { type RefObject, useEffect, useRef, useState } from "react";
 
 import {
@@ -515,6 +516,8 @@ export function CommentItem({
   const authorName = author.displayName;
   const isPostAuthor =
     author.userId !== null && author.userId === postAuthorUserId;
+  const isPresent = useIsPresent();
+  const reduceMotion = useReducedMotion();
   if (!active) return null;
   const projected = {
     ...(repostTarget ??
@@ -522,7 +525,14 @@ export function CommentItem({
     commentCount: root ? replyCount : comment.replyCount,
   };
   return (
-    <li
+    <motion.li
+      initial={{ height: 0 }}
+      animate={{ height: "auto" }}
+      exit={{ height: 0 }}
+      transition={{ duration: reduceMotion ? 0 : 0.24, ease: [0.2, 0, 0, 1] }}
+      style={{ overflow: "hidden" }}
+      inert={!isPresent}
+      aria-hidden={!isPresent || undefined}
       className={`${styles.commentItem} ${!root && presentation === "list" ? styles.replyComment : ""}`}
       data-comment-id={comment.id}
       data-focus-key={"comment-row-" + comment.id}
@@ -582,6 +592,6 @@ export function CommentItem({
         shareCard={shareCard}
       />
       {replyBranch}
-    </li>
+    </motion.li>
   );
 }

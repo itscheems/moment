@@ -1,4 +1,5 @@
 import postStyles from "../posts/PostPresentation.module.css";
+import { AnimatePresence, useReducedMotion } from "motion/react";
 import {
   type RefObject,
   useCallback,
@@ -149,6 +150,7 @@ export function CommentThread({
   replyDialogComment?: PublicComment | null;
 }) {
   const auth = useSession();
+  const reduceMotion = useReducedMotion();
   const canModerate =
     (auth.state === "signed-in" || auth.state === "expired") &&
     isAdministrator(auth.account);
@@ -558,10 +560,6 @@ export function CommentThread({
       return true;
     });
   }, [displayedItems, expandedRoots, conversationId]);
-  const visibleIds = useMemo(
-    () => new Set(visibleItems.map((comment) => comment.id)),
-    [visibleItems],
-  );
   const branchTotals = useMemo(
     () =>
       new Map(
@@ -703,122 +701,129 @@ export function CommentThread({
 
           {items.length > 0 ? (
             <ol className={styles.commentList}>
-              {displayedItems.map((comment) => (
-                <CommentItem
-                  key={comment.id}
-                  postAuthorUserId={
-                    (conversation?.author ?? post.author)?.userId ?? null
-                  }
-                  active={active && visibleIds.has(comment.id)}
-                  comment={comment}
-                  navigable
-                  repostTarget={commentAsPost(comment, post)}
-                  shareCard={(signal) =>
-                    loadCommentShareCard(api, post, comment.id, site, signal)
-                  }
-                  presentation={conversationId ? "direct-reply" : "list"}
-                  focusTarget={headingRef}
-                  onDeleted={deleted}
-                  onPinChange={(nextPinnedCommentId) => {
-                    setPinnedCommentId(nextPinnedCommentId);
-                    onMutation?.({
-                      kind: "pin",
-                      pinnedCommentId: nextPinnedCommentId,
-                    });
-                    setAnnouncement(
-                      nextPinnedCommentId ? "回复已置顶" : "已取消置顶回复",
-                    );
-                  }}
-                  onReply={(_rootId, target) => {
-                    setReply((current) =>
-                      current?.comment.id === target.id
-                        ? current
-                        : { comment: target, content: "" },
-                    );
-                    setReplyOpen(true);
-                  }}
-                  canModerate={canModerate}
-                  canDelete={
-                    auth.account?.status === "active" &&
-                    auth.account.userId === comment.author.userId
-                  }
-                  pinned={comment.id === pinnedCommentId}
-                  // A null root means there is nothing to reply to, which is
-                  // a different thing from not being allowed to. Being
-                  // signed out travels as canReply instead, so the action
-                  // keeps its place and explains itself when pressed rather
-                  // than vanishing and leaving a thread full of replies with
-                  // no visible way to make one.
-                  canReply={canCompose}
-                  replyBlockedBy={replyBlock ?? "signed-out"}
-                  replyRootId={comment.parentId ?? comment.id}
-                  // The root's own total, not the rows on screen: the
-                  // delete confirmation is describing an irreversible
-                  // cascade, and a page holds only part of a conversation.
-                  // The loaded count is kept as a floor so a reply that has
-                  // been optimistically inserted still counts.
-                  replyCount={Math.max(
-                    comment.replyCount,
-                    replyCounts.get(comment.id) ?? 0,
-                  )}
-                  site={site}
-                  replyBranch={
-                    branchEnds.has(comment.id) &&
-                    (branchTotals.get(branchEnds.get(comment.id)!) ?? 0) > 1
-                      ? (() => {
-                          const rootId = branchEnds.get(comment.id)!;
-                          const expanded = expandedRoots.has(rootId);
-                          return (
-                            <ReplyBranch
-                              active={active}
-                              expanded={expanded}
-                              hidden={Math.max(
-                                0,
-                                (branchTotals.get(rootId) ?? 0) -
-                                  (expanded
-                                    ? (loadedReplies.get(rootId) ?? 0)
-                                    : 1),
-                              )}
-                              onExpand={() => {
-                                setExpandedRoots((current) =>
-                                  new Set(current).add(rootId),
-                                );
-                                if (
-                                  (replyPaging.get(rootId)?.visited.length ??
-                                    0) === 0
-                                )
-                                  recoverReplies(rootId, "manual");
-                              }}
-                              onCollapse={() => {
-                                setExpandedRoots((current) => {
-                                  const next = new Set(current);
-                                  next.delete(rootId);
-                                  return next;
-                                });
-                                window.requestAnimationFrame(() => {
-                                  const row =
-                                    document.querySelector<HTMLElement>(
-                                      `[data-comment-id="${rootId}"]`,
-                                    );
-                                  row?.focus({ preventScroll: true });
+              <AnimatePresence initial={false}>
+                {visibleItems.map((comment) => (
+                  <CommentItem
+                    key={comment.id}
+                    postAuthorUserId={
+                      (conversation?.author ?? post.author)?.userId ?? null
+                    }
+                    active={active}
+                    comment={comment}
+                    navigable
+                    repostTarget={commentAsPost(comment, post)}
+                    shareCard={(signal) =>
+                      loadCommentShareCard(api, post, comment.id, site, signal)
+                    }
+                    presentation={conversationId ? "direct-reply" : "list"}
+                    focusTarget={headingRef}
+                    onDeleted={deleted}
+                    onPinChange={(nextPinnedCommentId) => {
+                      setPinnedCommentId(nextPinnedCommentId);
+                      onMutation?.({
+                        kind: "pin",
+                        pinnedCommentId: nextPinnedCommentId,
+                      });
+                      setAnnouncement(
+                        nextPinnedCommentId ? "回复已置顶" : "已取消置顶回复",
+                      );
+                    }}
+                    onReply={(_rootId, target) => {
+                      setReply((current) =>
+                        current?.comment.id === target.id
+                          ? current
+                          : { comment: target, content: "" },
+                      );
+                      setReplyOpen(true);
+                    }}
+                    canModerate={canModerate}
+                    canDelete={
+                      auth.account?.status === "active" &&
+                      auth.account.userId === comment.author.userId
+                    }
+                    pinned={comment.id === pinnedCommentId}
+                    // A null root means there is nothing to reply to, which is
+                    // a different thing from not being allowed to. Being
+                    // signed out travels as canReply instead, so the action
+                    // keeps its place and explains itself when pressed rather
+                    // than vanishing and leaving a thread full of replies with
+                    // no visible way to make one.
+                    canReply={canCompose}
+                    replyBlockedBy={replyBlock ?? "signed-out"}
+                    replyRootId={comment.parentId ?? comment.id}
+                    // The root's own total, not the rows on screen: the
+                    // delete confirmation is describing an irreversible
+                    // cascade, and a page holds only part of a conversation.
+                    // The loaded count is kept as a floor so a reply that has
+                    // been optimistically inserted still counts.
+                    replyCount={Math.max(
+                      comment.replyCount,
+                      replyCounts.get(comment.id) ?? 0,
+                    )}
+                    site={site}
+                    replyBranch={
+                      branchEnds.has(comment.id) &&
+                      (branchTotals.get(branchEnds.get(comment.id)!) ?? 0) > 1
+                        ? (() => {
+                            const rootId = branchEnds.get(comment.id)!;
+                            const expanded = expandedRoots.has(rootId);
+                            return (
+                              <ReplyBranch
+                                active={active}
+                                expanded={expanded}
+                                hidden={Math.max(
+                                  0,
+                                  (branchTotals.get(rootId) ?? 0) -
+                                    (expanded
+                                      ? (loadedReplies.get(rootId) ?? 0)
+                                      : 1),
+                                )}
+                                onExpand={() => {
+                                  setExpandedRoots((current) =>
+                                    new Set(current).add(rootId),
+                                  );
                                   if (
-                                    row &&
-                                    row.getBoundingClientRect().top < 0
+                                    (replyPaging.get(rootId)?.visited.length ??
+                                      0) === 0
                                   )
-                                    row.scrollIntoView?.({ block: "nearest" });
-                                });
-                              }}
-                              onLoad={(source) =>
-                                recoverReplies(rootId, source)
-                              }
-                              paging={replyPaging.get(rootId)}
-                            />
-                          );
-                        })()
-                      : null
-                  }
-                />
-              ))}
+                                    recoverReplies(rootId, "manual");
+                                }}
+                                onCollapse={() => {
+                                  setExpandedRoots((current) => {
+                                    const next = new Set(current);
+                                    next.delete(rootId);
+                                    return next;
+                                  });
+                                  window.requestAnimationFrame(() => {
+                                    const row =
+                                      document.querySelector<HTMLElement>(
+                                        `[data-comment-id="${rootId}"]`,
+                                      );
+                                    row?.focus({ preventScroll: true });
+                                    if (
+                                      row &&
+                                      row.getBoundingClientRect().top < 0
+                                    )
+                                      row.scrollIntoView?.({
+                                        block: "nearest",
+                                        behavior: reduceMotion
+                                          ? "instant"
+                                          : "smooth",
+                                      });
+                                  });
+                                }}
+                                onLoad={(source) =>
+                                  recoverReplies(rootId, source)
+                                }
+                                paging={replyPaging.get(rootId)}
+                              />
+                            );
+                          })()
+                        : null
+                    }
+                  />
+                ))}
+              </AnimatePresence>
             </ol>
           ) : null}
 

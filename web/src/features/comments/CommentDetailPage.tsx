@@ -187,6 +187,7 @@ export function CommentDetailPage({
                 site={site}
                 conversation
                 connected
+                connectedFrom
                 actions={actionsFor(replyTarget)}
                 href={commentDetailPath(post.id, replyTarget.id)}
                 shareCard={(signal) =>
@@ -232,6 +233,7 @@ export function CommentDetailPage({
             <PostPresentation
               detail
               conversation
+              connectedFrom
               shareCard={commentShareCard(context, post, site)}
               commentsId={"comments-" + selected.id}
               post={selectedPost}
