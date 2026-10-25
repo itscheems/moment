@@ -502,13 +502,11 @@ export function PostPresentation({
         data-timeline-item-key={timelineKey}
         tabIndex={-1}
       >
+        {pinLabel}
         {repostLabel}
         <div className={styles.detailIdentity}>
           <div className={styles.avatarColumn}>{avatar}</div>
-          <div className={styles.detailHeading}>
-            {pinLabel}
-            {byline}
-          </div>
+          <div className={styles.detailHeading}>{byline}</div>
         </div>
         <div className={styles.detailBody}>
           <MarkdownBody
@@ -599,10 +597,10 @@ export function PostPresentation({
           <span className={styles.srOnly}>打开这条 Moment 详情</span>
         </InternalLink>
       ) : null}
+      {pinLabel}
       {repostLabel}
       <div className={styles.avatarColumn}>{avatar}</div>
       <div className={styles.postMain}>
-        {pinLabel}
         {byline}
         {/* An article leads with its cover, title and excerpt instead of its
             prose: the body is not in a list response at all, and a card is
