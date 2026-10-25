@@ -20,6 +20,8 @@
 }
 
 .field {
+  -webkit-user-select: none;
+  user-select: none;
   block-size: 44px;
   display: flex;
   align-items: center;
