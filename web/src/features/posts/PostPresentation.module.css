@@ -859,7 +859,20 @@
   color: var(--text-primary);
 }
 .quoteMarkdown {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 4;
+  overflow: hidden;
+  max-block-size: 80px;
   margin-block-start: var(--space-2);
+  font-size: 15px;
+  line-height: 20px;
+}
+
+/* Keep inherited document paragraph spacing from consuming the quote preview. */
+.quoteCard .quoteMarkdown:global(.tiptap.ProseMirror) p {
+  margin: 0;
+  font: inherit;
 }
 
 .detail {
