@@ -28,6 +28,8 @@
 
 .leftRail {
   z-index: var(--layer-navigation);
+  -webkit-user-select: none;
+  user-select: none;
   overflow-x: hidden;
   overflow-y: auto;
   scrollbar-width: none;
