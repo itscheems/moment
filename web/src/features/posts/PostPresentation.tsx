@@ -202,6 +202,7 @@ export function PostPresentation({
   bylineContext,
   replyControl,
   navigable = true,
+  embedded = false,
 }: {
   post: PublicPost;
   site: SiteIdentity;
@@ -227,6 +228,7 @@ export function PostPresentation({
   bylineContext?: import("react").ReactNode;
   replyControl?: import("react").ReactNode;
   navigable?: boolean;
+  embedded?: boolean;
 }) {
   const { navigate } = useNavigation();
   const [expandedPostId, setExpandedPostId] = useState<string | null>(null);
@@ -336,30 +338,34 @@ export function PostPresentation({
         {bylineContext}
         {!detail ? (
           <>
-            <span aria-hidden="true">·</span>
-            <ExactTimeTooltip
-              exact={published.absolute}
-              children={
-                navigable ? (
-                  <InternalLink
-                    className={styles.timeLink}
-                    aria-label={
-                      post.commentPostId
-                        ? "查看" + title + "的评论详情"
-                        : undefined
-                    }
-                    data-focus-key={`${timelineKey}:relative-time`}
-                    href={detailHref}
-                  >
+            <span className={styles.bylineTime}>
+              <span aria-hidden="true">·</span>
+              <ExactTimeTooltip
+                exact={published.absolute}
+                children={
+                  navigable ? (
+                    <InternalLink
+                      className={styles.timeLink}
+                      aria-label={
+                        post.commentPostId
+                          ? "查看" + title + "的评论详情"
+                          : undefined
+                      }
+                      data-focus-key={`${timelineKey}:relative-time`}
+                      href={detailHref}
+                    >
+                      <time dateTime={post.publishedAt}>
+                        {published.relative}
+                      </time>
+                    </InternalLink>
+                  ) : (
                     <time dateTime={post.publishedAt}>
                       {published.relative}
                     </time>
-                  </InternalLink>
-                ) : (
-                  <time dateTime={post.publishedAt}>{published.relative}</time>
-                )
-              }
-            />
+                  )
+                }
+              />
+            </span>
             {hidden ? (
               <ActionTooltip label="仅自己可见">
                 <span
@@ -572,6 +578,7 @@ export function PostPresentation({
           : `${title}发布的 Moment，${published.absolute}`
       }
       className={`${styles.post} ${conversation ? styles.conversation : ""} ${useTimelineDensity ? styles.timelineDensity : ""} ${fresh ? styles.fresh : ""}`}
+      data-embedded={embedded || undefined}
       data-connected={connected || undefined}
       data-post-id={post.id}
       data-timeline-item-key={timelineKey}

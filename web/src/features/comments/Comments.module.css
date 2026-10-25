@@ -880,13 +880,22 @@
 
 .commentItem {
   min-inline-size: 0;
+  border-block-end: 1px solid var(--border-subtle);
+  transition: background-color var(--motion-fast) var(--ease-out);
 }
 
-.commentItem > article {
-  content-visibility: visible;
-  contain-intrinsic-size: none;
+@media (hover: hover) {
+  .commentItem:hover {
+    background: #f7f7f7;
+  }
+
+  :global(:root[data-theme="dim"]) .commentItem:hover,
+  :global(:root[data-theme="lights-out"]) .commentItem:hover {
+    background: var(--surface-hover);
+  }
 }
 
+.commentReplyTo .commentAuthor,
 .commentAuthor {
   min-inline-size: 0;
   overflow-wrap: anywhere;
@@ -928,6 +937,14 @@
   align-items: baseline;
   gap: 0.3rem;
   min-inline-size: 0;
+  max-inline-size: 100%;
+  flex: 0 1 auto;
+}
+
+.commentReplyTo > :where(span, a, strong) {
+  flex: 0 0 auto;
+  max-inline-size: 100%;
+  white-space: nowrap;
 }
 
 .commentReplyUnknown {
@@ -936,17 +953,24 @@
 
 .replyComment {
   --post-avatar-size: 1.5rem;
-  padding-inline-start: 3rem;
+}
+
+.commentItem.replyComment > article {
+  padding-inline-start: calc(var(--space-4) + 3rem);
 }
 
 .replyBranch {
   padding: 0 var(--space-4) var(--space-3)
-    calc(var(--space-4) + 3rem + 1.5rem + var(--space-2));
+    calc(var(--space-4) + 2.5rem + var(--space-2));
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: var(--space-3);
 }
+.replyComment .replyBranch {
+  padding-inline-start: calc(var(--space-4) + 3rem + 1.5rem + var(--space-2));
+}
+
 .replyBranch button {
   inline-size: fit-content;
 }
@@ -1224,10 +1248,6 @@
     padding-inline: var(--space-3);
   }
 
-  .replyBranch {
-    padding-inline-start: calc(var(--space-4) + 3rem + 1.5rem + var(--space-2));
-  }
-
   .replyDialogPopup > .formSurface,
   .replyDialogPopup > .signInNotice {
     padding-inline: var(--space-4);
@@ -1251,6 +1271,9 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .commentItem {
+    transition: none;
+  }
   .loadingDot {
     animation: none;
   }

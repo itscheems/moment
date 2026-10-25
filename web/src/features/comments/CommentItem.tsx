@@ -477,6 +477,7 @@ export function CommentItem({
   onPinChange,
   shareCard,
   repostTarget,
+  replyBranch,
 }: {
   active?: boolean;
   comment: PublicComment;
@@ -490,6 +491,7 @@ export function CommentItem({
   navigable?: boolean;
   shareCard?: ShareCardSource;
   repostTarget?: PublicPost;
+  replyBranch?: import("react").ReactNode;
   /**
    * Whether this reader may actually reply. It is deliberately separate from
    * replyRoot: a null root means there is nothing to reply to and the action
@@ -532,6 +534,7 @@ export function CommentItem({
         post={projected}
         site={site}
         timelineDensity
+        embedded
         navigable={navigable}
         href={commentDetailPath(comment.postId, comment.id)}
         pinned={pinned}
@@ -578,6 +581,7 @@ export function CommentItem({
         }}
         shareCard={shareCard}
       />
+      {replyBranch}
     </li>
   );
 }

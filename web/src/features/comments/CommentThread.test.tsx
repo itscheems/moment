@@ -760,6 +760,10 @@ describe("public comment thread", () => {
     const branch = await screen.findByRole("button", {
       name: "展开其余 1 条回复",
     });
+    expect(branch.closest("[data-comment-id]")).toHaveAttribute(
+      "data-comment-id",
+      replyId,
+    );
     fireEvent.click(branch);
 
     await screen.findByText("第二条回复");
@@ -783,6 +787,9 @@ describe("public comment thread", () => {
     const requestsBefore = fetcher.mock.calls.filter(([url]) =>
       String(url).includes("/replies"),
     ).length;
+    expect(
+      screen.getByRole("button", { name: "收起" }).closest("[data-comment-id]"),
+    ).toHaveAttribute("data-comment-id", laterReplyId);
     fireEvent.click(screen.getByRole("button", { name: "收起" }));
     expect(screen.queryByText("第二条回复")).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "展开其余 1 条回复" }));

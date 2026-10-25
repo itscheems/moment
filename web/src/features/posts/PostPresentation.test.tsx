@@ -684,7 +684,9 @@ describe("shared post presentation", () => {
     );
     // Name, handle, time, then the lock: it follows the metadata, not the
     // name, so the identity block never has to make room for it.
-    expect(mark.previousElementSibling).toHaveAttribute(
+    expect(
+      mark.previousElementSibling?.querySelector("[data-focus-key]"),
+    ).toHaveAttribute(
       "data-focus-key",
       expect.stringMatching(/:relative-time$/),
     );
