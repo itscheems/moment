@@ -116,7 +116,7 @@
   inset-block-start: calc(var(--space-3) + 2.5rem + var(--space-2));
   inset-block-end: calc(-1 * var(--space-1));
   inline-size: 2px;
-  background: var(--border-subtle);
+  background: var(--border-strong);
   pointer-events: none;
 }
 

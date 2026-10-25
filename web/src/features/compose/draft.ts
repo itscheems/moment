@@ -24,7 +24,41 @@ export interface ComposeDraftIdentity {
   savedAt: string;
 }
 
+export interface ComposeQuoteTarget {
+  id: string;
+  commentPostId?: string;
+}
+
+export function parseComposeQuoteTarget(
+  value: unknown,
+): ComposeQuoteTarget | undefined {
+  if (value == null) return undefined;
+  if (typeof value !== "object" || Array.isArray(value))
+    throw new Error("Invalid quote target");
+  const record = value as Record<string, unknown>;
+  const idPattern = /^[0-7][0-9A-HJKMNP-TV-Z]{25}$/;
+  if (
+    !hasExactKeys(record, [
+      "id",
+      ...(Object.hasOwn(record, "commentPostId") ? ["commentPostId"] : []),
+    ]) ||
+    typeof record.id !== "string" ||
+    !idPattern.test(record.id) ||
+    (record.commentPostId !== undefined &&
+      (typeof record.commentPostId !== "string" ||
+        !idPattern.test(record.commentPostId)))
+  )
+    throw new Error("Invalid quote target");
+  return {
+    id: record.id,
+    ...(record.commentPostId
+      ? { commentPostId: record.commentPostId as string }
+      : {}),
+  };
+}
+
 export interface ComposeDraft extends ComposeDraftIdentity {
+  quote?: ComposeQuoteTarget;
   mapCard?: MapCardData;
   contentMd: string;
 }
@@ -122,10 +156,14 @@ function parseJSON(value: string | null): unknown {
 export function fingerprintComposeDraft(
   contentMd: string,
   mapCard?: MapCardData | null,
+  quote?: ComposeQuoteTarget | null,
 ): string {
-  const value = mapCard
+  const base = mapCard
     ? JSON.stringify([contentMd, mapCardPayload(mapCard)])
     : contentMd;
+  const value = quote
+    ? JSON.stringify(["quote-v1", base, quote.id, quote.commentPostId ?? null])
+    : base;
   return bytesToHex(sha256(new TextEncoder().encode(value)));
 }
 
@@ -138,13 +176,15 @@ export function createComposeDraft(
   previousSavedAt?: string | null,
   now = new Date(),
   mapCard?: MapCardData | null,
+  quote?: ComposeQuoteTarget | null,
 ): ComposeDraft {
   const previous = previousSavedAt ? Date.parse(previousSavedAt) : 0;
   const nextTime = Math.max(now.getTime(), lastDraftTime + 1, previous + 1);
   lastDraftTime = nextTime;
   return {
     contentMd,
-    fingerprint: fingerprintComposeDraft(contentMd, mapCard),
+    fingerprint: fingerprintComposeDraft(contentMd, mapCard, quote),
+    ...(quote ? { quote } : {}),
     ...(mapCard ? { mapCard } : {}),
     savedAt: new Date(nextTime).toISOString(),
   };
@@ -156,17 +196,12 @@ function parseStoredDraft(value: string | null): ComposeDraft | null {
     typeof parsed !== "object" ||
     parsed === null ||
     Array.isArray(parsed) ||
-    !(
-      hasExactKeys(parsed as Record<string, unknown>, [
-        "content_md",
-        "saved_at",
-      ]) ||
-      hasExactKeys(parsed as Record<string, unknown>, [
-        "content_md",
-        "saved_at",
-        "map_card",
-      ])
-    )
+    !hasExactKeys(parsed as Record<string, unknown>, [
+      "content_md",
+      "saved_at",
+      ...(Object.hasOwn(parsed, "map_card") ? ["map_card"] : []),
+      ...(Object.hasOwn(parsed, "quote") ? ["quote"] : []),
+    ])
   ) {
     return null;
   }
@@ -174,8 +209,10 @@ function parseStoredDraft(value: string | null): ComposeDraft | null {
   if (typeof draft.content_md !== "string" || !isTimestamp(draft.saved_at)) {
     return null;
   }
+  let quote: ComposeQuoteTarget | undefined;
   let mapCard: MapCardData | undefined;
   try {
+    quote = parseComposeQuoteTarget(draft.quote);
     mapCard = draft.map_card == null ? undefined : parseMapCard(draft.map_card);
   } catch {
     return null;
@@ -183,7 +220,8 @@ function parseStoredDraft(value: string | null): ComposeDraft | null {
   return {
     contentMd: draft.content_md,
     ...(mapCard ? { mapCard } : {}),
-    fingerprint: fingerprintComposeDraft(draft.content_md, mapCard),
+    fingerprint: fingerprintComposeDraft(draft.content_md, mapCard, quote),
+    ...(quote ? { quote } : {}),
     savedAt: draft.saved_at,
   };
 }
@@ -490,7 +528,7 @@ export function saveComposeDraft(
     !INSTANCE_PATTERN.test(instanceId) ||
     !isTimestamp(draft.savedAt) ||
     !FINGERPRINT_PATTERN.test(draft.fingerprint) ||
-    fingerprintComposeDraft(draft.contentMd, draft.mapCard) !==
+    fingerprintComposeDraft(draft.contentMd, draft.mapCard, draft.quote) !==
       draft.fingerprint
   ) {
     return false;
@@ -502,6 +540,7 @@ export function saveComposeDraft(
       draftKey(instanceId),
       JSON.stringify({
         content_md: draft.contentMd,
+        ...(draft.quote ? { quote: draft.quote } : {}),
         ...(draft.mapCard ? { map_card: mapCardPayload(draft.mapCard) } : {}),
         saved_at: draft.savedAt,
       }),

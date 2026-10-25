@@ -26,7 +26,7 @@ import {
   type DiscussionChange,
 } from "./discussionChanges";
 import { PostReplyDialog } from "./PostReplyDialog";
-import { loadCommentShareCard } from "../share/shareCardInput";
+import { commentAsPost, loadCommentShareCard } from "../share/shareCardInput";
 import {
   appendRepliesToRoot,
   appendRoots,
@@ -712,6 +712,7 @@ export function CommentThread({
                     active={active && visibleIds.has(comment.id)}
                     comment={comment}
                     navigable
+                    repostTarget={commentAsPost(comment, post)}
                     shareCard={(signal) =>
                       loadCommentShareCard(api, post, comment.id, site, signal)
                     }

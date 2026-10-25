@@ -116,7 +116,11 @@ export function ComposeDrafts({
                     draft.contentMd ||
                       (draft.mapCard
                         ? `地图：${draft.mapCard.places.map((place) => place.name).join("、")}`
-                        : ""),
+                        : draft.quote
+                          ? draft.quote.commentPostId
+                            ? "引用评论"
+                            : "引用 Moment"
+                          : ""),
                   )}
                 </span>
                 <time dateTime={draft.savedAt}>

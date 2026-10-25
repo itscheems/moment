@@ -1,3 +1,4 @@
+import { commentAsPost } from "../share/shareCardInput";
 import { MapCardEditor } from "../maps/MapCardEditor";
 import { useEditHistory } from "../../components/useEditHistory";
 import { EditMediaHistory } from "../media/editMediaHistory";
@@ -82,6 +83,7 @@ import {
   saveComposeDraft,
   subscribeComposeDraftClearance,
   type ComposeDraft,
+  type ComposeQuoteTarget,
   type ComposeDraftClearEvent,
 } from "./draft";
 import { ComposeDrafts } from "./ComposeDrafts";
@@ -170,6 +172,7 @@ export interface ComposerHandle {
     contentMd: string,
     keptId?: string,
     mapCard?: MapCardData,
+    quote?: ComposeQuoteTarget,
   ) => void;
 }
 
@@ -183,6 +186,8 @@ interface ComposerProps {
   post?: PublicMomentPost;
   active?: boolean;
   quotedPostId?: string;
+  quotedCommentId?: string;
+  quotedCommentPostId?: string;
   /**
    * Carry the way into 草稿. The compose dialog puts it in its own header,
    * so the overlay turns this off; the compose screen -- the only compose
@@ -201,6 +206,8 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
       post,
       active = true,
       quotedPostId,
+      quotedCommentId,
+      quotedCommentPostId,
       draftsEntry = true,
       draftsListStart = false,
     },
@@ -239,6 +246,16 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
     );
     const [activeDraft, setActiveDraft] = useState<ComposeDraft | null>(null);
     const [announcement, setAnnouncement] = useState("");
+    const [quoteTarget, setQuoteTarget] = useState<ComposeQuoteTarget | null>(
+      () =>
+        quotedCommentId && quotedCommentPostId
+          ? { id: quotedCommentId, commentPostId: quotedCommentPostId }
+          : quotedPostId
+            ? { id: quotedPostId }
+            : null,
+    );
+    const quoteTargetRef = useRef(quoteTarget);
+    quoteTargetRef.current = quoteTarget;
     const [quotedPost, setQuotedPost] = useState<PublicPost | null>(null);
     const [quoteError, setQuoteError] = useState(false);
     const [mediaItems, setMediaItems] = useState<ComposerMediaItem[]>(() =>
@@ -308,6 +325,8 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
       });
     const repostOnly =
       quotedPost !== null &&
+      !quotedPost.commentPostId &&
+      account?.userId === quotedPost.author?.userId &&
       content.trim().length === 0 &&
       mediaItems.length === 0 &&
       mapCard === null;
@@ -316,6 +335,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
         content.trim().length > 0 ||
         mediaItems.length > 0 ||
         quotedPost !== null) &&
+      (!quoteTarget || quotedPost !== null) &&
       count <= MAX_CONTENT &&
       mediaError === null &&
       mediaItems.every((item) => item.state === "ready");
@@ -326,7 +346,8 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
         content !== initialContent ||
         mediaChanged ||
         locationChanged ||
-        visibilityChanged) &&
+        visibilityChanged ||
+        quoteTarget !== null) &&
       !allowLeaveRef.current;
     const hasAttachments =
       mediaItems.length > 0 ||
@@ -377,22 +398,76 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
       });
     };
 
-    useEffect(() => {
-      if (!quotedPostId || variant === "edit") {
-        setQuotedPost(null);
-        setQuoteError(false);
-        return;
-      }
-      const controller = new AbortController();
+    const clearQuote = () => {
+      quoteTargetRef.current = null;
+      setQuoteTarget(null);
+      setQuotedPost(null);
       setQuoteError(false);
-      void publicApi
-        .post(quotedPostId, controller.signal)
-        .then(setQuotedPost)
+      const draft = createComposeDraft(
+        contentRef.current,
+        activeDraftRef.current?.savedAt,
+        undefined,
+        mapCardRef.current,
+        null,
+      );
+      activeDraftRef.current = draft;
+      setActiveDraft(draft);
+      dirtyRef.current = true;
+      setDirty(true);
+      setError(null);
+      idempotencyKey.current = createIdempotencyKey();
+    };
+
+    useEffect(() => {
+      const target =
+        quotedCommentId && quotedCommentPostId
+          ? { id: quotedCommentId, commentPostId: quotedCommentPostId }
+          : quotedPostId
+            ? { id: quotedPostId }
+            : null;
+      setQuoteTarget((current) =>
+        JSON.stringify(current) === JSON.stringify(target) ? current : target,
+      );
+    }, [quotedPostId, quotedCommentId, quotedCommentPostId]);
+
+    useEffect(() => {
+      setQuotedPost(null);
+      setQuoteError(false);
+      if (!quoteTarget || variant === "edit") return;
+      const controller = new AbortController();
+      const load = quoteTarget.commentPostId
+        ? Promise.all([
+            publicApi.post(quoteTarget.commentPostId, controller.signal),
+            publicApi.commentContext(
+              quoteTarget.commentPostId,
+              quoteTarget.id,
+              controller.signal,
+            ),
+          ]).then(([original, context]) =>
+            commentAsPost(context.comment, original, context.directReplyCount),
+          )
+        : publicApi.post(quoteTarget.id, controller.signal);
+      void load
+        .then((quoted) => {
+          if (controller.signal.aborted) return;
+          setQuotedPost(quoted);
+          dirtyRef.current = true;
+          setDirty(true);
+          const draft = createComposeDraft(
+            contentRef.current,
+            activeDraftRef.current?.savedAt,
+            undefined,
+            mapCardRef.current,
+            quoteTarget,
+          );
+          activeDraftRef.current = draft;
+          setActiveDraft(draft);
+        })
         .catch(() => {
           if (!controller.signal.aborted) setQuoteError(true);
         });
       return () => controller.abort();
-    }, [publicApi, quotedPostId, variant]);
+    }, [publicApi, quoteTarget, variant]);
 
     useEffect(() => {
       if (!mention) {
@@ -474,6 +549,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
           activeDraftRef.current?.savedAt,
           undefined,
           mapCardRef.current,
+          quoteTargetRef.current,
         );
         activeDraftRef.current = nextDraft;
         setActiveDraft(nextDraft);
@@ -529,7 +605,13 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
         (kept) => kept.fingerprint === stranded.fingerprint,
       );
       if (!filed)
-        keepDraft(draftScope, stranded.contentMd, undefined, stranded.mapCard);
+        keepDraft(
+          draftScope,
+          stranded.contentMd,
+          undefined,
+          stranded.mapCard,
+          stranded.quote,
+        );
       clearComposeDraft(draftScope, {
         reason: "discarded",
         draft: stranded,
@@ -539,26 +621,45 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
     // Putting a kept draft back in the editor. Reached from the 草稿 list
     // on this surface, and from the compose dialog's list through the ref.
     const restoreDraftText = useCallback(
-      (contentMd: string, keptId?: string, restoredMap?: MapCardData) => {
+      (
+        contentMd: string,
+        keptId?: string,
+        restoredMap?: MapCardData,
+        restoredQuote?: ComposeQuoteTarget,
+      ) => {
         resetEditHistory.current();
         // Whatever is in the editor right now is not thrown away for it.
         const current = contentRef.current;
         if (
-          (current.trim() || mapCardRef.current) &&
-          fingerprintComposeDraft(current, mapCardRef.current) !==
-            fingerprintComposeDraft(contentMd, restoredMap)
+          (current.trim() || mapCardRef.current || quoteTargetRef.current) &&
+          fingerprintComposeDraft(
+            current,
+            mapCardRef.current,
+            quoteTargetRef.current,
+          ) !== fingerprintComposeDraft(contentMd, restoredMap, restoredQuote)
         ) {
-          keepDraft(draftScope, current, undefined, mapCardRef.current);
+          keepDraft(
+            draftScope,
+            current,
+            undefined,
+            mapCardRef.current,
+            quoteTargetRef.current,
+          );
         }
         // The draft leaves 草稿 as it enters the editor: it is the live
         // text now, and filing it again on the way out replaces it rather
         // than adding a second, near-identical copy.
         if (keptId) dropKeptDraft(draftScope, keptId);
+        quoteTargetRef.current = restoredQuote ?? null;
+        setQuoteTarget(restoredQuote ?? null);
+        setQuoteError(false);
+        idempotencyKey.current = createIdempotencyKey();
         const restored = createComposeDraft(
           contentMd,
           activeDraftRef.current?.savedAt,
           undefined,
           restoredMap,
+          restoredQuote,
         );
         activeDraftRef.current = restored;
         setActiveDraft(restored);
@@ -583,25 +684,38 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
           allowLeaveRef.current = true;
           if (
             variant === "edit" ||
-            (content.trim().length === 0 && !mapCardRef.current)
+            (content.trim().length === 0 &&
+              !mapCardRef.current &&
+              !quoteTargetRef.current)
           )
             return;
           const current =
             activeDraftRef.current?.fingerprint ===
-            fingerprintComposeDraft(content, mapCardRef.current)
+            fingerprintComposeDraft(
+              content,
+              mapCardRef.current,
+              quoteTargetRef.current,
+            )
               ? activeDraftRef.current
               : createComposeDraft(
                   content,
                   activeDraftRef.current?.savedAt,
                   undefined,
                   mapCardRef.current,
+                  quoteTargetRef.current,
                 );
           activeDraftRef.current = current;
           saveComposeDraft(draftScope, current);
           // Keeping is a decision, so it also files a copy under 草稿 --
           // the recovery slot only ever holds the most recent text, and a
           // second keep would otherwise erase the first.
-          keepDraft(draftScope, content, undefined, mapCardRef.current);
+          keepDraft(
+            draftScope,
+            content,
+            undefined,
+            mapCardRef.current,
+            quoteTargetRef.current,
+          );
         },
         leaveAndDiscard: () => {
           allowLeaveRef.current = true;
@@ -616,6 +730,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
               current.contentMd,
               undefined,
               current.mapCard,
+              current.quote,
             );
           }
           clearMedia();
@@ -655,6 +770,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
           activeDraftRef.current?.savedAt,
           undefined,
           next,
+          quoteTargetRef.current,
         );
         activeDraftRef.current = draft;
         setActiveDraft(draft);
@@ -844,6 +960,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
       location,
       visibility,
       quotedPost,
+      quoteTarget,
       dismissed: linkPreview.dismissed,
     };
     const historyGroup = JSON.stringify([
@@ -851,7 +968,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
       mediaHistory.signature(mediaItems),
       location,
       visibility,
-      quotedPost?.id,
+      quoteTarget,
       [...linkPreview.dismissed].sort(),
     ]);
     const { reset: resetHistory, ...historyEvents } = useEditHistory({
@@ -877,6 +994,8 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
           }
         }
         contentRef.current = next.content;
+        quoteTargetRef.current = next.quoteTarget;
+        setQuoteTarget(next.quoteTarget);
         setContent(next.content);
         changeMapCard(next.mapCard);
         replaceMedia(restoredMedia);
@@ -968,6 +1087,9 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
         allowLeaveRef.current = true;
         activeDraftRef.current = null;
         setActiveDraft(null);
+        quoteTargetRef.current = null;
+        setQuoteTarget(null);
+        setQuotedPost(null);
         setContent("");
         dirtyRef.current = false;
         setDirty(false);
@@ -1119,6 +1241,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
                 currentDraft.contentMd,
                 undefined,
                 currentDraft.mapCard,
+                currentDraft.quote,
               );
             }
           }
@@ -1150,6 +1273,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
               currentDraft.contentMd,
               undefined,
               currentDraft.mapCard,
+              currentDraft.quote,
             );
           }
         }
@@ -1198,13 +1322,18 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
         submittedDraft =
           active &&
           active.fingerprint ===
-            fingerprintComposeDraft(content, mapCardRef.current)
+            fingerprintComposeDraft(
+              content,
+              mapCardRef.current,
+              quoteTargetRef.current,
+            )
             ? active
             : createComposeDraft(
                 content,
                 active?.savedAt,
                 undefined,
                 mapCardRef.current,
+                quoteTargetRef.current,
               );
         activeDraftRef.current = submittedDraft;
         setActiveDraft(submittedDraft);
@@ -1252,7 +1381,9 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
                 idempotencyKey.current,
                 usages,
                 location ?? undefined,
-                quotedPost?.id,
+                quotedPost?.commentPostId
+                  ? { commentId: quotedPost.id }
+                  : quotedPost?.id,
                 linkPreview.card ? [linkPreview.card] : undefined,
                 visibility,
                 mapCard ?? undefined,
@@ -1270,6 +1401,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
             submittedDraft.contentMd,
             undefined,
             submittedDraft.mapCard,
+            submittedDraft.quote,
           );
         }
         announcePostChanged({
@@ -1403,7 +1535,12 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
               instanceId={draftScope}
               onEditingChange={setDraftsEditing}
               onOpenDraft={(kept) => {
-                restoreDraftText(kept.contentMd, kept.id, kept.mapCard);
+                restoreDraftText(
+                  kept.contentMd,
+                  kept.id,
+                  kept.mapCard,
+                  kept.quote,
+                );
                 setDraftsListOpen(false);
               }}
             />
@@ -1495,6 +1632,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
                       activeDraftRef.current?.savedAt,
                       undefined,
                       mapCardRef.current,
+                      quoteTargetRef.current,
                     );
                     activeDraftRef.current = nextDraft;
                     setActiveDraft(nextDraft);
@@ -1638,19 +1776,17 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
                   <strong>
                     {postAuthorSite(quotedPost, site).displayName}
                   </strong>
-                  <span>@{postAuthorSite(quotedPost, site).username}</span>
+                  {postAuthorSite(quotedPost, site).username ? (
+                    <span>@{postAuthorSite(quotedPost, site).username}</span>
+                  ) : null}
                   <button
                     aria-label="移除引用的 Moment"
                     disabled={pending}
                     onClick={() => {
-                      setQuotedPost(null);
+                      clearQuote();
                       window.requestAnimationFrame(() =>
                         textareaRef.current?.focus(),
                       );
-                      setError(null);
-                      dirtyRef.current = true;
-                      setDirty(true);
-                      idempotencyKey.current = createIdempotencyKey();
                     }}
                     type="button"
                   >
@@ -1669,7 +1805,15 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
             ) : null}
             {quoteError ? (
               <p className={styles.formError}>
-                无法载入要引用的 Moment，请返回后重试。
+                无法载入引用内容。
+                <button
+                  type="button"
+                  onClick={() => {
+                    clearQuote();
+                  }}
+                >
+                  取消引用
+                </button>
               </p>
             ) : null}
             <MapCardEditor

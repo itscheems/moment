@@ -736,6 +736,99 @@ describe("owner composing flow", () => {
     });
   });
 
+  it.each(["", "我的评论补充"])(
+    "publishes a comment quote with body %j through the normal composer",
+    async (content) => {
+      preauthenticate();
+      const originalId = "01K2ABCDEF0123456789ABCDE9",
+        commentId = "01K2ABCDEF0123456789ABCDE7";
+      window.history.replaceState(
+        {},
+        "",
+        `/compose?quoteComment=${commentId}&quotePost=${originalId}`,
+      );
+      const comment = {
+        id: commentId,
+        post_id: originalId,
+        parent_id: null,
+        depth: 0,
+        author_name: "乔乔",
+        author: post().author,
+        reply_to: null,
+        content_md: "被引用评论",
+        content_html: "<p>被引用评论</p>\n",
+        created_at: "2026-08-10T01:00:00Z",
+        media: [],
+        reply_count: 0,
+      };
+      const fetcher = installApi((url, init) => {
+        if (url === `/api/v1/posts/${originalId}` && !init?.method)
+          return json({ data: post("原帖", originalId), meta: {} });
+        if (
+          url === `/api/v1/posts/${originalId}/comments/${commentId}` &&
+          !init?.method
+        )
+          return json({
+            data: {
+              comment,
+              reply_target: null,
+              direct_reply_count: 0,
+              root_comment_id: commentId,
+              pinned_comment_id: null,
+            },
+            meta: {},
+          });
+        if (url === "/api/v1/posts" && init?.method === "POST")
+          return json(
+            {
+              data: {
+                ...post(content),
+                content_html: content ? `<p>${content}</p>` : "",
+                quoted_post: {
+                  id: commentId,
+                  comment_post_id: originalId,
+                  author: post().author,
+                  unavailable: false,
+                  kind: "moment",
+                  article: null,
+                  content_md: comment.content_md,
+                  content_html: comment.content_html,
+                  published_at: comment.created_at,
+                  media: [],
+                  location: null,
+                  map_card: null,
+                },
+              },
+              meta: {},
+            },
+            201,
+          );
+      });
+      render(<App />);
+      expect(await screen.findByText("被引用评论")).toBeInTheDocument();
+      if (content)
+        fireEvent.change(screen.getByLabelText("此刻想到什么？"), {
+          target: { value: content },
+        });
+      fireEvent.click(screen.getByRole("button", { name: "发布" }));
+      await waitFor(() => expect(window.location.pathname).toBe("/"));
+      const call = fetcher.mock.calls.find(
+        ([url, init]) =>
+          String(url) === "/api/v1/posts" && init?.method === "POST",
+      );
+      expect(JSON.parse(String(call?.[1]?.body))).toMatchObject({
+        content_md: content,
+        quoted_comment_id: commentId,
+      });
+      expect(JSON.parse(String(call?.[1]?.body))).not.toHaveProperty(
+        "quoted_post_id",
+      );
+      expect(
+        fetcher.mock.calls.some(([url]) => String(url).endsWith("/repost")),
+      ).toBe(false);
+    },
+  );
+
   it("reuses an uploaded media ID when post submission fails and retries", async () => {
     preauthenticate();
     window.history.replaceState({}, "", "/compose");

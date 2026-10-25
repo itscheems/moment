@@ -114,3 +114,16 @@ describe("kept compose drafts", () => {
     ).toEqual([]);
   });
 });
+
+it("keeps pure comment quotes distinct and removes only the matching target", () => {
+  const a = {
+      id: "01K2ABCDEF0123456789ABCDE1",
+      commentPostId: "01K2ABCDEF0123456789ABCDE0",
+    },
+    b = { ...a, id: "01K2ABCDEF0123456789ABCDE2" };
+  expect(keepDraft(instance, "", new Date(), undefined, a)).not.toBeNull();
+  expect(keepDraft(instance, "", new Date(), undefined, b)).not.toBeNull();
+  expect(listKeptDrafts(instance)).toHaveLength(2);
+  dropKeptDraftByContent(instance, "", undefined, undefined, a);
+  expect(listKeptDrafts(instance).map((d) => d.quote)).toEqual([b]);
+});

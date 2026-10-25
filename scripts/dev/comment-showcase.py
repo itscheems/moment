@@ -98,6 +98,16 @@ def add_long_context_case(builder, post_id, root_id):
                  note="Full long ancestor with image in the conversation and share card")
 
 
+def add_comment_quote_cases(builder):
+    entities = builder.manifest["entities"]
+    targets = [("comment-quote", "lena", entities["floor.1.reply.0"]["id"], "引用评论：可点击返回具体讨论。"),
+               ("comment-quote-only", "aming", entities["floor.1.reply.0"]["id"], ""),
+               ("comment-quote-media", "xiaoman", entities["long-media"]["id"], "引用带图片的完整评论。")]
+    for key, actor, target, content in targets:
+        post = builder.entity(key, actor, "post", "create", "--quote-comment", target, "--content", content)
+        builder.case("comments." + key, post["id"], note="Real comment quote; source identity, media and deep link retained")
+
+
 def main():
     instance = json.loads((PLAYGROUND / "data/instance.json").read_text())
     seed = json.loads((PLAYGROUND / "seed.json").read_text())["data"]
@@ -106,6 +116,7 @@ def main():
     if builder.manifest["complete"]:
         add_long_context_case(builder, builder.manifest["entities"]["post"]["id"],
                               builder.manifest["entities"]["long-media"]["id"])
+        add_comment_quote_cases(builder)
         print_cases(builder.manifest)
         return
 
@@ -196,6 +207,7 @@ def main():
                                        root["id"], "--reply-to", root["id"],
                                        "--content", "文章标题、摘要和被回复评论应当正确显示。")
                 builder.case("comments.article", article["id"], child["id"], note="Article summary and immediate target")
+    add_comment_quote_cases(builder)
     builder.manifest["complete"] = True
     builder.save()
     print_cases(builder.manifest)

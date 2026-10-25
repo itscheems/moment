@@ -165,6 +165,11 @@ function PublicApp() {
   const quotedPostId = hasValidRawQueryEncoding(contentLocation.search)
     ? (new URLSearchParams(contentLocation.search).get("quote") ?? undefined)
     : undefined;
+  const quoteParams = hasValidRawQueryEncoding(contentLocation.search)
+    ? new URLSearchParams(contentLocation.search)
+    : null;
+  const quotedCommentId = quoteParams?.get("quoteComment") ?? undefined;
+  const quotedCommentPostId = quoteParams?.get("quotePost") ?? undefined;
   const route = resolveRoute(displayLocation.pathname);
   const discussionRouteActive =
     route.id === "detail" ||
@@ -675,6 +680,8 @@ function PublicApp() {
               // opens its panel instead.
               draftsListStart={isComposeDraftsPath(displayLocation.pathname)}
               quotedPostId={quotedPostId}
+              quotedCommentId={quotedCommentId}
+              quotedCommentPostId={quotedCommentPostId}
               site={site}
               variant="page"
             />
@@ -856,6 +863,7 @@ function PublicApp() {
                         draft.contentMd,
                         draft.id,
                         draft.mapCard,
+                        draft.quote,
                       );
                       closeDrafts();
                     }}
@@ -872,6 +880,8 @@ function PublicApp() {
                       // The header above already carries it.
                       draftsEntry={false}
                       quotedPostId={quotedPostId}
+                      quotedCommentId={quotedCommentId}
+                      quotedCommentPostId={quotedCommentPostId}
                       ref={overlayComposer}
                       site={site}
                       variant="page"

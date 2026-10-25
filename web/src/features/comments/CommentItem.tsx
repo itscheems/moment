@@ -1,3 +1,4 @@
+import { RepostAction } from "../posts/RepostAction";
 import { AccountIdentityPreview } from "../../components/AccountIdentityPreview";
 import { commentsApi } from "../../api/comments";
 import { Dialog } from "../../components/Dialog";
@@ -15,6 +16,7 @@ import {
   PublicApiError,
   type PublicComment,
   type PublicCommentAuthor,
+  type PublicPost,
   type SiteIdentity,
 } from "../../api/public";
 import { InternalLink, useOptionalNavigation } from "../../app/navigation";
@@ -562,6 +564,7 @@ export function CommentItem({
   onDeleted,
   onPinChange,
   shareCard,
+  repostTarget,
 }: {
   active?: boolean;
   comment: PublicComment;
@@ -574,6 +577,7 @@ export function CommentItem({
   presentation?: "list" | "direct-reply";
   navigable?: boolean;
   shareCard?: ShareCardSource;
+  repostTarget?: PublicPost;
   /**
    * Whether this reader may actually reply. It is deliberately separate from
    * replyRoot: a null root means there is nothing to reply to and the action
@@ -806,6 +810,7 @@ export function CommentItem({
                 reason={replyBlockedBy}
               />
             )}
+            {repostTarget ? <RepostAction post={repostTarget} /> : null}
             {shareCard ? (
               <>
                 <ShareMenu

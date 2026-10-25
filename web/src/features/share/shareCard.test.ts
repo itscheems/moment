@@ -217,6 +217,21 @@ describe("drawing the card", () => {
     ...over,
   });
 
+  it("includes a quoted comment when the wrapper has no body", async () => {
+    await renderShareCard(
+      input({
+        blocks: [],
+        quote: input({
+          displayName: "Quoted",
+          blocks: [{ kind: "text", text: "COMMENT_QUOTE_BODY" }],
+          media: [],
+        }),
+      }),
+    );
+    expect(recording.text()).toContain("COMMENT_QUOTE_BODY");
+    expect(recording.text()).toContain("Quoted");
+  });
+
   it("draws the parent in the same font family at 15/20 and the current post at 20/24", async () => {
     const parent = input({
       displayName: "Parent",

@@ -1830,3 +1830,41 @@ describe("post kind and the body it is allowed to carry", () => {
     );
   });
 });
+
+it("reads registered and legacy comment quote targets without leaking unavailable metadata", () => {
+  const quoted = {
+    unavailable: false,
+    id: rootComment.id,
+    comment_post_id: post.id,
+    kind: "moment",
+    article: null,
+    content_md: "words",
+    content_html: "<p>words</p>",
+    published_at: post.published_at,
+    media: [],
+    location: null,
+    map_card: null,
+    author: ownerAuthor,
+  };
+  expect(parsePost({ ...post, quoted_post: quoted }).quotedPost).toMatchObject({
+    commentPostId: post.id,
+    id: rootComment.id,
+    author: { username: "owner" },
+  });
+  const { author: _, ...legacy } = quoted;
+  void _;
+  expect(
+    parsePost({
+      ...post,
+      quoted_post: { ...legacy, comment_author_name: "旧读者" },
+    }).quotedPost,
+  ).toMatchObject({
+    author: { displayName: "旧读者", username: null, userId: null },
+  });
+  expect(() =>
+    parsePost({ ...post, quoted_post: { ...quoted, unavailable: true } }),
+  ).toThrow();
+  expect(() =>
+    parsePost({ ...post, quoted_post: { ...quoted, comment_post_id: "bad" } }),
+  ).toThrow();
+});

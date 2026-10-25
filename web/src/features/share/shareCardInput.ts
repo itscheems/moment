@@ -24,6 +24,7 @@ export function commentAsPost(
 ): PublicPost {
   return {
     id: comment.id,
+    commentPostId: original.id,
     author: comment.author,
     kind: "moment",
     article: null,
@@ -62,6 +63,16 @@ export function postShareCard(
     location:
       post.location?.name?.trim() || post.location?.displayName?.trim() || null,
     link: post.linkCards.length ? shareCardLink(post.linkCards[0]) : null,
+    ...(post.quotedPost
+      ? post.quotedPost.unavailable
+        ? { quoteUnavailable: true }
+        : {
+            quote: postShareCard(
+              { ...post, ...post.quotedPost, quotedPost: null, linkCards: [] },
+              site,
+            ),
+          }
+      : {}),
   };
 }
 

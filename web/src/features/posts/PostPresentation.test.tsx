@@ -317,6 +317,41 @@ describe("shared post presentation", () => {
     );
   });
 
+  it("opens a quoted comment at its own detail address", () => {
+    render(
+      <NavigationProvider>
+        <PostPresentation
+          post={{
+            ...makePost("我的补充", "<p>我的补充</p>"),
+            quotedPost: {
+              unavailable: false,
+              id: "01K2ABCDEF0123456789ABCDE1",
+              commentPostId: "01K2ABCDEF0123456789ABCDE0",
+              kind: "moment",
+              article: null,
+              contentMd: "引用评论",
+              contentHtml: "<p>引用评论</p>",
+              publishedAt: "2026-08-10T01:00:00Z",
+              media: [],
+              location: null,
+            },
+          }}
+          site={site}
+        />
+      </NavigationProvider>,
+    );
+    const selection = vi.spyOn(window, "getSelection").mockReturnValue({
+      toString: () => "引用评论",
+    } as Selection);
+    fireEvent.click(screen.getByRole("link", { name: "打开被引用的 Moment" }));
+    expect(window.location.pathname).toBe("/");
+    selection.mockRestore();
+    fireEvent.click(screen.getByRole("link", { name: "打开被引用的 Moment" }));
+    expect(window.location.pathname).toBe(
+      "/m/01K2ABCDEF0123456789ABCDE0/comments/01K2ABCDEF0123456789ABCDE1",
+    );
+  });
+
   it("keeps a quote wrapper when its source is deleted", () => {
     render(
       <NavigationProvider>

@@ -175,6 +175,8 @@ export interface ShareCardPost {
 }
 
 export interface ShareCardInput extends ShareCardPost {
+  quote?: ShareCardPost;
+  quoteUnavailable?: boolean;
   context?: ShareCardPost[];
   replyCount?: number;
 }
@@ -483,6 +485,7 @@ function truncate(
   text: string,
   maxWidth: number,
 ): string {
+  if (maxWidth <= 0) return "";
   if (ctx.measureText(text).width <= maxWidth) return text;
   let cut = text;
   while (cut.length > 1 && ctx.measureText(`${cut}…`).width > maxWidth) {
@@ -1171,6 +1174,7 @@ function drawShareIdentity(
   avatar: HTMLImageElement | null,
   y: number,
   context = false,
+  rightInset = 0,
 ) {
   if (avatar) {
     ctx.save();
@@ -1195,8 +1199,9 @@ function drawShareIdentity(
     ctx.textAlign = "left";
   }
 
+  const availableWidth = WIDTH - rightInset;
   const textLeft = PAD + AVATAR + 4;
-  const nameWidth = WIDTH - PAD - 25 - 12 - textLeft;
+  const nameWidth = availableWidth - PAD - 25 - 12 - textLeft;
   ctx.fillStyle = INK;
   ctx.font = font(700, NAME_SIZE);
   const name = truncate(ctx, input.displayName, nameWidth);
@@ -1208,7 +1213,7 @@ function drawShareIdentity(
     const stamp = truncate(
       ctx,
       "· " + input.publishedLabel,
-      WIDTH - PAD - 40 - next,
+      availableWidth - PAD - 40 - next,
     );
     ctx.fillText(stamp, next, y + baseline(ctx, stamp, 20));
   }
@@ -1237,7 +1242,7 @@ function drawShareIdentity(
     const target = truncate(
       ctx,
       "回复 " + input.replyTo,
-      WIDTH - PAD - textLeft,
+      availableWidth - PAD - textLeft,
     );
     ctx.fillText(target, textLeft, y + 40 + baseline(ctx, target, 20));
   }
@@ -1294,9 +1299,10 @@ async function prepareShareContext(
   input: ShareCardPost,
   ruler: CanvasRenderingContext2D,
   signal?: AbortSignal,
+  inset = 0,
 ) {
   const left = PAD + AVATAR + 4;
-  const width = WIDTH - PAD - left;
+  const width = WIDTH - PAD - left - inset * 2;
   const mapCard = input.mapCard;
   const [avatar, thumbnail, mapImage, media] = await Promise.all([
     input.avatarUrl ? loadImage(input.avatarUrl) : null,
@@ -1360,6 +1366,7 @@ function drawShareContext(
   ctx: CanvasRenderingContext2D,
   value: Awaited<ReturnType<typeof prepareShareContext>>,
   top: number,
+  connected = true,
 ) {
   const {
     input,
@@ -1374,7 +1381,7 @@ function drawShareContext(
     left,
     width,
   } = value;
-  drawShareIdentity(ctx, input, avatar, top, true);
+  drawShareIdentity(ctx, input, avatar, top, true, WIDTH - PAD - left - width);
   let y = drawShareBody(ctx, laid, left, top + value.headerHeight, width);
   if (linkShape && input.link) {
     y += 18;
@@ -1413,7 +1420,8 @@ function drawShareContext(
   const start = top + AVATAR + 8;
   const end = top + value.height + BLOCK_GAP - 8;
   ctx.fillStyle = LINK_BORDER;
-  if (end > start) ctx.fillRect(PAD + AVATAR / 2 - 1, start, 2, end - start);
+  if (connected && end > start)
+    ctx.fillRect(PAD + AVATAR / 2 - 1, start, 2, end - start);
 }
 
 /** Render the card and hand back the bytes. */
@@ -1471,7 +1479,7 @@ export async function renderShareCard(
     contentWidth,
     input.articleTitle !== undefined,
     false,
-    Boolean(input.context?.length),
+    Boolean(input.context?.length || input.quote || input.quoteUnavailable),
   );
   const titleSize = HEADING_SIZES[1];
   const titleLine = Math.round(titleSize * 1.35);
@@ -1501,6 +1509,14 @@ export async function renderShareCard(
       prepareShareContext(parent, ruler, signal),
     ),
   );
+  const quoted = input.quote
+    ? await prepareShareContext(input.quote, ruler, signal, 12)
+    : null;
+  const quoteHeight = quoted
+    ? quoted.height + 24
+    : input.quoteUnavailable
+      ? 56
+      : 0;
   const contextHeight = contexts.reduce(
     (height, item) => height + item.height + BLOCK_GAP,
     0,
@@ -1515,6 +1531,7 @@ export async function renderShareCard(
     (shape ? 22 + shape.height : 0) +
     (mapImage ? 22 + mapHeight : 0) +
     (location ? 14 + 26 : 0) +
+    (quoteHeight ? 18 + quoteHeight : 0) +
     FOOTER_HEIGHT;
 
   const canvas = document.createElement("canvas");
@@ -1606,6 +1623,25 @@ export async function renderShareCard(
 
   if (location) y = drawShareLocation(ctx, location, PAD, y, contentWidth);
 
+  if (quoteHeight) {
+    y += 18;
+    ctx.strokeStyle = LINK_BORDER;
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.roundRect(PAD, y, contentWidth, quoteHeight, CARD_RADIUS);
+    ctx.stroke();
+    if (quoted) {
+      ctx.save();
+      ctx.translate(12, 0);
+      drawShareContext(ctx, quoted, y + 12, false);
+      ctx.restore();
+    } else {
+      ctx.fillStyle = MUTED;
+      ctx.font = font(400, 15);
+      ctx.fillText("引用内容暂不可用", PAD + 12, y + 34);
+    }
+    y += quoteHeight;
+  }
   drawFooter(ctx, input.publishedLabel, y, input.replyCount);
 
   return new Promise((settle, reject) => {

@@ -29,9 +29,10 @@ export function RepostAction({
   useEffect(() => setCurrent(post), [post]);
 
   if (!session || account?.status !== "active") return null;
-  const isAuthor = account.userId === post.author?.userId;
+  const isComment = post.commentPostId !== undefined;
+  const isAuthor = !isComment && account.userId === post.author?.userId;
 
-  const active = current.repostedAt !== null;
+  const active = !isComment && current.repostedAt !== null;
   const change = async (nextActive: boolean) => {
     if (pendingRef.current) return;
     pendingRef.current = true;
@@ -67,7 +68,7 @@ export function RepostAction({
       <ActionTooltip label={active ? "转发选项" : "转发"}>
         <Menu.Trigger
           data-post-action="repost"
-          aria-label="转发这条 Moment"
+          aria-label={isComment ? "转发这条评论" : "转发这条 Moment"}
           aria-pressed={active}
           className={`${postStyles.postAction} ${postStyles.repostAction} ${active ? postStyles.repostActive : ""}`}
           data-focus-key={`${post.id}:${post.timelineItemKind}:repost`}
@@ -107,12 +108,14 @@ export function RepostAction({
               className={styles.actionsMenuItem}
               onClick={() =>
                 navigateOverlay(
-                  `${COMPOSE_PATH}?quote=${encodeURIComponent(post.id)}`,
+                  isComment
+                    ? `${COMPOSE_PATH}?quoteComment=${encodeURIComponent(post.id)}&quotePost=${encodeURIComponent(post.commentPostId!)}`
+                    : `${COMPOSE_PATH}?quote=${encodeURIComponent(post.id)}`,
                 )
               }
             >
               <Icon name="edit" />
-              <span>引用 Moment</span>
+              <span>{isComment ? "引用评论" : "引用 Moment"}</span>
             </Menu.Item>
           </Menu.Popup>
         </Menu.Positioner>

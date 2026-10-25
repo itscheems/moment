@@ -1,3 +1,4 @@
+import { commentDetailPath } from "../../app/routes";
 import { MapCard } from "../maps/MapCard";
 import type { MapViewport } from "../maps/MapCanvas";
 import type { MapCardData } from "../maps/types";
@@ -396,17 +397,26 @@ export function PostPresentation({
       className={styles.quoteCard}
       onClick={(event) => {
         event.stopPropagation();
+        if (window.getSelection()?.toString()) return;
         const interactive =
           event.target instanceof Element
             ? event.target.closest(interactiveSurfaceSelector)
             : null;
         if (interactive && interactive !== event.currentTarget) return;
-        navigate(`/m/${encodeURIComponent(quoted.id)}`);
+        navigate(
+          quoted.commentPostId
+            ? commentDetailPath(quoted.commentPostId, quoted.id)
+            : `/m/${encodeURIComponent(quoted.id)}`,
+        );
       }}
       onKeyDown={(event) => {
         if (event.key === "Enter" || event.key === " ") {
           event.preventDefault();
-          navigate(`/m/${encodeURIComponent(quoted.id)}`);
+          navigate(
+            quoted.commentPostId
+              ? commentDetailPath(quoted.commentPostId, quoted.id)
+              : `/m/${encodeURIComponent(quoted.id)}`,
+          );
         }
       }}
       role="link"
@@ -415,7 +425,9 @@ export function PostPresentation({
       <header className={styles.quoteByline}>
         <SiteAvatar site={postAuthorSite(quoted, site)} />
         <strong>{postAuthorSite(quoted, site).displayName}</strong>
-        <span>@{postAuthorSite(quoted, site).username}</span>
+        {postAuthorSite(quoted, site).username ? (
+          <span>@{postAuthorSite(quoted, site).username}</span>
+        ) : null}
         <span>·</span>
         <time dateTime={quoted.publishedAt}>
           {formatMomentDate(quoted.publishedAt, site.timezone, now).relative}
@@ -511,7 +523,7 @@ export function PostPresentation({
                 ) : null}
               </button>
             </ActionTooltip>
-            {canPublish ? (
+            {canPublish || post.commentPostId ? (
               <RepostAction onChanged={onReposted} post={post} />
             ) : null}
             {share("start")}
@@ -627,7 +639,7 @@ export function PostPresentation({
               </InternalLink>
             )}
           </ActionTooltip>
-          {canPublish ? (
+          {canPublish || post.commentPostId ? (
             <RepostAction onChanged={onReposted} post={post} />
           ) : null}
           {share("end")}
