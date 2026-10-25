@@ -561,11 +561,6 @@ export function MediaComposer({
             ) : null}
           </button>
           {toolbarAction}
-          {items.length > 0 ? (
-            <span aria-live="polite" className={styles.mediaCount}>
-              {items.length} / {maximum}
-            </span>
-          ) : null}
         </div>
         {footerAction}
       </div>

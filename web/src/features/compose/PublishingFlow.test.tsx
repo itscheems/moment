@@ -940,7 +940,10 @@ describe("owner composing flow", () => {
     });
     fireEvent(textarea, imagePaste);
     expect(imagePaste.defaultPrevented).toBe(true);
-    expect(await screen.findByText("1 / 9")).toBeInTheDocument();
+    expect(
+      await screen.findByRole("button", { name: "预览第 1 张图片，共 1 张" }),
+    ).toBeInTheDocument();
+    expect(screen.queryByText("1 / 9")).not.toBeInTheDocument();
 
     const mixedImage = new File(["image"], "mixed.png", {
       type: "image/png",
@@ -957,7 +960,9 @@ describe("owner composing flow", () => {
     fireEvent(textarea, mixedPaste);
     expect(mixedPaste.defaultPrevented).toBe(true);
     expect(textarea).toHaveValue("");
-    expect(await screen.findByText("2 / 9")).toBeInTheDocument();
+    expect(
+      await screen.findByRole("button", { name: "预览第 2 张图片，共 2 张" }),
+    ).toBeInTheDocument();
 
     const overLimitPaste = createEvent.paste(textarea, {
       bubbles: true,
@@ -976,7 +981,10 @@ describe("owner composing flow", () => {
     });
     fireEvent(textarea, overLimitPaste);
     expect(overLimitPaste.defaultPrevented).toBe(true);
-    expect(await screen.findByText("9 / 9")).toBeInTheDocument();
+    expect(
+      await screen.findByRole("button", { name: "预览第 9 张图片，共 9 张" }),
+    ).toBeInTheDocument();
+    expect(screen.queryByText("9 / 9")).not.toBeInTheDocument();
     expect(
       screen.getByText("每条Moment最多附加 9 张图片；多出的文件没有加入。"),
     ).toBeInTheDocument();
@@ -992,7 +1000,9 @@ describe("owner composing flow", () => {
     });
     fireEvent(textarea, rejectedMixedPaste);
     expect(rejectedMixedPaste.defaultPrevented).toBe(false);
-    expect(screen.getByText("9 / 9")).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "预览第 9 张图片，共 9 张" }),
+    ).toBeInTheDocument();
   });
 
   it("publishes a Moment that contains only an image", async () => {
