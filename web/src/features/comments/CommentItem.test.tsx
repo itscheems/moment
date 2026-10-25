@@ -331,10 +331,7 @@ describe("the reply target identity", () => {
       "href",
       "/someone",
     );
-    expect(within(header).getByText("@itscheems")).toHaveAttribute(
-      "href",
-      "/itscheems",
-    );
+    expect(within(header).queryByText("@itscheems")).toBeNull();
     expect(
       within(header)
         .getAllByRole("link", { name: "Cheems" })
@@ -354,7 +351,7 @@ describe("the reply target identity", () => {
       const target = document.querySelector(
         `.${styles.commentReplyTo}`,
       ) as HTMLElement;
-      expect(target).toHaveTextContent("回复Cheems@itscheems");
+      expect(target.textContent).toBe("回复Cheems");
       expect(
         within(target).getByRole("link", { name: "Cheems" }),
       ).toHaveAttribute("href", "/itscheems");

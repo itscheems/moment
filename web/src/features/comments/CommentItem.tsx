@@ -443,18 +443,13 @@ function SignInToReplyPopover({
 
 export function CommentIdentity({ author }: { author: PublicCommentAuthor }) {
   if (!author.username || !author.profileUrl)
-    return <strong>{author.displayName}</strong>;
+    return <span>{author.displayName}</span>;
   return (
-    <>
-      <AccountIdentityPreview author={author}>
-        <InternalLink className={styles.commentAuthor} href={author.profileUrl}>
-          {author.displayName}
-        </InternalLink>
-      </AccountIdentityPreview>
-      <InternalLink className={styles.commentHandle} href={author.profileUrl}>
-        @{author.username}
+    <AccountIdentityPreview author={author}>
+      <InternalLink className={styles.commentAuthor} href={author.profileUrl}>
+        {author.displayName}
       </InternalLink>
-    </>
+    </AccountIdentityPreview>
   );
 }
 
@@ -563,6 +558,9 @@ export function CommentItem({
         }
         bylineContext={
           <>
+            {isPostAuthor ? (
+              <span className={styles.authorBadge}>作者</span>
+            ) : null}
             {!root ? (
               comment.replyTo ? (
                 <span className={styles.commentReplyTo}>
@@ -572,9 +570,6 @@ export function CommentItem({
               ) : (
                 <span className={styles.commentReplyUnknown}>楼内回复</span>
               )
-            ) : null}
-            {isPostAuthor ? (
-              <span className={styles.authorBadge}>作者</span>
             ) : null}
           </>
         }

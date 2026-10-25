@@ -298,8 +298,7 @@
   font-weight: 750;
 }
 
-.commentForm header > span,
-.authorBadge {
+.commentForm header > span {
   border: 1px solid var(--border-strong);
   border-radius: 999px;
   padding: 0.14rem 0.48rem;
@@ -895,7 +894,6 @@
   }
 }
 
-.commentReplyTo .commentAuthor,
 .commentAuthor {
   min-inline-size: 0;
   overflow-wrap: anywhere;
@@ -914,23 +912,6 @@
   }
 }
 
-.commentHandle {
-  min-inline-size: 0;
-  overflow-wrap: anywhere;
-  color: var(--text-secondary);
-  text-decoration: none;
-}
-
-.commentHandle:focus-visible {
-  text-decoration: underline;
-}
-
-@media (hover: hover) {
-  .commentHandle:hover {
-    text-decoration: underline;
-  }
-}
-
 .commentReplyTo {
   display: inline-flex;
   flex-wrap: wrap;
@@ -939,6 +920,13 @@
   min-inline-size: 0;
   max-inline-size: 100%;
   flex: 0 1 auto;
+  color: var(--text-secondary);
+  font-weight: 400;
+}
+
+.commentReplyTo .commentAuthor {
+  color: inherit;
+  font-weight: inherit;
 }
 
 .commentReplyTo > :where(span, a, strong) {
@@ -988,8 +976,18 @@
 }
 
 .authorBadge {
-  border-color: var(--accent);
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  align-self: center;
+  border: 1px solid var(--accent);
+  border-radius: 999px;
+  padding: 0 0.25rem;
   color: var(--accent);
+  font-size: 0.625rem;
+  font-weight: 500;
+  line-height: 0.875rem;
+  white-space: nowrap;
 }
 
 .dialogBackdrop {
