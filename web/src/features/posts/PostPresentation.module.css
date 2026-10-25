@@ -77,10 +77,13 @@
   block-size: var(--post-avatar-size, 2.5rem);
 }
 
-.timelineDensity .pinnedLabel,
 .timelineDensity .repostedLabel {
   grid-template-columns: 2.5rem minmax(0, 1fr);
   column-gap: var(--space-2);
+}
+
+.timelineDensity .pinnedLabel {
+  padding-inline-start: calc(2.5rem + var(--space-2));
 }
 
 .surfaceLink {
@@ -220,10 +223,10 @@
 
 .pinnedLabel {
   grid-column: 1 / -1;
-  display: grid;
-  grid-template-columns: 3rem minmax(0, 1fr);
+  display: flex;
   align-items: center;
-  column-gap: var(--space-3);
+  gap: var(--space-1);
+  padding-inline-start: calc(3rem + var(--space-3));
   color: var(--text-secondary);
   font-size: 0.75rem;
   font-weight: 500;
@@ -231,7 +234,7 @@
 }
 
 .pinnedLabel svg {
-  justify-self: end;
+  flex: none;
   inline-size: 0.8125rem;
   block-size: 0.8125rem;
 }
@@ -881,8 +884,7 @@
 }
 
 .detail .pinnedLabel {
-  grid-template-columns: 2.5rem minmax(0, 1fr);
-  column-gap: var(--space-2);
+  padding-inline-start: calc(2.5rem + var(--space-2));
   margin-block-end: var(--space-1);
 }
 
