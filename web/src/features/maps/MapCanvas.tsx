@@ -132,18 +132,35 @@ export default function MapCanvas({
       },
     };
     const [longitude, latitude] = mapCoordinate(focusTarget.place);
+    const target = new maplibre.LngLat(longitude, latitude);
+    const nearest = card.places
+      .map((place) => ({
+        place,
+        distance: target.distanceTo(
+          maplibre.LngLat.convert(mapCoordinate(place)),
+        ),
+      }))
+      .filter(({ distance }) => distance > 0)
+      .sort((a, b) => a.distance - b.distance)[0];
+    const nearbyZoom = nearest
+      ? map.cameraForBounds(mapBounds([focusTarget.place, nearest.place]), {
+          padding: 48,
+          maxZoom: 19,
+        })?.zoom
+      : undefined;
     map.flyTo({
       center: [
         longitude,
         globe ? latitude : Math.max(-85, Math.min(85, latitude)),
       ],
-      zoom: 14,
+      // Use nearby spacing to reveal street detail without backing away.
+      zoom: Math.max(map.getZoom(), 16, Math.min(18, (nearbyZoom ?? 17) - 1)),
       bearing: 0,
       pitch: 0,
       duration: 1400,
       curve: 1.42,
     });
-  }, [loaded, focusTarget, globe, placeFocus]);
+  }, [loaded, focusTarget, globe, placeFocus, card.places]);
   const reportCamera = (map: maplibre.Map) => {
     const center = map.getCenter();
     onViewport?.({
