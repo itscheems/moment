@@ -374,7 +374,7 @@ describe("focused comment reading", () => {
         ],
       }),
     );
-    fireEvent.click(screen.getByRole("button", { name: "加载更多回复" }));
+    fireEvent.click(screen.getByRole("button", { name: "加载更多" }));
     await screen.findByText("第二批回复");
     const loadedCalls = fetcher.mock.calls.length;
     view.rerender(wrapper(false));

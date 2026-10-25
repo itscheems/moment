@@ -650,7 +650,7 @@ describe("public comment thread", () => {
     await screen.findByText("被置顶的回应");
     expect(screen.getAllByText("被置顶的回应")).toHaveLength(1);
 
-    fireEvent.click(screen.getByRole("button", { name: "加载更多回复" }));
+    fireEvent.click(screen.getByRole("button", { name: "加载更多" }));
     await screen.findByText("第二页的根");
     expect(screen.getAllByText("被置顶的回应")).toHaveLength(1);
     expect(
@@ -658,7 +658,7 @@ describe("public comment thread", () => {
     ).toBe(true);
     // The cursor is spent, so the control retires rather than looping.
     expect(
-      screen.queryByRole("button", { name: "加载更多回复" }),
+      screen.queryByRole("button", { name: "加载更多" }),
     ).not.toBeInTheDocument();
   });
 
@@ -700,7 +700,7 @@ describe("public comment thread", () => {
     const draft = screen.getByLabelText("回复内容");
     fireEvent.focus(draft);
     fireEvent.change(draft, { target: { value: "这段还没发出去" } });
-    fireEvent.click(screen.getByRole("button", { name: "加载更多回复" }));
+    fireEvent.click(screen.getByRole("button", { name: "加载更多" }));
 
     await screen.findByText("正在重新获取更多回复…");
     // The already-loaded page is never discarded by a failed continuation.
@@ -783,7 +783,7 @@ describe("public comment thread", () => {
     const requestsBefore = fetcher.mock.calls.filter(([url]) =>
       String(url).includes("/replies"),
     ).length;
-    fireEvent.click(screen.getByRole("button", { name: "收起回复" }));
+    fireEvent.click(screen.getByRole("button", { name: "收起" }));
     expect(screen.queryByText("第二条回复")).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "展开其余 1 条回复" }));
     expect(screen.getByText("第二条回复")).toBeInTheDocument();

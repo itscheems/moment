@@ -825,7 +825,7 @@ export function CommentThread({
           {nextCursor && !moreError ? (
             <LoadMoreSentinel
               cursor={nextCursor}
-              label="加载更多回复"
+              label="加载更多"
               loading={loadingMore || threadLoading}
               onLoad={loadMoreRoots}
             />
@@ -878,7 +878,7 @@ function ReplyBranch({
           {paging?.loading
             ? "正在加载…"
             : expanded
-              ? "加载更多回复"
+              ? "加载更多"
               : `展开其余 ${hidden} 条回复`}
         </button>
       ) : null}
@@ -888,7 +888,7 @@ function ReplyBranch({
           type="button"
           onClick={onCollapse}
         >
-          收起回复
+          收起
         </button>
       ) : null}
       {paging?.error ? (
