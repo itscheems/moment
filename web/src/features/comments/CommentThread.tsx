@@ -1,3 +1,4 @@
+import postStyles from "../posts/PostPresentation.module.css";
 import {
   Fragment,
   type RefObject,
@@ -868,6 +869,7 @@ function ReplyBranch({
     <li className={styles.replyBranch}>
       {!paging?.error && (!expanded || paging?.cursor) ? (
         <button
+          className={postStyles.readMore}
           disabled={paging?.loading}
           aria-expanded={expanded}
           onClick={() => (expanded ? onLoad("manual") : onExpand())}
@@ -881,7 +883,11 @@ function ReplyBranch({
         </button>
       ) : null}
       {expanded ? (
-        <button type="button" onClick={onCollapse}>
+        <button
+          className={postStyles.readMore}
+          type="button"
+          onClick={onCollapse}
+        >
           收起回复
         </button>
       ) : null}

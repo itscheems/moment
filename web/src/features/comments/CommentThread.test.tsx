@@ -1019,18 +1019,9 @@ describe("public comment thread", () => {
     ).toBeVisible();
   });
 
-  it("keeps the inline reply geometry consistent in collapsed and expanded states", () => {
+  it("preserves inline reply transition declarations", () => {
     expect(commentsCss).toMatch(
       /\._formSurface_[\w-]+\._inlineTopLevelForm_[\w-]+\s*\{[^}]*border-block-end:\s*0;[^}]*padding:\s*0\.25rem var\(--space-4\) 0\.75rem;/s,
-    );
-    expect(commentsCss).toMatch(
-      /\._inlineTopLevelForm_[\w-]+\._commentExpanded_[\w-]+\s*\{[^}]*padding-block:\s*0\.25rem 0\.75rem;/s,
-    );
-    expect(commentsCss).not.toMatch(
-      /\._inlineTopLevelForm_[\w-]+\._commentLayoutFrame_[\w-]+\s*\{[^}]*transition:\s*none;/s,
-    );
-    expect(commentsCss).toMatch(
-      /\._inlineTopLevelForm_[\w-]+ \._commentComposerLayout_[\w-]+\s*\{[^}]*grid-template-columns:\s*var\(--target-size\) minmax\(0, 1fr\);[^}]*gap:\s*var\(--space-3\);/s,
     );
     // The folded geometry — the placeholder on the centre line of a 3.5rem
     // row under 0.25rem of form padding, the avatar 0.875rem down — comes
@@ -1488,21 +1479,6 @@ describe("public comment thread", () => {
     );
     expect(commentsCss).toMatch(
       /\._replyContextTarget_[\w-]+\s*\{[^}]*margin: var\(--space-3\) 0 var\(--space-1\)/,
-    );
-  });
-
-  it("preserves hover and reduced-motion declarations for comment rows", () => {
-    const itemRule = commentsCss.match(
-      /\._commentItem_[\w-]+\s*\{[^}]*\}/s,
-    )?.[0];
-    expect(itemRule).toBeDefined();
-    expect(itemRule).not.toContain("border-block");
-    expect(itemRule).toContain("transition: background-color 0.2s ease");
-    expect(commentsCss).toMatch(
-      /\._commentItem_[\w-]+:hover\s*\{[^}]*#f7f7f7/s,
-    );
-    expect(commentsCss).toMatch(
-      /@media \(prefers-reduced-motion: reduce\)[\s\S]*\._commentItem_[\w-]+\s*\{[^}]*transition: none;/s,
     );
   });
 

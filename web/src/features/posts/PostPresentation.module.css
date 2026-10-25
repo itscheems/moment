@@ -42,15 +42,16 @@
     (var(--post-menu-icon-size) - var(--post-edge-action-size)) / 2
   );
 
-  grid-template-columns: 2.5rem minmax(0, 1fr);
+  grid-template-columns: var(--post-avatar-size, 2.5rem) minmax(0, 1fr);
   column-gap: var(--space-2);
   padding: 0.75rem var(--space-4);
 }
 
 .timelineDensity .avatar,
-.timelineDensity .avatarFallback {
-  inline-size: 2.5rem;
-  block-size: 2.5rem;
+.timelineDensity .avatarFallback,
+.timelineDensity .identityLink > :first-child {
+  inline-size: var(--post-avatar-size, 2.5rem);
+  block-size: var(--post-avatar-size, 2.5rem);
 }
 
 .timelineDensity .repostedLabel {
@@ -97,8 +98,8 @@
 
 .post.conversation {
   --conversation-inset: var(--space-4);
-  grid-template-columns: var(--target-size) minmax(0, 1fr);
-  column-gap: var(--space-3);
+  grid-template-columns: 2.5rem minmax(0, 1fr);
+  column-gap: var(--space-2);
 }
 
 .post.conversation:not(.detail) {
@@ -110,11 +111,9 @@
 .conversation[data-connected]::after {
   content: "";
   position: absolute;
-  inset-inline-start: calc(
-    var(--conversation-inset) + var(--target-size) / 2 - 1px
-  );
-  inset-block-start: calc(var(--space-3) + 2.5rem + var(--space-2));
-  inset-block-end: calc(-1 * var(--space-1));
+  inset-inline-start: calc(var(--conversation-inset) + 1.25rem - 1px);
+  inset-block-start: calc(var(--space-3) + 2.5rem + var(--space-1));
+  inset-block-end: calc(-1 * var(--space-2));
   inline-size: 2px;
   background: var(--border-strong);
   pointer-events: none;
@@ -131,18 +130,12 @@
   font-weight: 400;
 }
 
-.conversation:not(.detail) .actionCount {
-  position: static;
-  min-inline-size: 0;
-  transform: none;
-}
-
 .post.conversation.detail {
   padding-block-start: var(--space-3);
 }
 .conversation.detail .detailIdentity {
-  grid-template-columns: var(--target-size) minmax(0, 1fr);
-  gap: var(--space-3);
+  grid-template-columns: 2.5rem minmax(0, 1fr);
+  gap: var(--space-2);
 }
 
 .identityLink {
@@ -376,7 +369,7 @@
 
 .timelineDensity .markdown {
   min-inline-size: 0;
-  margin-block-start: 0;
+  margin-block-start: 0.125rem;
   overflow-wrap: break-word;
   font-size: 0.9375rem;
   font-weight: 400;
@@ -652,7 +645,7 @@
   justify-self: end;
 }
 
-.post:not(.detail):not(.conversation) .postAction {
+.post:not(.detail):not(.timelineDensity) .postAction {
   padding: calc(
     (var(--post-edge-action-size) - var(--post-action-halo-size)) / 2
   );
@@ -822,6 +815,10 @@
 }
 
 .detail {
+  --post-menu-icon-size: 1.171875rem;
+  --post-menu-inline-offset: calc(
+    (1.40625rem - var(--post-edge-action-size)) / 2 + var(--space-1)
+  );
   display: block;
   padding-block: var(--space-4) 0;
   cursor: default;
@@ -878,7 +875,9 @@
 
 .detail .postAction {
   isolation: isolate;
-  inline-size: 1.90625rem;
+  inline-size: max-content;
+  min-inline-size: 1.90625rem;
+  justify-content: flex-start;
   block-size: 2.9375rem;
   min-block-size: 2.9375rem;
   border-radius: 0;
@@ -891,10 +890,11 @@
 }
 
 .detail .postAction::before {
+  inset-inline-start: -0.5rem;
   position: absolute;
   z-index: 0;
-  inline-size: 2.171875rem;
-  block-size: 2.171875rem;
+  inline-size: 2.40625rem;
+  block-size: 2.40625rem;
   border-radius: 50%;
   background: transparent;
   content: "";
@@ -929,26 +929,27 @@
 }
 
 .detail .postAction.replyAction:focus-visible::before {
-  background: #e8f5fd;
+  background: rgb(29 155 240 / 10%);
 }
 
 @media (hover: hover) {
   .detail .postAction.replyAction:hover::before {
-    background: #e8f5fd;
+    background: rgb(29 155 240 / 10%);
   }
 }
 
 .detail .postAction.repostAction:focus-visible::before {
-  background: #e3f1eb;
+  background: rgb(0 186 124 / 10%);
 }
 
 @media (hover: hover) {
   .detail .postAction.repostAction:hover::before {
-    background: #e3f1eb;
+    background: rgb(0 186 124 / 10%);
   }
 }
 
 .detail .shareAction {
+  min-inline-size: 0;
   grid-column: 5;
   inline-size: 1.40625rem;
   justify-self: end;
@@ -1016,10 +1017,6 @@
 }
 
 @media (max-width: 719px) {
-  .post.conversation {
-    --conversation-inset: var(--space-3);
-    padding-inline: var(--space-3);
-  }
   .post {
     grid-template-columns: 2.5rem minmax(0, 1fr);
     column-gap: 0.7rem;
@@ -1060,4 +1057,14 @@
   .post {
     transition: none;
   }
+}
+
+.detail .actionCount {
+  font-size: 0.8125rem;
+  font-variant-numeric: normal;
+  line-height: 1rem;
+  position: static;
+  inset: auto;
+  padding-inline: var(--space-1);
+  transform: none;
 }

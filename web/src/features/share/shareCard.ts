@@ -1417,8 +1417,8 @@ function drawShareContext(
     y += 340;
   }
   if (location) drawShareLocation(ctx, location, left, y, width);
-  const start = top + AVATAR + 8;
-  const end = top + value.height + BLOCK_GAP - 8;
+  const start = top + AVATAR + 4;
+  const end = top + value.height + BLOCK_GAP - 4;
   ctx.fillStyle = LINK_BORDER;
   if (connected && end > start)
     ctx.fillRect(PAD + AVATAR / 2 - 1, start, 2, end - start);

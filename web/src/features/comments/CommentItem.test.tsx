@@ -21,6 +21,7 @@ import { SessionProvider } from "../auth/SessionProvider";
 import { CommentForm } from "./CommentComposer";
 import { CommentItem } from "./CommentItem";
 import styles from "./Comments.module.css";
+import postStyles from "../posts/PostPresentation.module.css";
 
 const postId = "01K2ABCDEF0123456789ABCDE0";
 const rootId = "01K2ABCDEF0123456789ABCDE1";
@@ -97,55 +98,6 @@ function comment(
   };
 }
 
-/**
- * jsdom does no layout, so `scrollHeight` and `clientHeight` are both 0 there
- * and the component would never see an overflow. These stubs let a test say how
- * tall a given body box is; everything downstream of the measurement — the
- * control, the aria wiring, the focus handling — is then exercised for real.
- * The rendered-height judgement itself was verified in Chrome against the real
- * corpus, which is the only place it can be.
- */
-const measured = new Map<string, { scroll: number; client: number }>();
-
-function measure(id: string, scroll: number, client = 200) {
-  measured.set(id, { scroll, client });
-}
-
-function stubLayout() {
-  for (const property of ["scrollHeight", "clientHeight"] as const) {
-    Object.defineProperty(HTMLElement.prototype, property, {
-      configurable: true,
-      get(this: HTMLElement) {
-        const entry = measured.get(this.id);
-        if (!entry) return 0;
-        return property === "scrollHeight" ? entry.scroll : entry.client;
-      },
-    });
-  }
-}
-
-class FakeResizeObserver implements ResizeObserver {
-  static instances = new Set<FakeResizeObserver>();
-
-  constructor(private readonly callback: ResizeObserverCallback) {
-    FakeResizeObserver.instances.add(this);
-  }
-
-  observe() {}
-
-  unobserve() {}
-
-  disconnect() {
-    FakeResizeObserver.instances.delete(this);
-  }
-
-  static notify() {
-    for (const observer of FakeResizeObserver.instances) {
-      observer.callback([], observer);
-    }
-  }
-}
-
 function renderItem(
   target: PublicComment,
   others: PublicComment[] = [],
@@ -160,49 +112,56 @@ function renderItem(
   const focusTarget = createRef<HTMLElement>();
   return render(
     <NavigationProvider>
-      <ol>
-        {[target, ...others].map((current) => (
-          <CommentItem
-            comment={current}
-            focusTarget={focusTarget}
-            key={current.id}
-            onDeleted={() => {}}
-            onPinChange={() => {}}
-            onReply={() => {}}
-            canModerate={overrides.canModerate ?? false}
-            pinned={overrides.pinned ?? false}
-            replyCount={0}
-            canReply={overrides.canReply ?? true}
-            replyRootId={overrides.replyRoot?.id ?? null}
-            site={site}
-            postAuthorUserId={overrides.postAuthorUserId ?? profileUserId}
-          />
-        ))}
-      </ol>
+      <SessionProvider>
+        <ol>
+          {[target, ...others].map((current) => (
+            <CommentItem
+              comment={current}
+              focusTarget={focusTarget}
+              key={current.id}
+              onDeleted={() => {}}
+              onPinChange={() => {}}
+              onReply={() => {}}
+              canModerate={overrides.canModerate ?? false}
+              pinned={overrides.pinned ?? false}
+              replyCount={0}
+              canReply={overrides.canReply ?? true}
+              replyRootId={overrides.replyRoot?.id ?? null}
+              site={site}
+              postAuthorUserId={overrides.postAuthorUserId ?? profileUserId}
+            />
+          ))}
+        </ol>
+      </SessionProvider>
     </NavigationProvider>,
   );
 }
 
 function bodyOf(commentId: string) {
-  const element = document.getElementById(`comment-${commentId}-body`);
+  const element = document.querySelector(
+    `[data-comment-id="${commentId}"] .ProseMirror`,
+  );
   if (!element) throw new Error(`no body for ${commentId}`);
   return element;
 }
-
 beforeEach(() => {
-  measured.clear();
-  FakeResizeObserver.instances.clear();
-  stubLayout();
-  vi.stubGlobal("ResizeObserver", FakeResizeObserver);
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(
+      async () =>
+        new Response(
+          JSON.stringify({
+            error: { code: "UNAUTHORIZED", message: "signed out", details: {} },
+          }),
+          { status: 401, headers: { "Content-Type": "application/json" } },
+        ),
+    ),
+  );
 });
-
 afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
   window.sessionStorage.clear();
-  for (const property of ["scrollHeight", "clientHeight"] as const) {
-    Reflect.deleteProperty(HTMLElement.prototype, property);
-  }
 });
 
 describe("comment identity", () => {
@@ -303,85 +262,43 @@ it("marks the post author even when that account is not the site's display accou
 });
 
 describe("long comment folding", () => {
-  it("clips every body and offers the control only where something is hidden", () => {
-    const long = comment(rootId, "很长的一段");
-    const short = comment(replyId, "短", { parentId: rootId });
-    measure(`comment-${rootId}-body`, 983);
-    measure(`comment-${replyId}-body`, 23, 23);
-    renderItem(long, [short]);
-
-    expect(bodyOf(rootId)).toHaveClass(styles.commentBodyClipped);
-    expect(bodyOf(replyId)).toHaveClass(styles.commentBodyClipped);
-    expect(screen.getAllByRole("button", { name: "展开全文" })).toHaveLength(1);
-  });
-
-  // The fade is what the clip looks like when it has something to hide. Bound
-  // to the clip instead, a body that fits inside the maximum had its last line
-  // faded out anyway -- reading as cut off, with nothing offered to open it.
-  it("fades only the body that has something hidden behind the fade", () => {
-    const long = comment(rootId, "很长的一段");
-    const short = comment(replyId, "短", { parentId: rootId });
-    measure(`comment-${rootId}-body`, 983);
-    measure(`comment-${replyId}-body`, 23, 23);
-    renderItem(long, [short]);
-
-    expect(bodyOf(rootId)).toHaveClass(styles.commentBodyFaded);
-    expect(bodyOf(replyId)).not.toHaveClass(styles.commentBodyFaded);
-  });
-
-  it("takes the fade away with the clip when the body is opened", () => {
-    measure(`comment-${rootId}-body`, 983);
-    renderItem(comment(rootId, "很长的一段"));
-
-    expect(bodyOf(rootId)).toHaveClass(styles.commentBodyFaded);
-    fireEvent.click(screen.getByRole("button", { name: "展开全文" }));
-    expect(bodyOf(rootId)).not.toHaveClass(styles.commentBodyFaded);
-  });
-
-  it("wires the control to the body it controls and reverses cleanly", () => {
-    measure(`comment-${rootId}-body`, 983);
-    renderItem(comment(rootId, "很长的一段"));
-
-    const toggle = screen.getByRole("button", { name: "展开全文" });
-    expect(toggle).toHaveAttribute("aria-expanded", "false");
-    expect(toggle).toHaveAttribute("aria-controls", `comment-${rootId}-body`);
-
-    fireEvent.click(toggle);
-    expect(toggle).toHaveAttribute("aria-expanded", "true");
-    expect(toggle).toHaveTextContent("收起");
-    expect(bodyOf(rootId)).not.toHaveClass(styles.commentBodyClipped);
-
-    fireEvent.click(toggle);
-    expect(toggle).toHaveAttribute("aria-expanded", "false");
-    expect(toggle).toHaveTextContent("展开全文");
-    expect(bodyOf(rootId)).toHaveClass(styles.commentBodyClipped);
-  });
-
-  it("opens the body when focus lands on a link the clip is hiding", () => {
-    measure(`comment-${rootId}-body`, 983);
+  it("uses the post preview and reveals complete paragraphs in place", () => {
+    const text = "这是开头。".repeat(12),
+      tail = "后续评论正文".repeat(40);
     renderItem(
-      comment(rootId, "", {
-        contentMd: "见 [文档](https://example.com)",
-        contentHtml: '<p>见 <a href="https://example.com">文档</a></p>\n',
+      comment(rootId, text + "\n\n" + tail, {
+        contentHtml: `<p>${text}</p><p>${tail}</p>`,
       }),
     );
-
-    const hidden = screen.getByRole("link", { name: "文档" });
-    expect(bodyOf(rootId)).toHaveClass(styles.commentBodyClipped);
-    fireEvent.focus(hidden);
-    expect(bodyOf(rootId)).not.toHaveClass(styles.commentBodyClipped);
+    expect(bodyOf(rootId)).toHaveTextContent(text);
+    expect(bodyOf(rootId)).not.toHaveTextContent(tail);
+    const more = screen.getByRole("button", { name: "显示更多" });
+    fireEvent.click(more);
+    expect(bodyOf(rootId)).toHaveTextContent(tail);
+    expect(screen.queryByRole("button", { name: "显示更多" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "收起" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "展开全文" })).toBeNull();
   });
-
-  it("folds the body only, leaving media and location whole", () => {
-    measure(`comment-${rootId}-body`, 983);
+  it("does not offer Show more for short comments", () => {
+    renderItem(comment(rootId, "简短回复"));
+    expect(bodyOf(rootId)).toHaveTextContent("简短回复");
+    expect(screen.queryByRole("button", { name: "显示更多" })).toBeNull();
+  });
+  it("uses the existing hard clip for one long paragraph, with no fade", () => {
+    renderItem(comment(rootId, "长段落".repeat(160)));
+    expect(bodyOf(rootId)).toHaveClass(postStyles.clippedPreview);
+    fireEvent.click(screen.getByRole("button", { name: "显示更多" }));
+    expect(bodyOf(rootId)).not.toHaveClass(postStyles.clippedPreview);
+  });
+  it("keeps media and location outside the preview", () => {
     renderItem(
-      comment(rootId, "很长的一段", {
+      comment(rootId, "正文".repeat(200), {
         location: { name: "陆悦天地", displayName: "陆悦天地" },
         media: [
           {
             mediaId: "01M08A31N0WNK66SC39ZAQFK6P",
             position: 0,
-            altText: null,
+            altText: "评论图片",
             mimeType: "image/png",
             width: 800,
             height: 600,
@@ -389,69 +306,12 @@ describe("long comment folding", () => {
         ],
       }),
     );
-
-    const body = bodyOf(rootId);
-    const location = screen.getByLabelText("地点：陆悦天地");
-    expect(body.contains(location)).toBe(false);
-    const image = document.querySelector("img");
-    expect(image).not.toBeNull();
-    expect(body.contains(image)).toBe(false);
-  });
-
-  it("re-measures when the box changes instead of trusting the first reading", () => {
-    measure(`comment-${rootId}-body`, 100);
-    renderItem(comment(rootId, "刚好放得下"));
-    expect(screen.queryByRole("button", { name: "展开全文" })).toBeNull();
-
-    // The same comment in a narrower column: whether it folds is a property of
-    // the rendered box, not of the text.
-    measure(`comment-${rootId}-body`, 320);
-    act(() => FakeResizeObserver.notify());
     expect(
-      screen.getByRole("button", { name: "展开全文" }),
-    ).toBeInTheDocument();
-
-    measure(`comment-${rootId}-body`, 100);
-    act(() => FakeResizeObserver.notify());
-    expect(screen.queryByRole("button", { name: "展开全文" })).toBeNull();
-  });
-
-  it("keeps the reader in place when collapsing pulls the page up", () => {
-    measure(`comment-${rootId}-body`, 983);
-    renderItem(comment(rootId, "很长的一段"));
-    const toggle = screen.getByRole("button", { name: "展开全文" });
-    fireEvent.click(toggle);
-
-    const header = document.querySelector("header");
-    const scrollIntoView = vi.fn();
-    Object.defineProperty(header, "scrollIntoView", {
-      configurable: true,
-      value: scrollIntoView,
-    });
-    Object.defineProperty(header, "getBoundingClientRect", {
-      configurable: true,
-      value: () => ({ top: -420 }) as DOMRect,
-    });
-
-    fireEvent.click(toggle);
-    expect(scrollIntoView).toHaveBeenCalledWith({ block: "nearest" });
-  });
-
-  it("leaves a comment alone when collapsing costs the reader nothing", () => {
-    measure(`comment-${rootId}-body`, 983);
-    renderItem(comment(rootId, "很长的一段"));
-    const toggle = screen.getByRole("button", { name: "展开全文" });
-    fireEvent.click(toggle);
-
-    const header = document.querySelector("header");
-    const scrollIntoView = vi.fn();
-    Object.defineProperty(header, "scrollIntoView", {
-      configurable: true,
-      value: scrollIntoView,
-    });
-
-    fireEvent.click(toggle);
-    expect(scrollIntoView).not.toHaveBeenCalled();
+      bodyOf(rootId).contains(screen.getByLabelText("地点：陆悦天地")),
+    ).toBe(false);
+    expect(bodyOf(rootId).contains(screen.getByAltText("评论图片"))).toBe(
+      false,
+    );
   });
 });
 
@@ -636,21 +496,15 @@ describe("the composer's reply target", () => {
   });
 });
 
-// A signed-out reader has no reply button, because the prompt above the thread
-// already says why once and repeating it on every row is noise. What must not
-// survive is the row it used to sit in: an empty action bar still claims its
-// full target height, and a band of blank space under every comment reads as
-// something failing to load rather than as nothing being on offer.
 describe("comment action bar", () => {
-  it("renders no action bar when there is nothing to reply to", () => {
-    // A reply whose root is not on the page: the action has no target, so it
-    // has no meaning either, and an empty bar would leave dead space.
+  it("keeps sharing available without a reply target", () => {
+    // Sharing remains available even when this embedding has no reply target.
     renderItem(comment(replyId, "孤儿回复", { parentId: offPageId }));
 
-    expect(document.querySelector("footer")).toBeNull();
+    expect(screen.queryByRole("button", { name: /^回复/ })).toBeNull();
     expect(
-      screen.queryByRole("button", { name: /^回复/ }),
-    ).not.toBeInTheDocument();
+      screen.getByRole("button", { name: "分享 Cheems 的评论" }),
+    ).toBeVisible();
   });
 
   // Being signed out is not the same as having nothing to reply to. The action
@@ -677,7 +531,7 @@ describe("comment action bar", () => {
     const root = comment(rootId, "顶级回应");
     renderItem(root, [], { replyRoot: root });
 
-    const footer = document.querySelector("footer");
+    const footer = document.querySelector("[data-post-actions]");
     expect(footer).not.toBeNull();
     expect(
       within(footer as HTMLElement).getByRole("button", { name: /^回复/ }),

@@ -17,7 +17,6 @@ import { makeAccountLimits } from "../../test/accountFixtures";
 import { NavigationProvider } from "../../app/navigation";
 import { FeedbackProvider } from "../../components/Feedback";
 import { SessionProvider } from "../auth/SessionProvider";
-import formsCss from "../../components/Forms.module.css?inline";
 import { PostPresentation } from "./PostPresentation";
 import contentCss from "../../components/content/notion.scss?inline";
 import postCss from "./PostPresentation.module.css?inline";
@@ -219,9 +218,6 @@ describe("shared post presentation", () => {
     );
     expect(postCss).toMatch(
       /\._timelineDensity_[\w-]+ \._byline_[\w-]+,\s*\._timelineDensity_[\w-]+ \._markdown_[\w-]+\s*\{[^}]*font-family:\s*var\(--font-timeline\);[^}]*font-feature-settings:\s*normal;[^}]*letter-spacing:\s*normal;[^}]*text-rendering:\s*auto;[^}]*-webkit-font-smoothing:\s*auto;/s,
-    );
-    expect(postCss).toMatch(
-      /\._timelineDensity_[\w-]+ \._markdown_[\w-]+\s*\{[^}]*margin-block-start:\s*0;[^}]*overflow-wrap:\s*break-word;[^}]*font-size:\s*0\.9375rem;[^}]*font-weight:\s*400;[^}]*line-height:\s*1\.25rem;/s,
     );
     expect(contentCss).toMatch(
       /\.tiptap\.ProseMirror\s*\{[^}]*white-space:\s*pre-wrap;/,
@@ -777,43 +773,6 @@ describe("shared post presentation", () => {
     );
     expect(postCss).toMatch(
       /\._postAction_[\w-]+ svg\s*\{[^}]*inline-size:\s*1\.171875rem;[^}]*block-size:\s*1\.171875rem;/s,
-    );
-  });
-
-  it("keeps owner and share actions on one far-edge axis in lists and detail", () => {
-    expect(postCss).toMatch(
-      /\._post_[\w-]+\s*\{[^}]*--post-edge-action-size: 2\.75rem/,
-    );
-    expect(postCss).toMatch(/\._postActions_[\w-]+\s*\{[^}]*inline-size: 100%/);
-    expect(postCss).toMatch(
-      /\._postActions_[\w-]+\s*\{[^}]*grid-template-columns:\s*var\(--post-edge-action-size\)\s+var\(--post-edge-action-size\)\s+minmax\(0, 1fr\)\s+var\(--post-edge-action-size\)/,
-    );
-    expect(postCss).toMatch(
-      /\._shareAction_[\w-]+\s*\{[^}]*grid-column: 4;[^}]*justify-self: end/,
-    );
-    expect(formsCss).toMatch(
-      /\._postMenu_[\w-]+\s*\{[^}]*margin-inline-start: auto/,
-    );
-    expect(formsCss).toMatch(
-      /\._actionsMenuTrigger_[\w-]+\s*\{[^}]*inline-size: var\(--post-edge-action-size, 2\.75rem\);[^}]*block-size: var\(--post-edge-action-size, 2\.75rem\)/,
-    );
-    expect(postCss).toMatch(
-      /\._detail_[\w-]+ \._postActions_[\w-]+\s*\{[^}]*max-inline-size: none/,
-    );
-    expect(postCss).toMatch(
-      /\._detail_[\w-]+ \._postActions_[\w-]+\s*\{[^}]*grid-template-columns:\s*1\.90625rem 1\.90625rem 1\.90625rem 1\.90625rem 1\.40625rem;[^}]*justify-content:\s*space-between;[^}]*column-gap:\s*0;/s,
-    );
-    expect(postCss).toMatch(
-      /\._detail_[\w-]+ \._postAction_[\w-]+\s*\{[^}]*inline-size:\s*1\.90625rem;[^}]*block-size:\s*2\.9375rem;/s,
-    );
-    expect(postCss).toMatch(
-      /\._detail_[\w-]+ \._postAction_[\w-]+ svg\s*\{[^}]*inline-size:\s*1\.40625rem;[^}]*block-size:\s*1\.40625rem;/s,
-    );
-    expect(postCss).toMatch(
-      /\._detail_[\w-]+ \._postAction_[\w-]+::before\s*\{[^}]*inline-size:\s*2\.171875rem;[^}]*block-size:\s*2\.171875rem;[^}]*border-radius:\s*50%;/s,
-    );
-    expect(postCss).toMatch(
-      /\._detail_[\w-]+ \._shareAction_[\w-]+\s*\{[^}]*grid-column:\s*5;[^}]*inline-size:\s*1\.40625rem;[^}]*justify-self:\s*end;/s,
     );
   });
 

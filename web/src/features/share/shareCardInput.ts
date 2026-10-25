@@ -19,7 +19,7 @@ import {
 /** A comment uses post presentation without changing its persisted identity. */
 export function commentAsPost(
   comment: PublicComment,
-  original: PublicPost,
+  original: Pick<PublicPost, "id" | "visibility">,
   count = comment.replyCount,
 ): PublicPost {
   return {

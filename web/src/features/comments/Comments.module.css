@@ -102,8 +102,8 @@
 }
 
 .inlineTopLevelForm .commentComposerLayout {
-  grid-template-columns: var(--target-size) minmax(0, 1fr);
-  gap: var(--space-3);
+  grid-template-columns: 2.5rem minmax(0, 1fr);
+  gap: var(--space-2);
 }
 
 .inlineTopLevelForm .commentForm {
@@ -409,8 +409,7 @@
 }
 
 .formMeta,
-.commentForm > footer,
-.commentActions {
+.commentForm > footer {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -637,7 +636,6 @@
 .primaryAction,
 .secondaryAction,
 .dangerAction,
-.commentAction,
 .reauth button,
 .threadError button {
   min-block-size: var(--target-size);
@@ -713,15 +711,13 @@
   transform: scale(0.94);
 }
 
-.secondaryAction,
-.commentAction {
+.secondaryAction {
   color: var(--text-secondary);
   background: transparent;
 }
 
 @media (hover: hover) {
-  .secondaryAction:hover,
-  .commentAction:hover {
+  .secondaryAction:hover {
     color: var(--accent);
     background: var(--accent-soft);
   }
@@ -883,53 +879,12 @@
 }
 
 .commentItem {
-  --comment-avatar-size: var(--target-size);
-  position: relative;
   min-inline-size: 0;
-  padding: var(--space-3) var(--space-4);
-  overflow-wrap: anywhere;
-  transition: background-color 0.2s ease;
-}
-
-@media (hover: hover) {
-  .commentItem:hover {
-    background: light-dark(#f7f7f7, var(--surface-hover));
-  }
 }
 
 .commentItem > article {
-  display: grid;
-  grid-template-columns: var(--comment-avatar-size) minmax(0, 1fr);
-  column-gap: var(--space-3);
-}
-
-.commentAvatar {
-  position: relative;
-  grid-row: 1 / span 3;
-  inline-size: var(--comment-avatar-size);
-  block-size: var(--comment-avatar-size);
-  display: grid;
-  place-items: center;
-  border: 1px solid var(--border-subtle);
-  border-radius: 50%;
-  color: var(--accent);
-  background: var(--accent-soft);
-  font-weight: 750;
-  text-decoration: none;
-}
-
-/* Keep the smaller visible face an accessible target without moving text. */
-.commentAvatar::after {
-  content: "";
-  position: absolute;
-  inset: min(0px, calc((var(--comment-avatar-size) - var(--target-size)) / 2));
-  border-radius: 50%;
-}
-
-.commentAvatar > img,
-.commentAvatar > span {
-  inline-size: 100%;
-  block-size: 100%;
+  content-visibility: visible;
+  contain-intrinsic-size: none;
 }
 
 .commentAuthor {
@@ -980,246 +935,37 @@
 }
 
 .replyComment {
-  --comment-avatar-size: calc(var(--target-size) * 0.6);
-  padding-inline-start: calc(
-    var(--space-4) + var(--target-size) + var(--space-3)
-  );
-}
-
-.commentItem[data-depth="0"]:not(:first-child) {
-  border-block-start: 1px solid var(--border-subtle);
+  --post-avatar-size: 1.5rem;
+  padding-inline-start: 3rem;
 }
 
 .replyBranch {
-  padding-inline-start: calc(
-    var(--space-4) + var(--target-size) + var(--space-3)
-  );
-  padding-block: var(--space-2);
+  padding: 0 var(--space-4) var(--space-3)
+    calc(var(--space-4) + 3rem + 1.5rem + var(--space-2));
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: var(--space-3);
 }
-
 .replyBranch button {
-  border: 0;
-  background: none;
-  padding: 0.5rem 0;
-  color: var(--accent);
-  font: inherit;
-  font-size: 0.875rem;
-  cursor: pointer;
+  inline-size: fit-content;
 }
-
 .replyBranch button:disabled {
   color: var(--text-secondary);
   cursor: default;
 }
-
-@media (hover: hover) {
-  .replyBranch button:hover:not(:disabled) {
-    text-decoration: underline;
-  }
-}
-
 .replyBranch [role="alert"] {
   color: var(--text-secondary);
   font-size: 0.8125rem;
 }
-
 .commentActionsMenu {
-  position: absolute;
-  z-index: 1;
-  inset-block-start: var(--space-3);
-  inset-inline-end: var(--space-3);
-}
-
-.commentActionsMenu > button {
-  --post-edge-action-size: 2.25rem;
-  margin-block: -0.5rem;
-}
-
-.pinnedCommentMark {
-  grid-column: 2;
-  min-block-size: 1.25rem;
   display: flex;
   align-items: center;
-  gap: 0.35rem;
-  margin: 0 2.5rem 0.15rem 0;
-  color: var(--text-secondary);
-  font-size: 0.8125rem;
-  font-weight: 600;
-  line-height: 1rem;
-}
-
-.pinnedCommentMark svg {
-  inline-size: 0.9rem;
-  block-size: 0.9rem;
-}
-
-.replyComment .commentAvatar {
-  font-size: var(--text-sm);
-}
-
-.commentByline {
-  min-block-size: 1.35rem;
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0.3rem;
-  color: var(--text-secondary);
-  font-family: var(--font-timeline);
-  font-feature-settings: normal;
-  font-size: 0.9375rem;
-  letter-spacing: normal;
-  line-height: 1.25rem;
-  text-rendering: auto;
-  padding-inline-end: 2.5rem;
-}
-
-.commentByline strong {
-  min-inline-size: 0;
-  overflow-wrap: anywhere;
-  color: var(--text-primary);
-  font-weight: 700;
 }
 
 .authorBadge {
   border-color: var(--accent);
   color: var(--accent);
-}
-
-.commentMarkdown {
-  grid-column: 2;
-  margin-block-start: 0.2rem;
-  color: var(--text-primary);
-  font-family: var(--font-timeline);
-  font-feature-settings: normal;
-  font-size: 0.9375rem;
-  letter-spacing: normal;
-  line-height: 1.25rem;
-  overflow-wrap: break-word;
-  text-rendering: auto;
-}
-
-/* Read-only comment paragraphs inherit comment typography, not editor typography. */
-.commentMarkdown:global(.tiptap.ProseMirror) > p:not(:first-child) {
-  font-size: inherit;
-  font-weight: inherit;
-  line-height: inherit;
-}
-
-.commentByline :where(strong, time) {
-  font-family: inherit;
-  font-feature-settings: inherit;
-  letter-spacing: inherit;
-  text-rendering: inherit;
-}
-
-/*
- * The body is clipped from the first paint and stays clipped until the reader
- * asks otherwise, so a comment never expands and then snaps shut once the
- * measurement lands. A body that fits simply never reaches this maximum.
- *
- * Ten lines of the body's own 1.25rem line box, and the number comes from
- * measuring the real corpus in a browser at every width from 320 to 1440 rather
- * than from guessing at the text.
- *
- * Those measurements leave a wide gap with nothing in it. The ordinary comments
- * — a sentence, a five-bullet list, a small fenced code block — never exceed
- * 133px, which is 6.7 lines, reached by the list once it reflows at 320px. The
- * two long ones never drop below 263px, or 13.2 lines, which is the 535
- * character one at its widest. Ten lines is 200px: the middle of that gap, with
- * three lines of room on each side, so neither an unusually blocky short
- * comment nor an unusually wide long one lands on the wrong side of it.
- *
- * Nothing here special-cases block elements, and nothing should: a code block
- * really is that tall, and carving out exceptions by content shape would put
- * back exactly the guesswork the measurement replaces. Counting characters
- * cannot work at all here — the corpus is Chinese, where the 535-character
- * comment is 16 lines in the 510px column and the same budget of Latin text is
- * barely four.
- */
-.commentBody {
-  grid-column: 2;
-}
-
-.commentBodyClipped {
-  position: relative;
-  max-block-size: calc(10 * 1.25rem);
-  overflow: hidden;
-}
-
-/*
- * The fade is what the clip looks like when it has something to hide, so it is
- * applied where that is known to be true rather than wherever the clip is.
- * Bound together, a body that fits inside the maximum still had its last line
- * faded out -- reading as cut off, with no control offered to open it, because
- * nothing was in fact hidden. The clip itself stays unconditional: it costs
- * nothing on a body that never reaches the maximum, and turning it on after
- * measuring would make short comments visibly settle.
- */
-.commentBodyFaded {
-  mask-image: linear-gradient(to bottom, #000 82%, transparent);
-}
-
-/* Folding stays bidirectional within the current reading view. */
-.commentFoldToggle {
-  grid-column: 2;
-  min-block-size: 1.75rem;
-  inline-size: fit-content;
-  display: flex;
-  align-items: center;
-  margin-block-start: 0.15rem;
-  border: 0;
-  padding: 0;
-  color: var(--accent);
-  background: transparent;
-  font-family: inherit;
-  font-size: 0.9375rem;
-  line-height: 1.25rem;
-  cursor: pointer;
-}
-
-.commentFoldToggle:focus-visible {
-  text-decoration: underline;
-}
-
-@media (hover: hover) {
-  .commentFoldToggle:hover {
-    text-decoration: underline;
-  }
-}
-
-/*
- * The action row starts where the text does, but the glyph inside it does not:
- * the button is a full 2.75rem touch target with a 1.25rem icon centred in it,
- * so the icon lands 0.75rem to the right of every line above it and the column
- * visibly steps in at the bottom of each comment.
- *
- * Pulling the row left by exactly that inset puts the glyph on the text edge
- * while the button keeps its size — shrinking the button instead would buy the
- * alignment by making it harder to hit.
- */
-.commentActions {
-  grid-column: 2;
-  min-block-size: var(--target-size);
-  justify-content: flex-start;
-  margin-block-start: 0.1rem;
-  margin-inline-start: calc((var(--target-size) - 1.25rem) / -2);
-}
-
-.commentAction {
-  inline-size: var(--target-size);
-  min-block-size: var(--target-size);
-  display: grid;
-  place-items: center;
-  padding: 0;
-}
-
-.commentAction svg {
-  inline-size: 1.25rem;
-  block-size: 1.25rem;
 }
 
 .dialogBackdrop {
@@ -1468,31 +1214,18 @@
 }
 
 @media (max-width: 719px) {
-  .formSurface.inlineTopLevelForm {
-    padding-inline: var(--space-3);
-  }
-
   .threadHeader,
   .formSurface,
   .threadState,
   .threadError,
   .closedNotice,
   .signInNotice,
-  .emptyThread,
-  .commentItem {
+  .emptyThread {
     padding-inline: var(--space-3);
   }
 
-  .replyComment {
-    padding-inline-start: calc(
-      var(--space-3) + var(--target-size) + var(--space-3)
-    );
-  }
-
   .replyBranch {
-    padding-inline-start: calc(
-      var(--space-3) + var(--target-size) + var(--space-3)
-    );
+    padding-inline-start: calc(var(--space-4) + 3rem + 1.5rem + var(--space-2));
   }
 
   .replyDialogPopup > .formSurface,
@@ -1537,14 +1270,6 @@
 
   .commentMediaComposer > div > div:first-child button {
     transition: none;
-  }
-
-  .commentItem {
-    transition: none;
-  }
-
-  .commentBodyFaded {
-    mask-image: none;
   }
 
   .commentMediaComposer > div > div:first-child button:hover:not(:disabled),
@@ -1621,26 +1346,6 @@
     border-color: var(--accent);
     color: var(--accent);
   }
-}
-
-.commentPermalink {
-  color: var(--text-secondary);
-  text-decoration: none;
-}
-
-.commentPermalink:focus-visible {
-  text-decoration: underline;
-}
-
-@media (hover: hover) {
-  .commentPermalink:hover {
-    text-decoration: underline;
-  }
-}
-
-.commentAttachment {
-  grid-column: 2;
-  min-inline-size: 0;
 }
 
 .discussionDetail {

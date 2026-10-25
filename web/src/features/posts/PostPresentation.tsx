@@ -40,7 +40,6 @@ import { postShareCard } from "../share/shareCardInput";
 import type { ShareCardSource } from "../share/shareCard";
 import { ImageGrid } from "../media/ImageGrid";
 import styles from "./PostPresentation.module.css";
-import rowStyles from "./PostActionRow.module.css";
 
 export { SiteAvatar } from "../../components/SiteIdentity";
 
@@ -200,6 +199,9 @@ export function PostPresentation({
   conversation = false,
   connected = false,
   shareCard,
+  bylineContext,
+  replyControl,
+  navigable = true,
 }: {
   post: PublicPost;
   site: SiteIdentity;
@@ -222,6 +224,9 @@ export function PostPresentation({
   conversation?: boolean;
   connected?: boolean;
   shareCard?: ShareCardSource;
+  bylineContext?: import("react").ReactNode;
+  replyControl?: import("react").ReactNode;
+  navigable?: boolean;
 }) {
   const { navigate } = useNavigation();
   const [expandedPostId, setExpandedPostId] = useState<string | null>(null);
@@ -244,10 +249,19 @@ export function PostPresentation({
     post.linkCards.length > 0 ? <LinkCard card={post.linkCards[0]} /> : null;
   const detailHref = href ?? `/m/${encodeURIComponent(post.id)}`;
   const timelineKey = `${post.id}:${post.timelineItemKind}`;
-  const useTimelineDensity = timelineDensity && !detail;
+  const useTimelineDensity = (timelineDensity || conversation) && !detail;
 
   const openFromSurface = (event: MouseEvent<HTMLElement>) => {
-    if (detail) return;
+    if (
+      detail ||
+      !navigable ||
+      event.button !== 0 ||
+      event.metaKey ||
+      event.ctrlKey ||
+      event.shiftKey ||
+      event.altKey
+    )
+      return;
     if (window.getSelection()?.toString()) return;
     const target = event.target;
     if (!(target instanceof Element)) return;
@@ -319,19 +333,31 @@ export function PostPresentation({
             @{site.username}
           </InternalLink>
         ) : null}
+        {bylineContext}
         {!detail ? (
           <>
             <span aria-hidden="true">·</span>
             <ExactTimeTooltip
               exact={published.absolute}
               children={
-                <InternalLink
-                  className={styles.timeLink}
-                  data-focus-key={`${timelineKey}:relative-time`}
-                  href={detailHref}
-                >
+                navigable ? (
+                  <InternalLink
+                    className={styles.timeLink}
+                    aria-label={
+                      post.commentPostId
+                        ? "查看" + title + "的评论详情"
+                        : undefined
+                    }
+                    data-focus-key={`${timelineKey}:relative-time`}
+                    href={detailHref}
+                  >
+                    <time dateTime={post.publishedAt}>
+                      {published.relative}
+                    </time>
+                  </InternalLink>
+                ) : (
                   <time dateTime={post.publishedAt}>{published.relative}</time>
-                </InternalLink>
+                )
               }
             />
             {hidden ? (
@@ -377,7 +403,11 @@ export function PostPresentation({
       trigger={
         <button
           data-post-action="share"
-          aria-label="分享这条 Moment"
+          aria-label={
+            post.commentPostId && !detail
+              ? "分享 " + title + " 的评论"
+              : "分享这条 Moment"
+          }
           className={`${styles.postAction} ${styles.shareAction}`}
           type="button"
         >
@@ -452,7 +482,11 @@ export function PostPresentation({
   if (detail) {
     return (
       <article
-        aria-label={`${title}发布的 Moment，${published.absolute}`}
+        aria-label={
+          post.commentPostId && !detail
+            ? `${title}的回复`
+            : `${title}发布的 Moment，${published.absolute}`
+        }
         className={`${styles.post} ${styles.detail} ${conversation ? styles.conversation : ""} ${fresh ? styles.fresh : ""}`}
         data-connected={connected || undefined}
         data-post-id={post.id}
@@ -503,10 +537,7 @@ export function PostPresentation({
               <span>条回复</span>
             </a>
           ) : null}
-          <div
-            data-post-actions=""
-            className={`${styles.postActions} ${conversation && !detail ? rowStyles.row : ""}`}
-          >
+          <div data-post-actions="" className={styles.postActions}>
             <ActionTooltip label="回复">
               <button
                 data-post-action="reply"
@@ -535,7 +566,11 @@ export function PostPresentation({
 
   return (
     <article
-      aria-label={`${title}发布的 Moment，${published.absolute}`}
+      aria-label={
+        post.commentPostId && !detail
+          ? `${title}的回复`
+          : `${title}发布的 Moment，${published.absolute}`
+      }
       className={`${styles.post} ${conversation ? styles.conversation : ""} ${useTimelineDensity ? styles.timelineDensity : ""} ${fresh ? styles.fresh : ""}`}
       data-connected={connected || undefined}
       data-post-id={post.id}
@@ -543,14 +578,16 @@ export function PostPresentation({
       onClick={openFromSurface}
       tabIndex={-1}
     >
-      <InternalLink
-        aria-label="打开这条 Moment 详情"
-        className={styles.surfaceLink}
-        data-focus-key={`${timelineKey}:surface-link`}
-        href={detailHref}
-      >
-        <span className={styles.srOnly}>打开这条 Moment 详情</span>
-      </InternalLink>
+      {navigable ? (
+        <InternalLink
+          aria-label="打开这条 Moment 详情"
+          className={styles.surfaceLink}
+          data-focus-key={`${timelineKey}:surface-link`}
+          href={detailHref}
+        >
+          <span className={styles.srOnly}>打开这条 Moment 详情</span>
+        </InternalLink>
+      ) : null}
       {repostLabel}
       <div className={styles.avatarColumn}>{avatar}</div>
       <div className={styles.postMain}>
@@ -602,43 +639,46 @@ export function PostPresentation({
           />
         )}
         {quoteCard}
-        <div
-          data-post-actions=""
-          className={`${styles.postActions} ${conversation && !detail ? rowStyles.row : ""}`}
-        >
-          <ActionTooltip label="回复">
-            {onReply ? (
-              <button
-                data-post-action="reply"
-                aria-label="回复这条 Moment"
-                className={`${styles.postAction} ${styles.replyAction}`}
-                data-focus-key={`${timelineKey}:reply`}
-                onClick={onReply}
-                type="button"
-              >
-                <Icon name="reply" />
-                {post.commentCount > 0 ? (
-                  <span className={styles.actionCount}>
-                    {post.commentCount}
-                  </span>
-                ) : null}
-              </button>
-            ) : (
-              <InternalLink
-                aria-label={`打开完整 Moment${post.commentCount > 0 ? `，${post.commentCount} 条回复` : ""}`}
-                className={`${styles.postAction} ${styles.replyAction}`}
-                data-focus-key={`${timelineKey}:open-post`}
-                href={detailHref}
-              >
-                <Icon name="reply" />
-                {post.commentCount > 0 ? (
-                  <span className={styles.actionCount}>
-                    {post.commentCount}
-                  </span>
-                ) : null}
-              </InternalLink>
-            )}
-          </ActionTooltip>
+        <div data-post-actions="" className={styles.postActions}>
+          {replyControl !== undefined ? (
+            replyControl
+          ) : (
+            <ActionTooltip label="回复">
+              {onReply ? (
+                <button
+                  data-post-action="reply"
+                  aria-label={
+                    post.commentPostId ? "回复 " + title : "回复这条 Moment"
+                  }
+                  className={`${styles.postAction} ${styles.replyAction}`}
+                  data-focus-key={`${timelineKey}:reply`}
+                  onClick={onReply}
+                  type="button"
+                >
+                  <Icon name="reply" />
+                  {post.commentCount > 0 ? (
+                    <span className={styles.actionCount}>
+                      {post.commentCount}
+                    </span>
+                  ) : null}
+                </button>
+              ) : (
+                <InternalLink
+                  aria-label={`打开完整 Moment${post.commentCount > 0 ? `，${post.commentCount} 条回复` : ""}`}
+                  className={`${styles.postAction} ${styles.replyAction}`}
+                  data-focus-key={`${timelineKey}:open-post`}
+                  href={detailHref}
+                >
+                  <Icon name="reply" />
+                  {post.commentCount > 0 ? (
+                    <span className={styles.actionCount}>
+                      {post.commentCount}
+                    </span>
+                  ) : null}
+                </InternalLink>
+              )}
+            </ActionTooltip>
+          )}
           {canPublish || post.commentPostId ? (
             <RepostAction onChanged={onReposted} post={post} />
           ) : null}

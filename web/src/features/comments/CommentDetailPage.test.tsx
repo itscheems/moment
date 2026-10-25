@@ -393,9 +393,11 @@ describe("focused comment reading", () => {
     const { wrapper } = setup();
     render(wrapper());
     await screen.findByText("当前评论全文");
-    fireEvent.click(
-      currentPost().getByRole("button", { name: "分享这条 Moment" }),
-    );
+    const shareTrigger = currentPost().getByRole("button", {
+      name: "分享这条 Moment",
+    });
+    shareTrigger.focus();
+    fireEvent.keyDown(shareTrigger, { key: "ArrowDown" });
     await waitFor(() =>
       expect(
         screen.getByRole("menuitem", { name: "生成分享图片" }),
