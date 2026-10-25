@@ -9,7 +9,7 @@ import {
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { PublicApi } from "../../api/public";
-import defaultAvatarUrl from "../../assets/default-avatar.svg";
+import defaultAvatarUrl from "../../assets/default-avatar.png";
 import { NavigationProvider } from "../../app/navigation";
 import { FeedbackProvider } from "../../components/Feedback";
 import { SessionProvider } from "../auth/SessionProvider";

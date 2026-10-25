@@ -20,7 +20,7 @@ import { locationIconArtwork } from "../../components/locationIcon";
 import logoSvg from "../../assets/logo.svg?raw";
 import type { MapCardData } from "../maps/types";
 import type { MapViewport } from "../maps/MapCanvas";
-import defaultAvatarUrl from "../../assets/default-avatar.svg";
+import { initialAvatarUrl } from "../../components/initialAvatar";
 
 const FACE =
   '-apple-system, "system-ui", "Segoe UI", Roboto, Helvetica, Arial, sans-serif';
@@ -1297,7 +1297,7 @@ async function prepareShareContext(
   const width = WIDTH - PAD - left - inset * 2;
   const mapCard = input.mapCard;
   const [avatar, thumbnail, mapImage, media] = await Promise.all([
-    loadImage(input.avatarUrl ?? defaultAvatarUrl),
+    loadImage(input.avatarUrl ?? initialAvatarUrl(input.displayName)),
     input.link?.thumbnailUrl ? loadImage(input.link.thumbnailUrl) : null,
     mapCard
       ? import("../maps/mapSnapshot").then(({ renderMapSnapshot }) =>
@@ -1445,7 +1445,7 @@ export async function renderShareCard(
     : 340;
   const mapCard = input.mapCard;
   const [avatar, thumbnail, mapImage] = await Promise.all([
-    loadImage(input.avatarUrl ?? defaultAvatarUrl),
+    loadImage(input.avatarUrl ?? initialAvatarUrl(input.displayName)),
     input.link?.thumbnailUrl ? loadImage(input.link.thumbnailUrl) : null,
     mapCard
       ? import("../maps/mapSnapshot").then(({ renderMapSnapshot }) =>

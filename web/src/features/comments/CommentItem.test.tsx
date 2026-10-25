@@ -8,7 +8,7 @@ import {
   within,
 } from "@testing-library/react";
 import { createRef } from "react";
-import defaultAvatarUrl from "../../assets/default-avatar.svg";
+import defaultAvatarUrl from "../../assets/default-avatar.png";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {

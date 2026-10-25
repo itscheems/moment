@@ -10,7 +10,7 @@ import {
 import { beforeEach, afterEach, describe, expect, it, vi } from "vitest";
 
 import type { ReactElement } from "react";
-import defaultAvatarUrl from "../../assets/default-avatar.svg";
+import defaultAvatarUrl from "../../assets/default-avatar.png";
 import type { PublicPost, SiteIdentity } from "../../api/public";
 import { mediaPreviewUrl } from "../../api/mediaUrls";
 import { MentionProvider } from "../../app/mentions";

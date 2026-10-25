@@ -1,5 +1,5 @@
 import { mediaPreviewUrl } from "../api/mediaUrls";
-import defaultAvatarUrl from "../assets/default-avatar.svg";
+import { initialAvatarUrl } from "./initialAvatar";
 
 import type { PublicPost, SiteIdentity } from "../api/public";
 import styles from "./SiteIdentity.module.css";
@@ -46,7 +46,7 @@ export function SiteAvatar({
       src={
         site.avatarMediaId
           ? mediaPreviewUrl(site.avatarMediaId)
-          : defaultAvatarUrl
+          : initialAvatarUrl(siteDisplayName(site))
       }
       width={size ?? 44}
       style={dimensions}

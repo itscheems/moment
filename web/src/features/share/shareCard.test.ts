@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { renderMapSnapshot } from "../maps/mapSnapshot";
-import defaultAvatarUrl from "../../assets/default-avatar.svg";
+import defaultAvatarUrl from "../../assets/default-avatar.png";
 
 vi.mock("../maps/mapSnapshot", () => ({
   renderMapSnapshot: vi.fn(async () => document.createElement("canvas")),
