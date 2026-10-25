@@ -138,14 +138,21 @@ seeded() {
 
 seed_playground() {
   running && die "playground 还在 ${port} 上跑着；先 stop 再 reset"
+  umask 077
+  local seed_args=(dev scenario "$scenario" --seed "$seed")
+  [[ ! -s "$token_file" ]] || seed_args+=(--account-token-file "$token_file")
+  mkdir -p -- "$data_dir"
+  # Validate the target and saved credential before discarding any fixture data.
+  "$binary" --data-dir "$data_dir" --no-input "${seed_args[@]}" --dry-run --json >/dev/null
   # dev scenario bootstraps only a strictly empty directory.
   rm -rf -- "$data_dir"
   mkdir -p -- "$data_dir"
   say "灌入 ${scenario}（seed ${seed}，以当前时间为锚）"
-  "$binary" --data-dir "$data_dir" --no-input dev scenario "$scenario" --seed "$seed" --yes --json >"$seed_file"
+  "$binary" --data-dir "$data_dir" --no-input "${seed_args[@]}" --yes --json >"$seed_file"
   umask 077
   json_field "$seed_file" 'document.data.api_token' >"$token_file"
   chmod 600 "$token_file"
+  chmod 600 "$seed_file"
   rm -f -- "$cookie_file"
   say "$(json_field "$seed_file" '"锚点 " + document.data.showcase.anchored_at + "，" + document.data.showcase.cases.length + " 个 case，展示账号 @" + document.data.showcase.profile_username')"
 }

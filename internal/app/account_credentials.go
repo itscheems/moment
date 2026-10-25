@@ -2,9 +2,9 @@ package app
 
 import (
 	"context"
-	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
+	"io"
 	"strings"
 	"unicode/utf8"
 
@@ -125,7 +125,7 @@ func (service *AccountService) CreateAPIToken(ctx context.Context, userID, label
 		return IssuedAPIToken{}, domain.NewError(domain.CodeInvalidArgument, "token label is invalid", map[string]any{"field": "label"})
 	}
 	var bytes [32]byte
-	if _, err := rand.Read(bytes[:]); err != nil {
+	if _, err := io.ReadFull(service.tokenEntropy, bytes[:]); err != nil {
 		return IssuedAPIToken{}, err
 	}
 	value := base64.RawURLEncoding.EncodeToString(bytes[:])

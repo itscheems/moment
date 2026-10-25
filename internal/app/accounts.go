@@ -79,6 +79,7 @@ type AccountService struct {
 	transactions AccountTransactions
 	clock        func() time.Time
 	newID        func() (string, error)
+	tokenEntropy io.Reader
 	avatarSource AvatarSource
 	avatars      AvatarStore
 }
@@ -117,6 +118,16 @@ func WithAccountIDGenerator(generator func() (string, error)) AccountOption {
 	}
 }
 
+// WithAccountTokenEntropy supplies credential entropy for controlled fixtures.
+// Ordinary services use crypto/rand.Reader.
+func WithAccountTokenEntropy(source io.Reader) AccountOption {
+	return func(service *AccountService) {
+		if source != nil {
+			service.tokenEntropy = source
+		}
+	}
+}
+
 // NewAccountService binds the service to its ports.
 func NewAccountService(transactions AccountTransactions, options ...AccountOption) (*AccountService, error) {
 	if transactions == nil {
@@ -126,6 +137,7 @@ func NewAccountService(transactions AccountTransactions, options ...AccountOptio
 		transactions: transactions,
 		clock:        time.Now,
 		newID:        NewAccountID,
+		tokenEntropy: rand.Reader,
 	}
 	for _, option := range options {
 		option(service)

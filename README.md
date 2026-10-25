@@ -110,7 +110,7 @@ mise exec -- task playground
 mise exec -- task playground:comments
 ```
 
-样本覆盖评论详情、楼内回复、分页、折叠、文章评论和私密内容；重复运行会复用同一实例的样本。
+样本覆盖评论详情、楼内回复、分页、折叠、文章评论和私密内容；重复运行会复用同一实例的样本。测试账号 `xiaoman` 的 API 令牌保存在 `.moment-local/playground/account.token`，重启和 `task playground -- reset` 都会复用同一个值，方便浏览器记住；重置仍会清空测试内容和登录会话。
 
 </details>
 

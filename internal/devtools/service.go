@@ -1,7 +1,9 @@
 package devtools
 
 import (
+	"bytes"
 	"context"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -41,6 +43,8 @@ type Request struct {
 	// Anchor dates the site-showcase scenario; zero means the current
 	// minute. Every other scenario is dated from its seed and ignores it.
 	Anchor time.Time
+	// APIToken reuses a locally held development credential; it is never in Plan.
+	APIToken string
 
 	hooks *operationHooks
 }
@@ -87,6 +91,12 @@ type operationHooks struct {
 // constructs an unreachable generation through application contracts, and
 // publishes it with one atomic CURRENT switch. No failure path deletes a child.
 func Execute(ctx context.Context, request Request) (result Result, resultErr error) {
+	if request.APIToken != "" {
+		decoded, err := base64.RawURLEncoding.DecodeString(request.APIToken)
+		if err != nil || len(decoded) != 32 || base64.RawURLEncoding.EncodeToString(decoded) != request.APIToken {
+			return Result{}, domain.NewError(domain.CodeInvalidArgument, "development account token is invalid", map[string]any{"field": "account_token_file"})
+		}
+	}
 	recipe, err := recipeFor(request)
 	if err != nil {
 		return Result{}, domain.NewError(domain.CodeInvalidArgument, err.Error(), map[string]any{"field": "scenario", "allowed": ScenarioNames()})
@@ -313,7 +323,7 @@ func Execute(ctx context.Context, request Request) (result Result, resultErr err
 		return Result{}, rollbackIfPublished(runtimeState, authority, held, targetGenerationAuthority(target), generation.ID, postSwitchErr)
 	}
 	healthy := recipe.ExpectedDoctorCheckID == ""
-	apiToken, err := issueDevelopmentAccountToken(context.WithoutCancel(ctx), runtimeState, developmentAuthority, held)
+	apiToken, err := issueDevelopmentAccountToken(context.WithoutCancel(ctx), runtimeState, developmentAuthority, held, request.APIToken)
 	if err != nil {
 		return Result{}, rollbackIfPublished(runtimeState, authority, held, targetGenerationAuthority(target), generation.ID, err)
 	}
@@ -434,8 +444,8 @@ func runHook(hooks *operationHooks, selectHook func(*operationHooks) func() erro
 }
 
 // issueDevelopmentAccountToken creates a normal credential in the newly seeded
-// generation. Resetting the generation never preserves a previous API token.
-func issueDevelopmentAccountToken(ctx context.Context, runtimeState *runtimefs.Runtime, authority *runtimefs.DevelopmentAuthority, held *runtimefs.LeaseSet) (value string, resultErr error) {
+// generation. A supplied local value keeps browser sign-in stable across rebuilds.
+func issueDevelopmentAccountToken(ctx context.Context, runtimeState *runtimefs.Runtime, authority *runtimefs.DevelopmentAuthority, held *runtimefs.LeaseSet, fixedValue string) (value string, resultErr error) {
 	database, err := sqlitestore.OpenDevelopmentPinned(ctx, runtimeState, held, authority, sqlitestore.Options{})
 	if err != nil {
 		return "", err
@@ -445,7 +455,15 @@ func issueDevelopmentAccountToken(ctx context.Context, runtimeState *runtimefs.R
 	if err != nil {
 		return "", err
 	}
-	accounts, err := app.NewAccountService(repository)
+	var options []app.AccountOption
+	if fixedValue != "" {
+		decoded, err := base64.RawURLEncoding.DecodeString(fixedValue)
+		if err != nil {
+			return "", err
+		}
+		options = append(options, app.WithAccountTokenEntropy(bytes.NewReader(decoded)))
+	}
+	accounts, err := app.NewAccountService(repository, options...)
 	if err != nil {
 		return "", err
 	}
