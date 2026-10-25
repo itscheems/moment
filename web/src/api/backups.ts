@@ -156,6 +156,7 @@ export interface MergeReviewEntity {
   edited_at?: string;
   visibility?: string;
   quoted_entry_id?: string;
+  quoted_comment_id?: string;
   quote_unavailable?: boolean;
   link_cards?: MergeReviewLinkCard[];
 
@@ -844,6 +845,7 @@ export const REVIEW_ENTITY_STRINGS = [
   "author_user_id",
   "reply_to_comment_id",
   "quoted_entry_id",
+  "quoted_comment_id",
   "username",
   "display_name",
   "bio",
@@ -1170,7 +1172,9 @@ export function parseImportPlan(
       "warnings",
     ]) ||
     record.dry_run !== true ||
-    (record.format_version !== 2 && record.format_version !== 3)
+    (record.format_version !== 2 &&
+      record.format_version !== 3 &&
+      record.format_version !== 4)
   ) {
     throw invalidResponse("import plan contract is invalid");
   }

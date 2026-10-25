@@ -157,9 +157,9 @@ timezone, and a cursor minted under a window is valid only with that window.
 
 ## Exports
 
-`GET /backups/export` returns a complete `moment-export-v3` backup for an active administrator.
+`GET /backups/export` returns a complete `moment-export-v4` backup for an active administrator.
 `GET /account/export` returns the authenticated account's
-`moment-account-export-v1` personal archive. Pending accounts can export their own
+`moment-account-export-v2` personal archive. Pending accounts can export their own
 data; unauthenticated or revoked/suspended sessions cannot. Neither route accepts
 a body or query parameters, and personal export cannot select another account.
 

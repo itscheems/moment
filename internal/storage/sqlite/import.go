@@ -30,8 +30,9 @@ type PortableImporter struct {
 }
 
 type pendingQuote struct {
-	entryID  string
-	targetID *string
+	entryID   string
+	targetID  *string
+	commentID *string
 }
 
 // pendingReplyTarget defers one reply_to_comment_id link until every comment
@@ -248,11 +249,11 @@ func (importer *PortableImporter) insertEntry(ctx context.Context, value Archive
 		return fmt.Errorf("portable entry %s and its article body do not match", value.ID)
 	}
 	if isMoment && value.MapCard == nil {
-		if err := domain.ValidatePostMarkdown(body, len(usages)); err != nil && value.QuotedEntryID == nil && !value.QuoteUnavailable {
+		if err := domain.ValidatePostMarkdown(body, len(usages)); err != nil && value.QuotedEntryID == nil && value.QuotedCommentID == nil && !value.QuoteUnavailable {
 			return err
 		}
 	}
-	if value.QuoteUnavailable && value.QuotedEntryID != nil {
+	if (value.QuoteUnavailable && (value.QuotedEntryID != nil || value.QuotedCommentID != nil)) || (value.QuotedEntryID != nil && value.QuotedCommentID != nil) {
 		return errors.New("portable entry quote cannot be both available and unavailable")
 	}
 	if value.QuotedEntryID != nil {
@@ -264,6 +265,12 @@ func (importer *PortableImporter) insertEntry(ctx context.Context, value Archive
 		}
 		target := *value.QuotedEntryID
 		importer.pendingQuotes = append(importer.pendingQuotes, pendingQuote{entryID: value.ID, targetID: &target})
+	} else if value.QuotedCommentID != nil {
+		if _, err := domain.ParseID(*value.QuotedCommentID); err != nil {
+			return err
+		}
+		target := *value.QuotedCommentID
+		importer.pendingQuotes = append(importer.pendingQuotes, pendingQuote{entryID: value.ID, commentID: &target})
 	} else if value.QuoteUnavailable {
 		importer.pendingQuotes = append(importer.pendingQuotes, pendingQuote{entryID: value.ID})
 	}
@@ -700,7 +707,7 @@ func (importer *PortableImporter) Commit(ctx context.Context, expected ArchiveCo
 		return errors.New("portable import counts do not match the manifest")
 	}
 	for _, quote := range importer.pendingQuotes {
-		if _, err := importer.tx.ExecContext(ctx, `INSERT INTO entry_quotes (entry_id, quoted_entry_id) VALUES (?, ?)`, quote.entryID, quote.targetID); err != nil {
+		if _, err := importer.tx.ExecContext(ctx, `INSERT INTO entry_quotes (entry_id, quoted_entry_id, quoted_comment_id) VALUES (?, ?, ?)`, quote.entryID, quote.targetID, quote.commentID); err != nil {
 			return fmt.Errorf("insert portable entry quote: %w", err)
 		}
 	}

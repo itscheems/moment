@@ -762,7 +762,7 @@ func (inspector *Inspector) preflight(ctx context.Context, archivePath string) (
 	if document.Format != formatName {
 		return manifest{}, importInvalid("archive format identifier is unsupported", nil)
 	}
-	if document.FormatVersion != 2 && document.FormatVersion != FormatVersion {
+	if document.FormatVersion != 2 && document.FormatVersion != 3 && document.FormatVersion != FormatVersion {
 		return manifest{}, domain.NewError(domain.CodeExportVersionUnsupported, "archive format version is not supported", map[string]any{"format_version": document.FormatVersion, "supported_version": FormatVersion})
 	}
 	// Articles are bounded by the entry budget because every article is an
@@ -1338,7 +1338,7 @@ func rebuildPortableGeneration(ctx context.Context, parent *runtimefs.Runtime, g
 		}
 		entry := sqlitestore.ArchiveEntry{
 			PublicationState: value.PublicationState, AuthorUserID: value.AuthorUserID, ID: value.ID, Kind: value.Kind, ContentMD: value.ContentMD, Visibility: visibility,
-			CreatedAtMS: created.UnixMilli(), UpdatedAtMS: updated.UnixMilli(), PublishedAtMS: published.UnixMilli(), RepostedAtMS: repostedAtMS, EditedAtMS: editedAtMS, QuotedEntryID: value.QuotedEntryID, QuoteUnavailable: value.QuoteUnavailable, Media: usages, Location: location, MapCard: domain.CloneMapCard(value.MapCard), LinkCards: linkCards,
+			CreatedAtMS: created.UnixMilli(), UpdatedAtMS: updated.UnixMilli(), PublishedAtMS: published.UnixMilli(), RepostedAtMS: repostedAtMS, EditedAtMS: editedAtMS, QuotedEntryID: value.QuotedEntryID, QuotedCommentID: value.QuotedCommentID, QuoteUnavailable: value.QuoteUnavailable, Media: usages, Location: location, MapCard: domain.CloneMapCard(value.MapCard), LinkCards: linkCards,
 		}
 		if domain.EntryKind(value.Kind) != domain.KindArticle {
 			return importer.InsertEntry(ctx, entry)

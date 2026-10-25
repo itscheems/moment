@@ -36,12 +36,12 @@ import (
 
 const (
 	// FormatVersion is the import-facing Moment export protocol version.
-	FormatVersion           = 3
+	FormatVersion           = 4
 	formatName              = "moment-export"
 	copyBufferSize          = 128 << 10
 	manifestFixedPointLimit = 32
-	// FormatHeaderValue is the fail-closed HTTP/CLI negotiation token for v3.
-	FormatHeaderValue = "moment-export-v3"
+	// FormatHeaderValue is the fail-closed HTTP/CLI negotiation token for v4.
+	FormatHeaderValue = "moment-export-v4"
 )
 
 // ErrDestinationUnavailable classifies a safe output target that cannot be
@@ -49,7 +49,7 @@ const (
 var ErrDestinationUnavailable = errors.New("archive destination is unavailable")
 
 const readme = "Moment portable export\n\n" +
-	"Format: moment-export v3\n" +
+	"Format: moment-export v4\n" +
 	"Portable records are under data/ and immutable originals are under media/.\n" +
 	"checksums.sha256 uses: <sha256>\\t<uncompressed-bytes>\\t<path>.\n" +
 	"It lists every ZIP member except checksums.sha256 itself.\n"
@@ -642,6 +642,7 @@ type entryRecord struct {
 	// path. An absent key reads as everyone.
 	Visibility       string           `json:"visibility,omitempty"`
 	QuotedEntryID    *string          `json:"quoted_entry_id,omitempty"`
+	QuotedCommentID  *string          `json:"quoted_comment_id,omitempty"`
 	QuoteUnavailable bool             `json:"quote_unavailable,omitempty"`
 	Media            []usageRecord    `json:"media"`
 	Location         *locationRecord  `json:"location,omitempty"`
@@ -893,7 +894,7 @@ func portableEntryRecord(value sqlitestore.ArchiveEntry) entryRecord {
 		CreatedAt: portableTime(value.CreatedAtMS), UpdatedAt: portableTime(value.UpdatedAtMS),
 		PublishedAt: portableTime(value.PublishedAtMS), RepostedAt: portableOptionalTime(value.RepostedAtMS), EditedAt: portableOptionalTime(value.EditedAtMS),
 		Visibility:    portableVisibility(value.Visibility),
-		QuotedEntryID: value.QuotedEntryID, QuoteUnavailable: value.QuoteUnavailable,
+		QuotedEntryID: value.QuotedEntryID, QuotedCommentID: value.QuotedCommentID, QuoteUnavailable: value.QuoteUnavailable,
 		Media: portableUsageRecords(value.Media), Location: portableLocation(value.Location), MapCard: domain.CloneMapCard(value.MapCard),
 		LinkCards: portableLinkCards(value.LinkCards),
 	}
@@ -1226,7 +1227,7 @@ func validateArchiveEntry(value sqlitestore.ArchiveEntry) error {
 	}
 	body, isMoment := domain.Entry{Kind: domain.EntryKind(value.Kind), ContentMD: value.ContentMD}.Markdown()
 	if isMoment && value.MapCard == nil {
-		if err := domain.ValidatePostMarkdown(body, len(usages)); err != nil {
+		if err := domain.ValidatePostMarkdown(body, len(usages)); err != nil && value.QuotedEntryID == nil && value.QuotedCommentID == nil && !value.QuoteUnavailable {
 			return err
 		}
 	}
@@ -1235,8 +1236,13 @@ func validateArchiveEntry(value sqlitestore.ArchiveEntry) error {
 			return errors.New("entry quote is invalid")
 		}
 	}
-	if value.QuoteUnavailable && value.QuotedEntryID != nil {
+	if (value.QuoteUnavailable && (value.QuotedEntryID != nil || value.QuotedCommentID != nil)) || (value.QuotedEntryID != nil && value.QuotedCommentID != nil) {
 		return errors.New("entry quote cannot be available and unavailable")
+	}
+	if value.QuotedCommentID != nil {
+		if _, err := domain.ParseID(*value.QuotedCommentID); err != nil {
+			return err
+		}
 	}
 	if value.Location != nil {
 		return value.Location.Validate()
@@ -1892,7 +1898,7 @@ func ValidateFileContext(ctx context.Context, name string) error {
 		lastMedia = file.Name
 	}
 	readmeData, err := readSmallZIPMember(ctx, files["README.txt"], 64<<10)
-	if err != nil || (!bytes.Equal(readmeData, []byte(readme)) && !bytes.Equal(readmeData, []byte(strings.Replace(readme, "v3", "v2", 1)))) {
+	if err != nil {
 		return archiveInvalid("prepared ZIP README is not a supported payload", err)
 	}
 
@@ -1917,9 +1923,12 @@ func ValidateFileContext(ctx context.Context, name string) error {
 	if err := requireObjectFields(manifestFields["limits"], []string{"expanded_bytes"}, []string{"expanded_bytes"}); err != nil {
 		return archiveInvalid("prepared ZIP manifest limits are invalid", err)
 	}
-	if value.Format != formatName || (value.FormatVersion != 2 && value.FormatVersion != FormatVersion) || validateAppVersion(value.Source.AppVersion) != nil ||
+	if value.Format != formatName || (value.FormatVersion != 2 && value.FormatVersion != 3 && value.FormatVersion != FormatVersion) || validateAppVersion(value.Source.AppVersion) != nil ||
 		len(value.Source.InstanceID) != 32 || !isLowerHex(value.Source.InstanceID) || value.Counts.Entries < 0 || value.Counts.Comments < 0 || value.Counts.Media < 0 || value.Limits.ExpandedBytes < 1 {
 		return archiveInvalid("prepared ZIP manifest contract is invalid", nil)
+	}
+	if !bytes.Equal(readmeData, []byte(strings.Replace(readme, "v4", fmt.Sprintf("v%d", value.FormatVersion), 1))) {
+		return archiveInvalid("prepared ZIP README does not match its format version", nil)
 	}
 	_, err = parsePortableTimestamp(value.CreatedAt)
 	if err != nil {
@@ -2081,6 +2090,7 @@ func validatePortableRecords(ctx context.Context, files map[string]*zip.File, me
 
 	entryIDs := make(map[string]struct{})
 	quoteRefs := make(map[string]string)
+	commentQuoteRefs := make(map[string]string)
 	usageMediaIDs := make(map[string]struct{})
 	thumbnailSHAs := make(map[string]struct{})
 	// The pictures an article entry projects, kept until its body arrives, so
@@ -2088,6 +2098,11 @@ func validatePortableRecords(ctx context.Context, files map[string]*zip.File, me
 	articleEntryUsages := make(map[string][]sqlitestore.ArchiveUsage)
 	lastEntryID := ""
 	entries, err := validateJSONLines[entryRecord](ctx, files["data/entries.jsonl"], portableEntryFields, func(value entryRecord, fields map[string]json.RawMessage) error {
+		if document.FormatVersion < 4 {
+			if _, present := fields["quoted_comment_id"]; present {
+				return errors.New("quoted_comment_id requires archive format 4")
+			}
+		}
 		if document.FormatVersion < 3 {
 			if _, present := fields["map_card"]; present {
 				return errors.New("map_card requires archive format 3")
@@ -2185,7 +2200,7 @@ func validatePortableRecords(ctx context.Context, files map[string]*zip.File, me
 		}
 		if err := validateArchiveEntry(sqlitestore.ArchiveEntry{
 			PublicationState: portablePublicationState(value.PublicationState), AuthorUserID: value.AuthorUserID, ID: value.ID, Kind: value.Kind, ContentMD: value.ContentMD, Visibility: visibility,
-			CreatedAtMS: created.UnixMilli(), UpdatedAtMS: updated.UnixMilli(), PublishedAtMS: published.UnixMilli(), RepostedAtMS: repostedAtMS, EditedAtMS: editedAtMS, QuotedEntryID: value.QuotedEntryID, QuoteUnavailable: value.QuoteUnavailable, Media: usages, Location: location, MapCard: domain.CloneMapCard(value.MapCard), LinkCards: linkCards,
+			CreatedAtMS: created.UnixMilli(), UpdatedAtMS: updated.UnixMilli(), PublishedAtMS: published.UnixMilli(), RepostedAtMS: repostedAtMS, EditedAtMS: editedAtMS, QuotedEntryID: value.QuotedEntryID, QuotedCommentID: value.QuotedCommentID, QuoteUnavailable: value.QuoteUnavailable, Media: usages, Location: location, MapCard: domain.CloneMapCard(value.MapCard), LinkCards: linkCards,
 		}); err != nil {
 			return err
 		}
@@ -2195,6 +2210,9 @@ func validatePortableRecords(ctx context.Context, files map[string]*zip.File, me
 		}
 		if value.QuotedEntryID != nil {
 			quoteRefs[value.ID] = *value.QuotedEntryID
+		}
+		if value.QuotedCommentID != nil {
+			commentQuoteRefs[value.ID] = *value.QuotedCommentID
 		}
 		lastEntryID = value.ID
 		return nil
@@ -2296,6 +2314,11 @@ func validatePortableRecords(ctx context.Context, files map[string]*zip.File, me
 		if !exists || source.parent == nil || target.entryID != source.entryID ||
 			(targetID != *source.parent && (target.parent == nil || *target.parent != *source.parent)) {
 			return fmt.Errorf("comment %s answers comment %s outside its conversation", id, targetID)
+		}
+	}
+	for id, target := range commentQuoteRefs {
+		if _, exists := commentIDs[target]; !exists {
+			return fmt.Errorf("entry %s quotes missing comment %s", id, target)
 		}
 	}
 	expectedMedia := make(map[string]struct{}, len(mediaMembers))

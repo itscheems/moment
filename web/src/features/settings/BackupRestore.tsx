@@ -198,6 +198,7 @@ function mergeChangedFieldLabel(field: string): string {
     updated_at: "更新时间",
     published_at: "发布时间",
     quoted_entry_id: "引用的 Moment",
+    quoted_comment_id: "引用的评论",
     media: "媒体与图片描述",
     location: "位置",
     entry_id: "所属 Moment",

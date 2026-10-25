@@ -211,6 +211,25 @@ func ResolvePortableMerge(plan MergePlan, selection MergeSelection, local, incom
 		}
 		comments[resolvedComment.ID] = resolvedComment
 	}
+	// Comment identities are now allocated; redirect only selected incoming quotes.
+	for _, value := range incoming.Entries {
+		if value.QuotedCommentID == nil {
+			continue
+		}
+		choice := itemChoices[mergeChoiceKey(MergeEntry, value.ID)]
+		if choice == MergeSkip || choice == MergeKeepLocal {
+			continue
+		}
+		target, exists := result.CommentRemap[*value.QuotedCommentID]
+		if !exists {
+			return ResolvedMerge{}, domain.NewError(domain.CodeInvalidArgument, "selected quote depends on a skipped comment", map[string]any{"post_id": value.ID, "quoted_comment_id": *value.QuotedCommentID})
+		}
+		id := result.EntryRemap[value.ID]
+		entry := entries[id]
+		entry.QuotedCommentID = &target
+		entries[id] = entry
+	}
+	result.Authority.Entries = mapEntries(entries)
 	clearStrandedReplyTargets(comments)
 	result.Authority.Comments = topologicalComments(comments)
 

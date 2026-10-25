@@ -15,7 +15,7 @@ func registerAccountExport(application *Application, appVersion string) {
 		Path: []string{"user", "export"}, ArgsUsage: "[username]", Short: "Export one account's own data",
 		Long:    "Create a personal data archive, distinct from a site backup. Direct mode requires a username and filesystem authority; API mode exports only the authenticated account and takes no username.",
 		Inputs:  "Required --output path. --overwrite explicitly replaces an existing output file.",
-		Output:  "Path, archive_bytes, archive_sha256, format_version. The file uses moment-account-export-v1 and cannot be imported as a site backup.",
+		Output:  "Path, archive_bytes, archive_sha256, format_version. The file uses moment-account-export-v2 and cannot be imported as a site backup.",
 		Errors:  "ACCOUNT_NOT_FOUND for an unknown local account; unauthorized API requests fail; invalid or incomplete downloads are never published.",
 		Example: "moment user export cheems --data-dir ./moment-data --output ./my-data.zip --json",
 		Args:    cobra.RangeArgs(0, 1), Capability: CapabilityBoth,

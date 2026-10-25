@@ -79,6 +79,7 @@
     "provider_user_id",
     "published_at",
     "quote_unavailable",
+    "quoted_comment_id",
     "quoted_entry_id",
     "reply_to_comment_id",
     "reposted_at",

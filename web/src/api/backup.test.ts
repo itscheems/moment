@@ -1,4 +1,4 @@
-import { BackupsApi } from "./backups";
+import { BackupsApi, parseImportPlan, parseMergeReviewEntity } from "./backups";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
@@ -800,4 +800,14 @@ describe("backup and restore owner API", () => {
     await expect(aborted).rejects.toMatchObject({ code: "CANCELLED" });
     expect(request.aborted).toBe(true);
   });
+});
+
+it("reads v4 import plans and comment quote merge targets", () => {
+  const wire = { ...planData(100), format_version: 4 };
+  expect(parseImportPlan(wire, 100).formatVersion).toBe(4);
+  expect(
+    parseMergeReviewEntity(
+      makeReviewEntry({ quoted_comment_id: "01H00000000000000000000102" }),
+    ).quoted_comment_id,
+  ).toBe("01H00000000000000000000102");
 });
