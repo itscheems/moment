@@ -70,8 +70,6 @@
   padding: 0.75rem var(--space-4);
 }
 
-.timelineDensity .avatar,
-.timelineDensity .avatarFallback,
 .timelineDensity .identityLink > :first-child {
   inline-size: var(--post-avatar-size, 2.5rem);
   block-size: var(--post-avatar-size, 2.5rem);
@@ -191,30 +189,6 @@
   .identityLink:hover {
     filter: brightness(0.88);
   }
-}
-
-.avatar,
-.avatarFallback {
-  inline-size: 3rem;
-  block-size: 3rem;
-  display: block;
-  flex: 0 0 auto;
-  overflow: hidden;
-  border: 1px solid var(--border-subtle);
-  border-radius: 50%;
-  background: var(--accent-soft);
-}
-
-.avatar {
-  object-fit: cover;
-}
-
-.avatarFallback {
-  display: grid;
-  place-items: center;
-  color: var(--accent);
-  font-size: 1rem;
-  font-weight: 750;
 }
 
 .postMain {
@@ -1097,12 +1071,6 @@
 
   .markdown {
     font-size: 0.9375rem;
-  }
-
-  .avatar,
-  .avatarFallback {
-    inline-size: 2.5rem;
-    block-size: 2.5rem;
   }
 
   .detailIdentity {

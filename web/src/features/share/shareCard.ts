@@ -20,6 +20,7 @@ import { locationIconArtwork } from "../../components/locationIcon";
 import logoSvg from "../../assets/logo.svg?raw";
 import type { MapCardData } from "../maps/types";
 import type { MapViewport } from "../maps/MapCanvas";
+import defaultAvatarUrl from "../../assets/default-avatar.svg";
 
 const FACE =
   '-apple-system, "system-ui", "Segoe UI", Roboto, Helvetica, Arial, sans-serif';
@@ -149,7 +150,7 @@ function hostOf(url: string): string {
 export interface ShareCardPost {
   displayName: string;
   username: string;
-  /** Same-origin URL, or null to draw the initial instead. */
+  /** Same-origin URL, or null to use the shared default avatar image. */
   avatarUrl: string | null;
   /** Already formatted for the reader's locale and timezone. */
   publishedLabel: string;
@@ -1188,15 +1189,6 @@ function drawShareIdentity(
     ctx.beginPath();
     ctx.arc(PAD + AVATAR / 2, y + AVATAR / 2, AVATAR / 2, 0, Math.PI * 2);
     ctx.fill();
-    ctx.fillStyle = MUTED;
-    ctx.font = font(700, 22);
-    ctx.textAlign = "center";
-    ctx.fillText(
-      [...(input.displayName.trim() || "M")][0]?.toLocaleUpperCase() ?? "M",
-      PAD + AVATAR / 2,
-      y + AVATAR / 2 + 8,
-    );
-    ctx.textAlign = "left";
   }
 
   const availableWidth = WIDTH - rightInset;
@@ -1305,7 +1297,7 @@ async function prepareShareContext(
   const width = WIDTH - PAD - left - inset * 2;
   const mapCard = input.mapCard;
   const [avatar, thumbnail, mapImage, media] = await Promise.all([
-    input.avatarUrl ? loadImage(input.avatarUrl) : null,
+    loadImage(input.avatarUrl ?? defaultAvatarUrl),
     input.link?.thumbnailUrl ? loadImage(input.link.thumbnailUrl) : null,
     mapCard
       ? import("../maps/mapSnapshot").then(({ renderMapSnapshot }) =>
@@ -1453,7 +1445,7 @@ export async function renderShareCard(
     : 340;
   const mapCard = input.mapCard;
   const [avatar, thumbnail, mapImage] = await Promise.all([
-    input.avatarUrl ? loadImage(input.avatarUrl) : null,
+    loadImage(input.avatarUrl ?? defaultAvatarUrl),
     input.link?.thumbnailUrl ? loadImage(input.link.thumbnailUrl) : null,
     mapCard
       ? import("../maps/mapSnapshot").then(({ renderMapSnapshot }) =>

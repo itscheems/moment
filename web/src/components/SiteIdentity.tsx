@@ -1,4 +1,5 @@
 import { mediaPreviewUrl } from "../api/mediaUrls";
+import defaultAvatarUrl from "../assets/default-avatar.svg";
 
 import type { PublicPost, SiteIdentity } from "../api/public";
 import styles from "./SiteIdentity.module.css";
@@ -33,33 +34,23 @@ export function SiteAvatar({
   eager?: boolean;
   size?: number;
 }) {
-  const title = siteDisplayName(site);
   const dimensions =
     size === undefined ? undefined : { width: size, height: size };
-  if (site.avatarMediaId) {
-    return (
-      <img
-        alt=""
-        className={styles.avatar}
-        decoding="async"
-        height={size ?? 44}
-        loading={eager ? "eager" : "lazy"}
-        src={mediaPreviewUrl(site.avatarMediaId)}
-        width={size ?? 44}
-        style={dimensions}
-      />
-    );
-  }
   return (
-    <span
-      aria-hidden="true"
-      className={styles.avatarFallback}
+    <img
+      alt=""
+      className={styles.avatar}
+      decoding="async"
+      height={size ?? 44}
+      loading={eager ? "eager" : "lazy"}
+      src={
+        site.avatarMediaId
+          ? mediaPreviewUrl(site.avatarMediaId)
+          : defaultAvatarUrl
+      }
+      width={size ?? 44}
       style={dimensions}
-    >
-      <span className={styles.avatarInitial}>
-        {Array.from(title)[0]?.toLocaleUpperCase() ?? "M"}
-      </span>
-    </span>
+    />
   );
 }
 

@@ -8,6 +8,7 @@ import {
   within,
 } from "@testing-library/react";
 import { createRef } from "react";
+import defaultAvatarUrl from "../../assets/default-avatar.svg";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
@@ -235,15 +236,18 @@ describe("comment identity", () => {
     expect(avatar.querySelector("img")).toBeInTheDocument();
   });
 
-  it("falls back to the initial for a member who has no picture", () => {
+  it("uses the default avatar image for a member who has no picture", () => {
     renderItem(
       comment(rootId, "别人写的", {
         author: { ...strangerAuthor, avatarMediaId: null },
       }),
     );
 
-    expect(document.querySelector("img")).toBeNull();
-    expect(screen.getByText("别")).toBeInTheDocument();
+    expect(document.querySelector("img")).toHaveAttribute(
+      "src",
+      defaultAvatarUrl,
+    );
+    expect(screen.queryByText("别")).not.toBeInTheDocument();
   });
 });
 

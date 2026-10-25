@@ -10,6 +10,7 @@ import {
 import { beforeEach, afterEach, describe, expect, it, vi } from "vitest";
 
 import type { ReactElement } from "react";
+import defaultAvatarUrl from "../../assets/default-avatar.svg";
 import type { PublicPost, SiteIdentity } from "../../api/public";
 import { mediaPreviewUrl } from "../../api/mediaUrls";
 import { MentionProvider } from "../../app/mentions";
@@ -1012,7 +1013,10 @@ describe("shared post presentation", () => {
       await screen.findByRole("heading", { name: "阿明" })
     ).closest('[class*="identityCard"]');
     expect(screen.queryByText(site.bio)).not.toBeInTheDocument();
-    expect(preview?.querySelector("img")).toBeNull();
+    expect(preview?.querySelector("img")).toHaveAttribute(
+      "src",
+      defaultAvatarUrl,
+    );
     expect(
       within(preview as HTMLElement).getByText("@aming"),
     ).toBeInTheDocument();

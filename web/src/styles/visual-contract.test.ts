@@ -405,7 +405,7 @@ describe("visual foundation contract", () => {
 
   it("keeps the inline composer avatar on the timeline avatar rail", () => {
     expect(identityCss).toMatch(
-      /\._avatar_[\w-]+,\s*\._avatarFallback_[\w-]+\s*\{[^}]*inline-size: 2\.5rem;[^}]*block-size: 2\.5rem;/s,
+      /\._avatar_[\w-]+\s*\{[^}]*inline-size: 2\.5rem;[^}]*block-size: 2\.5rem;/s,
     );
     expect(formsCss).toMatch(
       /\._inlineComposer_[\w-]+\s*\{[^}]*grid-template-columns: 2\.5rem minmax\(0, 1fr\)/s,
