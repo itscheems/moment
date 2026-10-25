@@ -9,7 +9,7 @@ import {
 } from "react";
 
 import { ShareCardDialog } from "../features/share/ShareCardDialog";
-import type { ShareCardInput } from "../features/share/shareCard";
+import type { ShareCardSource } from "../features/share/shareCard";
 import { InternalLink } from "../app/navigation";
 import {
   SiteAvatar,
@@ -138,7 +138,7 @@ export function ShareMenu({
    * draw, which is what keeps the entry out of the menu rather than offering
    * something that opens onto an error.
    */
-  card?: ShareCardInput;
+  card?: ShareCardSource;
   href: string;
   title: string;
   trigger: ReactElement;

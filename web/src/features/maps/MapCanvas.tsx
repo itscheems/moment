@@ -14,6 +14,7 @@ import {
   mapBounds,
   mapConnections,
   mapCoordinate,
+  mapFitOptions,
   mapPlaceIdentity,
 } from "./geometry";
 import type { MapCardData, MapPlace } from "./types";
@@ -34,6 +35,11 @@ export interface MapCamera {
   pitch: number;
 }
 
+export interface MapViewport extends MapCamera {
+  width: number;
+  height: number;
+}
+
 export interface MapPlaceFocus {
   identity: string;
   camera: MapCamera;
@@ -44,6 +50,7 @@ export default function MapCanvas({
   globe = false,
   camera,
   onCamera,
+  onViewport,
   onFailure,
   onPick,
   focusTarget,
@@ -54,6 +61,7 @@ export default function MapCanvas({
   globe?: boolean;
   camera?: MapCamera;
   onCamera?: (camera: MapCamera) => void;
+  onViewport?: (viewport: MapViewport) => void;
   onFailure: () => void;
   onPick?: (longitude: number, latitude: number) => void;
   focusTarget?: { place: MapPlace } | null;
@@ -77,8 +85,7 @@ export default function MapCanvas({
     if (loaded && !onPick && fittedKey.current !== pointsKey) {
       placeFocus.current = null;
       ref.current?.fitBounds(bounds, {
-        padding: 48,
-        maxZoom: card.places.length === 1 ? 14 : 12,
+        ...mapFitOptions(card.places),
         duration: 0,
       });
     }
@@ -137,6 +144,18 @@ export default function MapCanvas({
       curve: 1.42,
     });
   }, [loaded, focusTarget, globe, placeFocus]);
+  const reportCamera = (map: maplibre.Map) => {
+    const center = map.getCenter();
+    onViewport?.({
+      longitude: center.lng,
+      latitude: center.lat,
+      zoom: map.getZoom(),
+      bearing: map.getBearing(),
+      pitch: map.getPitch(),
+      width: map.getCanvas().clientWidth,
+      height: map.getCanvas().clientHeight,
+    });
+  };
   return (
     <Map
       ref={ref}
@@ -147,10 +166,7 @@ export default function MapCanvas({
           ? { longitude: 0, latitude: 0, zoom: 1 }
           : {
               bounds,
-              fitBoundsOptions: {
-                padding: 48,
-                maxZoom: card.places.length === 1 ? 14 : 12,
-              },
+              fitBoundsOptions: mapFitOptions(card.places),
             })
       }
       mapStyle={MAP_STYLE}
@@ -171,9 +187,14 @@ export default function MapCanvas({
       }}
       maxPitch={0}
       onStyleData={({ target }) => applyMapWaterColor(target)}
-      onLoad={() => setLoaded(true)}
+      onLoad={({ target }) => {
+        setLoaded(true);
+        reportCamera(target);
+      }}
       onError={onFailure}
+      onMove={({ target }) => reportCamera(target)}
       onMoveEnd={(event) => onCamera?.(event.viewState)}
+      onResize={({ target }) => reportCamera(target)}
       onClick={
         onPick
           ? (event) => onPick(event.lngLat.wrap().lng, event.lngLat.lat)

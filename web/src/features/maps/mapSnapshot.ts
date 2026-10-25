@@ -1,13 +1,19 @@
 import { Map, setWorkerUrl, type ErrorEvent } from "maplibre-gl";
 import workerUrl from "maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url";
 import "maplibre-gl/dist/maplibre-gl.css";
-import { mapBounds, mapConnections, mapCoordinate } from "./geometry";
+import {
+  mapBounds,
+  mapConnections,
+  mapCoordinate,
+  mapFitOptions,
+} from "./geometry";
 import {
   applyMapWaterColor,
   MAP_CONNECTION_PAINT,
   MAP_STYLE,
 } from "./mapAppearance";
 import type { MapCardData } from "./types";
+import type { MapViewport } from "./MapCanvas";
 
 setWorkerUrl(workerUrl);
 
@@ -16,6 +22,7 @@ export async function renderMapSnapshot(
   width: number,
   height: number,
   signal?: AbortSignal,
+  viewport?: MapViewport,
 ): Promise<HTMLCanvasElement> {
   signal?.throwIfAborted();
   const container = document.createElement("div");
@@ -35,11 +42,17 @@ export async function renderMapSnapshot(
     const view = new Map({
       container,
       style: MAP_STYLE,
-      bounds: mapBounds(card.places),
-      fitBoundsOptions: {
-        padding: 48,
-        maxZoom: card.places.length === 1 ? 14 : 12,
-      },
+      ...(viewport
+        ? {
+            center: { lng: viewport.longitude, lat: viewport.latitude },
+            zoom: viewport.zoom + Math.log2(width / viewport.width),
+            bearing: viewport.bearing,
+            pitch: viewport.pitch,
+          }
+        : {
+            bounds: mapBounds(card.places),
+            fitBoundsOptions: mapFitOptions(card.places),
+          }),
       interactive: false,
       attributionControl: false,
       maxPitch: 0,

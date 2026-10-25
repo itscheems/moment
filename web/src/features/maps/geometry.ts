@@ -2,6 +2,10 @@ import gcoord from "gcoord";
 import greatCircle from "@turf/great-circle";
 import type { MapCardData, MapPlace } from "./types";
 
+export function mapFitOptions(places: MapPlace[]) {
+  return { padding: 48, maxZoom: places.length === 1 ? 14 : 18 };
+}
+
 /** Render identity is independent of list order and object property order. */
 export function mapPlaceIdentity(place: MapPlace): string {
   return JSON.stringify([
