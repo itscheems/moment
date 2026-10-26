@@ -33,6 +33,8 @@ export function PostReplyDialog({
   comment,
   site,
   triggerRef,
+  keepMounted = false,
+  formIdPrefix,
 }: {
   api: PublicApi;
   commentsEnabled: boolean;
@@ -46,6 +48,8 @@ export function PostReplyDialog({
   comment?: PublicComment;
   site: SiteIdentity;
   triggerRef?: RefObject<HTMLButtonElement | null>;
+  keepMounted?: boolean;
+  formIdPrefix?: string;
 }) {
   const canCompose = useCanComment();
   const author = postAuthorSite(comment ?? post, site);
@@ -67,7 +71,7 @@ export function PostReplyDialog({
 
   return (
     <Dialog.Root onOpenChange={onOpenChange} open={open}>
-      <Dialog.Portal>
+      <Dialog.Portal keepMounted={keepMounted}>
         <Dialog.Backdrop className={styles.dialogBackdrop} />
         <Dialog.Viewport className={styles.dialogViewport}>
           <Dialog.Popup
@@ -120,9 +124,11 @@ export function PostReplyDialog({
                 commentsEnabled={canComment}
                 content={content}
                 formId={
-                  comment
-                    ? "dialog-comment-" + comment.id
-                    : "dialog-top-level-comment"
+                  formIdPrefix
+                    ? "dialog-" + formIdPrefix
+                    : comment
+                      ? "dialog-comment-" + comment.id
+                      : "dialog-top-level-comment"
                 }
                 initialExpanded
                 onClosed={() => {

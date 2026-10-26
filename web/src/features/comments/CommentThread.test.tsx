@@ -2399,4 +2399,84 @@ describe("public comment thread", () => {
     );
     await waitFor(() => expect(screen.queryByText("我的回复")).toBeNull());
   });
+  it("isolates retained reply attachments by target and preserves them while the media viewer is inactive", async () => {
+    preauthenticate();
+    installApi((url, init) => {
+      if (url.endsWith("/comments") && init?.method !== "POST")
+        return success({ items: [root, comment(createdId, "另一条根评论")] });
+    });
+    const api = new PublicApi();
+    const show = (active: boolean) => (
+      <NavigationProvider>
+        <SessionProvider>
+          <CommentThread
+            active={active}
+            api={api}
+            post={post}
+            postId={postId}
+            site={site}
+            instanceId="media-test"
+          />
+        </SessionProvider>
+      </NavigationProvider>
+    );
+    const view = render(show(true));
+    await screen.findByText("顶级回应");
+    const rowA = document.querySelector(
+      '[data-comment-id="' + rootId + '"]',
+    ) as HTMLElement;
+    fireEvent.click(within(rowA).getByRole("button", { name: "回复 访客" }));
+    const first = await screen.findByRole("dialog", {
+      name: "回复这条 Moment",
+    });
+    fireEvent.change(within(first).getByLabelText("回复内容"), {
+      target: { value: "A 的草稿" },
+    });
+    fireEvent.change(within(first).getByLabelText("媒体文件"), {
+      target: {
+        files: [new File(["image"], "kept.png", { type: "image/png" })],
+      },
+    });
+    expect(
+      within(first).getByRole("button", { name: "移除第 1 张图片" }),
+    ).toBeInTheDocument();
+    fireEvent.click(
+      within(first).getByRole("button", { name: "关闭回复窗口" }),
+    );
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    const rowB = document.querySelector(
+      '[data-comment-id="' + createdId + '"]',
+    ) as HTMLElement;
+    fireEvent.click(within(rowB).getByRole("button", { name: "回复 访客" }));
+    const second = await screen.findByRole("dialog", {
+      name: "回复这条 Moment",
+    });
+    expect(within(second).getByLabelText("回复内容")).toHaveValue("");
+    expect(
+      within(second).queryByRole("button", { name: "移除第 1 张图片" }),
+    ).toBeNull();
+    fireEvent.click(
+      within(second).getByRole("button", { name: "关闭回复窗口" }),
+    );
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    fireEvent.click(within(rowA).getByRole("button", { name: "回复 访客" }));
+    const restored = await screen.findByRole("dialog", {
+      name: "回复这条 Moment",
+    });
+    expect(within(restored).getByLabelText("回复内容")).toHaveValue("A 的草稿");
+    expect(
+      within(restored).getByRole("button", { name: "移除第 1 张图片" }),
+    ).toBeInTheDocument();
+    view.rerender(show(false));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    view.rerender(show(true));
+    fireEvent.click(within(rowA).getByRole("button", { name: "回复 访客" }));
+    const resumed = await screen.findByRole("dialog", {
+      name: "回复这条 Moment",
+    });
+    expect(within(resumed).getByLabelText("回复内容")).toHaveValue("A 的草稿");
+    expect(
+      within(resumed).getByRole("button", { name: "移除第 1 张图片" }),
+    ).toBeInTheDocument();
+  });
 });

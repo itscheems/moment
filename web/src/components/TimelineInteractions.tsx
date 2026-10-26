@@ -4,6 +4,7 @@ import { Tooltip } from "@base-ui/react/tooltip";
 import {
   useRef,
   useState,
+  useCallback,
   type ReactElement,
   type SyntheticEvent,
 } from "react";
@@ -145,6 +146,11 @@ export function ShareMenu({
 }) {
   const triggerRef = useRef<HTMLButtonElement>(null);
   const [cardOpen, setCardOpen] = useState(false);
+  const cardOwnsFocus = useRef(false);
+  const restoreMenuFocus = useCallback(
+    () => (cardOwnsFocus.current ? false : triggerRef.current),
+    [],
+  );
   const stopCardNavigation = (event: SyntheticEvent) => {
     event.stopPropagation();
   };
@@ -203,7 +209,7 @@ export function ShareMenu({
           <Menu.Popup
             aria-label="分享"
             className={styles.sharePopup}
-            finalFocus={triggerRef}
+            finalFocus={restoreMenuFocus}
             onClick={stopCardNavigation}
           >
             <Menu.Item className={styles.shareItem} onClick={() => void copy()}>
@@ -231,7 +237,10 @@ export function ShareMenu({
             {card ? (
               <Menu.Item
                 className={styles.shareItem}
-                onClick={() => setCardOpen(true)}
+                onClick={() => {
+                  cardOwnsFocus.current = true;
+                  setCardOpen(true);
+                }}
               >
                 <Icon name="media" />
                 生成分享图片
@@ -243,7 +252,11 @@ export function ShareMenu({
       {card ? (
         <ShareCardDialog
           input={card}
-          onOpenChange={setCardOpen}
+          finalFocus={triggerRef}
+          onOpenChange={(open) => {
+            cardOwnsFocus.current = open;
+            setCardOpen(open);
+          }}
           open={cardOpen}
         />
       ) : null}

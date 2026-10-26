@@ -21,6 +21,7 @@ import { isAdministrator, useSession } from "../auth/SessionProvider";
 import { CommentForm, SignInToReply, useReplyBlock } from "./CommentComposer";
 import { CommentItem } from "./CommentItem";
 import {
+  announceDiscussionChanged,
   mergeCommentReplies,
   reconcileConversationComment,
   shiftReplyCounts,
@@ -116,20 +117,26 @@ interface ReplyDraft {
 }
 
 /** Keep the end of the folding replies in view, rather than their root. */
-function followReplyCollapse(preview: HTMLElement, last: HTMLElement) {
+function followReplyCollapse(
+  preview: HTMLElement,
+  last: HTMLElement,
+  container?: HTMLElement | null,
+) {
   const next = last.nextElementSibling;
   const navigation = document
     .querySelector('nav[aria-label="移动导航"]')
     ?.getBoundingClientRect();
-  const viewportBottom = navigation?.height
-    ? Math.min(window.innerHeight, navigation.top)
-    : window.innerHeight;
+  const viewportBottom = container
+    ? container.getBoundingClientRect().bottom
+    : navigation?.height
+      ? Math.min(window.innerHeight, navigation.top)
+      : window.innerHeight;
   const target = Math.min(
     next?.getBoundingClientRect().top ?? last.getBoundingClientRect().bottom,
     viewportBottom -
       Math.min(next?.getBoundingClientRect().height ?? 0, viewportBottom / 3),
   );
-  const scrollStyle = document.documentElement.style;
+  const scrollStyle = (container ?? document.documentElement).style;
   const previousAnchor = scrollStyle.getPropertyValue("overflow-anchor");
   scrollStyle.setProperty("overflow-anchor", "none");
   let finishFrame = 0;
@@ -173,7 +180,7 @@ function followReplyCollapse(preview: HTMLElement, last: HTMLElement) {
         : preview.getBoundingClientRect().bottom;
     const delta = boundary - target;
     if (Math.abs(delta) > 0.5)
-      window.scrollBy({ top: delta, behavior: "instant" });
+      (container ?? window).scrollBy({ top: delta, behavior: "instant" });
   };
   for (const event of ["wheel", "touchstart", "pointerdown"])
     window.addEventListener(event, cancel, { passive: true });
@@ -213,6 +220,8 @@ export function CommentThread({
   onMutation,
   conversation,
   replyDialogComment,
+  instanceId,
+  scrollContainerRef,
 }: {
   api: PublicApi;
   postId: string;
@@ -233,8 +242,11 @@ export function CommentThread({
   onMutation?: (mutation: CommentMutation) => void;
   conversation?: PublicComment;
   replyDialogComment?: PublicComment | null;
+  instanceId?: string;
+  scrollContainerRef?: RefObject<HTMLElement | null>;
 }) {
   const auth = useSession();
+  const threadRef = useRef<HTMLElement>(null);
   const collapseFollow = useRef<ReturnType<typeof followReplyCollapse> | null>(
     null,
   );
@@ -274,6 +286,9 @@ export function CommentThread({
   const [dialogDrafts, setDialogDrafts] = useState<Record<string, string>>({});
   const [reply, setReply] = useState<ReplyDraft | null>(null);
   const [replyOpen, setReplyOpen] = useState(false);
+  const [retainedReplyTargets, setRetainedReplyTargets] = useState<
+    PublicComment[]
+  >([]);
   const [closedByServer, setClosedByServer] = useState(false);
   const [announcement, setAnnouncement] = useState("");
   const headingRef = useRef<HTMLHeadingElement>(null);
@@ -288,7 +303,15 @@ export function CommentThread({
       : (replyDialogComment ?? conversation);
   const dialogKey = dialogComment?.id ?? post.id;
   const sourceKey = conversationId ? conversationId + ":direct" : "post";
-  const commentsId = conversationId ? "comments-" + conversationId : "comments";
+  const publishMutation = (mutation: CommentMutation) => {
+    onMutation?.(mutation);
+    announceDiscussionChanged(postId, mutation, instanceId ?? "detail");
+  };
+  const commentsId = instanceId
+    ? "comments-" + instanceId
+    : conversationId
+      ? "comments-" + conversationId
+      : "comments";
   const headingId = commentsId + "-heading";
   const readPage = useCallback(
     async (options: { cursor?: string; signal?: AbortSignal }) => {
@@ -417,7 +440,7 @@ export function CommentThread({
           // would lose their place.
           if (source === "manual" && firstNewId) {
             window.requestAnimationFrame(() =>
-              document
+              (threadRef.current ?? document)
                 .querySelector<HTMLElement>(`[data-comment-id="${firstNewId}"]`)
                 ?.focus({ preventScroll: true }),
             );
@@ -481,7 +504,7 @@ export function CommentThread({
           // treats a deliberate press.
           if (source === "manual" && firstNewId) {
             window.requestAnimationFrame(() =>
-              document
+              (threadRef.current ?? document)
                 .querySelector<HTMLElement>(`[data-comment-id="${firstNewId}"]`)
                 ?.focus({ preventScroll: true }),
             );
@@ -521,7 +544,9 @@ export function CommentThread({
     const id = focusCommentRef.current;
     if (!id || !items?.some((comment) => comment.id === id)) return;
     focusCommentRef.current = null;
-    document.querySelector<HTMLElement>(`[data-comment-id="${id}"]`)?.focus();
+    threadRef.current
+      ?.querySelector<HTMLElement>(`[data-comment-id="${id}"]`)
+      ?.focus();
   }, [active, items]);
 
   const created = (comment: PublicComment) => {
@@ -549,7 +574,7 @@ export function CommentThread({
       setReplyPaging((current) => mergeReplyPaging(current, [comment]));
     }
     onCountChange?.(1);
-    onMutation?.({ kind: "created", comment });
+    publishMutation({ kind: "created", comment });
     setReply(null);
     setReplyOpen(false);
     setAnnouncement("回复已发表");
@@ -566,7 +591,7 @@ export function CommentThread({
       setReply(null);
     if (pinnedCommentId === comment.id) setPinnedCommentId(null);
     onCountChange?.(-(1 + repliesAffected));
-    onMutation?.({ kind: "deleted", comment, repliesAffected });
+    publishMutation({ kind: "deleted", comment, repliesAffected });
     setAnnouncement(
       repliesAffected > 0
         ? `回复和 ${repliesAffected} 条后续回复已删除`
@@ -671,6 +696,7 @@ export function CommentThread({
   return (
     <section
       aria-labelledby={headingId}
+      ref={threadRef}
       className={styles.thread}
       hidden={!active}
       id={commentsId}
@@ -689,7 +715,7 @@ export function CommentThread({
         {announcement}
       </p>
 
-      {post && active ? (
+      {post && (active || instanceId) ? (
         <PostReplyDialog
           api={api}
           commentsEnabled={commentsEnabled}
@@ -700,14 +726,16 @@ export function CommentThread({
           }
           onCreated={created}
           onOpenChange={(open) => onReplyDialogOpenChange?.(open)}
-          open={replyDialogOpen}
+          open={active && replyDialogOpen}
+          keepMounted={Boolean(instanceId)}
+          formIdPrefix={instanceId}
           post={post}
           comment={dialogComment}
           site={site}
           triggerRef={replyDialogTriggerRef}
         />
       ) : null}
-      {post && reply && active ? (
+      {post && reply && active && !instanceId ? (
         <PostReplyDialog
           api={api}
           commentsEnabled={commentsEnabled}
@@ -718,12 +746,43 @@ export function CommentThread({
           }
           onCreated={created}
           onOpenChange={setReplyOpen}
-          open={replyOpen}
+          open={active && replyOpen}
+          keepMounted={Boolean(instanceId)}
+          formIdPrefix={instanceId ? instanceId + "-reply" : undefined}
           post={post}
           comment={reply.comment}
           site={site}
         />
       ) : null}
+
+      {instanceId && post
+        ? retainedReplyTargets.map((target) => {
+            const key = "reply:" + target.id;
+            return (
+              <PostReplyDialog
+                key={target.id}
+                api={api}
+                commentsEnabled={commentsEnabled}
+                content={dialogDrafts[key] ?? ""}
+                onClosed={() => setClosedByServer(true)}
+                onContentChange={(content) =>
+                  setDialogDrafts((current) => ({ ...current, [key]: content }))
+                }
+                onCreated={(comment) => {
+                  created(comment);
+                  setDialogDrafts((current) => ({ ...current, [key]: "" }));
+                }}
+                onOpenChange={setReplyOpen}
+                open={active && replyOpen && reply?.comment.id === target.id}
+                keepMounted
+                formIdPrefix={instanceId + "-reply-" + target.id}
+                post={post}
+                comment={target}
+                site={site}
+              />
+            );
+          })
+        : null}
 
       {items === null && (!loadError || recoveringThread) ? (
         <div aria-busy="true" className={styles.threadState}>
@@ -771,7 +830,13 @@ export function CommentThread({
                   ? "@" + conversation.author.username
                   : conversation?.author.displayName
               }
-              formId={conversationId ? "comment-" + conversationId : undefined}
+              formId={
+                instanceId
+                  ? "form-" + instanceId
+                  : conversationId
+                    ? "comment-" + conversationId
+                    : undefined
+              }
               postId={postId}
               setContent={setTopContent}
               site={site}
@@ -807,7 +872,7 @@ export function CommentThread({
                     onDeleted={deleted}
                     onPinChange={(nextPinnedCommentId) => {
                       setPinnedCommentId(nextPinnedCommentId);
-                      onMutation?.({
+                      publishMutation({
                         kind: "pin",
                         pinnedCommentId: nextPinnedCommentId,
                       });
@@ -816,6 +881,12 @@ export function CommentThread({
                       );
                     }}
                     onReply={(_rootId, target) => {
+                      if (instanceId)
+                        setRetainedReplyTargets((current) =>
+                          current.some((item) => item.id === target.id)
+                            ? current
+                            : [...current, target],
+                        );
                       setReply((current) =>
                         current?.comment.id === target.id
                           ? current
@@ -883,7 +954,7 @@ export function CommentThread({
                                   );
                                   const preview =
                                     first &&
-                                    document.querySelector<HTMLElement>(
+                                    threadRef.current?.querySelector<HTMLElement>(
                                       `[data-comment-id="${first.id}"]`,
                                     );
                                   const last =
@@ -892,7 +963,11 @@ export function CommentThread({
                                     );
                                   const follow =
                                     preview && last
-                                      ? followReplyCollapse(preview, last)
+                                      ? followReplyCollapse(
+                                          preview,
+                                          last,
+                                          scrollContainerRef?.current,
+                                        )
                                       : null;
                                   collapseFollow.current = follow;
                                   setExpandedRoots((current) => {

@@ -56,6 +56,7 @@ import {
   profileFromPath,
   resolveRoute,
 } from "./routes";
+import { MediaViewerProvider } from "../features/media/MediaViewerProvider";
 import styles from "./App.module.css";
 
 /** What sits behind the compose dialog when its address was loaded cold. */
@@ -960,7 +961,18 @@ function PublicApp() {
         inert={authRoute}
         style={authRoute ? undefined : { display: "contents" }}
       >
-        {readingSurface}
+        <MediaViewerProvider
+          scope={accountCacheScope(
+            site.instanceId,
+            discussionIdentity.accountKey,
+          )}
+          api={api}
+          site={site}
+          enabled={!authRoute && siteIdentityReady}
+          onSiteChanged={setSite}
+        >
+          {readingSurface}
+        </MediaViewerProvider>
       </div>
     </>
   );

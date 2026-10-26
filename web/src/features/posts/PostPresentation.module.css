@@ -1102,3 +1102,33 @@
   padding-inline: var(--space-1);
   transform: none;
 }
+
+/* The media discussion is the detail presentation inside a 350px column. */
+.detail.mediaDetail {
+  padding-block-start: 12px;
+  padding-inline: 16px;
+}
+.mediaDetail .detailBody .markdown:empty {
+  display: none;
+}
+.mediaDetail .detailBody .markdown {
+  margin-block-start: 12px;
+}
+.mediaDetail .publishedLine {
+  margin-block-start: 16px;
+  min-block-size: 21px;
+  align-items: center;
+}
+.mediaDetail .detailIdentity + .detailBody > .publishedLine:first-child {
+  margin-block-start: 30px;
+}
+.mediaDetail .postActions {
+  margin-block-start: 16px;
+}
+.mediaDetail .detailIdentity .identityLink > :first-child {
+  inline-size: 40px;
+  block-size: 40px;
+}
+.mediaDetail .postActions {
+  grid-template-columns: repeat(3, max-content);
+}

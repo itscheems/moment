@@ -204,6 +204,7 @@ export function PostPresentation({
   replyControl,
   navigable = true,
   embedded = false,
+  mediaViewer = false,
 }: {
   post: PublicPost;
   site: SiteIdentity;
@@ -231,6 +232,7 @@ export function PostPresentation({
   replyControl?: import("react").ReactNode;
   navigable?: boolean;
   embedded?: boolean;
+  mediaViewer?: boolean;
 }) {
   const { navigate } = useNavigation();
   const [expandedPostId, setExpandedPostId] = useState<string | null>(null);
@@ -448,6 +450,7 @@ export function PostPresentation({
         );
       }}
       onKeyDown={(event) => {
+        if (event.target !== event.currentTarget) return;
         if (event.key === "Enter" || event.key === " ") {
           event.preventDefault();
           navigate(
@@ -483,7 +486,15 @@ export function PostPresentation({
       )}
       {quoted.mapCard ? <MapCard card={quoted.mapCard} preview /> : null}
       {quoted.location ? <PostLocation location={quoted.location} /> : null}
-      {quoted.article ? null : <ImageGrid media={quoted.media} />}
+      {quoted.article ? null : (
+        <ImageGrid
+          media={quoted.media}
+          source={{
+            postId: quoted.commentPostId ?? quoted.id,
+            commentId: quoted.commentPostId ? quoted.id : undefined,
+          }}
+        />
+      )}
     </div>
   ) : null;
 
@@ -495,7 +506,7 @@ export function PostPresentation({
             ? `${title}的回复`
             : `${title}发布的 Moment，${published.absolute}`
         }
-        className={`${styles.post} ${styles.detail} ${conversation ? styles.conversation : ""} ${fresh ? styles.fresh : ""}`}
+        className={`${styles.post} ${styles.detail} ${mediaViewer ? styles.mediaDetail : ""} ${conversation ? styles.conversation : ""} ${fresh ? styles.fresh : ""}`}
         data-connected={connected || undefined}
         data-connected-from={connectedFrom || undefined}
         data-post-id={post.id}
@@ -509,11 +520,13 @@ export function PostPresentation({
           <div className={styles.detailHeading}>{byline}</div>
         </div>
         <div className={styles.detailBody}>
-          <MarkdownBody
-            className={styles.markdown}
-            html={post.contentHtml}
-            searchQuery={searchQuery}
-          />
+          {post.contentHtml ? (
+            <MarkdownBody
+              className={styles.markdown}
+              html={post.contentHtml}
+              searchQuery={searchQuery}
+            />
+          ) : null}
           {post.mapCard ? (
             <MapCard
               card={post.mapCard}
@@ -524,12 +537,19 @@ export function PostPresentation({
           {post.location ? <PostLocation location={post.location} /> : null}
           {/* See the timeline branch: an article's pictures are already in its
               body, so there is no attachment grid to draw. */}
-          {isArticlePost(post) ? null : (
-            <ImageGrid eagerVideo media={post.media} />
+          {isArticlePost(post) || mediaViewer ? null : (
+            <ImageGrid
+              eagerVideo
+              media={post.media}
+              source={{
+                postId: post.commentPostId ?? post.id,
+                commentId: post.commentPostId ? post.id : undefined,
+              }}
+            />
           )}
           {quoteCard}
           <p className={styles.publishedLine}>
-            <span>发布于</span>
+            {!mediaViewer ? <span>发布于</span> : null}
             <time dateTime={post.publishedAt}>{published.absolute}</time>
             {hidden ? (
               <span className={styles.hiddenNote}>
@@ -538,7 +558,7 @@ export function PostPresentation({
               </span>
             ) : null}
           </p>
-          {post.commentCount > 0 ? (
+          {!mediaViewer && post.commentCount > 0 ? (
             <a className={styles.detailStats} href={"#" + commentsId}>
               <strong>{post.commentCount}</strong>
               <span>条回复</span>
@@ -645,6 +665,10 @@ export function PostPresentation({
             compactTallVideo={compactTallVideo ?? useTimelineDensity}
             eagerVideo={eagerVideo}
             media={post.media}
+            source={{
+              postId: post.commentPostId ?? post.id,
+              commentId: post.commentPostId ? post.id : undefined,
+            }}
           />
         )}
         {quoteCard}

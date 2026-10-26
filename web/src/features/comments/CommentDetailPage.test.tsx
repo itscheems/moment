@@ -1,5 +1,6 @@
 import "@testing-library/jest-dom/vitest";
 import {
+  act,
   cleanup,
   fireEvent,
   render,
@@ -188,8 +189,13 @@ beforeEach(() => {
     value: vi.fn(),
   });
 });
-afterEach(() => {
+afterEach(async () => {
   cleanup();
+  await act(async () => {
+    await new Promise<void>((resolve) =>
+      requestAnimationFrame(() => resolve()),
+    );
+  });
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
 });
@@ -408,8 +414,11 @@ describe("focused comment reading", () => {
     const shareTrigger = currentPost().getByRole("button", {
       name: "分享这条 Moment",
     });
-    shareTrigger.focus();
-    fireEvent.keyDown(shareTrigger, { key: "ArrowDown" });
+    await act(async () => {
+      shareTrigger.focus();
+      fireEvent.keyDown(shareTrigger, { key: "ArrowDown", code: "ArrowDown" });
+      fireEvent.keyUp(shareTrigger, { key: "ArrowDown", code: "ArrowDown" });
+    });
     await waitFor(() =>
       expect(
         screen.getByRole("menuitem", { name: "生成分享图片" }),

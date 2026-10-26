@@ -18,12 +18,14 @@ import { ArticlePage } from "../article/ArticlePage";
 import { ArticleFocusLink } from "../article/ArticleFocusLink";
 import { HeaderActions } from "../../components/headerActions";
 import { postAuthorSite } from "../../components/SiteIdentity";
+import { listenForPostChanges } from "../posts/postEvents";
 import { PostPresentation } from "../posts/PostPresentation";
 import { CommentThread } from "../comments/CommentThread";
 import { CommentDetailPage } from "../comments/CommentDetailPage";
 import {
   type CommentMutation,
   type DiscussionChange,
+  listenForDiscussionChanges,
 } from "../comments/discussionChanges";
 import { useNavigation } from "../../app/navigation";
 import { useReadRecovery } from "../../components/useReadRecovery";
@@ -73,6 +75,24 @@ export function DetailPage({
   const revision = useRef(0);
   const publishMutation = (source: string, mutation: CommentMutation) =>
     setChange({ ...mutation, source, revision: ++revision.current });
+  useEffect(
+    () =>
+      listenForDiscussionChanges((postId, mutation, source) => {
+        if (postId === id && source.startsWith("media-"))
+          publishMutation("media-viewer", mutation);
+      }),
+    [id],
+  );
+  useEffect(
+    () =>
+      listenForPostChanges((event) => {
+        if (event.post.id === id) {
+          if (event.kind === "deleted") void load();
+          else setPost(event.post);
+        }
+      }),
+    [id],
+  );
   useEffect(() => {
     if (commentId)
       setVisitedComments((current) =>

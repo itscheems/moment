@@ -58,7 +58,7 @@ describe("media lightbox", () => {
     // before the press lands; the picture keeps the ordinary arrow because
     // pressing it does nothing.
     expect(mediaCss).toMatch(
-      /\._lightboxPopup_[\w-]+\s*\{[^}]*cursor: zoom-out;/s,
+      /\._lightboxStage_[\w-]+\s*\{[^}]*cursor: zoom-out;/s,
     );
     expect(mediaCss).toMatch(
       /\._lightboxStage_[\w-]+ img,[\s\S]*?video\s*\{[^}]*cursor: default;/s,
@@ -122,24 +122,78 @@ describe("media lightbox", () => {
     cleanup();
 
     render(<Harness />);
+    fireEvent.click(screen.getByRole("button", { name: "查看图片说明" }));
     expect(
       document.querySelector('[class*="lightboxDescription"]'),
     ).toHaveTextContent("第一张的描述");
   });
 
-  it("lays one scrim over the page instead of two stacked blacks", () => {
-    expect(mediaCss).not.toMatch(
-      /\._lightboxViewport_[\w-]+\s*\{[^}]*background:/s,
-    );
+  it("uses the measured surround without blurring the underlying page", () => {
     const backdrop = mediaCss.match(
       /\._lightboxBackdrop_[\w-]+\s*\{([^}]*)\}/s,
     )?.[1];
-    expect(backdrop).toBeDefined();
-    const alpha = Number(
-      backdrop!.match(/background: rgb\(0 0 0 \/ (\d+)%\)/)?.[1],
+    expect(backdrop).toMatch(/background: rgb\(0 0 0 \/ 40%\)/);
+    expect(backdrop).not.toMatch(/backdrop-filter/);
+    expect(mediaCss).toMatch(
+      /\._lightboxMedia_[\w-]+\s*\{[^}]*background: rgb\(0 0 0 \/ 90%\)/s,
     );
-    expect(alpha).toBeGreaterThan(0);
-    expect(alpha).toBeLessThan(90);
-    expect(backdrop).toMatch(/backdrop-filter: blur\(/);
+  });
+
+  it("stops at both boundaries and hides unavailable directions", () => {
+    render(<Harness />);
+    const dialog = screen.getByRole("dialog");
+    expect(screen.queryByRole("button", { name: "上一张图片" })).toBeNull();
+    fireEvent.keyDown(dialog, { key: "ArrowLeft" });
+    expect(screen.getByAltText("第一张")).toBeInTheDocument();
+    fireEvent.keyDown(dialog, { key: "ArrowRight" });
+    expect(screen.getByAltText("第二张")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "下一张图片" })).toBeNull();
+    fireEvent.keyDown(dialog, { key: "ArrowRight" });
+    expect(screen.getByAltText("第二张")).toBeInTheDocument();
+  });
+
+  it("protects discussion clicks, text selection keys and nested dialog keys", () => {
+    render(
+      <MediaLightbox
+        items={items}
+        selected={0}
+        onSelectedChange={vi.fn()}
+        panelShown
+        discussion={
+          <div>
+            <p>正文可选中</p>
+            <textarea aria-label="回复内容" />
+            <div role="dialog" aria-label="子窗口">
+              <button>子操作</button>
+            </div>
+          </div>
+        }
+      />,
+    );
+    fireEvent.click(screen.getByText("正文可选中"));
+    fireEvent.click(screen.getByRole("textbox", { name: "回复内容" }));
+    fireEvent.keyDown(screen.getByRole("textbox", { name: "回复内容" }), {
+      key: "ArrowRight",
+    });
+    fireEvent.keyDown(screen.getByRole("button", { name: "子操作" }), {
+      key: "ArrowRight",
+    });
+    expect(screen.getByAltText("第一张")).toBeInTheDocument();
+    const change = vi.fn();
+    cleanup();
+    render(
+      <MediaLightbox
+        items={items}
+        selected={0}
+        onSelectedChange={change}
+        panelShown
+        discussion={<textarea aria-label="回复内容" />}
+      />,
+    );
+    fireEvent.keyDown(screen.getByRole("textbox", { name: "回复内容" }), {
+      key: "ArrowLeft",
+    });
+    fireEvent.click(screen.getByRole("textbox", { name: "回复内容" }));
+    expect(change).not.toHaveBeenCalled();
   });
 });

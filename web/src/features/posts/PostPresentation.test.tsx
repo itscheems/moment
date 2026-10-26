@@ -1,5 +1,6 @@
 import "@testing-library/jest-dom/vitest";
 import {
+  act,
   cleanup,
   fireEvent,
   render as renderRaw,
@@ -22,8 +23,13 @@ import { PostPresentation } from "./PostPresentation";
 import contentCss from "../../components/content/notion.scss?inline";
 import postCss from "./PostPresentation.module.css?inline";
 
-afterEach(() => {
+afterEach(async () => {
   cleanup();
+  await act(async () => {
+    await new Promise<void>((resolve) =>
+      requestAnimationFrame(() => resolve()),
+    );
+  });
   vi.unstubAllGlobals();
   window.history.replaceState({}, "", "/");
   Object.defineProperty(window, "scrollY", {
@@ -312,6 +318,53 @@ describe("shared post presentation", () => {
     expect(postCss).toMatch(
       /@media \(hover: hover\)[\s\S]*?\._quoteCard_[^:]+:hover[\s\S]*?background:\s*var\(--quote-hover\);/,
     );
+  });
+
+  it("lets the quoted image button own Enter instead of navigating the quote wrapper", async () => {
+    render(
+      <NavigationProvider>
+        <PostPresentation
+          site={site}
+          post={{
+            ...makePost("附言", "<p>附言</p>"),
+            quotedPost: {
+              unavailable: false,
+              article: null,
+              id: "01K2ABCDEF0123456789ABCDE9",
+              kind: "moment",
+              contentMd: "照片",
+              contentHtml: "<p>照片</p>",
+              publishedAt: "2026-08-09T01:00:00.000Z",
+              location: null,
+              media: [
+                {
+                  mediaId: "01K2ABCDEF0123456789ABCDE6",
+                  position: 0,
+                  altText: "引用配图",
+                  mimeType: "image/png",
+                  width: 600,
+                  height: 400,
+                },
+              ],
+            },
+          }}
+        />
+      </NavigationProvider>,
+    );
+    const thumbnail = screen.getByRole("button", { name: /打开第 1 张图片/ });
+    thumbnail.focus();
+    expect(fireEvent.keyDown(thumbnail, { key: "Enter", code: "Enter" })).toBe(
+      true,
+    );
+    fireEvent.keyUp(thumbnail, { key: "Enter", code: "Enter" });
+    expect(window.location.pathname).toBe("/");
+    fireEvent.click(thumbnail);
+    expect(
+      screen.getByRole("dialog", { name: "图片 1 / 1" }),
+    ).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "关闭图片预览" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    await waitFor(() => expect(thumbnail).toHaveFocus());
   });
 
   it("opens a quoted comment at its own detail address", () => {
@@ -1263,7 +1316,11 @@ describe("shared post presentation", () => {
     const repost = await screen.findByRole("button", {
       name: "转发这条 Moment",
     });
-    fireEvent.click(repost);
+    await act(async () => {
+      repost.focus();
+      fireEvent.keyDown(repost, { key: "ArrowDown", code: "ArrowDown" });
+      fireEvent.keyUp(repost, { key: "ArrowDown", code: "ArrowDown" });
+    });
     fireEvent.click(await screen.findByRole("menuitem", { name: "转发" }));
     await waitFor(() =>
       expect(
