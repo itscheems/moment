@@ -112,8 +112,7 @@
 .mediaToolbar button,
 .editorRemove,
 .lightboxClose,
-.lightboxNav,
-.lightboxOriginal {
+.lightboxNav {
   min-block-size: var(--target-size);
   display: inline-flex;
   align-items: center;
@@ -171,8 +170,7 @@
 
 .editorRemove:active:not(:disabled),
 .lightboxClose:active,
-.lightboxNav:active:not(:disabled),
-.lightboxOriginal:active:not(:disabled) {
+.lightboxNav:active:not(:disabled) {
   transform: scale(0.9);
 }
 
@@ -182,8 +180,7 @@
 }
 
 .mediaToolbar button:disabled,
-.lightboxNav:disabled,
-.lightboxOriginal:disabled {
+.lightboxNav:disabled {
   opacity: 0.5;
   cursor: not-allowed;
 }
@@ -674,13 +671,6 @@
   }
 }
 
-@media (hover: hover) {
-  .lightboxOriginal:hover:not(:disabled) {
-    color: var(--accent);
-    background: var(--surface-hover);
-  }
-}
-
 @media (max-width: 519px) {
   .mediaEditorList {
     gap: var(--space-2);
@@ -1153,7 +1143,8 @@
   gap: 12px;
 }
 .viewerToolbar button,
-.lightboxAlt {
+.lightboxAlt,
+.lightboxOriginal {
   position: relative;
   min-inline-size: 36px;
   min-block-size: 36px;
@@ -1170,26 +1161,31 @@
   font-size: 13px;
   font-weight: 400;
 }
-.viewerToolbar svg {
+.viewerToolbar svg,
+.lightboxOriginal svg {
   inline-size: 22.5px;
   block-size: 22.5px;
 }
 .viewerToolbar button:focus-visible,
-.lightboxAlt:focus-visible {
+.lightboxAlt:focus-visible,
+.lightboxOriginal:focus-visible {
   outline: 2px solid #fff;
   outline-offset: 2px;
 }
 @media (hover: hover) {
   .viewerToolbar button:hover,
-  .lightboxAlt:hover {
+  .lightboxAlt:hover,
+  .lightboxOriginal:hover {
     background: rgb(255 255 255 / 10%);
     color: #fff;
   }
 }
 .lightboxOriginal {
-  color: #fff;
-  font-size: 13px;
-  white-space: nowrap;
+  inline-size: 36px;
+  block-size: 36px;
+  flex: 0 0 36px;
+  text-decoration: none;
+  cursor: pointer;
 }
 .lightboxAlt {
   min-inline-size: 32px;

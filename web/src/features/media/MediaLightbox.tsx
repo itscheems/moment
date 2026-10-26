@@ -138,17 +138,11 @@ export function MediaLightbox({
         'input, textarea, select, [contenteditable="true"], [role="textbox"], video, [role="menu"], [role="slider"]',
       ),
     );
-  const original =
-    shown?.originalSrc && !unavailable ? (
-      <a
-        className={styles.lightboxOriginal}
-        href={shown.originalSrc}
-        rel="noreferrer"
-        target="_blank"
-      >
-        {shown.kind === "video" ? "打开原画质视频" : "打开原图"}
-      </a>
-    ) : null;
+  const originalLabel = shown?.kind === "video" ? "打开原画质视频" : "打开原图";
+  const originalLink =
+    shown?.originalSrc && !unavailable
+      ? { href: shown.originalSrc, rel: "noreferrer", target: "_blank" }
+      : null;
 
   return (
     <Dialog.Root
@@ -330,8 +324,10 @@ export function MediaLightbox({
                           <Menu.Item onClick={onViewPost}>
                             查看所属内容与回复
                           </Menu.Item>
-                          {original ? (
-                            <Menu.Item render={original}>打开原图</Menu.Item>
+                          {originalLink ? (
+                            <Menu.Item render={<a {...originalLink} />}>
+                              {originalLabel}
+                            </Menu.Item>
                           ) : null}
                         </Menu.Popup>
                       </Menu.Positioner>
@@ -362,7 +358,16 @@ export function MediaLightbox({
                     ALT
                   </button>
                 ) : null}
-                {!mobile || !discussion ? original : null}
+                {originalLink && (!mobile || !discussion) ? (
+                  <a
+                    {...originalLink}
+                    aria-label={originalLabel}
+                    title={originalLabel}
+                    className={styles.lightboxOriginal}
+                  >
+                    <Icon name="open" />
+                  </a>
+                ) : null}
                 <span className={styles.srOnly} aria-live="polite">
                   {shownIndex + 1} / {items.length}
                 </span>
