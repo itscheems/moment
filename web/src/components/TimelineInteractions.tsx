@@ -22,6 +22,12 @@ import {
 import { notify } from "./Feedback";
 import { Icon } from "./icons";
 import styles from "./TimelineInteractions.module.css";
+import tooltipStyles from "./Tooltip.module.css";
+
+export interface ActionTooltipPlacement {
+  side?: "top" | "bottom" | "left" | "right";
+  sideOffset?: number;
+}
 
 export function ExactTimeTooltip({
   children,
@@ -37,24 +43,24 @@ export function ActionTooltip({
   children,
   label,
   wide = false,
-  variant,
+  placement,
 }: {
   children: ReactElement;
   label: string;
   wide?: boolean;
-  variant?: "media";
+  placement?: ActionTooltipPlacement;
 }) {
   return (
     <Tooltip.Root>
       <Tooltip.Trigger closeDelay={80} delay={350} render={children} />
       <Tooltip.Portal>
         <Tooltip.Positioner
-          className={styles.tooltipPositioner}
-          side={variant === "media" ? "top" : "bottom"}
-          sideOffset={variant === "media" ? -2.75 : 5}
+          className={tooltipStyles.positioner}
+          side={placement?.side ?? "bottom"}
+          sideOffset={placement?.sideOffset ?? 5}
         >
           <Tooltip.Popup
-            className={`${styles.tooltip} ${wide ? styles.tooltipWide : ""} ${variant === "media" ? styles.tooltipMedia : ""}`}
+            className={`${tooltipStyles.popup} ${wide ? tooltipStyles.wide : ""}`}
             role="tooltip"
           >
             {label}
@@ -133,7 +139,7 @@ export function ShareMenu({
   href,
   title,
   trigger,
-  tooltipVariant,
+  tooltipPlacement,
 }: {
   align?: "start" | "center" | "end";
   baseUrl: string | null;
@@ -146,7 +152,7 @@ export function ShareMenu({
   href: string;
   title: string;
   trigger: ReactElement;
-  tooltipVariant?: "media";
+  tooltipPlacement?: ActionTooltipPlacement;
 }) {
   const triggerRef = useRef<HTMLButtonElement>(null);
   const [cardOpen, setCardOpen] = useState(false);
@@ -183,7 +189,7 @@ export function ShareMenu({
 
   return (
     <Menu.Root>
-      <ActionTooltip label="分享" variant={tooltipVariant}>
+      <ActionTooltip label="分享" placement={tooltipPlacement}>
         <Menu.Trigger ref={triggerRef} render={trigger} />
       </ActionTooltip>
       <Menu.Portal>

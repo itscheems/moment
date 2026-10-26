@@ -3,54 +3,8 @@
   z-index: var(--layer-popover);
 }
 
-.tooltipPositioner {
-  z-index: var(--layer-tooltip);
-}
-
 .sharePositioner {
   max-inline-size: calc(100vw - 1rem);
-}
-
-.tooltip {
-  border-radius: 0.25rem;
-  padding: 0.3rem 0.5rem;
-  color: #ffffff;
-  background: rgb(83 100 113 / 94%);
-  box-shadow: 0 0.1rem 0.4rem rgb(15 20 25 / 15%);
-  font-size: 0.7rem;
-  white-space: nowrap;
-  transition:
-    opacity var(--motion-menu) var(--ease-out),
-    transform var(--motion-menu) var(--ease-out);
-}
-
-.tooltip[data-starting-style],
-.tooltip[data-ending-style] {
-  opacity: 0;
-  transform: translateY(-0.2rem);
-}
-
-.tooltipWide {
-  inline-size: min(22rem, calc(100vw - 2rem));
-  padding: var(--space-3);
-  color: var(--text-primary);
-  background: var(--surface-elevated);
-  box-shadow: var(--shadow-popover);
-  font-size: var(--text-xs);
-  line-height: 1.55;
-  white-space: normal;
-}
-
-.tooltipMedia {
-  border-radius: 16px;
-  padding: 4px 8px;
-  color: #fff;
-  background: rgb(0 0 0 / 80%);
-  box-shadow: none;
-  font-family: var(--font-timeline);
-  font-size: 11px;
-  font-weight: 400;
-  line-height: 12px;
 }
 
 .identityCard {
@@ -245,7 +199,6 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .tooltip,
   .identityCard,
   .sharePopup {
     transition: none;

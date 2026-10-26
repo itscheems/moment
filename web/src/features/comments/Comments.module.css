@@ -507,39 +507,6 @@
   transform: scale(1.12);
 }
 
-.inlineTopLevelForm
-  .commentMediaComposer
-  button[data-picker-tooltip]
-  > span[aria-hidden="true"] {
-  position: absolute;
-  z-index: 2;
-  inset-block-start: calc(100% + 0.125rem);
-  inset-inline-start: 50%;
-  border-radius: 0.125rem;
-  padding: 0.125rem 0.25rem;
-  color: #fff;
-  background: rgb(15 20 25 / 75%);
-  backdrop-filter: blur(4px);
-  font-size: 0.6875rem;
-  font-weight: 400;
-  line-height: 1rem;
-  opacity: 0;
-  pointer-events: none;
-  transform: translateX(-50%);
-  transition: opacity 0.15s ease;
-  white-space: nowrap;
-}
-
-@media (hover: hover) {
-  .inlineTopLevelForm
-    .commentMediaComposer
-    button[data-picker-tooltip]:hover
-    > span[aria-hidden="true"] {
-    opacity: 1;
-    transition-delay: 0.45s;
-  }
-}
-
 .inlineTopLevelForm .commentProgress {
   display: none;
 }

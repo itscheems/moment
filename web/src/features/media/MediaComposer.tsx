@@ -25,6 +25,7 @@ import {
 } from "./mediaState";
 import { MediaLightbox, type MediaLightboxItem } from "./MediaLightbox";
 import styles from "./Media.module.css";
+import { ActionTooltip } from "../../components/TimelineInteractions";
 import { canCropMedia } from "./mediaCrop";
 import { MediaDescriptionEditor } from "./MediaDescriptionEditor";
 
@@ -546,20 +547,17 @@ export function MediaComposer({
       {beforeToolbar}
       <div className={styles.mediaControls}>
         <div className={styles.mediaToolbar}>
-          <button
-            aria-label="选择媒体"
-            data-picker-tooltip={pickerTooltip}
-            disabled={disabled || items.length >= maximum}
-            onClick={() => fileInputRef.current?.click()}
-            ref={pickerRef}
-            title={pickerTooltip ? undefined : "添加媒体"}
-            type="button"
-          >
-            <Icon name="media-picker" />
-            {pickerTooltip ? (
-              <span aria-hidden="true">{pickerTooltip}</span>
-            ) : null}
-          </button>
+          <ActionTooltip label={pickerTooltip ?? "添加媒体"}>
+            <button
+              aria-label="选择媒体"
+              disabled={disabled || items.length >= maximum}
+              onClick={() => fileInputRef.current?.click()}
+              ref={pickerRef}
+              type="button"
+            >
+              <Icon name="media-picker" />
+            </button>
+          </ActionTooltip>
           {toolbarAction}
         </div>
         {footerAction}

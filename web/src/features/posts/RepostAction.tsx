@@ -5,7 +5,10 @@ import { Menu } from "@base-ui/react/menu";
 import type { PublicPost } from "../../api/public";
 import { notify } from "../../components/Feedback";
 import { Icon } from "../../components/icons";
-import { ActionTooltip } from "../../components/TimelineInteractions";
+import {
+  ActionTooltip,
+  type ActionTooltipPlacement,
+} from "../../components/TimelineInteractions";
 import { useNavigation } from "../../app/navigation";
 import { COMPOSE_PATH } from "../../app/routes";
 import postStyles from "./PostPresentation.module.css";
@@ -16,11 +19,11 @@ import { announcePostChanged } from "./postEvents";
 export function RepostAction({
   onChanged,
   post,
-  tooltipVariant,
+  tooltipPlacement,
 }: {
   onChanged?: (post: PublicPost) => void;
   post: PublicPost;
-  tooltipVariant?: "media";
+  tooltipPlacement?: ActionTooltipPlacement;
 }) {
   const { navigateOverlay } = useNavigation();
   const { account, session, expireIfInvalidSession } = useSession();
@@ -69,7 +72,7 @@ export function RepostAction({
     <Menu.Root>
       <ActionTooltip
         label={active ? "转发选项" : "转发"}
-        variant={tooltipVariant}
+        placement={tooltipPlacement}
       >
         <Menu.Trigger
           data-post-action="repost"

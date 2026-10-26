@@ -22,6 +22,7 @@ import { Icon } from "../../components/icons";
 import {
   ActionTooltip,
   ShareMenu,
+  type ActionTooltipPlacement,
 } from "../../components/TimelineInteractions";
 import { useReadRecovery } from "../../components/useReadRecovery";
 import { isAdministrator, useSession } from "../auth/SessionProvider";
@@ -54,6 +55,11 @@ import {
   type MediaSource,
 } from "./mediaViewerContext";
 import styles from "./Media.module.css";
+
+const viewerTooltipPlacement: ActionTooltipPlacement = {
+  side: "top",
+  sideOffset: -2.75,
+};
 
 interface Gallery {
   key: string;
@@ -239,7 +245,10 @@ export function MediaViewerProvider({
             toolbar={
               active ? (
                 <div className={styles.viewerToolbar}>
-                  <ActionTooltip label="回复" variant="media">
+                  <ActionTooltip
+                    label="回复"
+                    placement={viewerTooltipPlacement}
+                  >
                     <button
                       type="button"
                       aria-label="回复图片所属内容"
@@ -254,9 +263,12 @@ export function MediaViewerProvider({
                   </ActionTooltip>
                   {shown && !currentData?.unavailable ? (
                     <>
-                      <RepostAction post={shown} tooltipVariant="media" />
+                      <RepostAction
+                        post={shown}
+                        tooltipPlacement={viewerTooltipPlacement}
+                      />
                       <ShareMenu
-                        tooltipVariant="media"
+                        tooltipPlacement={viewerTooltipPlacement}
                         align="start"
                         baseUrl={site.publicBaseUrl}
                         href={sourceHref(active.source)}

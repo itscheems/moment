@@ -58,6 +58,7 @@ import {
 import { articleEditorExtensions } from "./schema";
 import { loadDraftContent, updateDraftFields } from "./draftHistory";
 import styles from "./Editor.module.css";
+import tooltipStyles from "../../../components/Tooltip.module.css";
 import { ArticleSheet } from "../../../components/content/ArticleSheet";
 import { ArticleReadingContent } from "../reader";
 import { MentionProvider } from "../../../app/mentions";
@@ -1043,10 +1044,10 @@ export function ArticleEditor({
                     align="end"
                     side="bottom"
                     sideOffset={10}
-                    className={styles.focusTooltipPositioner}
+                    className={tooltipStyles.positioner}
                   >
                     <Tooltip.Popup
-                      className={styles.focusTooltip}
+                      className={`${tooltipStyles.popup} ${tooltipStyles.wide}`}
                       role="tooltip"
                     >
                       {focused
