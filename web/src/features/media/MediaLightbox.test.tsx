@@ -94,39 +94,34 @@ describe("media lightbox", () => {
     expect(screen.getByText("图片暂时无法显示。")).toBeInTheDocument();
   });
 
-  // Two layers each at 94% composite to 99.6% -- a blackout that reads as the
-  // page being replaced rather than the picture being lifted off it.
-  // "尚未填写描述" and "纯装饰" are facts about the metadata, not about the
-  // picture; printing them under it told the reader nothing they wanted.
-  it("captions the picture only when the author wrote one", () => {
-    function Bare() {
-      return (
-        <MediaLightbox
-          items={[
-            {
-              key: "a",
-              previewSrc: "/preview/a.png",
-              alt: "无描述",
-              description: "",
-            },
-          ]}
-          onSelectedChange={vi.fn()}
-          selected={0}
-        />
-      );
-    }
-    render(<Bare />);
-
-    expect(screen.getByAltText("无描述")).toBeInTheDocument();
-    expect(document.querySelector('[class*="lightboxDescription"]')).toBeNull();
-    cleanup();
-
+  it("keeps image alternative text without adding a visible ALT action or caption", () => {
     render(<Harness />);
-    fireEvent.click(screen.getByRole("button", { name: "查看图片说明" }));
-    expect(
-      document.querySelector('[class*="lightboxDescription"]'),
-    ).toHaveTextContent("第一张的描述");
+    expect(screen.getByAltText("第一张")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "查看图片说明" })).toBeNull();
+    expect(screen.queryByText("ALT")).toBeNull();
+    expect(screen.queryByText("第一张的描述")).toBeNull();
   });
+
+  it.each([
+    { kind: "image" as const, label: "打开原图" },
+    { kind: "video" as const, label: "打开原画质视频" },
+  ])(
+    "labels the original $kind link without a native title",
+    ({ kind, label }) => {
+      render(
+        <MediaLightbox
+          items={[{ ...items[0], kind }]}
+          selected={0}
+          onSelectedChange={vi.fn()}
+        />,
+      );
+      const original = screen.getByRole("link", { name: label });
+      expect(original).toHaveAttribute("href", "/media/a");
+      expect(original).toHaveAttribute("target", "_blank");
+      expect(original).toHaveAttribute("rel", "noreferrer");
+      expect(original).not.toHaveAttribute("title");
+    },
+  );
 
   it("uses the measured surround without blurring the underlying page", () => {
     const backdrop = mediaCss.match(

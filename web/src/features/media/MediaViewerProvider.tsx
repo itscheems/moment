@@ -22,7 +22,6 @@ import { Icon } from "../../components/icons";
 import {
   ActionTooltip,
   ShareMenu,
-  type ActionTooltipPlacement,
 } from "../../components/TimelineInteractions";
 import { useReadRecovery } from "../../components/useReadRecovery";
 import { isAdministrator, useSession } from "../auth/SessionProvider";
@@ -48,18 +47,17 @@ import {
   TimelineLoading,
 } from "../timeline/PublicStates";
 import { buildLightboxItems } from "./ImageGrid";
-import { MediaLightbox, type MediaLightboxItem } from "./MediaLightbox";
+import {
+  MediaLightbox,
+  viewerTooltipPlacement,
+  type MediaLightboxItem,
+} from "./MediaLightbox";
 import {
   MediaViewerContext,
   mediaSourceKey,
   type MediaSource,
 } from "./mediaViewerContext";
 import styles from "./Media.module.css";
-
-const viewerTooltipPlacement: ActionTooltipPlacement = {
-  side: "top",
-  sideOffset: -2.75,
-};
 
 interface Gallery {
   key: string;
@@ -244,7 +242,7 @@ export function MediaViewerProvider({
             }}
             toolbar={
               active ? (
-                <div className={styles.viewerToolbar}>
+                <>
                   <ActionTooltip
                     label="回复"
                     placement={viewerTooltipPlacement}
@@ -293,7 +291,7 @@ export function MediaViewerProvider({
                       />
                     </>
                   ) : null}
-                </div>
+                </>
               ) : null
             }
             discussion={
