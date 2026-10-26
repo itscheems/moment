@@ -1,0 +1,43 @@
+.positioner {
+  z-index: var(--layer-tooltip);
+  pointer-events: none;
+}
+
+.popup {
+  z-index: var(--layer-tooltip);
+  max-inline-size: calc(100vw - 16px);
+  border: 0;
+  border-radius: 16px;
+  padding: 4px 8px;
+  color: #fff;
+  background: rgb(0 0 0 / 80%);
+  box-shadow: none;
+  font-family: var(--font-timeline);
+  font-size: 11px;
+  font-weight: 400;
+  line-height: 12px;
+  letter-spacing: normal;
+  white-space: nowrap;
+  pointer-events: none;
+  transition:
+    opacity var(--motion-menu) var(--ease-out),
+    transform var(--motion-menu) var(--ease-out);
+}
+
+.popup[data-starting-style],
+.popup[data-ending-style] {
+  opacity: 0;
+  transform: translateY(-0.2rem);
+}
+
+.wide {
+  inline-size: min(22rem, calc(100vw - 16px));
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .popup {
+    transition: none;
+  }
+}

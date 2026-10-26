@@ -5,6 +5,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { PublicApiError } from "../../api/public";
 import { LocationsApi } from "../../api/locations";
 import { Icon } from "../../components/icons";
+import { ActionTooltip } from "../../components/TimelineInteractions";
 import { useDocumentScrollLock } from "../../components/useDocumentScrollLock";
 import styles from "../../components/Forms.module.css";
 
@@ -255,15 +256,15 @@ export function LocationPicker({
       }}
       open={open}
     >
-      <Dialog.Trigger
-        aria-label={value ? `更改位置：${value.name}` : "添加位置"}
-        className={styles.locationTrigger}
-        data-picker-tooltip={pickerTooltip}
-        disabled={disabled}
-        title={pickerTooltip ? undefined : value ? "更改位置" : "添加位置"}
-      >
-        <Icon name="location-picker" />
-      </Dialog.Trigger>
+      <ActionTooltip label={pickerTooltip ?? (value ? "更改位置" : "添加位置")}>
+        <Dialog.Trigger
+          aria-label={value ? `更改位置：${value.name}` : "添加位置"}
+          className={styles.locationTrigger}
+          disabled={disabled}
+        >
+          <Icon name="location-picker" />
+        </Dialog.Trigger>
+      </ActionTooltip>
       <Dialog.Portal>
         <Dialog.Backdrop className={styles.locationBackdrop} />
         <Dialog.Viewport className={styles.locationViewport}>

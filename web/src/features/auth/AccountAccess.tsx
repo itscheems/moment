@@ -20,6 +20,7 @@ import { formatInstant } from "../compose/instants";
 import { useSession } from "./SessionProvider";
 import { oauthStartUrl, PROVIDER_ICONS, providerLabel } from "./providers";
 import styles from "../settings/Settings.module.css";
+import tooltipStyles from "../../components/Tooltip.module.css";
 
 const RETURN_PATH = "/settings/account";
 
@@ -68,11 +69,14 @@ function RowDetails({
       <Tooltip.Portal>
         <Tooltip.Positioner
           align="start"
-          className={styles.rowDetailsPositioner}
+          className={tooltipStyles.positioner}
           side="bottom"
           sideOffset={6}
         >
-          <Tooltip.Popup className={styles.rowDetails}>
+          <Tooltip.Popup
+            className={`${tooltipStyles.popup} ${styles.rowDetails}`}
+            role="tooltip"
+          >
             <dl>
               {lines.map(([term, value]) => (
                 <div key={term}>

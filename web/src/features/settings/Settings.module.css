@@ -1666,28 +1666,9 @@
   outline-offset: 2px;
 }
 
-.rowDetailsPositioner {
-  z-index: var(--layer-popover);
-}
-
 .rowDetails {
   max-inline-size: min(20rem, calc(100vw - 2rem));
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-panel);
-  padding: var(--space-3);
-  color: var(--text-primary);
-  background: var(--surface-elevated);
-  box-shadow: 0 0.4rem 1.2rem rgb(15 20 25 / 14%);
-  font-size: var(--text-sm);
-  transition:
-    opacity var(--motion-menu) var(--ease-out),
-    transform var(--motion-menu) var(--ease-out);
-}
-
-.rowDetails[data-starting-style],
-.rowDetails[data-ending-style] {
-  opacity: 0;
-  transform: translateY(-0.2rem);
+  white-space: normal;
 }
 
 .rowDetails dl {
@@ -1702,7 +1683,7 @@
 }
 
 .rowDetails dt {
-  color: var(--text-secondary);
+  color: rgb(255 255 255 / 70%);
   white-space: nowrap;
 }
 

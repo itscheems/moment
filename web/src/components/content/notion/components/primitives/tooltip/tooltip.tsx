@@ -29,6 +29,7 @@ import {
   FloatingDelayGroup,
 } from "@floating-ui/react";
 import "@content-notion/components/primitives/tooltip/tooltip.scss";
+import tooltipStyles from "../../../../../Tooltip.module.css";
 
 interface TooltipProviderProps {
   children: React.ReactNode;
@@ -225,7 +226,7 @@ export const TooltipContent = forwardRef<HTMLDivElement, TooltipContentProps>(
           ...style,
         }}
         {...context.getFloatingProps(props)}
-        className="tiptap-tooltip"
+        className={`${tooltipStyles.popup} tiptap-tooltip`}
       >
         {children}
       </div>

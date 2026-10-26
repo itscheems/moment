@@ -98,24 +98,16 @@
 }
 
 /* Article focus control: measured 36px circle / 20px filled glyph. */
-.focusModeButton,
-.focusTooltip {
+.focusModeButton {
   --focus-control-color: #0f1419;
-  --focus-tooltip-surface: #ffffff;
-  --focus-tooltip-shadow:
-    0 0 15px rgb(101 119 134 / 20%), 0 0 3px 1px rgb(101 119 134 / 15%);
 }
 
-:root[data-theme="dim"] :is(.focusModeButton, .focusTooltip) {
+:root[data-theme="dim"] .focusModeButton {
   --focus-control-color: #f7f9f9;
-  --focus-tooltip-surface: #15202b;
-  --focus-tooltip-shadow: 0 0 15px rgb(0 0 0 / 45%);
 }
 
-:root[data-theme="lights-out"] :is(.focusModeButton, .focusTooltip) {
+:root[data-theme="lights-out"] .focusModeButton {
   --focus-control-color: #e7e9ea;
-  --focus-tooltip-surface: #000000;
-  --focus-tooltip-shadow: 0 0 15px rgb(255 255 255 / 20%);
 }
 
 .focusModeButton {
@@ -151,34 +143,8 @@
   }
 }
 
-.focusTooltipPositioner {
-  /* The upstream sticky format toolbar occupies layer 90. */
-  z-index: var(--layer-picker);
-}
-
-.focusTooltip {
-  inline-size: min(22.5rem, calc(100vw - 2rem));
-  border-radius: 1rem;
-  padding: 1.25rem;
-  color: var(--focus-control-color);
-  background: var(--focus-tooltip-surface);
-  box-shadow: var(--focus-tooltip-shadow);
-  font-family: var(--font-sidebar);
-  font-size: 0.9375rem;
-  font-weight: 400;
-  line-height: 1.25rem;
-  opacity: 1;
-  transition: opacity var(--motion-popover) var(--ease-out);
-}
-
-.focusTooltip[data-starting-style],
-.focusTooltip[data-ending-style] {
-  opacity: 0;
-}
-
 @media (prefers-reduced-motion: reduce) {
-  .focusModeButton,
-  .focusTooltip {
+  .focusModeButton {
     transition: none;
   }
 }

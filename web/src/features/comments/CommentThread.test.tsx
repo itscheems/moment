@@ -1048,16 +1048,21 @@ describe("public comment thread", () => {
       name: "选择媒体",
     });
     expect(mediaPicker).toBeVisible();
-    expect(mediaPicker).toHaveAttribute("data-picker-tooltip", "媒体");
     expect(mediaPicker).not.toHaveAttribute("title");
     const locationPicker = within(form).getByRole("button", {
       name: "添加位置",
     });
     expect(locationPicker).toBeVisible();
     expect(locationPicker).toBeEnabled();
-    expect(locationPicker).toHaveAttribute("data-picker-tooltip", "位置");
     expect(locationPicker).not.toHaveAttribute("title");
     expect(locationPicker).not.toHaveTextContent("位置");
+
+    fireEvent.keyDown(document, { key: "Tab" });
+    act(() => mediaPicker.focus());
+    const mediaTooltip = await screen.findByRole("tooltip");
+    expect(mediaTooltip).toHaveTextContent("媒体");
+    expect(form).not.toContainElement(mediaTooltip);
+    act(() => mediaPicker.blur());
 
     fireEvent.blur(content, { relatedTarget: document.body });
     expect(frame).toHaveAttribute("data-comment-layout-state", "expanded");
@@ -1200,7 +1205,7 @@ describe("public comment thread", () => {
     expect(content).toHaveValue("");
     expect(
       within(form).getByRole("button", { name: "更改位置：书房" }),
-    ).toHaveAttribute("data-picker-tooltip", "位置");
+    ).toBeEnabled();
     const submit = within(form).getByRole("button", { name: "发表回复" });
     expect(submit).toBeEnabled();
     fireEvent.click(submit);
