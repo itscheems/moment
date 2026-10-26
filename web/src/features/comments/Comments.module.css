@@ -1372,3 +1372,10 @@
 .discussionContext {
   position: relative;
 }
+
+.dialogBackdrop[data-closed]:not([data-ending-style]),
+.dialogViewport:has(.replyDialogPopup[data-closed]):not(
+    :has([data-ending-style])
+  ) {
+  display: none;
+}

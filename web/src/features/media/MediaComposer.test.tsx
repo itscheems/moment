@@ -418,7 +418,7 @@ describe("media editor", () => {
     const trigger = screen.getByRole("button", {
       name: "预览第 1 张图片，共 2 张",
     });
-    const remove = screen.getByRole("button", { name: "移除第 1 张图片" });
+    screen.getByRole("button", { name: "移除第 1 张图片" });
     trigger.focus();
     fireEvent.click(trigger);
 
@@ -445,11 +445,6 @@ describe("media editor", () => {
       close.querySelector('svg[data-icon="media-remove"] use'),
     ).toHaveAttribute("href", "/icons/ui-symbols-v3.svg#media-remove");
     expect(close).not.toHaveTextContent("×");
-    const sharedRemovalClass = Array.from(remove.classList).find((className) =>
-      className.includes("mediaRemoveControl"),
-    );
-    expect(sharedRemovalClass).toBeTruthy();
-    expect(close).toHaveClass(sharedRemovalClass!);
     fireEvent.keyDown(dialog, { key: "ArrowRight" });
     await waitFor(() =>
       expect(dialog.querySelector("img")).toHaveAttribute(

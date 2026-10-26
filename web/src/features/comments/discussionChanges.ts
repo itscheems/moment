@@ -78,3 +78,25 @@ export function reconcileConversationComment(
     .filter((item) => item.id !== comment.id)
     .map((item) => clearReplyTarget(item, comment.id));
 }
+
+const discussionListeners = new Set<
+  (postId: string, mutation: CommentMutation, source: string) => void
+>();
+
+export function announceDiscussionChanged(
+  postId: string,
+  mutation: CommentMutation,
+  source: string,
+) {
+  for (const listener of discussionListeners)
+    listener(postId, mutation, source);
+}
+
+export function listenForDiscussionChanges(
+  listener: (postId: string, mutation: CommentMutation, source: string) => void,
+): () => void {
+  discussionListeners.add(listener);
+  return () => {
+    discussionListeners.delete(listener);
+  };
+}

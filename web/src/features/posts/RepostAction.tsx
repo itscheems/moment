@@ -16,9 +16,11 @@ import { announcePostChanged } from "./postEvents";
 export function RepostAction({
   onChanged,
   post,
+  tooltipVariant,
 }: {
   onChanged?: (post: PublicPost) => void;
   post: PublicPost;
+  tooltipVariant?: "media";
 }) {
   const { navigateOverlay } = useNavigation();
   const { account, session, expireIfInvalidSession } = useSession();
@@ -65,7 +67,10 @@ export function RepostAction({
 
   return (
     <Menu.Root>
-      <ActionTooltip label={active ? "转发选项" : "转发"}>
+      <ActionTooltip
+        label={active ? "转发选项" : "转发"}
+        variant={tooltipVariant}
+      >
         <Menu.Trigger
           data-post-action="repost"
           aria-label={isComment ? "转发这条评论" : "转发这条 Moment"}

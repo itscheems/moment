@@ -112,8 +112,7 @@
 .mediaToolbar button,
 .editorRemove,
 .lightboxClose,
-.lightboxNav,
-.lightboxOriginal {
+.lightboxNav {
   min-block-size: var(--target-size);
   display: inline-flex;
   align-items: center;
@@ -171,8 +170,7 @@
 
 .editorRemove:active:not(:disabled),
 .lightboxClose:active,
-.lightboxNav:active:not(:disabled),
-.lightboxOriginal:active:not(:disabled) {
+.lightboxNav:active:not(:disabled) {
   transform: scale(0.9);
 }
 
@@ -182,8 +180,7 @@
 }
 
 .mediaToolbar button:disabled,
-.lightboxNav:disabled,
-.lightboxOriginal:disabled {
+.lightboxNav:disabled {
   opacity: 0.5;
   cursor: not-allowed;
 }
@@ -674,13 +671,6 @@
   }
 }
 
-@media (hover: hover) {
-  .lightboxOriginal:hover:not(:disabled) {
-    color: var(--accent);
-    background: var(--surface-hover);
-  }
-}
-
 @media (max-width: 519px) {
   .mediaEditorList {
     gap: var(--space-2);
@@ -944,205 +934,381 @@
   position: fixed;
   z-index: var(--layer-lightbox);
   inset: 0;
+  pointer-events: none;
 }
-
-/* One scrim, not two. The viewport below used to paint the same 94% black
-   on top of this, which composites to 99.6% -- a hard blackout that read as
-   the page being replaced rather than the picture being lifted off it. A
-   single lighter layer over a blurred page keeps the page faintly present,
-   which is what every photo viewer worth copying does. */
+.lightboxPortal > * {
+  pointer-events: auto;
+}
+.lightboxPortal:has([data-discussion]) {
+  z-index: 110;
+}
+:global(body:has([data-media-viewer-open="true"])) {
+  --layer-popover: 121;
+  --layer-picker: 122;
+  --layer-lightbox: 130;
+  --layer-confirm: 140;
+}
 .lightboxBackdrop {
   position: fixed;
-  z-index: 0;
   inset: 0;
-  background: rgb(0 0 0 / 70%);
-  backdrop-filter: blur(24px);
+  background: rgb(0 0 0 / 40%);
+  pointer-events: auto;
   transition: opacity 180ms var(--ease-out);
 }
-
 .lightboxBackdrop[data-starting-style],
 .lightboxBackdrop[data-ending-style] {
   opacity: 0;
 }
-
+.lightboxBackdrop[data-closed]:not([data-ending-style]),
+.lightboxViewport:has(.lightboxPopup[data-closed]):not(
+    :has([data-ending-style])
+  ) {
+  display: none;
+}
 .lightboxViewport {
   position: fixed;
-  z-index: 1;
   inset: 0;
   display: grid;
-  place-items: center;
-  padding: 0;
+  pointer-events: auto;
 }
-
 .lightboxPopup {
   position: relative;
   inline-size: 100%;
   block-size: 100%;
+  min-inline-size: 0;
+  min-block-size: 0;
   display: grid;
-  grid-template-rows: minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr);
   border: 0;
   border-radius: 0;
   padding: 0;
   outline: 0;
   color: #fff;
   background: transparent;
-  /* A press on the dark surround closes, and the cursor is the only place
-     that can say so before the press. The picture keeps the ordinary arrow
-     because pressing it does nothing. */
-  cursor: zoom-out;
+  font-family: var(--font-timeline);
+  letter-spacing: normal;
   transition:
     opacity 180ms var(--ease-out),
     transform 180ms var(--ease-out);
 }
-
+.lightboxPopup[data-panel-shown] {
+  grid-template-columns: minmax(0, 1fr) 350px;
+}
 .lightboxPopup[data-starting-style],
 .lightboxPopup[data-ending-style] {
   opacity: 0;
   transform: scale(0.985);
 }
-
-.lightboxStage img,
-.lightboxStage video {
-  cursor: default;
-}
-
-.lightboxDescription {
+.lightboxMedia {
+  position: relative;
   min-inline-size: 0;
-  max-inline-size: 48rem;
-  margin: 0;
-  overflow: hidden;
-  color: rgb(255 255 255 / 82%);
-  font-size: var(--text-sm);
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.lightboxClose {
-  position: absolute;
-  z-index: 3;
-  inset-block-start: max(var(--space-4), env(safe-area-inset-top));
-  inset-inline-start: max(var(--space-4), env(safe-area-inset-left));
-}
-
-.lightboxNav:focus-visible {
-  background: rgb(47 51 54 / 92%);
-}
-
-@media (hover: hover) {
-  .lightboxNav:hover {
-    background: rgb(47 51 54 / 92%);
-  }
-}
-
-.lightboxCounter {
-  position: absolute;
-  z-index: 2;
-  inset-block-start: max(var(--space-4), env(safe-area-inset-top));
-  inset-inline-start: 50%;
-  min-block-size: 2rem;
-  display: grid;
-  place-items: center;
-  border-radius: 999px;
-  padding-inline: var(--space-3);
-  color: #fff;
-  background: rgb(15 20 25 / 64%);
-  font-family: var(--font-utility);
-  font-size: var(--text-xs);
-  transform: translateX(-50%);
-  backdrop-filter: blur(10px);
-}
-
-.lightboxStage {
   min-block-size: 0;
-  overflow: hidden;
   display: grid;
-  place-items: center;
-  padding: calc(var(--target-size) + var(--space-6))
-    max(calc(var(--target-size) + var(--space-6)), env(safe-area-inset-right))
-    var(--space-4)
-    max(calc(var(--target-size) + var(--space-6)), env(safe-area-inset-left));
-  background: transparent;
+  grid-template-rows: minmax(0, 1fr) auto;
+  background: rgb(0 0 0 / 90%);
 }
-
+.lightboxStage {
+  position: relative;
+  min-inline-size: 0;
+  min-block-size: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  cursor: zoom-out;
+  outline: 0;
+}
 .lightboxStage img,
 .lightboxStage video {
+  display: block;
   inline-size: auto;
   block-size: auto;
-  max-inline-size: min(52rem, calc(100vw - 8rem));
-  max-block-size: min(78dvh, 52rem);
-  border-radius: 0.35rem;
+  max-inline-size: 100%;
+  max-block-size: 100%;
   object-fit: contain;
+  border-radius: 0;
+  cursor: default;
   animation: lightbox-image-in 180ms var(--ease-out) both;
 }
-
+.lightboxStage img {
+  flex: 0 1 auto;
+}
+.lightboxClose,
+.lightboxToggle,
 .lightboxNav {
   position: absolute;
   z-index: 2;
-  inset-block-start: 50%;
-  inline-size: var(--target-size);
-  block-size: var(--target-size);
-  min-inline-size: var(--target-size);
-  justify-content: center;
+  display: grid;
+  place-items: center;
+  inline-size: 36px;
+  block-size: 36px;
+  min-inline-size: 36px;
+  min-block-size: 36px;
+  border: 0;
   border-radius: 50%;
   padding: 0;
   color: #fff;
-  background: rgb(15 20 25 / 68%);
-  font-size: 2rem;
-  line-height: 1;
+  background: rgb(0 0 0 / 75%);
+  box-shadow: none;
+  backdrop-filter: blur(4px);
+  cursor: pointer;
+  transition:
+    background-color 200ms,
+    box-shadow 200ms;
+}
+.lightboxClose::before,
+.lightboxToggle::before,
+.lightboxNav::before {
+  content: "";
+  position: absolute;
+  inset: -4px;
+}
+.lightboxClose svg,
+.lightboxToggle svg,
+.lightboxNav svg {
+  inline-size: 20px;
+  block-size: 20px;
+  fill: currentColor;
+  stroke: none;
+}
+.lightboxToggle > svg:not(:has(path)) {
+  stroke: currentColor;
+}
+.viewerReverse {
+  transform: rotate(180deg);
+}
+.lightboxClose {
+  inset-block-start: max(12px, env(safe-area-inset-top));
+  inset-inline-start: max(12px, env(safe-area-inset-left));
+}
+.lightboxToggle {
+  inset-block-start: max(12px, env(safe-area-inset-top));
+  inset-inline-end: max(12px, env(safe-area-inset-right));
+}
+.lightboxNav {
+  inset-block-start: 50%;
   transform: translateY(-50%);
-  backdrop-filter: blur(10px);
 }
-
-.lightboxNav:active:not(:disabled) {
-  transform: translateY(-50%) scale(0.9);
-}
-
 .lightboxPrevious {
-  inset-inline-start: max(var(--space-4), env(safe-area-inset-left));
+  inset-inline-start: max(12px, env(safe-area-inset-left));
 }
-
 .lightboxNext {
-  inset-inline-end: max(var(--space-4), env(safe-area-inset-right));
+  inset-inline-end: max(12px, env(safe-area-inset-right));
 }
-
+.lightboxClose:focus-visible,
+.lightboxToggle:focus-visible,
+.lightboxNav:focus-visible {
+  outline: 2px solid #fff;
+  outline-offset: 2px;
+  background: rgb(20 20 20 / 75%);
+}
+@media (hover: hover) {
+  .lightboxClose:hover,
+  .lightboxToggle:hover,
+  .lightboxNav:hover {
+    background: rgb(20 20 20 / 75%);
+  }
+}
+.lightboxDiscussion {
+  min-inline-size: 0;
+  min-block-size: 0;
+  block-size: 100%;
+  overflow-x: hidden;
+  overflow-y: hidden;
+  border-inline-start: 1px solid var(--border-subtle);
+  color: var(--text-primary);
+  background: var(--surface);
+  cursor: default;
+  text-rendering: auto;
+  -webkit-font-smoothing: auto;
+}
 .lightboxFooter {
   min-inline-size: 0;
-  inline-size: min(52rem, calc(100% - 8rem));
+  inline-size: min(600px, 100%);
+  min-block-size: 48px;
+  justify-self: center;
   display: flex;
   align-items: center;
-  justify-content: flex-start;
-  justify-self: center;
-  gap: var(--space-3);
-  padding: var(--space-2) 0 max(var(--space-4), env(safe-area-inset-bottom));
-  background: transparent;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 0 16px env(safe-area-inset-bottom);
+  color: #fff;
 }
-
+.viewerToolbar {
+  flex: 1;
+  min-inline-size: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.viewerToolbar button,
+.lightboxAlt,
 .lightboxOriginal {
-  flex: 0 0 auto;
-  min-block-size: auto;
+  position: relative;
+  min-inline-size: 36px;
+  min-block-size: 36px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
   border: 0;
-  border-radius: 0;
   padding: 0;
-  color: rgb(255 255 255 / 82%);
-  background: transparent;
-  font-size: var(--text-sm);
-  font-weight: 600;
-  text-decoration: underline;
-  text-decoration-color: transparent;
-  text-underline-offset: 0.2em;
-}
-
-.lightboxOriginal:focus-visible {
+  border-radius: 999px;
   color: #fff;
   background: transparent;
-  text-decoration-color: currentColor;
+  font-family: var(--font-timeline);
+  font-size: 13px;
+  font-weight: 400;
 }
-
+.viewerToolbar svg,
+.lightboxOriginal svg {
+  position: relative;
+  inline-size: 22.5px;
+  block-size: 22.5px;
+  flex: 0 0 auto;
+  margin-inline: 8px;
+}
+.viewerToolbar button,
+.lightboxOriginal {
+  inline-size: auto;
+  min-inline-size: 38.5px;
+  block-size: 48px;
+  min-block-size: 48px;
+  flex: 0 0 auto;
+  gap: 0;
+  border-radius: 0;
+  line-height: 16px;
+  cursor: pointer;
+}
+.viewerToolbar button::before,
+.lightboxOriginal::before {
+  content: "";
+  position: absolute;
+  inset-inline-start: 0;
+  inset-block-start: 50%;
+  inline-size: 38.5px;
+  block-size: 38.5px;
+  border-radius: 50%;
+  background: transparent;
+  pointer-events: none;
+  transform: translateY(-50%);
+  transition: background-color 200ms;
+}
+.viewerToolbar [data-repost-count] {
+  position: static;
+  min-inline-size: 0;
+  line-height: 16px;
+  transform: none;
+}
+.viewerToolbar button[data-viewer-action="reply"] {
+  --viewer-action-hover: rgb(29 155 240 / 10%);
+}
+.viewerToolbar button[data-post-action="repost"] {
+  --viewer-action-hover: rgb(0 186 124 / 10%);
+}
+.viewerToolbar
+  button[data-post-action="repost"]:is(
+    :hover,
+    :focus-visible,
+    [aria-pressed="true"]
+  ) {
+  color: #00ba7c;
+  background: transparent;
+}
+.viewerToolbar button:focus-visible::before,
+.lightboxOriginal:focus-visible::before {
+  background: var(--viewer-action-hover, rgb(255 255 255 / 10%));
+}
+.viewerToolbar button:focus-visible,
+.lightboxAlt:focus-visible,
+.lightboxOriginal:focus-visible {
+  outline: 2px solid #fff;
+  outline-offset: 2px;
+}
 @media (hover: hover) {
-  .lightboxOriginal:hover:not(:disabled) {
+  .viewerToolbar button[data-viewer-action="reply"]:hover {
+    color: #1d9bf0;
+  }
+  .lightboxAlt:hover {
+    background: rgb(255 255 255 / 10%);
     color: #fff;
+  }
+  .viewerToolbar button:hover,
+  .lightboxOriginal:hover {
     background: transparent;
-    text-decoration-color: currentColor;
+  }
+  .viewerToolbar button:hover::before,
+  .lightboxOriginal:hover::before {
+    background: var(--viewer-action-hover, rgb(255 255 255 / 10%));
+  }
+}
+.lightboxOriginal {
+  inline-size: 38.5px;
+  flex: 0 0 38.5px;
+  text-decoration: none;
+  cursor: pointer;
+}
+.lightboxAlt {
+  min-inline-size: 32px;
+  font-weight: 700;
+}
+.lightboxCaption {
+  position: absolute;
+  z-index: 3;
+  inset-inline: 12px;
+  inset-block-end: calc(60px + env(safe-area-inset-bottom));
+  max-block-size: 40%;
+  overflow: auto;
+  border-radius: 12px;
+  padding: 16px;
+  color: var(--text-primary);
+  background: var(--surface);
+}
+.lightboxDescription {
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: 15px;
+  line-height: 20px;
+}
+.viewerMenuPositioner {
+  z-index: var(--layer-popover);
+}
+.viewerMenu {
+  min-inline-size: 0;
+  inline-size: max-content;
+  max-inline-size: calc(100vw - 24px);
+  border-radius: 12px;
+  padding: 0;
+  color: var(--text-primary);
+  background: var(--surface);
+  box-shadow: var(--shadow-popover);
+}
+.viewerMenu > * {
+  display: block;
+  color: inherit;
+  text-decoration: none;
+  padding: 12px 16px;
+  border-radius: 8px;
+  cursor: pointer;
+  font-family: var(--font-timeline);
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 20px;
+}
+.viewerMenu > [data-highlighted] {
+  background: var(--surface-hover);
+}
+@media (max-width: 687px) {
+  .lightboxMedia {
+    background: #000;
+  }
+  .lightboxBackdrop {
+    background: #000;
+  }
+  .lightboxFooter {
+    padding-inline: 20px;
   }
 }
 
@@ -1181,31 +1347,6 @@
     .videoTile[data-media-shape="tall"]
     .videoPoster {
     object-fit: cover;
-  }
-
-  .lightboxStage {
-    padding-inline: var(--space-2);
-  }
-
-  .lightboxStage img,
-  .lightboxStage video {
-    max-inline-size: calc(100vw - 1rem);
-    max-block-size: 74dvh;
-  }
-
-  .lightboxNav {
-    inset-block-start: auto;
-    inset-block-end: max(4.5rem, env(safe-area-inset-bottom));
-  }
-
-  .lightboxFooter {
-    inline-size: calc(100% - 2rem);
-    align-items: stretch;
-    flex-direction: column;
-  }
-
-  .lightboxDescription {
-    text-align: center;
   }
 }
 
@@ -1270,4 +1411,11 @@
   inset: -1px 16px auto -16px;
   height: 1px;
   background: var(--border-subtle);
+}
+
+.viewerDiscussion {
+  block-size: 100%;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }

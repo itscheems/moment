@@ -26,7 +26,11 @@ import {
   loadCommentShareCard,
 } from "../share/shareCardInput";
 import { CommentThread } from "./CommentThread";
-import type { CommentMutation, DiscussionChange } from "./discussionChanges";
+import {
+  announceDiscussionChanged,
+  type CommentMutation,
+  type DiscussionChange,
+} from "./discussionChanges";
 import styles from "./Comments.module.css";
 
 export function CommentDetailPage({
@@ -122,6 +126,7 @@ export function CommentDetailPage({
   }, [active, missing]);
   const mutation = (value: CommentMutation) => {
     onMutation(value);
+    announceDiscussionChanged(post.id, value, "detail-comment");
     loaded.current = false;
     if (active) void load();
   };

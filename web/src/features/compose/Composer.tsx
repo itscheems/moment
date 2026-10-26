@@ -1800,7 +1800,15 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
                     <span>{quotedPost.location.name}</span>
                   </p>
                 ) : null}
-                <ImageGrid media={quotedPost.media} />
+                <ImageGrid
+                  media={quotedPost.media}
+                  source={{
+                    postId: quotedPost.commentPostId ?? quotedPost.id,
+                    commentId: quotedPost.commentPostId
+                      ? quotedPost.id
+                      : undefined,
+                  }}
+                />
               </article>
             ) : null}
             {quoteError ? (

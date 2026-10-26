@@ -4,6 +4,7 @@ import { Tooltip } from "@base-ui/react/tooltip";
 import {
   useRef,
   useState,
+  useCallback,
   type ReactElement,
   type SyntheticEvent,
 } from "react";
@@ -36,10 +37,12 @@ export function ActionTooltip({
   children,
   label,
   wide = false,
+  variant,
 }: {
   children: ReactElement;
   label: string;
   wide?: boolean;
+  variant?: "media";
 }) {
   return (
     <Tooltip.Root>
@@ -47,11 +50,11 @@ export function ActionTooltip({
       <Tooltip.Portal>
         <Tooltip.Positioner
           className={styles.tooltipPositioner}
-          side="bottom"
-          sideOffset={5}
+          side={variant === "media" ? "top" : "bottom"}
+          sideOffset={variant === "media" ? -2.75 : 5}
         >
           <Tooltip.Popup
-            className={`${styles.tooltip} ${wide ? styles.tooltipWide : ""}`}
+            className={`${styles.tooltip} ${wide ? styles.tooltipWide : ""} ${variant === "media" ? styles.tooltipMedia : ""}`}
             role="tooltip"
           >
             {label}
@@ -130,6 +133,7 @@ export function ShareMenu({
   href,
   title,
   trigger,
+  tooltipVariant,
 }: {
   align?: "start" | "center" | "end";
   baseUrl: string | null;
@@ -142,9 +146,15 @@ export function ShareMenu({
   href: string;
   title: string;
   trigger: ReactElement;
+  tooltipVariant?: "media";
 }) {
   const triggerRef = useRef<HTMLButtonElement>(null);
   const [cardOpen, setCardOpen] = useState(false);
+  const cardOwnsFocus = useRef(false);
+  const restoreMenuFocus = useCallback(
+    () => (cardOwnsFocus.current ? false : triggerRef.current),
+    [],
+  );
   const stopCardNavigation = (event: SyntheticEvent) => {
     event.stopPropagation();
   };
@@ -173,24 +183,9 @@ export function ShareMenu({
 
   return (
     <Menu.Root>
-      <Tooltip.Root>
-        <Tooltip.Trigger
-          closeDelay={80}
-          delay={350}
-          render={<Menu.Trigger ref={triggerRef} render={trigger} />}
-        />
-        <Tooltip.Portal>
-          <Tooltip.Positioner
-            className={styles.tooltipPositioner}
-            side="bottom"
-            sideOffset={5}
-          >
-            <Tooltip.Popup className={styles.tooltip} role="tooltip">
-              分享
-            </Tooltip.Popup>
-          </Tooltip.Positioner>
-        </Tooltip.Portal>
-      </Tooltip.Root>
+      <ActionTooltip label="分享" variant={tooltipVariant}>
+        <Menu.Trigger ref={triggerRef} render={trigger} />
+      </ActionTooltip>
       <Menu.Portal>
         <Menu.Positioner
           align={align}
@@ -203,7 +198,7 @@ export function ShareMenu({
           <Menu.Popup
             aria-label="分享"
             className={styles.sharePopup}
-            finalFocus={triggerRef}
+            finalFocus={restoreMenuFocus}
             onClick={stopCardNavigation}
           >
             <Menu.Item className={styles.shareItem} onClick={() => void copy()}>
@@ -231,7 +226,10 @@ export function ShareMenu({
             {card ? (
               <Menu.Item
                 className={styles.shareItem}
-                onClick={() => setCardOpen(true)}
+                onClick={() => {
+                  cardOwnsFocus.current = true;
+                  setCardOpen(true);
+                }}
               >
                 <Icon name="media" />
                 生成分享图片
@@ -243,7 +241,11 @@ export function ShareMenu({
       {card ? (
         <ShareCardDialog
           input={card}
-          onOpenChange={setCardOpen}
+          finalFocus={triggerRef}
+          onOpenChange={(open) => {
+            cardOwnsFocus.current = open;
+            setCardOpen(open);
+          }}
           open={cardOpen}
         />
       ) : null}

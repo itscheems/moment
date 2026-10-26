@@ -202,7 +202,12 @@ describe("an article in the timeline", () => {
 
     // Only the cover. A grid of the body's pictures would show the article
     // twice, once as a card and once as an album.
-    expect(container.querySelectorAll("img")).toHaveLength(1);
+    expect(
+      container.querySelectorAll(
+        'img[src="' + mediaPreviewUrl(coverMediaId) + '"]',
+      ),
+    ).toHaveLength(1);
+    expect(screen.queryByRole("button", { name: /打开第.*张图片/ })).toBeNull();
     expect(screen.queryByAltText("入海口")).toBeNull();
   });
 
@@ -248,7 +253,12 @@ describe("an article in the timeline", () => {
     );
     expect(quote.querySelectorAll("a")).toHaveLength(0);
     expect(quote).toHaveAttribute("tabindex", "0");
-    expect(container.querySelectorAll("img")).toHaveLength(1);
+    expect(
+      container.querySelectorAll(
+        'img[src="' + mediaPreviewUrl(coverMediaId) + '"]',
+      ),
+    ).toHaveLength(1);
+    expect(screen.queryByRole("button", { name: /打开第.*张图片/ })).toBeNull();
   });
 });
 

@@ -10,6 +10,7 @@ import { MediaLightbox, type MediaLightboxItem } from "./MediaLightbox";
 import { ViewportVideo } from "./ViewportVideo";
 import { isVideoMimeType } from "./mediaState";
 import styles from "./Media.module.css";
+import { useMediaViewer, type MediaSource } from "./mediaViewerContext";
 
 function mediaAlt(
   usage: PublicMediaUsage,
@@ -92,31 +93,10 @@ function MediaAsset({
   );
 }
 
-export function ImageGrid({
-  media,
-  eagerVideo = false,
-  compactTallVideo = false,
-}: {
-  media: PublicMediaUsage[];
-  eagerVideo?: boolean;
-  compactTallVideo?: boolean;
-}) {
-  const [selected, setSelected] = useState<number | null>(null);
-  const [failed, setFailed] = useState(() => new Set<string>());
-  if (media.length === 0) return null;
-  const containsVideo = media.some((usage) => isVideoMimeType(usage.mimeType));
-  const singleUsage = media.length === 1 ? media[0] : null;
-  const singleMediaStyle = singleUsage
-    ? ({
-        "--single-media-ratio": `${singleUsage.width} / ${singleUsage.height}`,
-        "--single-media-max-width": `${34 * (singleUsage.width / singleUsage.height)}rem`,
-      } as CSSProperties)
-    : undefined;
-  const singleMediaShape =
-    singleUsage && isVideoMimeType(singleUsage.mimeType)
-      ? mediaShape(singleUsage)
-      : undefined;
-  const lightboxItems: MediaLightboxItem[] = media.map((usage, index) => ({
+export function buildLightboxItems(
+  media: PublicMediaUsage[],
+): MediaLightboxItem[] {
+  return media.map((usage, index) => ({
     key: usageKey(usage),
     previewSrc: mediaPreviewUrl(usage.mediaId),
     originalSrc: mediaOriginalUrl(usage.mediaId),
@@ -132,6 +112,36 @@ export function ImageGrid({
       ? mediaPosterUrl(usage.mediaId)
       : null,
   }));
+}
+
+export function ImageGrid({
+  media,
+  eagerVideo = false,
+  compactTallVideo = false,
+  source,
+}: {
+  media: PublicMediaUsage[];
+  eagerVideo?: boolean;
+  compactTallVideo?: boolean;
+  source?: MediaSource;
+}) {
+  const viewer = useMediaViewer();
+  const [selected, setSelected] = useState<number | null>(null);
+  const [failed, setFailed] = useState(() => new Set<string>());
+  if (media.length === 0) return null;
+  const containsVideo = media.some((usage) => isVideoMimeType(usage.mimeType));
+  const singleUsage = media.length === 1 ? media[0] : null;
+  const singleMediaStyle = singleUsage
+    ? ({
+        "--single-media-ratio": `${singleUsage.width} / ${singleUsage.height}`,
+        "--single-media-max-width": `${34 * (singleUsage.width / singleUsage.height)}rem`,
+      } as CSSProperties)
+    : undefined;
+  const singleMediaShape =
+    singleUsage && isVideoMimeType(singleUsage.mimeType)
+      ? mediaShape(singleUsage)
+      : undefined;
+  const lightboxItems = buildLightboxItems(media);
 
   const markFailed = (usage: PublicMediaUsage) => {
     setFailed((current) => new Set(current).add(usageKey(usage)));
@@ -193,7 +203,17 @@ export function ImageGrid({
               aria-label={imageTileName(usage, index, media.length)}
               className={`${styles.imageTile} ${styles.imageButton}`}
               key={`${usage.position}-${usage.mediaId}`}
-              onClick={() => setSelected(index)}
+              onClick={(event) => {
+                event.stopPropagation();
+                if (viewer && source)
+                  viewer.open(
+                    source,
+                    lightboxItems,
+                    index,
+                    event.currentTarget,
+                  );
+                else setSelected(index);
+              }}
               style={singleMediaStyle}
               type="button"
             >
