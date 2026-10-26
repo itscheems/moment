@@ -37,10 +37,12 @@ export function ActionTooltip({
   children,
   label,
   wide = false,
+  variant,
 }: {
   children: ReactElement;
   label: string;
   wide?: boolean;
+  variant?: "media";
 }) {
   return (
     <Tooltip.Root>
@@ -48,11 +50,11 @@ export function ActionTooltip({
       <Tooltip.Portal>
         <Tooltip.Positioner
           className={styles.tooltipPositioner}
-          side="bottom"
-          sideOffset={5}
+          side={variant === "media" ? "top" : "bottom"}
+          sideOffset={variant === "media" ? -2.75 : 5}
         >
           <Tooltip.Popup
-            className={`${styles.tooltip} ${wide ? styles.tooltipWide : ""}`}
+            className={`${styles.tooltip} ${wide ? styles.tooltipWide : ""} ${variant === "media" ? styles.tooltipMedia : ""}`}
             role="tooltip"
           >
             {label}
@@ -131,6 +133,7 @@ export function ShareMenu({
   href,
   title,
   trigger,
+  tooltipVariant,
 }: {
   align?: "start" | "center" | "end";
   baseUrl: string | null;
@@ -143,6 +146,7 @@ export function ShareMenu({
   href: string;
   title: string;
   trigger: ReactElement;
+  tooltipVariant?: "media";
 }) {
   const triggerRef = useRef<HTMLButtonElement>(null);
   const [cardOpen, setCardOpen] = useState(false);
@@ -179,24 +183,9 @@ export function ShareMenu({
 
   return (
     <Menu.Root>
-      <Tooltip.Root>
-        <Tooltip.Trigger
-          closeDelay={80}
-          delay={350}
-          render={<Menu.Trigger ref={triggerRef} render={trigger} />}
-        />
-        <Tooltip.Portal>
-          <Tooltip.Positioner
-            className={styles.tooltipPositioner}
-            side="bottom"
-            sideOffset={5}
-          >
-            <Tooltip.Popup className={styles.tooltip} role="tooltip">
-              分享
-            </Tooltip.Popup>
-          </Tooltip.Positioner>
-        </Tooltip.Portal>
-      </Tooltip.Root>
+      <ActionTooltip label="分享" variant={tooltipVariant}>
+        <Menu.Trigger ref={triggerRef} render={trigger} />
+      </ActionTooltip>
       <Menu.Portal>
         <Menu.Positioner
           align={align}

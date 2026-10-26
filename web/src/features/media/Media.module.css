@@ -1163,8 +1163,62 @@
 }
 .viewerToolbar svg,
 .lightboxOriginal svg {
+  position: relative;
   inline-size: 22.5px;
   block-size: 22.5px;
+  flex: 0 0 auto;
+  margin-inline: 8px;
+}
+.viewerToolbar button,
+.lightboxOriginal {
+  inline-size: auto;
+  min-inline-size: 38.5px;
+  block-size: 48px;
+  min-block-size: 48px;
+  flex: 0 0 auto;
+  gap: 0;
+  border-radius: 0;
+  line-height: 16px;
+  cursor: pointer;
+}
+.viewerToolbar button::before,
+.lightboxOriginal::before {
+  content: "";
+  position: absolute;
+  inset-inline-start: 0;
+  inset-block-start: 50%;
+  inline-size: 38.5px;
+  block-size: 38.5px;
+  border-radius: 50%;
+  background: transparent;
+  pointer-events: none;
+  transform: translateY(-50%);
+  transition: background-color 200ms;
+}
+.viewerToolbar [data-repost-count] {
+  position: static;
+  min-inline-size: 0;
+  line-height: 16px;
+  transform: none;
+}
+.viewerToolbar button[data-viewer-action="reply"] {
+  --viewer-action-hover: rgb(29 155 240 / 10%);
+}
+.viewerToolbar button[data-post-action="repost"] {
+  --viewer-action-hover: rgb(0 186 124 / 10%);
+}
+.viewerToolbar
+  button[data-post-action="repost"]:is(
+    :hover,
+    :focus-visible,
+    [aria-pressed="true"]
+  ) {
+  color: #00ba7c;
+  background: transparent;
+}
+.viewerToolbar button:focus-visible::before,
+.lightboxOriginal:focus-visible::before {
+  background: var(--viewer-action-hover, rgb(255 255 255 / 10%));
 }
 .viewerToolbar button:focus-visible,
 .lightboxAlt:focus-visible,
@@ -1173,17 +1227,25 @@
   outline-offset: 2px;
 }
 @media (hover: hover) {
-  .viewerToolbar button:hover,
-  .lightboxAlt:hover,
-  .lightboxOriginal:hover {
+  .viewerToolbar button[data-viewer-action="reply"]:hover {
+    color: #1d9bf0;
+  }
+  .lightboxAlt:hover {
     background: rgb(255 255 255 / 10%);
     color: #fff;
   }
+  .viewerToolbar button:hover,
+  .lightboxOriginal:hover {
+    background: transparent;
+  }
+  .viewerToolbar button:hover::before,
+  .lightboxOriginal:hover::before {
+    background: var(--viewer-action-hover, rgb(255 255 255 / 10%));
+  }
 }
 .lightboxOriginal {
-  inline-size: 36px;
-  block-size: 36px;
-  flex: 0 0 36px;
+  inline-size: 38.5px;
+  flex: 0 0 38.5px;
   text-decoration: none;
   cursor: pointer;
 }

@@ -19,7 +19,10 @@ import { useNavigation } from "../../app/navigation";
 import { commentDetailPath } from "../../app/routes";
 import { useMediaQuery } from "../../components/useMediaQuery";
 import { Icon } from "../../components/icons";
-import { ShareMenu } from "../../components/TimelineInteractions";
+import {
+  ActionTooltip,
+  ShareMenu,
+} from "../../components/TimelineInteractions";
 import { useReadRecovery } from "../../components/useReadRecovery";
 import { isAdministrator, useSession } from "../auth/SessionProvider";
 import { CommentThread } from "../comments/CommentThread";
@@ -236,20 +239,24 @@ export function MediaViewerProvider({
             toolbar={
               active ? (
                 <div className={styles.viewerToolbar}>
-                  <button
-                    type="button"
-                    aria-label="回复图片所属内容"
-                    onClick={requestReply}
-                  >
-                    <Icon name="reply" />
-                    {shown?.commentCount ? (
-                      <span>{shown.commentCount}</span>
-                    ) : null}
-                  </button>
+                  <ActionTooltip label="回复" variant="media">
+                    <button
+                      type="button"
+                      aria-label="回复图片所属内容"
+                      data-viewer-action="reply"
+                      onClick={requestReply}
+                    >
+                      <Icon name="reply" />
+                      {shown?.commentCount ? (
+                        <span>{shown.commentCount}</span>
+                      ) : null}
+                    </button>
+                  </ActionTooltip>
                   {shown && !currentData?.unavailable ? (
                     <>
-                      <RepostAction post={shown} />
+                      <RepostAction post={shown} tooltipVariant="media" />
                       <ShareMenu
+                        tooltipVariant="media"
                         align="start"
                         baseUrl={site.publicBaseUrl}
                         href={sourceHref(active.source)}
