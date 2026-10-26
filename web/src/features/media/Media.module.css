@@ -1127,23 +1127,15 @@
   inline-size: min(600px, 100%);
   min-block-size: 48px;
   justify-self: center;
-  display: flex;
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(0, 1fr);
   align-items: center;
-  justify-content: space-between;
-  gap: 16px;
+  justify-items: center;
   padding: 0 16px env(safe-area-inset-bottom);
   color: #fff;
 }
-.viewerToolbar {
-  flex: 1;
-  min-inline-size: 0;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-}
 .viewerToolbar button,
-.lightboxAlt,
 .lightboxOriginal {
   position: relative;
   min-inline-size: 36px;
@@ -1171,7 +1163,7 @@
 }
 .viewerToolbar button,
 .lightboxOriginal {
-  inline-size: auto;
+  inline-size: 38.5px;
   min-inline-size: 38.5px;
   block-size: 48px;
   min-block-size: 48px;
@@ -1195,11 +1187,14 @@
   transform: translateY(-50%);
   transition: background-color 200ms;
 }
-.viewerToolbar [data-repost-count] {
-  position: static;
+.viewerToolbar button > span {
+  position: absolute;
+  inset-block-start: 50%;
+  inset-inline-start: calc(100% - 4px);
   min-inline-size: 0;
   line-height: 16px;
-  transform: none;
+  white-space: nowrap;
+  transform: translateY(-50%);
 }
 .viewerToolbar button[data-viewer-action="reply"] {
   --viewer-action-hover: rgb(29 155 240 / 10%);
@@ -1221,7 +1216,6 @@
   background: var(--viewer-action-hover, rgb(255 255 255 / 10%));
 }
 .viewerToolbar button:focus-visible,
-.lightboxAlt:focus-visible,
 .lightboxOriginal:focus-visible {
   outline: 2px solid #fff;
   outline-offset: 2px;
@@ -1229,10 +1223,6 @@
 @media (hover: hover) {
   .viewerToolbar button[data-viewer-action="reply"]:hover {
     color: #1d9bf0;
-  }
-  .lightboxAlt:hover {
-    background: rgb(255 255 255 / 10%);
-    color: #fff;
   }
   .viewerToolbar button:hover,
   .lightboxOriginal:hover {
@@ -1248,29 +1238,6 @@
   flex: 0 0 38.5px;
   text-decoration: none;
   cursor: pointer;
-}
-.lightboxAlt {
-  min-inline-size: 32px;
-  font-weight: 700;
-}
-.lightboxCaption {
-  position: absolute;
-  z-index: 3;
-  inset-inline: 12px;
-  inset-block-end: calc(60px + env(safe-area-inset-bottom));
-  max-block-size: 40%;
-  overflow: auto;
-  border-radius: 12px;
-  padding: 16px;
-  color: var(--text-primary);
-  background: var(--surface);
-}
-.lightboxDescription {
-  margin: 0;
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-  font-size: 15px;
-  line-height: 20px;
 }
 .viewerMenuPositioner {
   z-index: var(--layer-popover);

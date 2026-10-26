@@ -10,6 +10,10 @@ import { Menu } from "@base-ui/react/menu";
 import { useElementSize, useMergedRef } from "@mantine/hooks";
 import { viewerMediaSize } from "./viewerMediaSize";
 import { Icon } from "../../components/icons";
+import {
+  ActionTooltip,
+  type ActionTooltipPlacement,
+} from "../../components/TimelineInteractions";
 import { useDocumentScrollLock } from "../../components/useDocumentScrollLock";
 import { useMediaQuery } from "../../components/useMediaQuery";
 import styles from "./Media.module.css";
@@ -25,6 +29,11 @@ export interface MediaLightboxItem {
   width?: number | null;
   height?: number | null;
 }
+
+export const viewerTooltipPlacement: ActionTooltipPlacement = {
+  side: "top",
+  sideOffset: -2.75,
+};
 
 // Filled artwork on the reference viewer's 24-unit grid.
 const viewerPaths = {
@@ -76,7 +85,6 @@ export function MediaLightbox({
   unavailable?: boolean;
 }) {
   const [failed, setFailed] = useState(false);
-  const [descriptionOpen, setDescriptionOpen] = useState(false);
   const item = selected === null ? null : (items[selected] ?? null);
   const open = selected !== null && item !== null;
   const mobile = useMediaQuery("(max-width: 687px)");
@@ -100,7 +108,6 @@ export function MediaLightbox({
   useDocumentScrollLock(open);
   useEffect(() => {
     setFailed(false);
-    setDescriptionOpen(false);
   }, [selected, item?.key]);
   useEffect(() => {
     if (item && selected !== null)
@@ -345,40 +352,28 @@ export function MediaLightbox({
                   </button>
                 )
               ) : null}
-              <div className={styles.lightboxFooter}>
+              <div
+                className={`${styles.lightboxFooter} ${styles.viewerToolbar}`}
+              >
                 {toolbar}
-                {shown?.description && !unavailable ? (
-                  <button
-                    aria-label="查看图片说明"
-                    className={styles.lightboxAlt}
-                    onClick={() => setDescriptionOpen((v) => !v)}
-                    aria-expanded={descriptionOpen}
-                    type="button"
-                  >
-                    ALT
-                  </button>
-                ) : null}
                 {originalLink && (!mobile || !discussion) ? (
-                  <a
-                    {...originalLink}
-                    aria-label={originalLabel}
-                    title={originalLabel}
-                    className={styles.lightboxOriginal}
+                  <ActionTooltip
+                    label={originalLabel}
+                    placement={viewerTooltipPlacement}
                   >
-                    <Icon name="open" />
-                  </a>
+                    <a
+                      {...originalLink}
+                      aria-label={originalLabel}
+                      className={styles.lightboxOriginal}
+                    >
+                      <Icon name="open" />
+                    </a>
+                  </ActionTooltip>
                 ) : null}
                 <span className={styles.srOnly} aria-live="polite">
                   {shownIndex + 1} / {items.length}
                 </span>
               </div>
-              {shown?.description && descriptionOpen && !unavailable ? (
-                <div className={styles.lightboxCaption}>
-                  <p className={styles.lightboxDescription}>
-                    {shown.description}
-                  </p>
-                </div>
-              ) : null}
             </div>
             {discussion ? (
               <aside
