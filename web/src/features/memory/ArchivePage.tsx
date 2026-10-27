@@ -362,7 +362,7 @@ export function ArchivePage({
   }
 
   return (
-    <div className={styles.memoryPage}>
+    <div className={styles.memoryPage} data-archive-page>
       {calendar !== null && inRail && railSlot
         ? createPortal(calendar, railSlot)
         : null}

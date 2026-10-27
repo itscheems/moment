@@ -204,10 +204,12 @@ export async function transitionArchiveWindow(
     return !signal.aborted;
   }
   const root = document.documentElement;
+  // The inline calendar scrolls with the list; the desktop rail is outside this column.
+  const surface = list.closest<HTMLElement>("[data-archive-page]") ?? list;
   const oldRootName = root.style.viewTransitionName;
-  const oldListName = list.style.viewTransitionName;
-  const oldBackground = list.style.backgroundColor;
-  const bounds = list.getBoundingClientRect();
+  const oldListName = surface.style.viewTransitionName;
+  const oldBackground = surface.style.backgroundColor;
+  const bounds = surface.getBoundingClientRect();
   const header =
     document.querySelector("#main-content > header")?.getBoundingClientRect()
       .bottom ?? 0;
@@ -216,8 +218,8 @@ export async function transitionArchiveWindow(
     ?.getBoundingClientRect();
   const bottom = nav && nav.height > 0 ? Math.max(0, innerHeight - nav.top) : 0;
   root.style.viewTransitionName = "none";
-  list.style.viewTransitionName = "archive-timeline";
-  list.style.backgroundColor = "var(--surface)";
+  surface.style.viewTransitionName = "archive-timeline";
+  surface.style.backgroundColor = "var(--surface)";
   root.dataset.archiveTransition = direction ?? "older";
   root.style.setProperty(
     "--archive-clip",
@@ -234,7 +236,7 @@ export async function transitionArchiveWindow(
   const transition = document.startViewTransition(() => {
     if (signal.aborted || cancelled) return;
     update();
-    const nextBounds = list.getBoundingClientRect();
+    const nextBounds = surface.getBoundingClientRect();
     root.style.setProperty(
       "--archive-old-offset",
       `${bounds.top - nextBounds.top}px`,
@@ -279,8 +281,8 @@ export async function transitionArchiveWindow(
     window.removeEventListener("touchstart", cancel);
     window.removeEventListener("keydown", keydown);
     root.style.viewTransitionName = oldRootName;
-    list.style.viewTransitionName = oldListName;
-    list.style.backgroundColor = oldBackground;
+    surface.style.viewTransitionName = oldListName;
+    surface.style.backgroundColor = oldBackground;
     delete root.dataset.archiveTransition;
     for (const name of [
       "--archive-clip",
