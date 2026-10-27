@@ -33,12 +33,13 @@ func registerComments(application *Application) {
 	application.MustRegisterLeaf(LeafSpec{
 		Path: []string{"comment", "list"}, ArgsUsage: "<post-id>", Short: "List one page of a comment thread",
 		Long:    "Read one keyset page of a flattened one-level thread through the selected local instance or public HTTP API.",
-		Inputs:  "Provide one canonical post ULID plus optional --cursor and --limit. Public API reads do not require an account token.",
+		Inputs:  "Provide one canonical post ULID plus optional --sort oldest|newest, --cursor and --limit. Public API reads do not require an account token.",
 		Output:  "An ordered data.items array of roots followed by their inline replies, data.pinned, and nullable meta.next_cursor.",
 		Errors:  "Invalid IDs, invalid cursors, and missing posts return stable codes and non-zero exit statuses.",
 		Example: "moment comment list 01ARZ3NDEKTSV4RRFFQ69G5FAV --data-dir ./moment-data --limit 20 --json",
 		Args:    cobra.ExactArgs(1), Capability: CapabilityBoth, Run: runCommentList,
 		Flags: func(flags *pflag.FlagSet) {
+			flags.String("sort", "oldest", "creation order: oldest or newest")
 			flags.String("cursor", "", "opaque keyset cursor from a previous page")
 			flags.Int("limit", 0, "maximum root comments to return (1-100)")
 		},
@@ -46,13 +47,14 @@ func registerComments(application *Application) {
 	application.MustRegisterLeaf(LeafSpec{
 		Path: []string{"comment", "replies"}, ArgsUsage: "<post-id> <comment-id>", Short: "List one page of replies",
 		Long:    "Read one keyset page. The default thread scope reads a whole top-level floor; direct reads only replies to the selected comment.",
-		Inputs:  "Provide a post ULID, comment ULID, optional --scope thread|direct, --cursor and --limit. Thread scope requires a top-level comment.",
+		Inputs:  "Provide a post ULID, comment ULID, optional --scope thread|direct, --sort oldest|newest, --cursor and --limit. Thread scope requires a top-level comment.",
 		Output:  "An ordered data.items array of replies and nullable meta.next_cursor.",
 		Errors:  "Invalid IDs, invalid cursors, and comments that are not roots of the named post return stable codes.",
 		Example: "moment comment replies 01ARZ3NDEKTSV4RRFFQ69G5FAV 01ARZ3NDEKTSV4RRFFQ69G5FAW --data-dir ./moment-data --json",
 		Args:    cobra.ExactArgs(2), Capability: CapabilityBoth, Run: runCommentReplies,
 		Flags: func(flags *pflag.FlagSet) {
 			flags.String("scope", "thread", "reply collection: thread or direct")
+			flags.String("sort", "oldest", "creation order: oldest or newest")
 			flags.String("cursor", "", "opaque keyset cursor from a previous page")
 			flags.Int("limit", 0, "maximum replies to return (1-100)")
 		},
@@ -149,7 +151,21 @@ func commentPageFlags(input CommandInput) (string, int, url.Values, error) {
 	if input.Changed("limit") && (limit < 1 || limit > app.MaxPostPageSize) {
 		return "", 0, nil, invalidArgument("limit must be between 1 and 100", "choose a limit within the supported range")
 	}
+	sortValue, err := input.String("sort")
+	if err != nil {
+		return "", 0, nil, err
+	}
+	if input.Changed("sort") && sortValue == "" {
+		return "", 0, nil, invalidArgument("sort cannot be empty", "choose oldest or newest")
+	}
+	sort, err := app.NormalizeCommentSort(app.CommentSort(sortValue))
+	if err != nil {
+		return "", 0, nil, commentCLIError(err)
+	}
 	query := url.Values{}
+	if sort != app.CommentOldest {
+		query.Set("sort", string(sort))
+	}
 	if cursor != "" {
 		query.Set("cursor", cursor)
 	}
@@ -177,7 +193,7 @@ func runCommentList(ctx context.Context, invocation Invocation, input CommandInp
 			return Result{}, commentCLIError(err)
 		}
 		defer func() { _ = database.Close() }()
-		result, err := service.ListPage(ctx, app.ListCommentsInput{EntryID: postID, Cursor: cursor, Limit: limit, Viewer: app.ViewerFromContext(ctx)})
+		result, err := service.ListPage(ctx, app.ListCommentsInput{EntryID: postID, Cursor: cursor, Limit: limit, Sort: app.CommentSort(query.Get("sort")), Viewer: app.ViewerFromContext(ctx)})
 		if err != nil {
 			return Result{}, commentCLIError(err)
 		}
@@ -266,7 +282,7 @@ func runCommentReplies(ctx context.Context, invocation Invocation, input Command
 			return Result{}, commentCLIError(err)
 		}
 		defer func() { _ = database.Close() }()
-		result, err := service.ListReplies(ctx, app.ListRepliesInput{EntryID: postID, RootID: rootID, Scope: app.CommentReplyScope(scope), Cursor: cursor, Limit: limit, Viewer: app.ViewerFromContext(ctx)})
+		result, err := service.ListReplies(ctx, app.ListRepliesInput{EntryID: postID, RootID: rootID, Scope: app.CommentReplyScope(scope), Cursor: cursor, Limit: limit, Sort: app.CommentSort(query.Get("sort")), Viewer: app.ViewerFromContext(ctx)})
 		if err != nil {
 			return Result{}, commentCLIError(err)
 		}
@@ -614,11 +630,11 @@ func commentAPIRequest(ctx context.Context, invocation Invocation, method, endpo
 			return nil, status, invalidAPIResponse()
 		}
 	case *commentdto.Thread:
-		if err := commentdto.ValidateThread(*typed); err != nil {
+		if err := commentdto.ValidateThread(*typed, app.CommentSort(query.Get("sort"))); err != nil {
 			return nil, status, invalidAPIResponse()
 		}
 	case *commentdto.ReplyPage:
-		if err := commentdto.ValidateReplyPage(*typed); err != nil {
+		if err := commentdto.ValidateReplyPage(*typed, app.CommentSort(query.Get("sort"))); err != nil {
 			return nil, status, invalidAPIResponse()
 		}
 	case *commentdto.Pin:

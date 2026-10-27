@@ -97,16 +97,16 @@ func TestValidateThreadTiesThePinnedConversationToTheThreadPost(t *testing.T) {
 	stranger := testComment(t, strangerID, otherPostID, "", created)
 
 	valid := Thread{Items: []Comment{root}, PinnedCommentID: &rootID, Pinned: []Comment{root}}
-	if err := ValidateThread(valid); err != nil {
+	if err := ValidateThread(valid, app.CommentOldest); err != nil {
 		t.Fatalf("rejected a canonical thread: %v", err)
 	}
 	// A pinned root the server could not load leaves the selection with no
 	// conversation beside it. ListPage emits exactly that, so it is legal.
-	if err := ValidateThread(Thread{Items: []Comment{root}, PinnedCommentID: &strangerID}); err != nil {
+	if err := ValidateThread(Thread{Items: []Comment{root}, PinnedCommentID: &strangerID}, app.CommentOldest); err != nil {
 		t.Fatalf("rejected an unloadable pinned selection: %v", err)
 	}
 	crossPost := Thread{Items: []Comment{root}, PinnedCommentID: &strangerID, Pinned: []Comment{stranger}}
-	if err := ValidateThread(crossPost); err == nil {
+	if err := ValidateThread(crossPost, app.CommentOldest); err == nil {
 		t.Fatal("accepted a pinned conversation from another post")
 	}
 	replyID := "01ARZ3NDEKTSV4RRFFQ69G5FB2"
@@ -115,11 +115,11 @@ func TestValidateThreadTiesThePinnedConversationToTheThreadPost(t *testing.T) {
 		PinnedCommentID: &rootID,
 		Pinned:          []Comment{root, testComment(t, replyID, otherPostID, rootID, created.Add(time.Second))},
 	}
-	if err := ValidateThread(crossReply); err == nil {
+	if err := ValidateThread(crossReply, app.CommentOldest); err == nil {
 		t.Fatal("accepted a pinned reply from another post")
 	}
 	garbage := "not-a-comment-id"
-	if err := ValidateThread(Thread{Items: []Comment{root}, PinnedCommentID: &garbage}); err == nil {
+	if err := ValidateThread(Thread{Items: []Comment{root}, PinnedCommentID: &garbage}, app.CommentOldest); err == nil {
 		t.Fatal("accepted a pinned_comment_id that is not a comment ID")
 	}
 }
@@ -137,18 +137,18 @@ func TestValidateReplyPageRejectsMixedPostsAndRepeatedReplies(t *testing.T) {
 	first := testComment(t, firstID, postID, rootID, created)
 	second := testComment(t, secondID, postID, rootID, created.Add(time.Second))
 
-	if err := ValidateReplyPage(ReplyPage{Items: []Comment{first, second}}); err != nil {
+	if err := ValidateReplyPage(ReplyPage{Items: []Comment{first, second}}, app.CommentOldest); err != nil {
 		t.Fatalf("rejected a canonical reply page: %v", err)
 	}
 	stranger := testComment(t, secondID, otherPostID, rootID, created.Add(time.Second))
-	if err := ValidateReplyPage(ReplyPage{Items: []Comment{first, stranger}}); err == nil {
+	if err := ValidateReplyPage(ReplyPage{Items: []Comment{first, stranger}}, app.CommentOldest); err == nil {
 		t.Fatal("accepted a reply page spanning two posts")
 	}
 	// Ordering alone does not catch a repeat: the second copy sorts after the
 	// first, so only identity does.
 	repeated := first
 	repeated.CreatedAt = created.Add(2 * time.Second)
-	if err := ValidateReplyPage(ReplyPage{Items: []Comment{first, second, repeated}}); err == nil {
+	if err := ValidateReplyPage(ReplyPage{Items: []Comment{first, second, repeated}}, app.CommentOldest); err == nil {
 		t.Fatal("accepted a reply page repeating one reply")
 	}
 }

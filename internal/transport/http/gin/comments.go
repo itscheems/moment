@@ -72,12 +72,12 @@ func listComments(service *app.CommentService, gate *Gate) gin.HandlerFunc {
 			writeCommentError(ctx, err)
 			return
 		}
-		cursor, limit, err := commentPageQuery(ctx.Request.URL)
+		cursor, limit, err := commentPageQuery(ctx.Request.URL, "sort")
 		if err != nil {
 			writeCommentError(ctx, err)
 			return
 		}
-		thread, err := service.ListPage(ctx.Request.Context(), app.ListCommentsInput{EntryID: postID, Cursor: cursor, Limit: limit, Viewer: gate.Viewer(ctx)})
+		thread, err := service.ListPage(ctx.Request.Context(), app.ListCommentsInput{EntryID: postID, Cursor: cursor, Limit: limit, Sort: app.CommentSort(ctx.Query("sort")), Viewer: gate.Viewer(ctx)})
 		if err != nil {
 			writeCommentError(ctx, err)
 			return
@@ -123,12 +123,12 @@ func listCommentReplies(service *app.CommentService, gate *Gate) gin.HandlerFunc
 			writeCommentError(ctx, err)
 			return
 		}
-		cursor, limit, err := commentPageQuery(ctx.Request.URL, "scope")
+		cursor, limit, err := commentPageQuery(ctx.Request.URL, "scope", "sort")
 		if err != nil {
 			writeCommentError(ctx, err)
 			return
 		}
-		page, err := service.ListReplies(ctx.Request.Context(), app.ListRepliesInput{EntryID: postID, RootID: rootID, Scope: app.CommentReplyScope(ctx.Query("scope")), Cursor: cursor, Limit: limit, Viewer: gate.Viewer(ctx)})
+		page, err := service.ListReplies(ctx.Request.Context(), app.ListRepliesInput{EntryID: postID, RootID: rootID, Scope: app.CommentReplyScope(ctx.Query("scope")), Cursor: cursor, Limit: limit, Sort: app.CommentSort(ctx.Query("sort")), Viewer: gate.Viewer(ctx)})
 		if err != nil {
 			writeCommentError(ctx, err)
 			return

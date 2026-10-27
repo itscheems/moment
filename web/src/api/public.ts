@@ -489,6 +489,8 @@ export interface CommentReplyPage {
   nextCursor: string | null;
 }
 
+export type CommentSort = "oldest" | "newest";
+
 export type CommentReplyScope = "thread" | "direct";
 
 export interface CommentContext {
@@ -1070,6 +1072,7 @@ function parseCommentThread(
   value: unknown,
   postId: string,
   nextCursor: string | null,
+  sort: CommentSort = "oldest",
 ): CommentThread {
   if (
     !isRecord(value) ||
@@ -1095,7 +1098,10 @@ function parseCommentThread(
     }
     ids.add(comment.id);
     if (comment.parentId === null) {
-      if (previousRoot && commentOrder(previousRoot, comment) >= 0) {
+      if (
+        previousRoot &&
+        commentOrder(previousRoot, comment) * (sort === "newest" ? -1 : 1) >= 0
+      ) {
         throw invalidResponse("comment roots are not in stable order");
       }
       currentRoot = comment.id;
@@ -1105,7 +1111,10 @@ function parseCommentThread(
       if (comment.parentId !== currentRoot) {
         throw invalidResponse("comment reply is not adjacent to its root");
       }
-      if (previousReply && commentOrder(previousReply, comment) >= 0) {
+      if (
+        previousReply &&
+        commentOrder(previousReply, comment) * (sort === "newest" ? -1 : 1) >= 0
+      ) {
         throw invalidResponse("comment replies are not in stable order");
       }
       previousReply = comment;
@@ -1145,6 +1154,7 @@ function parseCommentReplyPage(
   rootId: string,
   nextCursor: string | null,
   scope: CommentReplyScope = "thread",
+  sort: CommentSort = "oldest",
 ): CommentReplyPage {
   // mirrors locationdto.Results (internal/transport/locationdto/dto.go)
   if (
@@ -1166,7 +1176,10 @@ function parseCommentReplyPage(
     ) {
       throw invalidResponse("comment reply page mixes conversations");
     }
-    if (previous && commentOrder(previous, comment) >= 0) {
+    if (
+      previous &&
+      commentOrder(previous, comment) * (sort === "newest" ? -1 : 1) >= 0
+    ) {
       throw invalidResponse("comment replies are not in stable order");
     }
     previous = comment;
@@ -2723,11 +2736,17 @@ export class PublicApi {
 
   async comments(
     postId: string,
-    options: { cursor?: string | null; signal?: AbortSignal } = {},
+    options: {
+      cursor?: string | null;
+      signal?: AbortSignal;
+      sort?: CommentSort;
+    } = {},
   ): Promise<CommentThread> {
-    const query = options.cursor
-      ? `?cursor=${encodeURIComponent(options.cursor)}`
-      : "";
+    const params = new URLSearchParams();
+    if (options.cursor) params.set("cursor", options.cursor);
+    if (options.sort && options.sort !== "oldest")
+      params.set("sort", options.sort);
+    const query = params.size ? `?${params}` : "";
     const response = await this.fetcher(
       `/api/v1/posts/${encodeURIComponent(postId)}/comments${query}`,
       { headers: { Accept: "application/json" }, signal: options.signal },
@@ -2738,7 +2757,7 @@ export class PublicApi {
     if (response.status !== 200) {
       throw invalidResponse("comment thread must return HTTP 200");
     }
-    return parseCommentThread(data, postId, nullableCursor(meta));
+    return parseCommentThread(data, postId, nullableCursor(meta), options.sort);
   }
 
   async commentReplies(
@@ -2748,11 +2767,14 @@ export class PublicApi {
       cursor?: string | null;
       signal?: AbortSignal;
       scope?: CommentReplyScope;
+      sort?: CommentSort;
     } = {},
   ): Promise<CommentReplyPage> {
     const params = new URLSearchParams();
     if (options.cursor) params.set("cursor", options.cursor);
     if (options.scope) params.set("scope", options.scope);
+    if (options.sort && options.sort !== "oldest")
+      params.set("sort", options.sort);
     const query = params.size ? `?${params}` : "";
     const response = await this.fetcher(
       `/api/v1/posts/${encodeURIComponent(postId)}/comments/${encodeURIComponent(rootId)}/replies${query}`,
@@ -2770,6 +2792,7 @@ export class PublicApi {
       rootId,
       nullableCursor(meta),
       options.scope,
+      options.sort,
     );
   }
 

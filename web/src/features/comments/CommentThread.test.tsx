@@ -460,6 +460,75 @@ describe("public comment thread", () => {
     vi.unstubAllGlobals();
   });
 
+  it("hides time sorting for an empty thread", async () => {
+    installApi((url) =>
+      url.endsWith("/comments") ? success({ items: [] }) : undefined,
+    );
+    renderThread();
+    await screen.findByText("登录后回复");
+    expect(
+      screen.queryByRole("button", { name: /回复排序/ }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("requests newest first and keeps the previous view when a sort request fails", async () => {
+    const oldest = comment(rootId, "early reply", {
+      createdAt: "2026-08-10T01:00:00Z",
+    });
+    const newest = comment(replyId, "late reply", {
+      createdAt: "2026-08-10T02:00:00Z",
+    });
+    let fail = false;
+    installApi((url) => {
+      if (url.includes("/comments?sort=newest"))
+        return fail
+          ? json(
+              {
+                error: {
+                  code: "INVALID_ARGUMENT",
+                  message: "retry",
+                  request_id: "sort-error",
+                  details: {},
+                },
+              },
+              400,
+            )
+          : success({ items: [newest, oldest] });
+      if (url.endsWith("/comments"))
+        return success({ items: [oldest, newest] });
+      return undefined;
+    });
+    renderThread();
+    const trigger = await screen.findByRole("button", {
+      name: "回复排序：最早",
+    });
+    const open = async () => {
+      fireEvent.keyDown(trigger, { key: "ArrowDown", code: "ArrowDown" });
+      await screen.findByRole("menuitemradio", { name: "最新" });
+    };
+    await open();
+    fireEvent.click(screen.getByRole("menuitemradio", { name: "最新" }));
+    await screen.findByRole("button", { name: "回复排序：最新" });
+    expect(
+      [...document.querySelectorAll("[data-comment-id]")].map((el) =>
+        el.getAttribute("data-comment-id"),
+      ),
+    ).toEqual([replyId, rootId]);
+    fireEvent.keyDown(trigger, { key: "ArrowDown", code: "ArrowDown" });
+    fireEvent.click(await screen.findByRole("menuitemradio", { name: "最早" }));
+    await screen.findByRole("button", { name: "回复排序：最早" });
+    fail = true;
+    await open();
+    fireEvent.click(screen.getByRole("menuitemradio", { name: "最新" }));
+    await screen.findByRole("alert");
+    expect(trigger).toHaveTextContent("最早");
+    expect(
+      [...document.querySelectorAll("[data-comment-id]")].map((el) =>
+        el.getAttribute("data-comment-id"),
+      ),
+    ).toEqual([rootId, replyId]);
+  });
+
   it("loads nothing while inactive and preserves the draft and loaded thread when resumed", async () => {
     preauthenticate();
     const fetcher = installApi((url, init) => {

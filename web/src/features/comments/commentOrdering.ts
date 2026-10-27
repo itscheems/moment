@@ -1,7 +1,10 @@
-import { type PublicComment } from "../../api/public";
+import { type CommentSort, type PublicComment } from "../../api/public";
 import { clearReplyTarget, shiftReplyCounts } from "./discussionChanges";
 
-function orderComments(left: PublicComment, right: PublicComment): number {
+export function orderComments(
+  left: PublicComment,
+  right: PublicComment,
+): number {
   const time = Date.parse(left.createdAt) - Date.parse(right.createdAt);
   return time || left.id.localeCompare(right.id);
 }
@@ -227,4 +230,18 @@ export function countReplies(items: PublicComment[]): Map<string, number> {
     }
   }
   return counts;
+}
+
+/** Sort sibling runs without separating roots from their replies. */
+export function sortCommentThread(
+  items: PublicComment[],
+  sort: CommentSort,
+): PublicComment[] {
+  const direction = sort === "newest" ? -1 : 1;
+  return commentRuns(items)
+    .sort((a, b) => direction * orderComments(a[0], b[0]))
+    .flatMap(([root, ...replies]) => [
+      root,
+      ...replies.sort((a, b) => direction * orderComments(a, b)),
+    ]);
 }

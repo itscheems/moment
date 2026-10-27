@@ -341,6 +341,7 @@ func TestCommentPagingKeepsDirectAndAPIAnswersIdentical(t *testing.T) {
 			"--idempotency-key", "page-reply-"+strconv.Itoa(index), "--json")
 	}
 
+	commandData(t, execute(application, "", "comment", "create", fixture.postID, "--data-dir", fixture.dataDir, "--as", "writer", "--content", "later root", "--json"))
 	t.Setenv("MOMENT_TOKEN", fixture.token)
 	for _, probe := range []struct {
 		name string
@@ -348,6 +349,9 @@ func TestCommentPagingKeepsDirectAndAPIAnswersIdentical(t *testing.T) {
 	}{
 		{name: "thread", args: []string{"comment", "list", fixture.postID, "--limit", "5"}},
 		{name: "replies", args: []string{"comment", "replies", fixture.postID, rootID, "--limit", "2"}},
+		{name: "newest thread", args: []string{"comment", "list", fixture.postID, "--sort", "newest", "--limit", "5"}},
+		{name: "newest replies", args: []string{"comment", "replies", fixture.postID, rootID, "--sort", "newest", "--limit", "2"}},
+		{name: "newest direct replies", args: []string{"comment", "replies", fixture.postID, rootID, "--scope", "direct", "--sort", "newest", "--limit", "2"}},
 	} {
 		t.Run(probe.name, func(t *testing.T) {
 			apiOutput := execute(application, "", append([]string{"--url", fixture.server.URL}, append(probe.args, "--json")...)...)

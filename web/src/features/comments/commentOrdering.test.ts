@@ -4,6 +4,7 @@ import type { PublicComment } from "../../api/public";
 import {
   appendRepliesToRoot,
   appendRoots,
+  sortCommentThread,
   reconcileCreatedComment,
   reconcileDeletedComment,
 } from "./commentOrdering";
@@ -139,4 +140,22 @@ describe("comment ordering under pagination", () => {
     );
     expect(absent[0].replyCount).toBe(4);
   });
+});
+
+it("sorts whole conversations and their siblings without detaching replies", () => {
+  const input = [
+    comment("r1", at(1)),
+    comment("a", at(2), "r1"),
+    comment("b", at(3), "r1"),
+    comment("r2", at(4)),
+  ];
+  expect(ids(sortCommentThread(input, "newest"))).toEqual([
+    "r2",
+    "r1",
+    "b",
+    "a",
+  ]);
+  expect(
+    ids(sortCommentThread(sortCommentThread(input, "newest"), "oldest")),
+  ).toEqual(ids(input));
 });
