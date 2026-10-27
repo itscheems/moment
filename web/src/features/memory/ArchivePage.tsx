@@ -21,7 +21,7 @@ import {
   RAIL_VIEWPORT_QUERY,
   useMediaQuery,
 } from "../../components/useMediaQuery";
-import { siteToday } from "../timeline/timelineDays";
+import { siteDate, siteToday } from "../timeline/timelineDays";
 import { TimelinePage } from "../timeline/TimelinePage";
 import { ReadRecoveryNotice } from "../timeline/PublicStates";
 import { ArchiveCalendar } from "./ArchiveCalendar";
@@ -34,6 +34,10 @@ import {
   timezoneNote,
 } from "./archiveDates";
 import { parseArchiveLocation } from "./memoryState";
+import {
+  archiveJumpDirection,
+  type ArchiveJumpDirection,
+} from "./archiveMotion";
 import styles from "./Memory.module.css";
 
 function ArchiveMessage({
@@ -149,7 +153,10 @@ export function ArchivePage({
   const anchor = positionAnchor(state);
   const positionKey =
     state.day ?? state.month ?? (state.year === null ? "" : String(state.year));
-  const [jump, setJump] = useState(0);
+  const [jump, setJump] = useState<{
+    id: number;
+    direction: ArchiveJumpDirection;
+  }>({ id: 0, direction: null });
   const onNavigate: MouseEventHandler<HTMLAnchorElement> = (event) => {
     if (
       !event.defaultPrevented &&
@@ -159,7 +166,28 @@ export function ArchivePage({
       !event.shiftKey &&
       !event.altKey
     ) {
-      setJump((current) => current + 1);
+      const headerBottom =
+        document
+          .querySelector("#main-content > header")
+          ?.getBoundingClientRect().bottom ?? 0;
+      const visible = Array.from(
+        document.querySelectorAll<HTMLElement>("[data-timeline-at]"),
+      ).find((row) => {
+        const bounds = row.getBoundingClientRect();
+        return (
+          bounds.bottom > headerBottom + 1 && bounds.top < window.innerHeight
+        );
+      });
+      const from = visible?.dataset.timelineAt
+        ? siteDate(visible.dataset.timelineAt, site.timezone)
+        : (anchor ?? today);
+      const to = positionAnchor(
+        parseArchiveLocation(new URL(event.currentTarget.href).search),
+      );
+      setJump((current) => ({
+        id: current.id + 1,
+        direction: archiveJumpDirection(from, to),
+      }));
     }
   };
 
@@ -336,7 +364,8 @@ export function ArchivePage({
             api={api}
             emptyContext="archive"
             initialSearch={listSearch}
-            key={`${anchor ?? "latest"}:${jump}`}
+            key={`${anchor ?? "latest"}:${jump.id}`}
+            archiveJumpDirection={jump.direction}
             canPublish={canPublish}
             site={site}
           />

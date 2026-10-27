@@ -32,6 +32,7 @@ import {
   ShareMenu,
 } from "../../components/TimelineInteractions";
 import { formatMomentDate } from "./dates";
+import { timelineInstant } from "../timeline/timelineItems";
 import { PostActions } from "./PostActions";
 import { RepostAction } from "./RepostAction";
 import { ArticleCard, QuotedArticle } from "../article/ArticleCard";
@@ -511,6 +512,7 @@ export function PostPresentation({
         data-connected-from={connectedFrom || undefined}
         data-post-id={post.id}
         data-timeline-item-key={timelineKey}
+        data-timeline-at={timelineInstant(post)}
         tabIndex={-1}
       >
         {pinLabel}
@@ -604,6 +606,7 @@ export function PostPresentation({
       data-connected-from={connectedFrom || undefined}
       data-post-id={post.id}
       data-timeline-item-key={timelineKey}
+      data-timeline-at={timelineInstant(post)}
       onClick={openFromSurface}
       tabIndex={-1}
     >

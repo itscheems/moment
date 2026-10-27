@@ -43,6 +43,10 @@ import {
 import { reconcileTimelineEvent, timelineItemKey } from "./timelineItems";
 import styles from "./TimelinePage.module.css";
 import { rowElement, withRowsRendered } from "./scrollAnchor";
+import {
+  scrollToArchiveRow,
+  type ArchiveJumpDirection,
+} from "../memory/archiveMotion";
 
 const MAX_REPLAY_PAGES = 1_000;
 
@@ -98,6 +102,7 @@ export function TimelinePage({
   emptyContext = "timeline",
   onSiteChanged,
   canPublish = false,
+  archiveJumpDirection = null,
 }: {
   api: PublicApi;
   site: SiteIdentity;
@@ -110,6 +115,7 @@ export function TimelinePage({
   emptyContext?: "timeline" | "archive";
   onSiteChanged?: (site: SiteIdentity) => void;
   canPublish?: boolean;
+  archiveJumpDirection?: ArchiveJumpDirection;
 }) {
   const {
     pathname,
@@ -147,6 +153,7 @@ export function TimelinePage({
   const anchorKey = useRef<string | null>(null);
   const listRef = useRef<HTMLElement | null>(null);
   const savedAnchor = useRef(archiveAnchor);
+  const stopArchiveJump = useRef<(() => void) | null>(null);
   /** The top row and where it was, measured just before a page is prepended. */
   const compensation = useRef<{ key: string; top: number } | null>(null);
 
@@ -299,7 +306,7 @@ export function TimelinePage({
       combined = reconcilePostChanges(combined);
       visitedCursors.current = visited;
       anchorKey.current =
-        request.anchor && opening.items[0]
+        (request.anchor || archiveJumpDirection) && opening.items[0]
           ? timelineItemKey(opening.items[0])
           : null;
       setPosts(combined);
@@ -318,7 +325,7 @@ export function TimelinePage({
     } finally {
       if (!controller.signal.aborted) setLoadingInitial(false);
     }
-  }, [api, forgetProgress, reconcilePostChanges]);
+  }, [api, archiveJumpDirection, forgetProgress, reconcilePostChanges]);
 
   useEffect(() => {
     void loadInitial();
@@ -326,6 +333,7 @@ export function TimelinePage({
       activeInitial.current?.abort();
       activeMore.current?.abort();
       activeNewer.current?.abort();
+      stopArchiveJump.current?.();
     };
   }, [loadInitial]);
 
@@ -353,21 +361,20 @@ export function TimelinePage({
     const row = key && list ? rowElement(key, list) : undefined;
     if (row && list) {
       withRowsRendered(() => {
-        const header = document.querySelector<HTMLElement>(
-          "#main-content > header",
+        stopArchiveJump.current = scrollToArchiveRow(
+          row,
+          list,
+          archiveJumpDirection,
+          (arrived) => {
+            if (arrived) row.dataset.archiveTarget = "true";
+            setSettled(true);
+          },
         );
-        window.scrollTo({
-          top:
-            row.getBoundingClientRect().top +
-            window.scrollY -
-            (header?.offsetHeight ?? 0),
-          behavior: "auto",
-        });
-        row.dataset.archiveTarget = "true";
       }, list);
+    } else {
+      setSettled(true);
     }
-    setSettled(true);
-  }, []);
+  }, [archiveJumpDirection]);
 
   useEffect(() => {
     if (loadingInitial || initialError || initialEntryRestored.current) {
@@ -615,6 +622,7 @@ export function TimelinePage({
           <LoadMoreSentinel
             className={styles.moreRow}
             cursor={nextCursor}
+            enabled={archiveJumpDirection === null || settled}
             label="加载更早的 Moment"
             loading={loadingMore || loadingInitial}
             onLoad={(source) => void loadMore(source)}
