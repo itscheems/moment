@@ -496,16 +496,23 @@ export function TimelinePage({
       syncArchiveWindow(loadedSearchRef.current);
       const delta =
         archiveRowTop(row, archiveJump.restore?.top) - window.scrollY;
+      const preserveEmphasis =
+        archiveJump.repeat === true && row.hasAttribute("data-archive-target");
       if (Math.abs(delta) < 1 || archiveJump.restore) {
         if (archiveJump.restore)
           placeArchiveRow(row, list, archiveJump.restore.top);
         else if (!archiveJump.repeat) emphasizeArchiveRow(row);
         setSettled(true);
       } else if (Math.abs(delta) <= window.innerHeight * 3) {
-        stopArchiveJump.current = scrollToArchiveRow(row, list, (arrived) => {
-          if (arrived) emphasizeArchiveRow(row);
-          setSettled(true);
-        });
+        stopArchiveJump.current = scrollToArchiveRow(
+          row,
+          list,
+          (arrived) => {
+            if (arrived && !preserveEmphasis) emphasizeArchiveRow(row);
+            setSettled(true);
+          },
+          preserveEmphasis,
+        );
       } else {
         const controller = new AbortController();
         activeInitial.current = controller;
@@ -514,14 +521,14 @@ export function TimelinePage({
           archiveJump.direction ?? (delta > 0 ? "older" : "newer"),
           () =>
             withRowsRendered(() => {
-              row.removeAttribute("data-archive-target");
+              if (!preserveEmphasis) row.removeAttribute("data-archive-target");
               placeArchiveRow(row, list);
             }, list),
           controller.signal,
         )
           .then((arrived) => {
             if (controller.signal.aborted) return;
-            if (arrived) emphasizeArchiveRow(row);
+            if (arrived && !preserveEmphasis) emphasizeArchiveRow(row);
             setSettled(true);
           })
           .catch((error: unknown) => {

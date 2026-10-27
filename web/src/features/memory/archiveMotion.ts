@@ -115,6 +115,7 @@ export function scrollToArchiveRow(
   row: HTMLElement,
   list: HTMLElement,
   onSettled: (arrived: boolean) => void,
+  preserveEmphasis = false,
 ): () => void {
   reserveArchiveTail(row, list);
   const start = window.scrollY;
@@ -128,7 +129,7 @@ export function scrollToArchiveRow(
     onSettled(false);
     return () => {};
   }
-  row.removeAttribute("data-archive-target");
+  if (!preserveEmphasis) row.removeAttribute("data-archive-target");
   if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
     update(1);
     onSettled(true);
