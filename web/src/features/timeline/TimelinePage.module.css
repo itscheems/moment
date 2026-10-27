@@ -2,6 +2,10 @@
   min-block-size: 28rem;
 }
 
+:global([data-archive-page]) .timelineList :global([data-timeline-item-key]) {
+  content-visibility: visible;
+}
+
 :global(:root[data-archive-transition]::view-transition) {
   pointer-events: none;
   clip-path: inset(var(--archive-clip));
