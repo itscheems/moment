@@ -1,7 +1,5 @@
 import { TimelinePage } from "../timeline/TimelinePage";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Menu } from "@base-ui/react/menu";
-import { Tabs } from "@base-ui/react/tabs";
 
 import {
   PublicApi,
@@ -12,6 +10,7 @@ import {
 import { useNavigation } from "../../app/navigation";
 import { profileFeedPath, profileFromPath } from "../../app/routes";
 import { Icon } from "../../components/icons";
+import { ProfileTabs } from "./ProfileTabs";
 import { ExactTimeTooltip } from "../../components/TimelineInteractions";
 import { ShellState } from "../../components/ShellState";
 import { useReadRecovery } from "../../components/useReadRecovery";
@@ -31,8 +30,7 @@ import { ProfileEditor } from "./ProfileEditor";
 import { ProfileHeader } from "./ProfileHeader";
 import { SuggestedPeople } from "../people/SuggestedPeople";
 import { formatMomentDate } from "../posts/dates";
-import { profileFilters, type ProfileFilter } from "./profileTimeline";
-import interactionStyles from "../../components/TimelineInteractions.module.css";
+import type { ProfileFilter } from "./profileTimeline";
 import styles from "./ProfilePage.module.css";
 
 const missingRoute = {
@@ -54,12 +52,6 @@ export function MemberProfilePage({
   const { account: viewer } = useSession();
   const navigation = useNavigation();
   const filter = profileFromPath(navigation.pathname)?.filter ?? "all";
-  const [leftFilter, setLeftFilter] = useState<"all" | "moment">(
-    filter === "moment" ? "moment" : "all",
-  );
-  useEffect(() => {
-    if (filter !== "article") setLeftFilter(filter);
-  }, [filter]);
   const [account, setAccount] = useState<PublicAccount | null>(null);
   const [state, setState] = useState<
     "loading" | "ready" | "missing" | "failed"
@@ -96,15 +88,6 @@ export function MemberProfilePage({
       });
     return () => controller.abort();
   }, [api, attempt, username]);
-
-  const feedApi = useMemo(
-    () =>
-      api.forAuthor(
-        account?.userId ?? "",
-        filter === "all" ? undefined : filter,
-      ),
-    [api, account?.userId, filter],
-  );
 
   /**
    * Adopt what the server just saved, and follow the handle if it moved.
@@ -200,100 +183,48 @@ export function MemberProfilePage({
           ) : null}
         </div>
       </div>
-      <Tabs.Root
-        value={filter}
-        onValueChange={(value) => selectFilter(value as ProfileFilter)}
-        className={styles.contentTabs}
+      <ProfileTabs
+        key={`${account.userId}:${viewer?.userId ?? "guest"}`}
+        filter={filter}
+        onSelect={selectFilter}
       >
-        <Tabs.List
-          aria-label="帖子类型"
-          className={styles.tabList}
-          activateOnFocus={false}
-        >
-          <div className={styles.tabSlot}>
-            <Tabs.Tab
-              value={leftFilter}
-              aria-label={leftFilter === "moment" ? "帖子" : "全部"}
-              className={styles.typeTab}
-            />
-            <div
-              className={styles.tabContent}
-              data-active={filter !== "article" ? "" : undefined}
-            >
-              <Icon name="archive" variant="navigation" />
-              <span className={styles.tabLabel}>
-                <span className={styles.tabLabelContent}>
-                  {leftFilter === "moment" ? "帖子" : "全部"}
-                </span>
-              </span>
-              <span className={styles.filterSlot}>
-                <Menu.Root>
-                  <Menu.Trigger
-                    aria-label="选择帖子类型"
-                    className={styles.filterTrigger}
-                    disabled={filter === "article"}
-                  >
-                    <Icon name="chevron-down" />
-                  </Menu.Trigger>
-                  <Menu.Portal>
-                    <Menu.Positioner
-                      side="bottom"
-                      align="start"
-                      sideOffset={4}
-                      className={interactionStyles.sharePositioner}
-                    >
-                      <Menu.Popup
-                        aria-label="帖子类型筛选"
-                        className={interactionStyles.sharePopup}
-                      >
-                        {(["all", "moment"] as const).map((kind) => (
-                          <Menu.Item
-                            key={kind}
-                            className={interactionStyles.shareItem}
-                            onClick={() => selectFilter(kind)}
-                          >
-                            <span>{kind === "all" ? "全部" : "帖子"}</span>
-                          </Menu.Item>
-                        ))}
-                      </Menu.Popup>
-                    </Menu.Positioner>
-                  </Menu.Portal>
-                </Menu.Root>
-              </span>
-            </div>
-          </div>
-          <div className={styles.tabSlot}>
-            <Tabs.Tab
-              value="article"
-              aria-label="文章"
-              className={styles.typeTab}
-            >
-              <Icon name="article" />
-            </Tabs.Tab>
-          </div>
-          <Tabs.Indicator
-            className={styles.tabIndicator}
-            style={{
-              transform: filter === "article" ? "translateX(250%)" : undefined,
-            }}
+        {(kind) => (
+          <MemberProfileFeed
+            api={api}
+            userId={account.userId}
+            kind={kind}
+            site={site}
+            canPublish={viewer?.status === "active"}
           />
-        </Tabs.List>
-        <div className={styles.feedViewport}>
-          {profileFilters.map((kind) => (
-            <Tabs.Panel key={kind} value={kind} className={styles.feedPanel}>
-              {kind === filter ? (
-                <TimelinePage
-                  api={feedApi}
-                  site={site}
-                  initialSearch=""
-                  canPublish={viewer?.status === "active"}
-                  key={`${account.userId}:${kind}`}
-                />
-              ) : null}
-            </Tabs.Panel>
-          ))}
-        </div>
-      </Tabs.Root>
+        )}
+      </ProfileTabs>
     </section>
+  );
+}
+
+function MemberProfileFeed({
+  api,
+  userId,
+  kind,
+  site,
+  canPublish,
+}: {
+  api: PublicApi;
+  userId: string;
+  kind: ProfileFilter;
+  site: SiteIdentity;
+  canPublish: boolean;
+}) {
+  const feedApi = useMemo(
+    () => api.forAuthor(userId, kind === "all" ? undefined : kind),
+    [api, userId, kind],
+  );
+  return (
+    <TimelinePage
+      api={feedApi}
+      site={site}
+      initialSearch=""
+      canPublish={canPublish}
+    />
   );
 }
