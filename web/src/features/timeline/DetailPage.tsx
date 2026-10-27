@@ -22,6 +22,7 @@ import { listenForPostChanges } from "../posts/postEvents";
 import { PostPresentation } from "../posts/PostPresentation";
 import { CommentThread } from "../comments/CommentThread";
 import { CommentDetailPage } from "../comments/CommentDetailPage";
+import { RelevantPeople } from "../people/RelevantPeople";
 import {
   type CommentMutation,
   type DiscussionChange,
@@ -176,6 +177,11 @@ export function DetailPage({
   // where a moment leads with its prose.
   return (
     <>
+      <RelevantPeople
+        api={api}
+        post={post}
+        active={active && !commentId && !focusReading}
+      />
       {loading || error ? <ReadRecoveryNotice /> : null}
       {active && !commentId && isReadArticlePost(post) && !focusReading ? (
         <HeaderActions>

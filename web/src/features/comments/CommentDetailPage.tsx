@@ -26,6 +26,7 @@ import {
   loadCommentShareCard,
 } from "../share/shareCardInput";
 import { CommentThread } from "./CommentThread";
+import { RelevantPeople } from "../people/RelevantPeople";
 import {
   announceDiscussionChanged,
   type CommentMutation,
@@ -166,6 +167,14 @@ export function CommentDetailPage({
       inert={!active}
       aria-label="评论详情"
     >
+      {context && !missing ? (
+        <RelevantPeople
+          api={api}
+          post={post}
+          context={context}
+          active={active}
+        />
+      ) : null}
       {active ? (
         <div className={styles.discussionContext}>
           <section aria-label="原帖引用">
