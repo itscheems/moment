@@ -5,8 +5,8 @@ import { Icon } from "../../components/icons";
 import styles from "./ReplySort.module.css";
 
 const options = [
-  { value: "oldest", label: "最早在上" },
-  { value: "newest", label: "最新在上" },
+  { value: "oldest", label: "最早" },
+  { value: "newest", label: "最新" },
 ] as const;
 
 export function ReplySort({

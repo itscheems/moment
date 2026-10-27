@@ -500,15 +500,15 @@ describe("public comment thread", () => {
     });
     renderThread();
     const trigger = await screen.findByRole("button", {
-      name: "回复排序：最早在上",
+      name: "回复排序：最早",
     });
     const open = async () => {
       fireEvent.keyDown(trigger, { key: "ArrowDown", code: "ArrowDown" });
-      await screen.findByRole("menuitemradio", { name: "最新在上" });
+      await screen.findByRole("menuitemradio", { name: "最新" });
     };
     await open();
-    fireEvent.click(screen.getByRole("menuitemradio", { name: "最新在上" }));
-    await screen.findByRole("button", { name: "回复排序：最新在上" });
+    fireEvent.click(screen.getByRole("menuitemradio", { name: "最新" }));
+    await screen.findByRole("button", { name: "回复排序：最新" });
     expect(
       [...document.querySelectorAll("[data-comment-id]")].map((el) =>
         el.getAttribute("data-comment-id"),
@@ -516,14 +516,14 @@ describe("public comment thread", () => {
     ).toEqual([replyId, rootId]);
     fireEvent.keyDown(trigger, { key: "ArrowDown", code: "ArrowDown" });
     fireEvent.click(
-      await screen.findByRole("menuitemradio", { name: "最早在上" }),
+      await screen.findByRole("menuitemradio", { name: "最早" }),
     );
-    await screen.findByRole("button", { name: "回复排序：最早在上" });
+    await screen.findByRole("button", { name: "回复排序：最早" });
     fail = true;
     await open();
-    fireEvent.click(screen.getByRole("menuitemradio", { name: "最新在上" }));
+    fireEvent.click(screen.getByRole("menuitemradio", { name: "最新" }));
     await screen.findByRole("alert");
-    expect(trigger).toHaveTextContent("最早在上");
+    expect(trigger).toHaveTextContent("最早");
     expect(
       [...document.querySelectorAll("[data-comment-id]")].map((el) =>
         el.getAttribute("data-comment-id"),
