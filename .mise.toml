@@ -1,5 +1,5 @@
 [tools]
-go = "1.25.12"
+go = "1.26.10"
 node = "24.19.0"
 pnpm = "10.34.5"
 task = "3.52.0"
@@ -8,7 +8,6 @@ goreleaser = "2.17.1"
 syft = "1.50.0"
 grype = "0.116.1"
 gitleaks = "8.30.1"
-"go:golang.org/x/vuln/cmd/govulncheck" = "1.6.0"
 
 [settings]
 experimental = true

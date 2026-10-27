@@ -2,8 +2,21 @@
 
 Moment v0 supports CGo-free native archives for Linux, macOS, and Windows on
 amd64 and arm64. The container target is Linux and runs as fixed UID/GID 65532
-with `/data` as its only writable authority volume. Go 1.25.12, Node 24.19.0,
-pnpm 10.34.5, and every release/security tool are pinned in `.mise.toml`.
+with `/data` as its only writable authority volume. Go 1.26.10, Node 24.19.0,
+pnpm 10.34.5, and the release tools are pinned in `.mise.toml`. The source
+vulnerability wrapper pins govulncheck and builds it with the selected Go
+toolchain.
+
+## Routine checks
+
+Pull requests and pushes to `main` run the full formatting, lint, test, build,
+and process-lock checks once on Ubuntu. A separate source-security job checks
+imported Go packages, high-severity npm advisories, and secrets in Git history.
+Each job installs only the tools it uses.
+
+Native macOS/Windows qualification, cross-compilation, reproducible archives,
+SBOMs, and container lifecycle checks run in the tagged release workflow.
+Merge-policy enforcement and the post-merge audit remain separate workflows.
 
 ## Qualification
 

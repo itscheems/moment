@@ -1,8 +1,8 @@
 module github.com/moment/moment
 
-go 1.25.0
+go 1.26.0
 
-toolchain go1.25.12
+toolchain go1.26.10
 
 require (
 	github.com/coreos/go-oidc/v3 v3.20.0
@@ -11,11 +11,11 @@ require (
 	github.com/spf13/cobra v1.10.2
 	github.com/spf13/pflag v1.0.9
 	github.com/yuin/goldmark v1.8.5
-	golang.org/x/image v0.44.0
+	golang.org/x/image v0.45.0
 	golang.org/x/oauth2 v0.36.0
-	golang.org/x/sync v0.22.0
-	golang.org/x/sys v0.47.0
-	golang.org/x/text v0.40.0
+	golang.org/x/sync v0.23.0
+	golang.org/x/sys v0.48.0
+	golang.org/x/text v0.42.0
 	modernc.org/sqlite v1.56.0
 )
 
@@ -51,8 +51,8 @@ require (
 	github.com/ugorji/go/codec v1.3.1 // indirect
 	go.mongodb.org/mongo-driver/v2 v2.5.0 // indirect
 	golang.org/x/arch v0.22.0 // indirect
-	golang.org/x/crypto v0.53.0
-	golang.org/x/net v0.56.0
+	golang.org/x/crypto v0.57.0
+	golang.org/x/net v0.60.0
 	google.golang.org/protobuf v1.36.10 // indirect
 	modernc.org/libc v1.74.4 // indirect
 	modernc.org/mathutil v1.7.1 // indirect
