@@ -1,0 +1,9 @@
+# Historical CLI help-output checksums, not credentials.
+2e20496e50ac97e4641449f1c8cc6a4b7bf46413:internal/transport/cli/testdata/help-digests.json:generic-api-key:18
+d6054013b4624935efc04de3b32eef8468e616f8:internal/transport/cli/testdata/help-digests.json:generic-api-key:18
+da02455689b82ee8945db2cecf0078599d669a0f:internal/transport/cli/testdata/help-digests.json:generic-api-key:39
+da02455689b82ee8945db2cecf0078599d669a0f:internal/transport/cli/testdata/help-digests.json:generic-api-key:40
+
+# Editor keyboard shortcut constants, not credentials.
+7dcfdbb49fccc9419649ada367cd6ac4d2df8414:web/src/features/article/editor/vendor/notion/components/ui/move-node-button/use-move-node.ts:generic-api-key:19
+7dcfdbb49fccc9419649ada367cd6ac4d2df8414:web/src/features/article/editor/vendor/notion/components/ui/move-node-button/use-move-node.ts:generic-api-key:20

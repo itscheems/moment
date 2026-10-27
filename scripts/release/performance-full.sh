@@ -96,9 +96,9 @@ if (( validation_only == 1 )); then
     .qualified == false and .validation_only == true and .commit == $commit and
     .binary.version == $version and .binary.commit == $commit and
     .binary.build_date == $build_date and .binary.sha256 == $binary_sha256 and
-    .binary.go_version == "go1.25.12" and
+    .binary.go_version == "go1.26.10" and
     .environment.goos == $goos and .environment.goarch == $goarch and
-    .environment.go_version == "go1.25.12" and .environment.gomaxprocs > 0 and
+    .environment.go_version == "go1.26.10" and .environment.gomaxprocs > 0 and
     .environment.rss_sample_interval_ms == 25 and
     .fixture.probe_scenario == "timeline-empty" and .fixture.probe_backup_scenario == "post-with-images" and
     .fixture.probe_stage_timeout == "30m" and

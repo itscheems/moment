@@ -186,8 +186,8 @@ verify_performance_evidence() {
   jq -e --arg commit "$commit" --arg binary_sha256 "$native_sha256" --arg version "$release_version" --arg build_date "$expected_build_date" '
     .qualified == true and .validation_only == false and .commit == $commit and .binary.commit == $commit and
     .binary.sha256 == $binary_sha256 and .binary.version == $version and .binary.build_date == $build_date and
-    .binary.go_version == "go1.25.12" and
-    .environment.goos == "linux" and .environment.goarch == "amd64" and .environment.go_version == "go1.25.12" and
+    .binary.go_version == "go1.26.10" and
+    .environment.goos == "linux" and .environment.goarch == "amd64" and .environment.go_version == "go1.26.10" and
     .environment.gomaxprocs > 0 and .environment.rss_sample_interval_ms == 25 and
     .fixture.probe_scenario == "timeline-empty" and .fixture.probe_backup_scenario == "post-with-images" and
     .fixture.probe_stage_timeout == "30m" and
@@ -242,7 +242,7 @@ if [[ "${MOMENT_REQUIRE_QUALIFICATION:-0}" == "1" ]]; then
       .artifacts.archive_count == 6 and .artifacts.sbom_count == 6 and
       .artifacts.checksum_manifest == $checksums and .artifacts.hashes == $hashes and
       .vulnerability_policy.sha256 == $policy_sha256 and .vulnerability_policy.document == $policy and
-      .environment.go == "go version go1.25.12 linux/amd64" and
+      .environment.go == "go version go1.26.10 linux/amd64" and
       .environment.node == "v24.19.0" and .environment.pnpm == "10.34.5" and
       .environment.goreleaser.git_version == "2.17.1" and
       (.environment.goreleaser.git_commit | test("^[0-9a-f]{40}$")) and
@@ -324,7 +324,7 @@ goreleaser_metadata="$(jq -n \
 syft_version="$(syft version -o json)"
 grype_version="$(grype version -o json)"
 grype_db="$(grype db status -o json | jq -c '{schemaVersion,from,built,valid}')"
-govulncheck_version="$(govulncheck -version)"
+govulncheck_version="$(go run golang.org/x/vuln/cmd/govulncheck@v1.6.0 -version)"
 jq -n \
   --arg commit "$commit" \
   --arg version "$release_version" \

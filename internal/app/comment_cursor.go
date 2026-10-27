@@ -28,11 +28,13 @@ const (
 // CommentSort selects both the keyset seek direction and the ID tie-breaker.
 type CommentSort string
 
+// Comment ordering options for chronological pagination.
 const (
 	CommentOldest CommentSort = "oldest"
 	CommentNewest CommentSort = "newest"
 )
 
+// NormalizeCommentSort defaults empty ordering and rejects unsupported values.
 func NormalizeCommentSort(value CommentSort) (CommentSort, error) {
 	if value == "" {
 		return CommentOldest, nil

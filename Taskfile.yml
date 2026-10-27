@@ -67,8 +67,7 @@ tasks:
   fmt:check:
     desc: Check formatting without changing tracked sources
     cmds:
-      - go fmt ./...
-      - git diff --exit-code -- "*.go"
+      - node scripts/dev/check-go-format.mjs
       - pnpm --dir web format:check
 
   lint:
@@ -101,6 +100,7 @@ tasks:
     cmds:
       - task: merge:test
       - task: layout:test
+      - node --test scripts/dev/check-go-format.test.mjs
       - task: fmt:check
       - task: lint
       - task: test
@@ -111,14 +111,19 @@ tasks:
     cmds:
       - go test -count=1 -v ./internal/runtimefs -run '^(TestCrossProcessSharedExclusiveAndCrashRelease|TestLockOrderIsRejectedAcrossProcessBoundary)$'
 
-  security:
-    desc: Run source, dependency, license, and adversarial security gates
+  security:source:
+    desc: Scan Go and Web dependencies and Git history for security issues
     deps: [web:build]
     cmds:
-      - node scripts/release/check-pipefail-pipelines.mjs
       - bash scripts/release/check-vulnerabilities.sh
       - pnpm --dir web audit --registry=https://registry.npmjs.org --audit-level high
       - gitleaks git --redact --no-banner --no-color .
+
+  security:
+    desc: Run source, dependency, license, and adversarial security gates
+    cmds:
+      - node scripts/release/check-pipefail-pipelines.mjs
+      - task: security:source
       - bash scripts/release/check-licenses.sh
       - go test -race ./internal/domain ./internal/media ./internal/archive ./internal/auth ./internal/observability ./internal/transport/http/gin
 
