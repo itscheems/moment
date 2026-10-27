@@ -5,6 +5,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { flushSync } from "react-dom";
 
 import {
   PublicApi,
@@ -40,9 +41,25 @@ import {
   validateNewerPage,
   withoutLoadedProgress,
 } from "./cursorContinuity";
-import { reconcileTimelineEvent, timelineItemKey } from "./timelineItems";
+import {
+  reconcileTimelineEvent,
+  timelineItemKey,
+  timelineInstant,
+} from "./timelineItems";
+import { siteDate } from "./timelineDays";
+import { parseArchiveLocation } from "../memory/memoryState";
+import { positionAnchor } from "../memory/archiveDates";
 import styles from "./TimelinePage.module.css";
 import { rowElement, withRowsRendered } from "./scrollAnchor";
+import {
+  scrollToArchiveRow,
+  archiveRowTop,
+  placeArchiveRow,
+  emphasizeArchiveRow,
+  rememberArchiveWindow,
+  transitionArchiveWindow,
+  type ArchiveJumpRequest,
+} from "../memory/archiveMotion";
 
 const MAX_REPLAY_PAGES = 1_000;
 
@@ -98,6 +115,7 @@ export function TimelinePage({
   emptyContext = "timeline",
   onSiteChanged,
   canPublish = false,
+  archiveJump = null,
 }: {
   api: PublicApi;
   site: SiteIdentity;
@@ -110,12 +128,14 @@ export function TimelinePage({
   emptyContext?: "timeline" | "archive";
   onSiteChanged?: (site: SiteIdentity) => void;
   canPublish?: boolean;
+  archiveJump?: ArchiveJumpRequest | null;
 }) {
   const {
     pathname,
     replaceTimelineProgress,
     replaceWithinPage,
     restoreCurrentEntry,
+    archiveAnchor,
   } = useNavigation();
   const [posts, setPosts] = useState<PublicPost[]>([]);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
@@ -132,6 +152,9 @@ export function TimelinePage({
   const [settled, setSettled] = useState(false);
   const [freshId, setFreshId] = useState<string | null>(null);
   const initialSearchRef = useRef(initialSearch);
+  const loadedSearchRef = useRef(initialSearch);
+  const pendingJump = useRef<ArchiveJumpRequest | null>(null);
+  const handledJump = useRef({ id: 0, search: "" });
   const surfacePath = useRef(pathname);
   const activeInitial = useRef<AbortController | null>(null);
   const activeMore = useRef<AbortController | null>(null);
@@ -144,6 +167,9 @@ export function TimelinePage({
   const recoveredCursors = useRef(new Set<string>());
   /** The row the list opened at: the newest on or before the anchor. */
   const anchorKey = useRef<string | null>(null);
+  const listRef = useRef<HTMLElement | null>(null);
+  const savedAnchor = useRef(archiveAnchor);
+  const stopArchiveJump = useRef<(() => void) | null>(null);
   /** The top row and where it was, measured just before a page is prepended. */
   const compensation = useRef<{ key: string; top: number } | null>(null);
 
@@ -187,7 +213,29 @@ export function TimelinePage({
     [replaceWithinPage],
   );
 
+  const syncArchiveWindow = useCallback(
+    (search: string) => {
+      rememberArchiveWindow(search);
+      const params = new URLSearchParams(window.location.search);
+      const loaded = new URLSearchParams(search);
+      const sameWindow =
+        loaded.get("anchor") ===
+        positionAnchor(parseArchiveLocation(window.location.search));
+      for (const name of ["loaded_through", "loaded_newer"]) {
+        const value = sameWindow ? loaded.get(name) : null;
+        if (value) params.set(name, value);
+        else params.delete(name);
+      }
+      replaceWithinPage(
+        `${surfacePath.current}${params.size ? `?${params}` : ""}`,
+      );
+    },
+    [replaceWithinPage],
+  );
+
   const loadInitial: () => Promise<void> = useCallback(async () => {
+    const jump = pendingJump.current;
+    if (jump) initialSearchRef.current = jump.search;
     activeInitial.current?.abort();
     activeMore.current?.abort();
     activeNewer.current?.abort();
@@ -294,14 +342,50 @@ export function TimelinePage({
 
       if (discardedProgress) forgetProgress();
       combined = reconcilePostChanges(combined);
-      visitedCursors.current = visited;
-      anchorKey.current =
-        request.anchor && opening.items[0]
-          ? timelineItemKey(opening.items[0])
-          : null;
-      setPosts(combined);
-      setNextCursor(page.nextCursor);
-      setPrevCursor(newerCursor);
+      const publish = () => {
+        if (jump) listRef.current?.style.removeProperty("padding-block-end");
+        loadedSearchRef.current = initialSearchRef.current;
+        if (surfacePath.current === "/archive" && !jump)
+          rememberArchiveWindow(loadedSearchRef.current);
+        visitedCursors.current = visited;
+        anchorKey.current =
+          (request.anchor || jump) && opening.items[0]
+            ? timelineItemKey(opening.items[0])
+            : null;
+        setPosts(combined);
+        setNextCursor(page.nextCursor);
+        setPrevCursor(newerCursor);
+        setLoadingInitial(false);
+      };
+      if (jump) {
+        initialEntryRestored.current = true;
+        const arrived = await transitionArchiveWindow(
+          listRef.current,
+          jump.direction ?? (jump.restore ? null : "newer"),
+          () => {
+            flushSync(publish);
+            syncArchiveWindow(loadedSearchRef.current);
+            const list = listRef.current;
+            const key = jump.restore?.key ?? anchorKey.current;
+            const row = key && list ? rowElement(key, list) : undefined;
+            if (row && list)
+              withRowsRendered(() => {
+                row.removeAttribute("data-archive-target");
+                placeArchiveRow(row, list, jump.restore?.top);
+              }, list);
+          },
+          controller.signal,
+        );
+        if (controller.signal.aborted) return;
+        if (!arrived) initialSearchRef.current = loadedSearchRef.current;
+        const row =
+          anchorKey.current && listRef.current
+            ? rowElement(anchorKey.current, listRef.current)
+            : undefined;
+        if (arrived && row && !jump.restore) emphasizeArchiveRow(row);
+        pendingJump.current = null;
+        setSettled(true);
+      } else publish();
     } catch (error) {
       if (controller.signal.aborted) return;
       const query = new URLSearchParams(initialSearchRef.current);
@@ -311,11 +395,14 @@ export function TimelinePage({
       ) {
         forgetProgress(true);
         await loadInitial();
-      } else setInitialError(error);
+      } else {
+        setInitialError(error);
+        if (jump) setSettled(true);
+      }
     } finally {
       if (!controller.signal.aborted) setLoadingInitial(false);
     }
-  }, [api, forgetProgress, reconcilePostChanges]);
+  }, [api, forgetProgress, reconcilePostChanges, syncArchiveWindow]);
 
   useEffect(() => {
     void loadInitial();
@@ -323,6 +410,7 @@ export function TimelinePage({
       activeInitial.current?.abort();
       activeMore.current?.abort();
       activeNewer.current?.abort();
+      stopArchiveJump.current?.();
     };
   }, [loadInitial]);
 
@@ -345,33 +433,153 @@ export function TimelinePage({
   // already above: where a jump to a day lands, and the only way "scroll up
   // for what came after" can be true from the first frame.
   const placeAnchor = useCallback(() => {
+    if (handledJump.current.id > 0) return;
     const key = anchorKey.current;
-    const row = key ? rowElement(key) : undefined;
-    if (row) {
+    const list = listRef.current;
+    const row = key && list ? rowElement(key, list) : undefined;
+    if (row && list) {
       withRowsRendered(() => {
-        const header = document.querySelector<HTMLElement>(
-          "#main-content > header",
-        );
-        window.scrollTo({
-          top:
-            row.getBoundingClientRect().top +
-            window.scrollY -
-            (header?.offsetHeight ?? 0),
-          behavior: "auto",
-        });
-      });
+        placeArchiveRow(row, list);
+        emphasizeArchiveRow(row);
+      }, list);
     }
     setSettled(true);
   }, []);
+
+  useEffect(() => {
+    if (!archiveJump || handledJump.current.id === archiveJump.id) return;
+    const alreadyMoving =
+      !settled &&
+      !initialError &&
+      !archiveJump.restore &&
+      handledJump.current.search === archiveJump.search;
+    handledJump.current = { id: archiveJump.id, search: archiveJump.search };
+    if (alreadyMoving) return;
+    const target = new URLSearchParams(archiveJump.search).get("anchor");
+    const index = archiveJump.restore
+      ? posts.findIndex(
+          (post) => timelineItemKey(post) === archiveJump.restore?.key,
+        )
+      : target === null
+        ? prevCursor === null
+          ? 0
+          : -1
+        : posts.findIndex(
+            (post) => siteDate(timelineInstant(post), site.timezone) <= target,
+          );
+    const post =
+      index >= 0 && (index > 0 || prevCursor === null || archiveJump.restore)
+        ? posts[index]
+        : undefined;
+    const list = listRef.current;
+    const row =
+      post && list ? rowElement(timelineItemKey(post), list) : undefined;
+    if (
+      archiveJump.repeat &&
+      row &&
+      Math.abs(archiveRowTop(row) - window.scrollY) < 1
+    ) {
+      setSettled(true);
+      return;
+    }
+    activeInitial.current?.abort();
+    activeMore.current?.abort();
+    activeNewer.current?.abort();
+    stopArchiveJump.current?.();
+    compensation.current = null;
+    setSettled(false);
+    if (row && list) {
+      pendingJump.current = null;
+      initialSearchRef.current = loadedSearchRef.current;
+      setLoadingInitial(false);
+      setInitialError(null);
+      syncArchiveWindow(loadedSearchRef.current);
+      const delta =
+        archiveRowTop(row, archiveJump.restore?.top) - window.scrollY;
+      const preserveEmphasis =
+        archiveJump.repeat === true && row.hasAttribute("data-archive-target");
+      if (Math.abs(delta) < 1 || archiveJump.restore) {
+        if (archiveJump.restore)
+          placeArchiveRow(row, list, archiveJump.restore.top);
+        else if (!archiveJump.repeat) emphasizeArchiveRow(row);
+        setSettled(true);
+      } else if (Math.abs(delta) <= window.innerHeight * 3) {
+        stopArchiveJump.current = scrollToArchiveRow(
+          row,
+          list,
+          (arrived) => {
+            if (arrived && !preserveEmphasis) emphasizeArchiveRow(row);
+            setSettled(true);
+          },
+          preserveEmphasis,
+        );
+      } else {
+        const controller = new AbortController();
+        activeInitial.current = controller;
+        void transitionArchiveWindow(
+          list,
+          archiveJump.direction ?? (delta > 0 ? "older" : "newer"),
+          () =>
+            withRowsRendered(() => {
+              if (!preserveEmphasis) row.removeAttribute("data-archive-target");
+              placeArchiveRow(row, list);
+            }, list),
+          controller.signal,
+        )
+          .then((arrived) => {
+            if (controller.signal.aborted) return;
+            if (arrived && !preserveEmphasis) emphasizeArchiveRow(row);
+            setSettled(true);
+          })
+          .catch((error: unknown) => {
+            if (!controller.signal.aborted) {
+              setInitialError(error);
+              setSettled(true);
+            }
+          });
+      }
+    } else {
+      pendingJump.current = archiveJump;
+      initialSearchRef.current = archiveJump.search;
+      syncArchiveWindow(loadedSearchRef.current);
+      void loadInitial();
+    }
+  }, [
+    archiveJump,
+    loadInitial,
+    posts,
+    prevCursor,
+    syncArchiveWindow,
+    settled,
+    initialError,
+    site.timezone,
+  ]);
 
   useEffect(() => {
     if (loadingInitial || initialError || initialEntryRestored.current) {
       return;
     }
     initialEntryRestored.current = true;
-    const placed = restoreCurrentEntry(
-      anchorKey.current ? placeAnchor : undefined,
-    );
+    let placed = false;
+    const restore = () => {
+      const saved = savedAnchor.current;
+      const row =
+        saved && listRef.current
+          ? rowElement(saved.key, listRef.current)
+          : null;
+      if (saved && row && listRef.current) {
+        placeArchiveRow(row, listRef.current, saved.top);
+        return;
+      }
+      placed = restoreCurrentEntry(anchorKey.current ? placeAnchor : undefined);
+    };
+    // A saved scroll offset refers to laid-out rows, not their off-screen
+    // placeholders. Restore in the same geometry used for a fresh date jump.
+    if ((anchorKey.current || savedAnchor.current) && listRef.current) {
+      withRowsRendered(restore, listRef.current);
+    } else {
+      restore();
+    }
     // Restoration scrolls on the next frame; the top frontier may look only
     // after that, or it would see itself at the top of an unscrolled page.
     if (!placed) window.requestAnimationFrame(() => setSettled(true));
@@ -421,7 +629,12 @@ export function TimelinePage({
       visitedCursors.current = visited;
       setPosts(combined);
       setNextCursor(page.nextCursor);
-      replaceTimelineProgress(requestedCursor);
+      const progress = new URLSearchParams(loadedSearchRef.current);
+      progress.set("loaded_through", requestedCursor);
+      loadedSearchRef.current = initialSearchRef.current = `?${progress}`;
+      if (surfacePath.current === "/archive")
+        syncArchiveWindow(loadedSearchRef.current);
+      else replaceTimelineProgress(requestedCursor);
       if (source === "manual" && firstNew) {
         window.requestAnimationFrame(() => {
           rowElement(firstNew)?.focus({ preventScroll: true });
@@ -470,7 +683,12 @@ export function TimelinePage({
       visitedCursors.current = visited;
       setPosts(combined);
       setPrevCursor(page.prevCursor);
-      replaceTimelineProgress(requestedCursor, "loaded_newer");
+      const progress = new URLSearchParams(loadedSearchRef.current);
+      progress.set("loaded_newer", requestedCursor);
+      loadedSearchRef.current = initialSearchRef.current = `?${progress}`;
+      if (surfacePath.current === "/archive")
+        syncArchiveWindow(loadedSearchRef.current);
+      else replaceTimelineProgress(requestedCursor, "loaded_newer");
       if (source === "manual" && nearestNew) {
         window.requestAnimationFrame(() => {
           rowElement(nearestNew)?.focus({ preventScroll: true });
@@ -532,7 +750,7 @@ export function TimelinePage({
   });
 
   if (loadingInitial && posts.length === 0) return <TimelineLoading />;
-  if (initialError && (!recoveringInitial || posts.length === 0)) {
+  if (initialError && posts.length === 0) {
     return <PublicError recovering={recoveringInitial} />;
   }
   if (posts.length === 0 && !nextCursor && !prevCursor) {
@@ -541,8 +759,13 @@ export function TimelinePage({
 
   return (
     <>
-      <section aria-label="公开时间流" className={styles.timelineList}>
-        {posts.length > 0 && (initialError || loadingInitial) ? (
+      <section
+        aria-label="公开时间流"
+        className={styles.timelineList}
+        ref={listRef}
+      >
+        {posts.length > 0 &&
+        (initialError || (loadingInitial && !pendingJump.current)) ? (
           <ReadRecoveryNotice />
         ) : null}
         <p aria-live="polite" className={styles.srOnly}>
@@ -553,10 +776,11 @@ export function TimelinePage({
             正在重新获取更新的内容…
           </ReadRecoveryNotice>
         ) : null}
-        {prevCursor && settled && !newerError ? (
+        {prevCursor && !newerError ? (
           <LoadMoreSentinel
             className={styles.moreRow}
             cursor={prevCursor}
+            enabled={settled}
             label="加载更新的 Moment"
             loading={loadingNewer || loadingInitial}
             onLoad={(source) => void loadNewer(source)}
@@ -585,6 +809,7 @@ export function TimelinePage({
           <LoadMoreSentinel
             className={styles.moreRow}
             cursor={nextCursor}
+            enabled={archiveJump === null || settled}
             label="加载更早的 Moment"
             loading={loadingMore || loadingInitial}
             onLoad={(source) => void loadMore(source)}
