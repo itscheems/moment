@@ -79,7 +79,8 @@ func TestMediaDirectAgentContractAndMaintenanceSafety(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	blocked := execute(application, "", "media", "list", "--timeout", "200ms", "--data-dir", dataDir, "--as", "writer", "--json")
+	// The command opens and verifies SQLite before waiting for the media lock.
+	blocked := execute(application, "", "media", "list", "--timeout", "2s", "--data-dir", dataDir, "--as", "writer", "--json")
 	if err := exclusive.Release(); err != nil {
 		t.Fatal(err)
 	}
