@@ -43,11 +43,11 @@ type CommentStore interface {
 	CommentsEnabled(context.Context) (bool, error)
 	CommentByID(context.Context, domain.ID) (domain.Comment, bool, error)
 	CommentsByID(context.Context, []domain.ID) (map[domain.ID]domain.Comment, error)
-	ListCommentRoots(context.Context, domain.ID, *CommentPosition, int) ([]domain.Comment, error)
-	ListCommentReplies(context.Context, domain.ID, *CommentPosition, int) ([]domain.Comment, error)
-	ListDirectCommentReplies(context.Context, domain.ID, domain.ID, *CommentPosition, int) ([]domain.Comment, error)
+	ListCommentRoots(context.Context, domain.ID, *CommentPosition, int, CommentSort) ([]domain.Comment, error)
+	ListCommentReplies(context.Context, domain.ID, *CommentPosition, int, CommentSort) ([]domain.Comment, error)
+	ListDirectCommentReplies(context.Context, domain.ID, domain.ID, *CommentPosition, int, CommentSort) ([]domain.Comment, error)
 	CountDirectCommentReplies(context.Context, domain.ID, domain.ID) (int, error)
-	ReplyPreviews(context.Context, []domain.ID, int) (map[domain.ID][]domain.Comment, error)
+	ReplyPreviews(context.Context, []domain.ID, int, CommentSort) (map[domain.ID][]domain.Comment, error)
 	CommentMediaUsagesByComment(context.Context, []domain.ID) (map[domain.ID][]MediaUsageProjection, error)
 	ReplyCounts(context.Context, []domain.ID) (map[domain.ID]int, error)
 	CommentAuthorIdentities(context.Context, []string) (map[string]CommentAuthorIdentity, error)
@@ -147,6 +147,7 @@ type CommentReplyPage struct {
 type ListCommentsInput struct {
 	EntryID domain.ID
 	Cursor  string
+	Sort    CommentSort
 	Limit   int
 	// Viewer is who is reading; a thread under a post they may not see is
 	// reported as a missing post.
@@ -159,6 +160,7 @@ type ListRepliesInput struct {
 	RootID  domain.ID
 	Scope   CommentReplyScope
 	Cursor  string
+	Sort    CommentSort
 	Limit   int
 	Viewer  Viewer
 }
@@ -535,7 +537,11 @@ func (service *CommentService) ListPage(ctx context.Context, input ListCommentsI
 	if err != nil {
 		return CommentThread{}, err
 	}
-	after, err := decodeCommentRootCursor(input.Cursor, input.EntryID)
+	sort, err := NormalizeCommentSort(input.Sort)
+	if err != nil {
+		return CommentThread{}, err
+	}
+	after, err := decodeCommentRootCursor(input.Cursor, input.EntryID, sort)
 	if err != nil {
 		return CommentThread{}, err
 	}
@@ -547,7 +553,7 @@ func (service *CommentService) ListPage(ctx context.Context, input ListCommentsI
 		}
 		// One extra root answers "is there another page" without a second
 		// query, the same trick the timeline uses.
-		roots, storeErr := store.ListCommentRoots(ctx, input.EntryID, after, limit+1)
+		roots, storeErr := store.ListCommentRoots(ctx, input.EntryID, after, limit+1, sort)
 		if storeErr != nil {
 			return storeErr
 		}
@@ -569,7 +575,7 @@ func (service *CommentService) ListPage(ctx context.Context, input ListCommentsI
 		// page can hold up to MaxPageSize roots, and a query behind every row
 		// is the shape this read already avoids for attachments, totals and
 		// identities.
-		previews, previewErr := store.ReplyPreviews(ctx, rootIDs, InlineReplyPreviewCount+1)
+		previews, previewErr := store.ReplyPreviews(ctx, rootIDs, InlineReplyPreviewCount+1, sort)
 		if previewErr != nil {
 			return previewErr
 		}
@@ -582,7 +588,7 @@ func (service *CommentService) ListPage(ctx context.Context, input ListCommentsI
 			if len(replies) > InlineReplyPreviewCount {
 				replies = replies[:InlineReplyPreviewCount]
 				last := replies[len(replies)-1]
-				repliesNextCursor[root.ID] = encodeCommentReplyCursor(root.ID, CommentPosition{CreatedAtMS: domain.TimeToMillis(last.CreatedAt), ID: last.ID})
+				repliesNextCursor[root.ID] = encodeCommentReplyCursor(root.ID, CommentPosition{CreatedAtMS: domain.TimeToMillis(last.CreatedAt), ID: last.ID}, sort)
 			}
 			records = append(records, replies...)
 		}
@@ -601,7 +607,7 @@ func (service *CommentService) ListPage(ctx context.Context, input ListCommentsI
 		thread.Items = rendered
 		if hasNext && len(roots) > 0 {
 			last := roots[len(roots)-1]
-			thread.NextCursor = encodeCommentRootCursor(input.EntryID, CommentPosition{CreatedAtMS: domain.TimeToMillis(last.CreatedAt), ID: last.ID})
+			thread.NextCursor = encodeCommentRootCursor(input.EntryID, CommentPosition{CreatedAtMS: domain.TimeToMillis(last.CreatedAt), ID: last.ID}, sort)
 		}
 		pinnedCommentID, storeErr := store.PinnedCommentID(ctx, input.EntryID)
 		if storeErr != nil {
@@ -619,7 +625,7 @@ func (service *CommentService) ListPage(ctx context.Context, input ListCommentsI
 			return nil
 		}
 		pinnedRecords := []domain.Comment{pinnedRoot}
-		pinnedReplies, storeErr := store.ListCommentReplies(ctx, pinnedRoot.ID, nil, InlineReplyPreviewCount+1)
+		pinnedReplies, storeErr := store.ListCommentReplies(ctx, pinnedRoot.ID, nil, InlineReplyPreviewCount+1, sort)
 		if storeErr != nil {
 			return storeErr
 		}
@@ -627,7 +633,7 @@ func (service *CommentService) ListPage(ctx context.Context, input ListCommentsI
 		if len(pinnedReplies) > InlineReplyPreviewCount {
 			pinnedReplies = pinnedReplies[:InlineReplyPreviewCount]
 			last := pinnedReplies[len(pinnedReplies)-1]
-			pinnedNextCursor = encodeCommentReplyCursor(pinnedRoot.ID, CommentPosition{CreatedAtMS: domain.TimeToMillis(last.CreatedAt), ID: last.ID})
+			pinnedNextCursor = encodeCommentReplyCursor(pinnedRoot.ID, CommentPosition{CreatedAtMS: domain.TimeToMillis(last.CreatedAt), ID: last.ID}, sort)
 		}
 		pinnedRecords = append(pinnedRecords, pinnedReplies...)
 		pinnedCounts, storeErr := store.ReplyCounts(ctx, []domain.ID{pinnedRoot.ID})
@@ -739,7 +745,11 @@ func (service *CommentService) ListReplies(ctx context.Context, input ListReplie
 	if input.Scope != CommentRepliesThread && input.Scope != CommentRepliesDirect {
 		return CommentReplyPage{}, domain.NewError(domain.CodeInvalidArgument, "scope must be thread or direct", map[string]any{"field": "scope"})
 	}
-	after, err := decodeScopedCommentReplyCursor(input.Cursor, input.RootID, input.Scope)
+	sort, err := NormalizeCommentSort(input.Sort)
+	if err != nil {
+		return CommentReplyPage{}, err
+	}
+	after, err := decodeScopedCommentReplyCursor(input.Cursor, input.RootID, input.Scope, sort)
 	if err != nil {
 		return CommentReplyPage{}, err
 	}
@@ -761,9 +771,9 @@ func (service *CommentService) ListReplies(ctx context.Context, input ListReplie
 		}
 		var replies []domain.Comment
 		if input.Scope == CommentRepliesDirect {
-			replies, storeErr = store.ListDirectCommentReplies(ctx, input.EntryID, input.RootID, after, limit+1)
+			replies, storeErr = store.ListDirectCommentReplies(ctx, input.EntryID, input.RootID, after, limit+1, sort)
 		} else {
-			replies, storeErr = store.ListCommentReplies(ctx, input.RootID, after, limit+1)
+			replies, storeErr = store.ListCommentReplies(ctx, input.RootID, after, limit+1, sort)
 		}
 		if storeErr != nil {
 			return storeErr
@@ -779,7 +789,7 @@ func (service *CommentService) ListReplies(ctx context.Context, input ListReplie
 		page.Items = rendered
 		if hasNext && len(replies) > 0 {
 			last := replies[len(replies)-1]
-			page.NextCursor = encodeScopedCommentReplyCursor(input.RootID, CommentPosition{CreatedAtMS: domain.TimeToMillis(last.CreatedAt), ID: last.ID}, input.Scope)
+			page.NextCursor = encodeScopedCommentReplyCursor(input.RootID, CommentPosition{CreatedAtMS: domain.TimeToMillis(last.CreatedAt), ID: last.ID}, input.Scope, sort)
 		}
 		return nil
 	})

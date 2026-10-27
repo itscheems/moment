@@ -150,52 +150,60 @@ const commentColumns = `comments.id, comments.entry_id, comments.parent_id, comm
        location.category, location.provider, location.provider_place_id,
        location.latitude_e7, location.longitude_e7, location.coordinate_system`
 
-// Comments read oldest first, so the seek predicate walks forward with `>`.
-// The timeline walks backward with `<`; mixing the two directions in one
-// codebase is the easiest thing here to get wrong, and getting it wrong
-// returns a plausible wrong page rather than an error.
-const commentSeekPredicate = `(comments.created_at_ms > ? OR (comments.created_at_ms = ? AND comments.id > ?))`
-
-const commentKeysetOrder = `ORDER BY comments.created_at_ms ASC, comments.id ASC LIMIT ?`
-
-func commentSeekArguments(after *app.CommentPosition) (string, []any) {
+// The keyset predicate and tie-breaker always use the same direction.
+func commentOrder(sort app.CommentSort) string {
+	if sort == app.CommentNewest {
+		return "DESC"
+	}
+	return "ASC"
+}
+func commentSeekArguments(after *app.CommentPosition, sort app.CommentSort) (string, []any) {
 	if after == nil {
 		return "", nil
 	}
-	return " AND " + commentSeekPredicate, []any{after.CreatedAtMS, after.CreatedAtMS, after.ID.String()}
+	operator := ">"
+	if sort == app.CommentNewest {
+		operator = "<"
+	}
+	predicate := " AND (comments.created_at_ms " + operator + " ? OR (comments.created_at_ms = ? AND comments.id " + operator + " ?))"
+	return predicate, []any{after.CreatedAtMS, after.CreatedAtMS, after.ID.String()}
+}
+func commentKeysetOrder(sort app.CommentSort) string {
+	direction := commentOrder(sort)
+	return "ORDER BY comments.created_at_ms " + direction + ", comments.id " + direction + " LIMIT ?"
 }
 
 // ListCommentRoots returns one keyset page of top-level comments.
-func (store commentStore) ListCommentRoots(ctx context.Context, entryID domain.ID, after *app.CommentPosition, limit int) ([]domain.Comment, error) {
-	predicate, arguments := commentSeekArguments(after)
+func (store commentStore) ListCommentRoots(ctx context.Context, entryID domain.ID, after *app.CommentPosition, limit int, sort app.CommentSort) ([]domain.Comment, error) {
+	predicate, arguments := commentSeekArguments(after, sort)
 	query := `SELECT ` + commentColumns + `
 FROM comments
 LEFT JOIN comment_location AS location ON location.comment_id = comments.id
 WHERE comments.entry_id = ? AND comments.parent_id IS NULL` + predicate + `
-` + commentKeysetOrder
+` + commentKeysetOrder(sort)
 	return store.queryCommentPage(ctx, query, append(append([]any{entryID.String()}, arguments...), limit)...)
 }
 
 // ListCommentReplies returns one keyset page of replies under a single root.
-func (store commentStore) ListCommentReplies(ctx context.Context, rootID domain.ID, after *app.CommentPosition, limit int) ([]domain.Comment, error) {
-	predicate, arguments := commentSeekArguments(after)
+func (store commentStore) ListCommentReplies(ctx context.Context, rootID domain.ID, after *app.CommentPosition, limit int, sort app.CommentSort) ([]domain.Comment, error) {
+	predicate, arguments := commentSeekArguments(after, sort)
 	query := `SELECT ` + commentColumns + `
 FROM comments
 LEFT JOIN comment_location AS location ON location.comment_id = comments.id
 WHERE comments.parent_id = ?` + predicate + `
-` + commentKeysetOrder
+` + commentKeysetOrder(sort)
 	return store.queryCommentPage(ctx, query, append(append([]any{rootID.String()}, arguments...), limit)...)
 }
 
 // Unaddressed historical replies remain with their root when a target is absent.
-func (store commentStore) ListDirectCommentReplies(ctx context.Context, entryID, targetID domain.ID, after *app.CommentPosition, limit int) ([]domain.Comment, error) {
-	predicate, arguments := commentSeekArguments(after)
+func (store commentStore) ListDirectCommentReplies(ctx context.Context, entryID, targetID domain.ID, after *app.CommentPosition, limit int, sort app.CommentSort) ([]domain.Comment, error) {
+	predicate, arguments := commentSeekArguments(after, sort)
 	query := `SELECT ` + commentColumns + `
 FROM comments
 LEFT JOIN comment_location AS location ON location.comment_id = comments.id
 WHERE comments.entry_id = ? AND (comments.reply_to_comment_id = ? OR
  (comments.parent_id = ? AND comments.reply_to_comment_id IS NULL))` + predicate + `
-` + commentKeysetOrder
+` + commentKeysetOrder(sort)
 	return store.queryCommentPage(ctx, query, append(append([]any{entryID.String(), targetID.String(), targetID.String()}, arguments...), limit)...)
 }
 
@@ -226,7 +234,7 @@ func (store commentStore) queryCommentPage(ctx context.Context, query string, ar
 	return records, nil
 }
 
-// ReplyPreviews returns the oldest few replies under each of several roots in
+// ReplyPreviews returns the first few replies in the requested order under roots in
 // one query.
 //
 // The caller used to ask per root inside the page loop. That is a query behind
@@ -238,7 +246,7 @@ func (store commentStore) queryCommentPage(ctx context.Context, query string, ar
 // each reply within its parent by the same (created_at_ms, id) order the
 // keyset pages walk, then keep the first few. One extra row per root is kept
 // so the caller can still tell whether more remain without counting.
-func (store commentStore) ReplyPreviews(ctx context.Context, rootIDs []domain.ID, limit int) (map[domain.ID][]domain.Comment, error) {
+func (store commentStore) ReplyPreviews(ctx context.Context, rootIDs []domain.ID, limit int, sort app.CommentSort) (map[domain.ID][]domain.Comment, error) {
 	previews := make(map[domain.ID][]domain.Comment, len(rootIDs))
 	if len(rootIDs) == 0 || limit <= 0 {
 		return previews, nil
@@ -256,7 +264,7 @@ WITH ranked AS (
     SELECT comments.id AS ranked_id,
            ROW_NUMBER() OVER (
                PARTITION BY comments.parent_id
-               ORDER BY comments.created_at_ms ASC, comments.id ASC
+               ORDER BY comments.created_at_ms `+commentOrder(sort)+`, comments.id `+commentOrder(sort)+`
            ) AS position
     FROM comments
     WHERE comments.parent_id IN (`+strings.Join(placeholders, ", ")+`)
@@ -266,7 +274,7 @@ FROM comments
 JOIN ranked ON ranked.ranked_id = comments.id
 LEFT JOIN comment_location AS location ON location.comment_id = comments.id
 WHERE ranked.position <= ?
-ORDER BY comments.parent_id, comments.created_at_ms ASC, comments.id ASC`, arguments...)
+ORDER BY comments.parent_id, comments.created_at_ms `+commentOrder(sort)+`, comments.id `+commentOrder(sort), arguments...)
 	if err != nil {
 		return nil, fmt.Errorf("query reply previews: %w", err)
 	}

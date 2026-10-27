@@ -25,13 +25,33 @@ const (
 	commentDirectReplyCursorV1 = 2
 )
 
+// CommentSort selects both the keyset seek direction and the ID tie-breaker.
+type CommentSort string
+
+const (
+	CommentOldest CommentSort = "oldest"
+	CommentNewest CommentSort = "newest"
+)
+
+func NormalizeCommentSort(value CommentSort) (CommentSort, error) {
+	if value == "" {
+		return CommentOldest, nil
+	}
+	if value != CommentOldest && value != CommentNewest {
+		return "", domain.NewError(domain.CodeInvalidArgument, "sort must be oldest or newest", map[string]any{"field": "sort"})
+	}
+	return value, nil
+}
+
+// Oldest cursors retain their existing representation; newest is explicit.
+func commentCursorSort(value CommentSort) CommentSort {
+	if value == CommentNewest {
+		return value
+	}
+	return ""
+}
+
 // CommentPosition is the keyset boundary passed to the repository.
-//
-// Comments are ordered oldest first, the opposite of the timeline, so the seek
-// predicate built from this compares greater-than where the timeline compares
-// less-than. Getting that backwards silently returns the wrong page rather
-// than failing, which is why the repository tests construct two comments
-// sharing a millisecond.
 type CommentPosition struct {
 	CreatedAtMS int64
 	ID          domain.ID
@@ -41,23 +61,25 @@ type CommentPosition struct {
 // decode, the same guard the timeline applies to its date filters: a cursor
 // minted for one thread cannot be replayed against another.
 type commentRootCursorPayload struct {
-	Version     int    `json:"v"`
-	EntryID     string `json:"entry_id"`
-	CreatedAtMS int64  `json:"created_at_ms"`
-	ID          string `json:"id"`
+	Version     int         `json:"v"`
+	EntryID     string      `json:"entry_id"`
+	CreatedAtMS int64       `json:"created_at_ms"`
+	ID          string      `json:"id"`
+	Sort        CommentSort `json:"sort,omitempty"`
 }
 
 type commentReplyCursorPayload struct {
-	Version     int    `json:"v"`
-	RootID      string `json:"root_id"`
-	CreatedAtMS int64  `json:"created_at_ms"`
-	ID          string `json:"id"`
+	Version     int         `json:"v"`
+	RootID      string      `json:"root_id"`
+	CreatedAtMS int64       `json:"created_at_ms"`
+	ID          string      `json:"id"`
+	Sort        CommentSort `json:"sort,omitempty"`
 }
 
-func encodeCommentRootCursor(entryID domain.ID, position CommentPosition) string {
+func encodeCommentRootCursor(entryID domain.ID, position CommentPosition, sort CommentSort) string {
 	payload, err := json.Marshal(commentRootCursorPayload{
 		Version: commentRootCursorV1, EntryID: entryID.String(),
-		CreatedAtMS: position.CreatedAtMS, ID: position.ID.String(),
+		CreatedAtMS: position.CreatedAtMS, ID: position.ID.String(), Sort: commentCursorSort(sort),
 	})
 	if err != nil {
 		panic("fixed comment cursor payload cannot fail to encode")
@@ -65,18 +87,18 @@ func encodeCommentRootCursor(entryID domain.ID, position CommentPosition) string
 	return base64.RawURLEncoding.EncodeToString(payload)
 }
 
-func encodeCommentReplyCursor(rootID domain.ID, position CommentPosition) string {
-	return encodeScopedCommentReplyCursor(rootID, position, CommentRepliesThread)
+func encodeCommentReplyCursor(rootID domain.ID, position CommentPosition, sort CommentSort) string {
+	return encodeScopedCommentReplyCursor(rootID, position, CommentRepliesThread, sort)
 }
 
-func encodeScopedCommentReplyCursor(rootID domain.ID, position CommentPosition, scope CommentReplyScope) string {
+func encodeScopedCommentReplyCursor(rootID domain.ID, position CommentPosition, scope CommentReplyScope, sort CommentSort) string {
 	version := commentReplyCursorV1
 	if scope == CommentRepliesDirect {
 		version = commentDirectReplyCursorV1
 	}
 	payload, err := json.Marshal(commentReplyCursorPayload{
 		Version: version, RootID: rootID.String(),
-		CreatedAtMS: position.CreatedAtMS, ID: position.ID.String(),
+		CreatedAtMS: position.CreatedAtMS, ID: position.ID.String(), Sort: commentCursorSort(sort),
 	})
 	if err != nil {
 		panic("fixed comment cursor payload cannot fail to encode")
@@ -90,7 +112,7 @@ func encodeScopedCommentReplyCursor(rootID domain.ID, position CommentPosition, 
 // cursor grants no authority, so the worst a forged one can do is address a
 // different page of already-public data. Requiring the bytes to round trip
 // exactly is enough to keep the format ours, and it leaves no key to manage.
-func decodeCommentRootCursor(value string, entryID domain.ID) (*CommentPosition, error) {
+func decodeCommentRootCursor(value string, entryID domain.ID, sort CommentSort) (*CommentPosition, error) {
 	payloadBytes, ok := decodeCursorBytes(value)
 	if !ok {
 		if value == "" {
@@ -102,13 +124,13 @@ func decodeCommentRootCursor(value string, entryID domain.ID) (*CommentPosition,
 	if err := decodeCanonicalCursor(payloadBytes, &payload); err != nil {
 		return nil, err
 	}
-	if payload.Version != commentRootCursorV1 || payload.EntryID != entryID.String() {
+	if payload.Version != commentRootCursorV1 || payload.EntryID != entryID.String() || payload.Sort != commentCursorSort(sort) {
 		return nil, invalidCursor()
 	}
 	return commentPositionFrom(payload.CreatedAtMS, payload.ID)
 }
 
-func decodeScopedCommentReplyCursor(value string, rootID domain.ID, scope CommentReplyScope) (*CommentPosition, error) {
+func decodeScopedCommentReplyCursor(value string, rootID domain.ID, scope CommentReplyScope, sort CommentSort) (*CommentPosition, error) {
 	payloadBytes, ok := decodeCursorBytes(value)
 	if !ok {
 		if value == "" {
@@ -124,7 +146,7 @@ func decodeScopedCommentReplyCursor(value string, rootID domain.ID, scope Commen
 	if scope == CommentRepliesDirect {
 		version = commentDirectReplyCursorV1
 	}
-	if payload.Version != version || payload.RootID != rootID.String() {
+	if payload.Version != version || payload.RootID != rootID.String() || payload.Sort != commentCursorSort(sort) {
 		return nil, invalidCursor()
 	}
 	return commentPositionFrom(payload.CreatedAtMS, payload.ID)

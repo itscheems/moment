@@ -1,3 +1,5 @@
+import type { CommentSort } from "../../api/public";
+import { ReplySort } from "./ReplySort";
 import postStyles from "../posts/PostPresentation.module.css";
 import { AnimatePresence, cancelFrame, frame } from "motion/react";
 import {
@@ -36,6 +38,8 @@ import {
   countReplies,
   mergePinnedConversation,
   orderPinnedConversation,
+  orderComments,
+  sortCommentThread,
   reconcileCreatedComment,
   reconcileDeletedComment,
 } from "./commentOrdering";
@@ -260,6 +264,8 @@ export function CommentThread({
   const canModerate =
     (auth.state === "signed-in" || auth.state === "expired") &&
     isAdministrator(auth.account);
+  const [sort, setSort] = useState<CommentSort>("oldest");
+  const [displaySort, setDisplaySort] = useState<CommentSort>("oldest");
   const [items, setItems] = useState<PublicComment[] | null>(null);
   const [expandedRoots, setExpandedRoots] = useState<Set<string>>(
     () => new Set(),
@@ -276,6 +282,7 @@ export function CommentThread({
     api: PublicApi;
     postId: string;
     attempt: number;
+    sort: CommentSort;
   } | null>(null);
   const [loadError, setLoadError] = useState<unknown>(null);
   const [threadLoading, setThreadLoading] = useState(true);
@@ -315,14 +322,15 @@ export function CommentThread({
   const headingId = commentsId + "-heading";
   const readPage = useCallback(
     async (options: { cursor?: string; signal?: AbortSignal }) => {
-      if (!conversationId) return api.comments(postId, options);
+      if (!conversationId) return api.comments(postId, { ...options, sort });
       const page = await api.commentReplies(postId, conversationId, {
         ...options,
         scope: "direct",
+        sort,
       });
       return { ...page, pinned: [], pinnedCommentId: null };
     },
-    [api, postId, conversationId],
+    [api, postId, conversationId, sort],
   );
 
   const load = useCallback(() => setAttempt((value) => value + 1), []);
@@ -366,9 +374,12 @@ export function CommentThread({
     if (
       loaded?.api === api &&
       loaded.postId === postId &&
-      loaded.attempt === attempt
-    )
+      loaded.attempt === attempt &&
+      loaded.sort === sort
+    ) {
+      setLoadError(null);
       return;
+    }
     const controller = new AbortController();
     for (const pending of continuations.current.values()) pending.abort();
     continuations.current.clear();
@@ -380,12 +391,21 @@ export function CommentThread({
     void readPage({ signal: controller.signal })
       .then((thread) => {
         if (controller.signal.aborted) return;
-        loadedThread.current = { api, postId, attempt };
+        if (loadedThread.current?.sort !== sort) setExpandedRoots(new Set());
+        loadedThread.current = { api, postId, attempt, sort };
+        setDisplaySort(sort);
         // The pinned conversation is delivered beside the page so that pinning
         // never reorders what a cursor addresses. Folding it back into the
         // stream at its own point in time keeps one array to reason about, and
         // keeps that array in the creation order every other helper walks.
-        setItems(mergePinnedConversation(thread.items, thread.pinned));
+        setItems(
+          conversationId
+            ? mergeCommentReplies([], thread.items)
+            : mergePinnedConversation(
+                sortCommentThread(thread.items, "oldest"),
+                sortCommentThread(thread.pinned, "oldest"),
+              ),
+        );
         setPinnedCommentId(thread.pinnedCommentId);
         setNextCursor(thread.nextCursor);
         setReplyPaging(
@@ -399,7 +419,7 @@ export function CommentThread({
         if (!controller.signal.aborted) setThreadLoading(false);
       });
     return () => controller.abort();
-  }, [active, api, attempt, postId, readPage]);
+  }, [active, api, attempt, postId, readPage, sort, conversationId]);
 
   const loadMoreRoots = useCallback(
     (source: "automatic" | "manual") => {
@@ -409,6 +429,7 @@ export function CommentThread({
         !cursor ||
         loadingMore ||
         threadLoading ||
+        sort !== displaySort ||
         continuations.current.has("roots")
       )
         return;
@@ -431,7 +452,10 @@ export function CommentThread({
           setItems((current) =>
             conversationId
               ? mergeCommentReplies(current ?? [], page.items)
-              : appendRoots(current ?? [], page.items),
+              : appendRoots(
+                  current ?? [],
+                  sortCommentThread(page.items, "oldest"),
+                ),
           );
           setReplyPaging((current) => mergeReplyPaging(current, page.items));
           setNextCursor(page.nextCursor);
@@ -456,7 +480,16 @@ export function CommentThread({
           }
         });
     },
-    [active, loadingMore, nextCursor, readPage, conversationId, threadLoading],
+    [
+      active,
+      loadingMore,
+      nextCursor,
+      readPage,
+      conversationId,
+      threadLoading,
+      sort,
+      displaySort,
+    ],
   );
 
   const loadMoreReplies = useCallback(
@@ -468,6 +501,7 @@ export function CommentThread({
         paging.loading ||
         !paging.cursor ||
         threadLoading ||
+        sort !== displaySort ||
         continuations.current.has(rootId)
       )
         return;
@@ -480,14 +514,22 @@ export function CommentThread({
         withReplyPaging(current, rootId, { loading: true, error: null }),
       );
       void api
-        .commentReplies(postId, rootId, { cursor, signal: controller.signal })
+        .commentReplies(postId, rootId, {
+          cursor,
+          signal: controller.signal,
+          sort,
+        })
         .then((page) => {
           if (controller.signal.aborted) return;
           validateCursorPage(page, cursor, visited, "comment reply");
           const firstNewId = page.items[0]?.id;
           setItems((current) =>
             current
-              ? appendRepliesToRoot(current, rootId, page.items)
+              ? appendRepliesToRoot(
+                  current,
+                  rootId,
+                  [...page.items].sort(orderComments),
+                )
               : current,
           );
           setReplyPaging((current) =>
@@ -521,7 +563,7 @@ export function CommentThread({
             continuations.current.delete(rootId);
         });
     },
-    [active, api, postId, replyPaging, threadLoading],
+    [active, api, postId, replyPaging, threadLoading, sort, displaySort],
   );
 
   const recoverReplies = (rootId: string, source: LoadSource) => {
@@ -650,9 +692,14 @@ export function CommentThread({
   const displayedItems = useMemo(
     () =>
       conversationId
-        ? (items ?? [])
-        : orderPinnedConversation(items ?? [], pinnedCommentId),
-    [items, pinnedCommentId, conversationId],
+        ? displaySort === "newest"
+          ? [...(items ?? [])].reverse()
+          : (items ?? [])
+        : orderPinnedConversation(
+            sortCommentThread(items ?? [], displaySort),
+            pinnedCommentId,
+          ),
+    [items, pinnedCommentId, conversationId, displaySort],
   );
 
   const loadedReplies = useMemo(
@@ -808,6 +855,16 @@ export function CommentThread({
 
       {items ? (
         <>
+          {items.length > 0 ? (
+            <ReplySort
+              value={displaySort}
+              busy={threadLoading}
+              onChange={(next) => {
+                if (next === sort) load();
+                else setSort(next);
+              }}
+            />
+          ) : null}
           {!site.commentsEnabled && !closedByServer ? (
             <div className={styles.closedNotice} role="status">
               <strong>回复已关闭</strong>

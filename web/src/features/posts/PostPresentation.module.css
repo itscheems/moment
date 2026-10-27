@@ -864,6 +864,11 @@
   -webkit-font-smoothing: auto;
 }
 
+/* The sort row supplies the conversation divider when replies are present. */
+.detail:has(+ section [data-reply-sort]) {
+  border-block-end: 0;
+}
+
 .detailIdentity {
   display: grid;
   grid-template-columns: 2.5rem minmax(0, 1fr);

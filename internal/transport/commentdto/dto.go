@@ -349,7 +349,7 @@ func validProjectionMIMEType(value string) bool {
 // to mark it if a later page carries it. What is not accepted is a pinned
 // conversation belonging to some other post, because the whole response
 // describes one post's thread.
-func ValidateThread(thread Thread) error {
+func ValidateThread(thread Thread, sort app.CommentSort) error {
 	if thread.Items == nil {
 		return errors.New("comment thread items must be an array")
 	}
@@ -358,7 +358,7 @@ func ValidateThread(thread Thread) error {
 			return err
 		}
 	}
-	if err := validateCommentRun(thread.Pinned); err != nil {
+	if err := validateCommentRun(thread.Pinned, sort); err != nil {
 		return err
 	}
 	if len(thread.Pinned) > 0 {
@@ -386,7 +386,7 @@ func ValidateThread(thread Thread) error {
 		}
 		seen[comment.ID] = struct{}{}
 		if comment.ParentID == nil {
-			if lastRoot != nil && !commentAfter(*lastRoot, comment) {
+			if lastRoot != nil && !commentAfter(*lastRoot, comment, sort) {
 				return errors.New("comment roots are not in stable order")
 			}
 			rootCopy := comment
@@ -398,7 +398,7 @@ func ValidateThread(thread Thread) error {
 		if *comment.ParentID != currentRoot {
 			return errors.New("comment reply is not adjacent to its root")
 		}
-		if lastReply != nil && !commentAfter(*lastReply, comment) {
+		if lastReply != nil && !commentAfter(*lastReply, comment, sort) {
 			return errors.New("comment replies are not in stable order")
 		}
 		replyCopy := comment
@@ -434,7 +434,7 @@ func ValidateThread(thread Thread) error {
 // parent_id does not imply sharing one post, and stable ordering does not
 // imply distinct identities once a repeated reply arrives with a different
 // timestamp — which is what concatenating two overlapping pages produces.
-func ValidateReplyPage(page ReplyPage) error {
+func ValidateReplyPage(page ReplyPage, sort app.CommentSort) error {
 	if page.Items == nil {
 		return errors.New("comment reply page items must be an array")
 	}
@@ -465,7 +465,7 @@ func ValidateReplyPage(page ReplyPage) error {
 		if *comment.ParentID != parent {
 			return errors.New("comment reply page mixes conversations")
 		}
-		if last != nil && !commentAfter(*last, comment) {
+		if last != nil && !commentAfter(*last, comment, sort) {
 			return errors.New("comment replies are not in stable order")
 		}
 		current := comment
@@ -475,7 +475,7 @@ func ValidateReplyPage(page ReplyPage) error {
 }
 
 // validateCommentRun checks a root followed by its own ordered replies.
-func validateCommentRun(comments []Comment) error {
+func validateCommentRun(comments []Comment, sort app.CommentSort) error {
 	root := ""
 	var last *Comment
 	for index, comment := range comments {
@@ -492,7 +492,7 @@ func validateCommentRun(comments []Comment) error {
 		if comment.ParentID == nil || *comment.ParentID != root {
 			return errors.New("comment reply is not adjacent to its root")
 		}
-		if last != nil && !commentAfter(*last, comment) {
+		if last != nil && !commentAfter(*last, comment, sort) {
 			return errors.New("comment replies are not in stable order")
 		}
 		current := comment
@@ -514,7 +514,10 @@ func ValidatePin(pin Pin) error {
 	return nil
 }
 
-func commentAfter(left, right Comment) bool {
+func commentAfter(left, right Comment, sort app.CommentSort) bool {
+	if sort == app.CommentNewest {
+		left, right = right, left
+	}
 	if right.CreatedAt.After(left.CreatedAt) {
 		return true
 	}

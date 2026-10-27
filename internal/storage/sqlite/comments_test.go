@@ -739,7 +739,7 @@ func TestReplyPreviewsMatchPerRootPaging(t *testing.T) {
 		store := newCommentStore(queries)
 		roots := []domain.ID{busyID, quietID, bareID}
 		limit := app.InlineReplyPreviewCount + 1
-		batched, err := store.ReplyPreviews(testAccountContext(), roots, limit)
+		batched, err := store.ReplyPreviews(testAccountContext(), roots, limit, app.CommentOldest)
 		if err != nil {
 			return err
 		}
@@ -747,7 +747,7 @@ func TestReplyPreviewsMatchPerRootPaging(t *testing.T) {
 			t.Fatalf("previews cover %d roots, want %d", len(batched), len(roots))
 		}
 		for _, rootID := range roots {
-			individual, listErr := store.ListCommentReplies(testAccountContext(), rootID, nil, limit)
+			individual, listErr := store.ListCommentReplies(testAccountContext(), rootID, nil, limit, app.CommentOldest)
 			if listErr != nil {
 				return listErr
 			}
@@ -769,7 +769,7 @@ func TestReplyPreviewsMatchPerRootPaging(t *testing.T) {
 		if len(batched[busyID]) != limit {
 			t.Fatalf("busy root preview = %d, want the probe row too", len(batched[busyID]))
 		}
-		empty, err := store.ReplyPreviews(testAccountContext(), nil, limit)
+		empty, err := store.ReplyPreviews(testAccountContext(), nil, limit, app.CommentOldest)
 		if err != nil || len(empty) != 0 {
 			t.Fatalf("empty batch = %#v, %v", empty, err)
 		}
