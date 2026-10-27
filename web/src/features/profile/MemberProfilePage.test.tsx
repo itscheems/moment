@@ -203,13 +203,31 @@ describe("member profile", () => {
     await waitFor(() =>
       expect(requested.some((url) => url.includes("kind=article"))).toBe(true),
     );
+    const articleTab = screen.getByRole("tab", { name: "文章" });
+    expect(articleTab).toHaveTextContent("文章");
+    expect(articleTab.closest("[data-feed-motion]")).toHaveAttribute(
+      "data-feed-motion",
+      "slide",
+    );
+    expect(articleTab.closest("[data-feed-direction]")).toHaveAttribute(
+      "data-feed-direction",
+      "right",
+    );
     fireEvent.click(screen.getByRole("tab", { name: "全部" }));
     await waitFor(() => expect(window.location.pathname).toBe("/linlin/all"));
+    expect(articleTab.closest("[data-feed-direction]")).toHaveAttribute(
+      "data-feed-direction",
+      "left",
+    );
     fireEvent.click(screen.getByRole("button", { name: "选择帖子类型" }));
     fireEvent.click(await screen.findByRole("menuitem", { name: "帖子" }));
     await waitFor(() => expect(window.location.pathname).toBe("/linlin/posts"));
     await waitFor(() =>
       expect(requested.some((url) => url.includes("kind=moment"))).toBe(true),
+    );
+    expect(articleTab.closest("[data-feed-motion]")).toHaveAttribute(
+      "data-feed-motion",
+      "none",
     );
   });
 
