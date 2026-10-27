@@ -74,13 +74,15 @@ function Person({
             <span>{person.displayName}</span>
           </InternalLink>
         </SiteIdentityPreview>
-        <InternalLink
-          tabIndex={-1}
-          className={styles.handle}
-          href={person.profileUrl}
-        >
-          @{person.username}
-        </InternalLink>
+        <SiteIdentityPreview site={person}>
+          <InternalLink
+            tabIndex={-1}
+            className={styles.handle}
+            href={person.profileUrl}
+          >
+            @{person.username}
+          </InternalLink>
+        </SiteIdentityPreview>
         {!compact && person.bio ? (
           <div className={styles.bio} dir="auto">
             {biography(person.bio)}

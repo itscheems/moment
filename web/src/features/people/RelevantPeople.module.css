@@ -159,6 +159,7 @@
 }
 
 .handle {
+  inline-size: fit-content;
   color: var(--text-secondary);
   font-weight: 400;
 }

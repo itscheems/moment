@@ -114,6 +114,23 @@ describe("RelevantPeople", () => {
     expect(slot).toBeEmptyDOMElement();
   });
 
+  it("opens the account preview from its handle and closes it before profile navigation", async () => {
+    const { view } = setup();
+    render(view());
+    const handle = await within(slot).findByRole("link", { name: "@alice" });
+    fireEvent.focus(handle);
+    const heading = await screen.findByRole("heading", {
+      name: "Alice",
+    });
+    const preview = heading.closest('[class*="identityCard"]');
+    expect(preview?.textContent).toContain(alice.bio);
+    fireEvent.click(within(heading).getByRole("link", { name: "Alice" }));
+    expect(window.location.pathname).toBe("/alice");
+    expect(
+      screen.queryByRole("heading", { name: "Alice" }),
+    ).not.toBeInTheDocument();
+  });
+
   it("allows copying biography text before using the surrounding row to navigate", async () => {
     const { view } = setup();
     render(view());
