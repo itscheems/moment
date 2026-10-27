@@ -21,6 +21,8 @@
   font-weight: 800;
   line-height: 24px;
   letter-spacing: normal;
+  /* Chirp has no CJK glyphs; give the platform fallback the same visual weight. */
+  -webkit-text-stroke: 0.4px currentColor;
 }
 
 .card ul {
