@@ -2,6 +2,54 @@
   min-block-size: 28rem;
 }
 
+:global(:root[data-archive-transition]::view-transition) {
+  pointer-events: none;
+  clip-path: inset(var(--archive-clip));
+}
+
+:global(::view-transition-group(archive-timeline)) {
+  animation: none;
+}
+
+:global(::view-transition-old(archive-timeline)),
+:global(::view-transition-new(archive-timeline)) {
+  height: auto;
+  mix-blend-mode: normal;
+  animation-duration: 360ms;
+  animation-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+  animation-fill-mode: both;
+}
+
+:global(::view-transition-old(archive-timeline)) {
+  animation-name: archive-window-out;
+  clip-path: inset(var(--archive-old-clip));
+}
+
+:global(::view-transition-new(archive-timeline)) {
+  animation-name: archive-window-in;
+  clip-path: inset(var(--archive-new-clip));
+}
+
+@keyframes archive-window-out {
+  from {
+    transform: translateY(var(--archive-old-offset));
+  }
+  to {
+    transform: translateY(
+      calc(var(--archive-old-offset) - var(--archive-shift))
+    );
+  }
+}
+
+@keyframes archive-window-in {
+  from {
+    transform: translateY(var(--archive-shift));
+  }
+  to {
+    transform: translateY(0);
+  }
+}
+
 .timelineList :global([data-archive-target]) {
   animation: archive-landing 2s ease-in-out;
 }

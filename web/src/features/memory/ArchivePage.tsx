@@ -36,9 +36,21 @@ import {
 import { parseArchiveLocation } from "./memoryState";
 import {
   archiveJumpDirection,
-  type ArchiveJumpDirection,
+  archiveWindowSearch,
+  archiveRestorePosition,
+  type ArchiveJumpRequest,
 } from "./archiveMotion";
 import styles from "./Memory.module.css";
+
+function archiveListSearch(search: string): string {
+  const state = parseArchiveLocation(search);
+  const params = new URLSearchParams();
+  const anchor = positionAnchor(state);
+  if (anchor) params.set("anchor", anchor);
+  if (state.loadedThrough) params.set("loaded_through", state.loadedThrough);
+  if (state.loadedNewer) params.set("loaded_newer", state.loadedNewer);
+  return archiveWindowSearch(params.size ? `?${params}` : "");
+}
 
 function ArchiveMessage({
   title,
@@ -99,7 +111,7 @@ export function ArchivePage({
   site: SiteIdentity;
 }) {
   const state = useMemo(() => parseArchiveLocation(search), [search]);
-  const { pathname } = useNavigation();
+  const { pathname, navigate } = useNavigation();
   const railSlot = useRailSlot();
   const railViewport = useMediaQuery(RAIL_VIEWPORT_QUERY);
   const inRail = railViewport && railSlot !== null;
@@ -153,10 +165,21 @@ export function ArchivePage({
   const anchor = positionAnchor(state);
   const positionKey =
     state.day ?? state.month ?? (state.year === null ? "" : String(state.year));
-  const [jump, setJump] = useState<{
-    id: number;
-    direction: ArchiveJumpDirection;
-  }>({ id: 0, direction: null });
+  const [jump, setJump] = useState<ArchiveJumpRequest | null>(null);
+  const jumpId = useRef(0);
+  useEffect(() => {
+    const restore = (event: PopStateEvent) => {
+      if (window.location.pathname !== "/archive") return;
+      setJump({
+        id: ++jumpId.current,
+        search: archiveListSearch(window.location.search),
+        direction: null,
+        restore: archiveRestorePosition(event.state),
+      });
+    };
+    window.addEventListener("popstate", restore);
+    return () => window.removeEventListener("popstate", restore);
+  }, []);
   const onNavigate: MouseEventHandler<HTMLAnchorElement> = (event) => {
     if (
       !event.defaultPrevented &&
@@ -181,13 +204,23 @@ export function ArchivePage({
       const from = visible?.dataset.timelineAt
         ? siteDate(visible.dataset.timelineAt, site.timezone)
         : (anchor ?? today);
-      const to = positionAnchor(
-        parseArchiveLocation(new URL(event.currentTarget.href).search),
-      );
-      setJump((current) => ({
-        id: current.id + 1,
+      const target = new URL(event.currentTarget.href);
+      const to = positionAnchor(parseArchiveLocation(target.search));
+      const current = new URLSearchParams(window.location.search);
+      current.delete("loaded_through");
+      current.delete("loaded_newer");
+      const repeat = current.toString() === target.searchParams.toString();
+      event.preventDefault();
+      if (!repeat)
+        navigate(`${target.pathname}${target.search}`, {
+          preserveScroll: true,
+        });
+      setJump({
+        id: ++jumpId.current,
+        search: to ? `?anchor=${to}` : "",
+        repeat,
         direction: archiveJumpDirection(from, to),
-      }));
+      });
     }
   };
 
@@ -281,14 +314,7 @@ export function ArchivePage({
   // either direction; the timeline puts the anchored row under the header
   // itself, on a phone where the calendar stands above it as on a desktop
   // where it stands beside it.
-  const listSearch = useMemo(() => {
-    const params = new URLSearchParams();
-    if (anchor) params.set("anchor", anchor);
-    if (state.loadedThrough) params.set("loaded_through", state.loadedThrough);
-    if (state.loadedNewer) params.set("loaded_newer", state.loadedNewer);
-    const query = params.toString();
-    return query ? `?${query}` : "";
-  }, [anchor, state.loadedNewer, state.loadedThrough]);
+  const listSearch = useMemo(() => archiveListSearch(search), [search]);
 
   const monthsEmpty = months !== null && months.length === 0;
   let calendar: ReactNode = null;
@@ -364,8 +390,7 @@ export function ArchivePage({
             api={api}
             emptyContext="archive"
             initialSearch={listSearch}
-            key={`${anchor ?? "latest"}:${jump.id}`}
-            archiveJumpDirection={jump.direction}
+            archiveJump={jump}
             canPublish={canPublish}
             site={site}
           />

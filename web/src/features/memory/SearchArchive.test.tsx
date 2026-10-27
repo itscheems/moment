@@ -823,7 +823,7 @@ describe("search and archive memory layer", () => {
     });
   }
 
-  function installArchive() {
+  function installArchive(headItems?: unknown[]) {
     return install((url) => {
       if (url === "/api/v1/archive/months") return json(archiveMonths);
       if (url === "/api/v1/archive/month?month=2026-08") return json(august);
@@ -853,7 +853,7 @@ describe("search and archive memory layer", () => {
         case "2025-12-31":
           return timelinePage([lastYear], { prev: "newer-after-1231" });
         case null:
-          return timelinePage([repostedLater, first, lastYear], {
+          return timelinePage(headItems ?? [repostedLater, first, lastYear], {
             prev: "head-newer",
           });
         default:
@@ -951,7 +951,7 @@ describe("search and archive memory layer", () => {
   it("starts the list at a picked day, reads back past it, and keeps the day across history", async () => {
     pinToday();
     window.history.replaceState({}, "", "/archive");
-    const fetcher = installArchive();
+    const fetcher = installArchive([repostedLater]);
     render(<App />);
 
     fireEvent.click(
@@ -1027,10 +1027,10 @@ describe("search and archive memory layer", () => {
     expect(await screen.findByText("旧城雨落在街口")).toBeInTheDocument();
   });
 
-  it("positions and emphasizes the landing row again when the selected day is clicked", async () => {
+  it("keeps the selected day's rows and requests when the same date is clicked again", async () => {
     pinToday();
     window.history.replaceState({}, "", "/archive?day=2026-08-10");
-    installArchive();
+    const fetcher = installArchive();
     render(<App />);
 
     const selectedDay = await screen.findByRole("link", {
@@ -1046,15 +1046,69 @@ describe("search and archive memory layer", () => {
       screen.getByText("旧帖，后来转发").closest("article"),
     ).not.toHaveAttribute("data-archive-target");
 
+    const requests = postRequests(fetcher);
     fireEvent.click(selectedDay);
-    await waitFor(() => expect(landingRow).not.toBeInTheDocument());
-    const newLandingRow = (await screen.findByText("旧城雨落在街口")).closest(
-      "article",
-    )!;
-    await waitFor(() =>
-      expect(newLandingRow).toHaveAttribute("data-archive-target"),
+    expect(landingRow).toBeInTheDocument();
+    expect(screen.getByText("旧城雨落在街口").closest("article")).toBe(
+      landingRow,
     );
+    expect(postRequests(fetcher)).toEqual(requests);
     expect(window.location.search).toBe("?day=2026-08-10");
+  });
+
+  it("slides to an already loaded day without replacing the list or fetching it again", async () => {
+    pinToday();
+    window.history.replaceState({}, "", "/archive");
+    const fetcher = installArchive();
+    render(<App />);
+    const day = await screen.findByRole("link", {
+      name: "8月10日，2 条 Moment",
+    });
+    const row = (await screen.findByText("旧城雨落在街口")).closest("article");
+    const requests = postRequests(fetcher);
+    fireEvent.click(day);
+    await waitFor(() =>
+      expect(window.location.search).toContain("day=2026-08-10"),
+    );
+    expect(screen.getByText("旧城雨落在街口").closest("article")).toBe(row);
+    expect(postRequests(fetcher)).toEqual(requests);
+  });
+
+  it("retains the current list while a missing archive window loads", async () => {
+    pinToday();
+    window.history.replaceState({}, "", "/archive");
+    const fetcher = installArchive([repostedLater]);
+    render(<App />);
+    const day = await screen.findByRole("link", {
+      name: "8月10日，2 条 Moment",
+    });
+    const row = screen.getByText("旧帖，后来转发").closest("article");
+    let release: (() => void) | undefined;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const fetch = fetcher.getMockImplementation()!;
+    let started = false;
+    fetcher.mockImplementation(async (input) => {
+      if (String(input).includes("anchor=2026-08-10")) {
+        started = true;
+        await gate;
+      }
+      return fetch(input);
+    });
+    fireEvent.click(day);
+    await waitFor(() => expect(started).toBe(true));
+    expect(row).toBeInTheDocument();
+    expect(screen.queryByText("旧城雨落在街口")).not.toBeInTheDocument();
+    fireEvent.click(
+      screen.getByRole("link", { name: "8月10日，2 条 Moment，已选择" }),
+    );
+    expect(row).toBeInTheDocument();
+    expect(
+      postRequests(fetcher).filter((url) => url.includes("anchor=2026-08-10")),
+    ).toHaveLength(1);
+    release?.();
+    expect(await screen.findByText("旧城雨落在街口")).toBeInTheDocument();
   });
 
   it("jumps years and months from the picker, and draws empty months as places rather than controls", async () => {
@@ -1092,14 +1146,15 @@ describe("search and archive memory layer", () => {
     expect(window.location.search).toBe("");
 
     // A month moves the list and closes the picker.
+    const requestsBeforeMonth = postRequests(fetcher);
+    const cachedRow = screen.getByText("去年最后一天的雨").closest("article");
     fireEvent.click(
       screen.getByRole("link", { name: "2025年12月，1 条 Moment" }),
     );
     expect(window.location.search).toBe("?month=2025-12");
-    await waitFor(() =>
-      expect(postRequests(fetcher)).toContain(
-        "/api/v1/posts?limit=20&anchor=2025-12-31",
-      ),
+    expect(postRequests(fetcher)).toEqual(requestsBeforeMonth);
+    expect(screen.getByText("去年最后一天的雨").closest("article")).toBe(
+      cachedRow,
     );
     await waitFor(() =>
       expect(screen.queryByRole("group", { name: "年份" })).toBeNull(),
