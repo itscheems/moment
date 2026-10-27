@@ -34,6 +34,7 @@ import { hasValidRawQueryEncoding } from "../features/memory/memoryState";
 import { SearchPage } from "../features/memory/SearchPage";
 import { MemberProfilePage } from "../features/profile/MemberProfilePage";
 import { ProfilePage } from "../features/profile/ProfilePage";
+import { SuggestedPeople } from "../features/people/SuggestedPeople";
 import { ThemeProvider } from "../theme/ThemeProvider";
 import { ReadingLayoutProvider } from "../features/article/ReadingLayout";
 import { FeedbackProvider } from "../components/Feedback";
@@ -567,6 +568,11 @@ function PublicApp() {
         ) : null}
         {hasTimeline ? (
           <div hidden={route.id !== "home"}>
+            <SuggestedPeople
+              api={api}
+              kind="home"
+              active={siteIdentityReady && route.id === "home"}
+            />
             {siteIdentityReady && publishingAvailable ? (
               <div className={styles.homeComposer} hidden={mobileViewport}>
                 <Composer

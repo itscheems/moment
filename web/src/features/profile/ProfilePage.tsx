@@ -58,6 +58,7 @@ import interactionStyles from "../../components/TimelineInteractions.module.css"
 import styles from "./ProfilePage.module.css";
 import { ProfileEditor } from "./ProfileEditor";
 import { ProfileHeader } from "./ProfileHeader";
+import { SuggestedPeople } from "../people/SuggestedPeople";
 
 export function ProfilePage({
   api,
@@ -366,6 +367,11 @@ export function ProfilePage({
   return (
     <section aria-label={`${title} 的个人资料`}>
       <ProfileHeader api={api} userId={site.profileUserId} title={title} />
+      <SuggestedPeople
+        api={api}
+        kind="profile"
+        profileUsername={site.username}
+      />
       <div className={styles.cover}>
         <SiteCover eager site={site} />
       </div>

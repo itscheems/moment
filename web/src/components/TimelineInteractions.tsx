@@ -81,6 +81,7 @@ export function SiteIdentityPreview({
   const title = siteDisplayName(site);
   const profileHref = siteProfileHref(site);
   const previewActionsRef = useRef<PreviewCard.Root.Actions>(null);
+  const previewTriggerRef = useRef<HTMLAnchorElement>(null);
   const closeBeforeNavigation = () => {
     const actions = previewActionsRef.current;
     actions?.close();
@@ -88,13 +89,37 @@ export function SiteIdentityPreview({
   };
   return (
     <PreviewCard.Root actionsRef={previewActionsRef}>
-      <PreviewCard.Trigger closeDelay={160} delay={450} render={children} />
+      <PreviewCard.Trigger
+        ref={previewTriggerRef}
+        closeDelay={300}
+        delay={600}
+        render={children}
+      />
       <PreviewCard.Portal>
         <PreviewCard.Positioner
-          align="start"
+          align="center"
+          alignOffset={({ anchor, positioner }) => {
+            const trigger = previewTriggerRef.current;
+            if (!trigger) return 0;
+            const rect = trigger.getBoundingClientRect();
+            const center = rect.left + rect.width / 2;
+            const viewportWidth =
+              trigger.ownerDocument.documentElement.clientWidth;
+            // Prefer an element edge when centering would leave the viewport.
+            if (center - positioner.width / 2 < 0)
+              return (positioner.width - anchor.width) / 2;
+            if (center + positioner.width / 2 > viewportWidth)
+              return -(positioner.width - anchor.width) / 2;
+            return 0;
+          }}
           className={styles.identityPositioner}
+          collisionAvoidance={{
+            side: "flip",
+            align: "shift",
+            fallbackAxisSide: "none",
+          }}
           side="bottom"
-          sideOffset={6}
+          sideOffset={10}
         >
           <PreviewCard.Popup className={styles.identityCard}>
             <div className={styles.identityCover}>

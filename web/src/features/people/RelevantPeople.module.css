@@ -1,3 +1,27 @@
+@font-face {
+  font-family: "RecommendationChirp";
+  src: url("/fonts/recommendation-chirp-regular.woff2") format("woff2");
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "RecommendationChirp";
+  src: url("/fonts/recommendation-chirp-bold.woff2") format("woff2");
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "RecommendationChirp";
+  src: url("/fonts/recommendation-chirp-heavy.woff2") format("woff2");
+  font-style: normal;
+  font-weight: 800;
+  font-display: swap;
+}
+
 .card {
   overflow: hidden;
   border: 1px solid var(--border-subtle);
@@ -29,6 +53,22 @@
   margin: 0;
   padding: 0;
   list-style: none;
+}
+
+.card h2 > span {
+  display: inline-block;
+}
+
+.compact {
+  font-family: "RecommendationChirp", var(--font-timeline);
+}
+
+.compact h2 {
+  -webkit-text-stroke: 0;
+}
+
+.compact .person {
+  align-items: center;
 }
 
 .person {
@@ -119,6 +159,7 @@
 }
 
 .handle {
+  inline-size: fit-content;
   color: var(--text-secondary);
   font-weight: 400;
 }

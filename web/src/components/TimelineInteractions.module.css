@@ -8,6 +8,7 @@
 }
 
 .identityCard {
+  --motion-popover: 250ms;
   inline-size: min(300px, calc(100vw - 2rem));
   max-block-size: calc(100dvh - 2rem);
   overflow-x: hidden;
@@ -26,16 +27,12 @@
   letter-spacing: normal;
   text-rendering: auto;
   -webkit-font-smoothing: auto;
-  transform-origin: var(--transform-origin);
-  transition:
-    opacity var(--motion-popover) var(--ease-out),
-    transform var(--motion-popover) var(--ease-out);
+  transition: opacity var(--motion-popover) ease;
 }
 
 .identityCard[data-starting-style],
 .identityCard[data-ending-style] {
   opacity: 0;
-  transform: translateY(0.25rem) scale(0.98);
 }
 
 .identityCover {

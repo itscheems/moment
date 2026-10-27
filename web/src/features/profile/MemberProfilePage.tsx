@@ -29,6 +29,7 @@ import {
 } from "../timeline/PublicStates";
 import { ProfileEditor } from "./ProfileEditor";
 import { ProfileHeader } from "./ProfileHeader";
+import { SuggestedPeople } from "../people/SuggestedPeople";
 import { formatMomentDate } from "../posts/dates";
 import { profileFilters, type ProfileFilter } from "./profileTimeline";
 import interactionStyles from "../../components/TimelineInteractions.module.css";
@@ -152,6 +153,12 @@ export function MemberProfilePage({
   return (
     <section aria-label={`${title} 的个人资料`}>
       <ProfileHeader api={api} userId={account.userId} title={title} />
+      <SuggestedPeople
+        api={api}
+        kind="profile"
+        profileUsername={username}
+        active={account.username === username}
+      />
       {state === "loading" || state === "failed" ? (
         <ReadRecoveryNotice error={error} />
       ) : null}
