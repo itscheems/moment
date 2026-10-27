@@ -515,9 +515,7 @@ describe("public comment thread", () => {
       ),
     ).toEqual([replyId, rootId]);
     fireEvent.keyDown(trigger, { key: "ArrowDown", code: "ArrowDown" });
-    fireEvent.click(
-      await screen.findByRole("menuitemradio", { name: "最早" }),
-    );
+    fireEvent.click(await screen.findByRole("menuitemradio", { name: "最早" }));
     await screen.findByRole("button", { name: "回复排序：最早" });
     fail = true;
     await open();
