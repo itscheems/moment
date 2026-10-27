@@ -9,10 +9,17 @@ toolchain.
 
 ## Routine checks
 
-Pull requests and pushes to `main` run the full formatting, lint, test, build,
-and process-lock checks once on Ubuntu. A separate source-security job checks
-imported Go packages, high-severity npm advisories, and secrets in Git history.
-Each job installs only the tools it uses.
+Pull requests and pushes to `main` run Web build/static checks, Web tests,
+three Go race-test groups, and source security as separate jobs. Archive and
+lifecycle suites have their own runners; the core Go group covers every other
+package plus formatting, tooling tests, static analysis, process locks, and the
+native binary build. The groups select every Go package exactly once.
+
+Web tests and security start independently. Go jobs consume the real Web build
+artifact and cache their Go modules and build output. Each check has a separate
+step in the job log, and each job installs only the tools it uses. Source
+security checks imported Go packages, high-severity npm advisories, and secrets
+in Git history.
 
 Native macOS/Windows qualification, cross-compilation, reproducible archives,
 SBOMs, and container lifecycle checks run in the tagged release workflow.
