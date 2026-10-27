@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/moment/moment/internal/archive"
 	"github.com/moment/moment/internal/auth"
@@ -406,7 +407,11 @@ func TestBootstrapRejectsConcurrentMember(t *testing.T) {
 
 func TestBootstrapConcurrentCommandsShareOneInstanceAndCredentialDelivery(t *testing.T) {
 	root := canonicalTempDir(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
 	start := make(chan struct{})
+	ready := make(chan struct{}, 2)
+	release := make(chan struct{})
 	results := make([]Result, 2)
 	errorsSeen := make([]error, 2)
 	var wait sync.WaitGroup
@@ -415,12 +420,30 @@ func TestBootstrapConcurrentCommandsShareOneInstanceAndCredentialDelivery(t *tes
 		go func(index int) {
 			defer wait.Done()
 			<-start
-			results[index], errorsSeen[index] = Execute(context.Background(), Request{
+			results[index], errorsSeen[index] = Execute(ctx, Request{
 				DataDir: root, Operation: OperationScenario, Scenario: "timeline-basic", Seed: 33,
+				hooks: &operationHooks{AfterBootstrap: func() error {
+					ready <- struct{}{}
+					select {
+					case <-release:
+						return nil
+					case <-ctx.Done():
+						return ctx.Err()
+					}
+				}},
 			})
 		}(index)
 	}
 	close(start)
+	// Both commands must observe the empty target before either publishes it.
+	for range results {
+		select {
+		case <-ready:
+		case <-ctx.Done():
+			t.Fatal("bootstrap contenders did not reach the publication barrier")
+		}
+	}
+	close(release)
 	wait.Wait()
 	tokens, successes, conflicts := 0, 0, 0
 	for index, err := range errorsSeen {

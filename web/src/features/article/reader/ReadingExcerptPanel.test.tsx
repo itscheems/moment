@@ -98,6 +98,14 @@ function mark(
 ) {
   act(() => applyReadingColor(editor, { from, to }, type, color));
 }
+
+it("drops excerpt ranges when the reader editor is destroyed", () => {
+  const { editor } = show();
+  mark(editor, 2, 6);
+  expect(readingExcerptRanges(editor)).toEqual([{ from: 2, to: 6 }]);
+  act(() => editor.destroy());
+  expect(readingExcerptRanges(editor)).toEqual([]);
+});
 async function openPanel() {
   fireEvent.click(await screen.findByRole("button", { name: "本次摘录" }));
   return screen.findByRole("dialog", { name: "本次摘录面板" });
