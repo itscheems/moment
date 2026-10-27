@@ -1,5 +1,10 @@
 import { Popover } from "@base-ui/react/popover";
-import { type ReactNode, useMemo, useState } from "react";
+import {
+  type MouseEventHandler,
+  type ReactNode,
+  useMemo,
+  useState,
+} from "react";
 
 import type { ArchiveMonthCount } from "../../api/public";
 import { InternalLink } from "../../app/navigation";
@@ -42,7 +47,7 @@ export interface ArchiveCalendarProps {
   variant: "rail" | "column";
   onVisibleMonthChange: (month: string) => void;
   /** A link on the calendar is about to move the list. */
-  onNavigate?: () => void;
+  onNavigate?: MouseEventHandler<HTMLAnchorElement>;
 }
 
 /**
@@ -96,8 +101,8 @@ function MonthPicker({
             aria-current={key === visibleMonth ? "date" : undefined}
             aria-label={`${year}年${index}月，${count} 条 Moment`}
             href={archiveHref({ month: key })}
-            onClick={() => {
-              onNavigate?.();
+            onClick={(event) => {
+              onNavigate?.(event);
               setOpen(false);
             }}
           >

@@ -993,9 +993,11 @@ describe("search and archive memory layer", () => {
 
     // More after the day loads from the top, the way more before it loads
     // from the bottom, and records its progress the same way.
-    fireEvent.click(
-      await screen.findByRole("button", { name: "加载更新的 Moment" }),
-    );
+    const newerButton = await screen.findByRole("button", {
+      name: "加载更新的 Moment",
+    });
+    await waitFor(() => expect(newerButton).toBeEnabled());
+    fireEvent.click(newerButton);
     await waitFor(() =>
       expect(postRequests(fetcher)).toContain(
         "/api/v1/posts?limit=20&cursor=newer-more",
@@ -1023,6 +1025,36 @@ describe("search and archive memory layer", () => {
       }),
     ).toBeInTheDocument();
     expect(await screen.findByText("旧城雨落在街口")).toBeInTheDocument();
+  });
+
+  it("positions and emphasizes the landing row again when the selected day is clicked", async () => {
+    pinToday();
+    window.history.replaceState({}, "", "/archive?day=2026-08-10");
+    installArchive();
+    render(<App />);
+
+    const selectedDay = await screen.findByRole("link", {
+      name: "8月10日，2 条 Moment，已选择",
+    });
+    const landingRow = (await screen.findByText("旧城雨落在街口")).closest(
+      "article",
+    )!;
+    await waitFor(() =>
+      expect(landingRow).toHaveAttribute("data-archive-target"),
+    );
+    expect(
+      screen.getByText("旧帖，后来转发").closest("article"),
+    ).not.toHaveAttribute("data-archive-target");
+
+    fireEvent.click(selectedDay);
+    await waitFor(() => expect(landingRow).not.toBeInTheDocument());
+    const newLandingRow = (await screen.findByText("旧城雨落在街口")).closest(
+      "article",
+    )!;
+    await waitFor(() =>
+      expect(newLandingRow).toHaveAttribute("data-archive-target"),
+    );
+    expect(window.location.search).toBe("?day=2026-08-10");
   });
 
   it("jumps years and months from the picker, and draws empty months as places rather than controls", async () => {

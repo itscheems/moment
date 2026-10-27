@@ -5,12 +5,14 @@ export type LoadSource = "automatic" | "manual";
 export function LoadMoreSentinel({
   className,
   cursor,
+  enabled = true,
   label,
   loading,
   onLoad,
 }: {
   className?: string;
   cursor: string;
+  enabled?: boolean;
   label: string;
   loading: boolean;
   onLoad: (source: LoadSource) => void;
@@ -24,7 +26,7 @@ export function LoadMoreSentinel({
   loadingRef.current = loading;
 
   useEffect(() => {
-    if (typeof IntersectionObserver !== "function") return;
+    if (!enabled || typeof IntersectionObserver !== "function") return;
     const target = sentinelRef.current;
     if (!target) return;
     const observer = new IntersectionObserver(
@@ -42,11 +44,15 @@ export function LoadMoreSentinel({
     );
     observer.observe(target);
     return () => observer.disconnect();
-  }, [cursor]);
+  }, [cursor, enabled]);
 
   return (
     <div className={className} ref={sentinelRef}>
-      <button disabled={loading} onClick={() => onLoad("manual")} type="button">
+      <button
+        disabled={loading || !enabled}
+        onClick={() => onLoad("manual")}
+        type="button"
+      >
         {loading ? "正在加载…" : label}
       </button>
     </div>

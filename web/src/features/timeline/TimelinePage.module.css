@@ -2,6 +2,36 @@
   min-block-size: 28rem;
 }
 
+.timelineList :global([data-archive-target]) {
+  animation: archive-landing 2s ease-in-out;
+}
+
+@keyframes archive-landing {
+  0%,
+  100% {
+    background-color: var(--surface);
+  }
+
+  10%,
+  80% {
+    background-color: color-mix(in srgb, #1d9bf0 16%, var(--surface));
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .timelineList :global([data-archive-target]) {
+    animation-name: archive-landing-still;
+    animation-duration: 2s !important;
+  }
+
+  @keyframes archive-landing-still {
+    from,
+    to {
+      background-color: color-mix(in srgb, #1d9bf0 16%, var(--surface));
+    }
+  }
+}
+
 .moreRow,
 .endMark {
   border-block-end: 1px solid var(--border-subtle);

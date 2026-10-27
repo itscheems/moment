@@ -18,10 +18,10 @@ export function rowElement(
  * a placeholder height until they come near, so a position computed across
  * them is wrong by the difference -- measured: an anchored row placed under
  * the header at 53px was 380px above it a frame later, once the twenty rows
- * over it had taken their real height. Rendering every row once fixes its
- * real height in the browser's memory (`contain-intrinsic-size: auto`), so
- * whatever is measured against them afterwards holds; the override is lifted
- * on the next frame and the rows go back to skipping.
+ * over it had taken their real height. Cache each rendered content height as
+ * its intrinsic fallback: forcing layout alone does not make the browser
+ * remember off-screen rows. The override is lifted on the next frame and the
+ * rows go back to skipping without changing the measured scroll position.
  */
 export function withRowsRendered(
   measureAndScroll: () => void,
@@ -30,6 +30,19 @@ export function withRowsRendered(
   const rows = rowElements(root);
   for (const row of rows) {
     row.style.setProperty("content-visibility", "visible");
+  }
+  for (const row of rows) {
+    const style = getComputedStyle(row);
+    const height =
+      row.getBoundingClientRect().height -
+      parseFloat(style.paddingTop) -
+      parseFloat(style.paddingBottom) -
+      parseFloat(style.borderTopWidth) -
+      parseFloat(style.borderBottomWidth);
+    row.style.setProperty(
+      "contain-intrinsic-block-size",
+      `auto ${Math.max(0, height)}px`,
+    );
   }
   measureAndScroll();
   window.requestAnimationFrame(() => {

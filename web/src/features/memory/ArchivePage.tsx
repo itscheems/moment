@@ -1,4 +1,5 @@
 import {
+  type MouseEventHandler,
   type ReactNode,
   useCallback,
   useEffect,
@@ -148,6 +149,19 @@ export function ArchivePage({
   const anchor = positionAnchor(state);
   const positionKey =
     state.day ?? state.month ?? (state.year === null ? "" : String(state.year));
+  const [jump, setJump] = useState(0);
+  const onNavigate: MouseEventHandler<HTMLAnchorElement> = (event) => {
+    if (
+      !event.defaultPrevented &&
+      event.button === 0 &&
+      !event.metaKey &&
+      !event.ctrlKey &&
+      !event.shiftKey &&
+      !event.altKey
+    ) {
+      setJump((current) => current + 1);
+    }
+  };
 
   // The month on the calendar. Seated by the position whenever the position
   // (or the archive under it) changes, and otherwise left to the reader's
@@ -280,6 +294,7 @@ export function ArchivePage({
           monthCounts={monthCounts}
           months={months}
           note={note}
+          onNavigate={onNavigate}
           onVisibleMonthChange={setVisibleMonth}
           positioned={anchor !== null}
           range={range}
@@ -321,7 +336,7 @@ export function ArchivePage({
             api={api}
             emptyContext="archive"
             initialSearch={listSearch}
-            key={anchor ?? "latest"}
+            key={`${anchor ?? "latest"}:${jump}`}
             canPublish={canPublish}
             site={site}
           />

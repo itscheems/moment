@@ -26,6 +26,7 @@ interface NavigationLocation extends LocationSnapshot {
 }
 
 interface NavigationContextValue extends NavigationLocation {
+  archiveAnchor?: { key: string; top: number };
   navigate: (href: string, options?: { preserveScroll?: boolean }) => void;
   navigateAuth: (href: string) => void;
   /**
@@ -63,6 +64,7 @@ interface NavigationContextValue extends NavigationLocation {
 export type NavigationBlocker = (resume: () => void) => boolean;
 
 interface MomentHistoryState {
+  momentArchiveAnchor?: { key: string; top: number };
   momentFocusKey?: string;
   /** Navigated to and not yet shown; cleared by the first restoration. */
   momentFresh?: boolean;
@@ -131,6 +133,24 @@ function historyState(): MomentHistoryState {
     : {};
 }
 
+function archiveScrollAnchor(): MomentHistoryState["momentArchiveAnchor"] {
+  if (window.location.pathname !== "/archive") return undefined;
+  const headerBottom =
+    document.querySelector("#main-content > header")?.getBoundingClientRect()
+      .bottom ?? 0;
+  const row = Array.from(
+    document.querySelectorAll<HTMLElement>(
+      "#main-content [data-timeline-item-key]",
+    ),
+  ).find((item) => item.getBoundingClientRect().bottom > headerBottom + 1);
+  return row
+    ? {
+        key: row.dataset.timelineItemKey!,
+        top: row.getBoundingClientRect().top,
+      }
+    : undefined;
+}
+
 function restoreEntry(state: unknown, restoreFocus = true) {
   window.requestAnimationFrame(() => {
     window.scrollTo({ top: scrollPosition(state), behavior: "auto" });
@@ -180,6 +200,7 @@ export function NavigationProvider({ children }: { children: ReactNode }) {
       window.history.replaceState(
         {
           ...historyState(),
+          momentArchiveAnchor: archiveScrollAnchor(),
           momentFocusKey: activeFocusKey,
           momentScrollY: window.scrollY,
         },
@@ -405,7 +426,11 @@ export function NavigationProvider({ children }: { children: ReactNode }) {
       window.cancelAnimationFrame(frame);
       frame = window.requestAnimationFrame(() => {
         window.history.replaceState(
-          { ...historyState(), momentScrollY: window.scrollY },
+          {
+            ...historyState(),
+            momentScrollY: window.scrollY,
+            momentArchiveAnchor: archiveScrollAnchor(),
+          },
           "",
           window.location.href,
         );
@@ -413,7 +438,11 @@ export function NavigationProvider({ children }: { children: ReactNode }) {
     };
     const saveScrollNow = () => {
       window.history.replaceState(
-        { ...historyState(), momentScrollY: window.scrollY },
+        {
+          ...historyState(),
+          momentScrollY: window.scrollY,
+          momentArchiveAnchor: archiveScrollAnchor(),
+        },
         "",
         window.location.href,
       );
@@ -431,6 +460,7 @@ export function NavigationProvider({ children }: { children: ReactNode }) {
   const value = useMemo(
     () => ({
       ...location,
+      archiveAnchor: historyState().momentArchiveAnchor,
       navigate,
       navigateAuth,
       replace,

@@ -835,7 +835,7 @@
 }
 
 .imageGrid[data-media-count="1"] {
-  inline-size: fit-content;
+  inline-size: min(100%, var(--single-media-max-width));
   max-inline-size: 100%;
   display: flex;
   align-items: flex-start;

@@ -116,6 +116,7 @@ export function TimelinePage({
     replaceTimelineProgress,
     replaceWithinPage,
     restoreCurrentEntry,
+    archiveAnchor,
   } = useNavigation();
   const [posts, setPosts] = useState<PublicPost[]>([]);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
@@ -144,6 +145,8 @@ export function TimelinePage({
   const recoveredCursors = useRef(new Set<string>());
   /** The row the list opened at: the newest on or before the anchor. */
   const anchorKey = useRef<string | null>(null);
+  const listRef = useRef<HTMLElement | null>(null);
+  const savedAnchor = useRef(archiveAnchor);
   /** The top row and where it was, measured just before a page is prepended. */
   const compensation = useRef<{ key: string; top: number } | null>(null);
 
@@ -346,8 +349,9 @@ export function TimelinePage({
   // for what came after" can be true from the first frame.
   const placeAnchor = useCallback(() => {
     const key = anchorKey.current;
-    const row = key ? rowElement(key) : undefined;
-    if (row) {
+    const list = listRef.current;
+    const row = key && list ? rowElement(key, list) : undefined;
+    if (row && list) {
       withRowsRendered(() => {
         const header = document.querySelector<HTMLElement>(
           "#main-content > header",
@@ -359,7 +363,8 @@ export function TimelinePage({
             (header?.offsetHeight ?? 0),
           behavior: "auto",
         });
-      });
+        row.dataset.archiveTarget = "true";
+      }, list);
     }
     setSettled(true);
   }, []);
@@ -369,9 +374,29 @@ export function TimelinePage({
       return;
     }
     initialEntryRestored.current = true;
-    const placed = restoreCurrentEntry(
-      anchorKey.current ? placeAnchor : undefined,
-    );
+    let placed = false;
+    const restore = () => {
+      const saved = savedAnchor.current;
+      const row =
+        saved && listRef.current
+          ? rowElement(saved.key, listRef.current)
+          : null;
+      if (saved && row) {
+        window.scrollTo({
+          top: row.getBoundingClientRect().top + window.scrollY - saved.top,
+          behavior: "auto",
+        });
+        return;
+      }
+      placed = restoreCurrentEntry(anchorKey.current ? placeAnchor : undefined);
+    };
+    // A saved scroll offset refers to laid-out rows, not their off-screen
+    // placeholders. Restore in the same geometry used for a fresh date jump.
+    if ((anchorKey.current || savedAnchor.current) && listRef.current) {
+      withRowsRendered(restore, listRef.current);
+    } else {
+      restore();
+    }
     // Restoration scrolls on the next frame; the top frontier may look only
     // after that, or it would see itself at the top of an unscrolled page.
     if (!placed) window.requestAnimationFrame(() => setSettled(true));
@@ -541,7 +566,11 @@ export function TimelinePage({
 
   return (
     <>
-      <section aria-label="公开时间流" className={styles.timelineList}>
+      <section
+        aria-label="公开时间流"
+        className={styles.timelineList}
+        ref={listRef}
+      >
         {posts.length > 0 && (initialError || loadingInitial) ? (
           <ReadRecoveryNotice />
         ) : null}
@@ -553,10 +582,11 @@ export function TimelinePage({
             正在重新获取更新的内容…
           </ReadRecoveryNotice>
         ) : null}
-        {prevCursor && settled && !newerError ? (
+        {prevCursor && !newerError ? (
           <LoadMoreSentinel
             className={styles.moreRow}
             cursor={prevCursor}
+            enabled={settled}
             label="加载更新的 Moment"
             loading={loadingNewer || loadingInitial}
             onLoad={(source) => void loadNewer(source)}
