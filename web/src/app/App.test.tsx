@@ -13,6 +13,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { App } from "./App";
 import { makeAccountLimits } from "../test/accountFixtures";
 
+// Route lifecycle assertions do not measure cold reader-chunk compilation.
+import "../features/article/reader/ArticleReadingContent";
+
 class FakeVisualViewport extends EventTarget {
   height: number;
   width: number;

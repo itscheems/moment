@@ -67,6 +67,7 @@ export function readingSelectionText(editor: Editor, range: ReadingRange) {
 
 /** Derive excerpts from the current decoration ranges, never from author marks. */
 export function readingExcerptRanges(editor: Editor): ReadingRange[] {
+  if (editor.isDestroyed) return [];
   const sorted = editor.storage.readingAnnotations.ranges
     .filter((range) => range.from < range.to)
     .map(({ from, to }) => ({ from, to }))
