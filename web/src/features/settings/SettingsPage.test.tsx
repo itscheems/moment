@@ -237,7 +237,7 @@ it("creates and revokes an account token without persisting the secret", async (
       url === `/api/v1/account/tokens/${tokenId}` &&
       init?.method === "DELETE"
     )
-      return json({ revoked: true });
+      return json({ revoked: true, reauthentication_required: false });
   });
   render(<App />);
   fireEvent.change(await screen.findByLabelText("令牌名称"), {

@@ -1,7 +1,12 @@
+import { CredentialConfirmation } from "./CredentialConfirmation";
 import { useEffect, useState, type FormEvent } from "react";
 import { accountsApi } from "../../api/accounts";
 import { selectSiteProfile, siteApi } from "../../api/site";
-import { type Account, type SiteIdentity } from "../../api/public";
+import {
+  PublicApiError,
+  type Account,
+  type SiteIdentity,
+} from "../../api/public";
 import { useNavigation } from "../../app/navigation";
 import { isAdministrator, useSession } from "../auth/SessionProvider";
 import { AccountAccess } from "../auth/AccountAccess";
@@ -77,7 +82,12 @@ function SiteConfiguration({
       setNotice("站点设置已保存。");
     } catch (next) {
       if (!expireIfInvalidSession(next))
-        setError("站点设置没有保存。请检查时区和网址后重试。");
+        setError(
+          next instanceof PublicApiError &&
+            next.code === "REAUTHENTICATION_REQUIRED"
+            ? "请先在页面上方确认身份，再保存站点设置。"
+            : "站点设置没有保存。请检查时区和网址后重试。",
+        );
     } finally {
       setPending(false);
     }
@@ -97,7 +107,12 @@ function SiteConfiguration({
       setNotice("首页展示账号已更新，账号权限保持不变。");
     } catch (next) {
       if (!expireIfInvalidSession(next))
-        setError("展示账号没有更改，请选择已启用的账号后重试。");
+        setError(
+          next instanceof PublicApiError &&
+            next.code === "REAUTHENTICATION_REQUIRED"
+            ? "请先在页面上方确认身份，再更改展示账号。"
+            : "展示账号没有更改，请选择已启用的账号后重试。",
+        );
     } finally {
       setPending(false);
     }
@@ -245,6 +260,7 @@ export function SettingsPage({
             ) : null}
           </a>
         ))}
+        {account ? <CredentialConfirmation /> : null}
       </nav>
       <div className={styles.settingsContent} ref={contentRef}>
         {section !== "account" && !admin ? (

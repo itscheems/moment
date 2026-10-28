@@ -1,3 +1,4 @@
+import { credentialConfirmationStatus } from "../../api/accounts";
 import { MapCard } from "../maps/MapCard";
 import {
   backupsApi,
@@ -446,6 +447,8 @@ function importError(error: unknown, operation: "plan" | "restore"): string {
       : "服务器明确拒绝了恢复，当前站点没有被确认替换。请重新预检。";
   }
   switch (error.code) {
+    case "REAUTHENTICATION_REQUIRED":
+      return "请先在页面上方确认身份，再重试备份操作。";
     case "EXPORT_INVALID":
     case "EXPORT_CHECKSUM_MISMATCH":
     case "EXPORT_VERSION_UNSUPPORTED":
@@ -859,7 +862,7 @@ export function BackupRestore({
     return () => window.cancelAnimationFrame(frame);
   }, [restoreState]);
 
-  const download = () => {
+  const download = async () => {
     if (!session || exportGuardRef.current) return;
     exportGuardRef.current = true;
     exportGuardTimerRef.current = window.setTimeout(() => {
@@ -869,6 +872,11 @@ export function BackupRestore({
     setExportState("running");
     setExportNotice("正在把同源备份请求交给浏览器…");
     try {
+      if (!(await credentialConfirmationStatus())) {
+        setExportState("failed");
+        setExportNotice("请先在页面上方确认身份，再下载整站备份。");
+        return;
+      }
       const anchor = document.createElement("a");
       anchor.href = "/api/v1/backups/export";
       anchor.download = "moment-export.zip";
@@ -1166,6 +1174,10 @@ export function BackupRestore({
           setMergeSelection(null);
           setMergeState("failed");
           setMergeError("合并计划已过期或当前站点已变化，请重新检查合并冲突。");
+        } else if (error.code === "REAUTHENTICATION_REQUIRED") {
+          setMergeError(
+            "请先在页面上方确认身份，再提交。当前审阅和选择已保留。",
+          );
         } else if (error.code === "IMPORT_IN_PROGRESS") {
           setMergeError(
             "另一项导入刚刚开始，本次合并没有提交。请稍后重新检查。",
@@ -1305,6 +1317,10 @@ export function BackupRestore({
           setMergeState("failed");
           setMergeError(
             "审阅后当前站点已经发生变化。为保护新内容，恢复已拒绝；请重新检查备份。",
+          );
+        } else if (error.code === "REAUTHENTICATION_REQUIRED") {
+          setRestoreError(
+            "请先在页面上方确认身份，再提交。当前审阅和选择已保留。",
           );
         } else {
           setRestoreError(

@@ -455,6 +455,14 @@ function installFetch(
   const fetcher = vi.fn(
     async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
+      if (url === "/api/v1/account/reauthentication")
+        return json({
+          data: {
+            confirmed: true,
+            expires_at: new Date(Date.now() + 300000).toISOString(),
+          },
+          meta: { request_id: "req_confirmation" },
+        });
       if (url === "/api/v1/site") return json(siteEnvelope());
       if (url === "/api/v1/status") return json(ownerStatusEnvelope());
       if (url === "/api/v1/account/session") {
@@ -847,9 +855,11 @@ describe("owner backup and restore", () => {
     const button = screen.getByRole("button", { name: "下载整站备份" });
     fireEvent.click(button);
     fireEvent.click(button);
-    expect(clicks).toEqual([
-      { href: "/api/v1/backups/export", download: "moment-export.zip" },
-    ]);
+    await waitFor(() =>
+      expect(clicks).toEqual([
+        { href: "/api/v1/backups/export", download: "moment-export.zip" },
+      ]),
+    );
     expect(await screen.findByText(/已请求下载/)).toBeInTheDocument();
     expect(fetcher).not.toHaveBeenCalledWith(
       "/api/v1/backups/export",
@@ -889,10 +899,12 @@ describe("owner backup and restore", () => {
       await vi.advanceTimersByTimeAsync(1_000);
     });
     fireEvent.click(screen.getByRole("button", { name: "下载整站备份" }));
-    expect(clicks).toEqual([
-      "/api/v1/backups/export",
-      "/api/v1/backups/export",
-    ]);
+    await waitFor(() =>
+      expect(clicks).toEqual([
+        "/api/v1/backups/export",
+        "/api/v1/backups/export",
+      ]),
+    );
   });
 
   it("shows current-only content before an exact replacement and commits the reviewed plan", async () => {

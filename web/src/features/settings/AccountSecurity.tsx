@@ -1,3 +1,5 @@
+import { ConfirmDialog } from "../../components/ConfirmDialog";
+import { PublicApiError } from "../../api/public";
 import { useEffect, useState, type FormEvent } from "react";
 import {
   accountSecurity,
@@ -5,6 +7,7 @@ import {
   listApiCredentials,
   revokeApiCredential,
   setAccountPassword,
+  revokeAllCredentials,
   type ApiCredential,
 } from "../../api/accounts";
 import { useNavigation } from "../../app/navigation";
@@ -59,7 +62,7 @@ export function AccountSecurity({ instanceId }: { instanceId: string | null }) {
       navigation.navigate("/login?return=%2Fsettings%2Faccount");
     } catch (next) {
       if (!expireIfInvalidSession(next))
-        setError("密码没有更新，请检查输入后重试。");
+        setError(failure(next, "密码没有更新，请检查输入后重试。"));
     } finally {
       setPending(null);
     }
@@ -75,7 +78,8 @@ export function AccountSecurity({ instanceId }: { instanceId: string | null }) {
       setTokens((current) => [created.credential, ...current]);
       setLabel("");
     } catch (next) {
-      if (!expireIfInvalidSession(next)) setError("API 令牌没有创建，请重试。");
+      if (!expireIfInvalidSession(next))
+        setError(failure(next, "API 令牌没有创建，请重试。"));
     } finally {
       setPending(null);
     }
@@ -85,14 +89,42 @@ export function AccountSecurity({ instanceId }: { instanceId: string | null }) {
     setPending(token.id);
     setError(null);
     try {
-      await revokeApiCredential(session.csrfToken, token.id);
+      if (await revokeApiCredential(session.csrfToken, token.id)) {
+        setReceipt(null);
+        forgetSession(instanceId);
+        navigation.navigate("/login?return=%2Fsettings%2Faccount");
+        return;
+      }
       setTokens((current) =>
         current.map((item) =>
           item.id === token.id ? { ...item, revoked_at_ms: Date.now() } : item,
         ),
       );
     } catch (next) {
-      if (!expireIfInvalidSession(next)) setError("令牌未撤销，可以重试。");
+      if (!expireIfInvalidSession(next))
+        setError(failure(next, "令牌未撤销，可以重试。"));
+    } finally {
+      setPending(null);
+    }
+  }
+  function failure(next: unknown, fallback: string) {
+    return next instanceof PublicApiError &&
+      next.code === "REAUTHENTICATION_REQUIRED"
+      ? "请先在页面上方确认身份，再重试此操作。"
+      : fallback;
+  }
+  async function revokeAll() {
+    if (!session || pending) return;
+    setPending("all");
+    setError(null);
+    try {
+      await revokeAllCredentials(session.csrfToken);
+      setReceipt(null);
+      forgetSession(instanceId);
+      navigation.navigate("/login?return=%2Fsettings%2Faccount");
+    } catch (next) {
+      if (!expireIfInvalidSession(next))
+        setError(failure(next, "凭据未全部撤销，请重试。"));
     } finally {
       setPending(null);
     }
@@ -131,8 +163,8 @@ export function AccountSecurity({ instanceId }: { instanceId: string | null }) {
         </label>
         <p>
           {passwordEnabled
-            ? "修改密码后，需要在浏览器重新登录。"
-            : "设置密码后，可使用用户名和密码登录。"}
+            ? "修改密码会撤销全部 API 令牌和浏览器会话，需要重新登录并重新配置 API 客户端。"
+            : "设置密码后，可使用用户名和密码登录。现有 API 令牌和浏览器会话将全部撤销。"}
         </p>
         <button
           className={forms.primaryButton}
@@ -143,7 +175,9 @@ export function AccountSecurity({ instanceId }: { instanceId: string | null }) {
         </button>
       </form>
       <h3>API 令牌</h3>
-      <p>每个令牌仅代表你的账号，并使用账号当前的权限。</p>
+      <p>
+        每个令牌仅代表你的账号，并使用账号当前的权限。撤销令牌也会结束通过它登录的会话。
+      </p>
       <form
         className={styles.settingsForm}
         onSubmit={(event) => void issue(event)}
@@ -188,6 +222,24 @@ export function AccountSecurity({ instanceId }: { instanceId: string | null }) {
           </button>
         </div>
       ) : null}
+      <ConfirmDialog
+        title="撤销全部访问凭据？"
+        description="全部 API 令牌和浏览器会话都会失效，包括当前会话。密码和已关联的第三方登录方式会保留；如果账号没有其他登录方式，请先设置密码。"
+        confirmLabel="撤销全部凭据并退出"
+        cancelLabel="取消"
+        danger
+        pending={pending !== null}
+        trigger={
+          <button
+            type="button"
+            className={forms.secondaryButton}
+            disabled={!session || pending !== null}
+          >
+            撤销全部访问凭据
+          </button>
+        }
+        onConfirm={revokeAll}
+      />
       <ul className={styles.credentialList}>
         {tokens.map((token) => (
           <li key={token.id}>
