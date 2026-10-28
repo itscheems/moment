@@ -222,7 +222,7 @@ describe("public image grid", () => {
     const playIcon = playButton.querySelector('[data-icon="video-play"]');
     expect(playIcon?.querySelectorAll("path")).toHaveLength(2);
     expect(playIcon?.querySelector("use")).toBeNull();
-    expect(screen.getByText("2:00")).toBeVisible();
+    expect(screen.getByText("0:00 / 2:00")).toBeVisible();
 
     act(() => TestIntersectionObserver.instances[0].setIntersecting(false));
     expect(pause).toHaveBeenCalled();
@@ -279,12 +279,21 @@ describe("public image grid", () => {
     render(<ImageGrid eagerVideo media={[video()]} />);
 
     const element = screen.getByLabelText("一段测试视频");
+    Object.defineProperty(element, "duration", {
+      configurable: true,
+      value: 120,
+    });
     fireEvent.loadedMetadata(element);
     fireEvent.click(screen.getByRole("button", { name: "播放视频" }));
     expect(play).toHaveBeenCalledOnce();
     fireEvent.playing(element);
 
-    await waitFor(() => expect(element).toHaveAttribute("controls"));
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: "暂停视频" }),
+      ).toBeInTheDocument(),
+    );
+    expect(element).not.toHaveAttribute("controls");
     expect(
       document.querySelector(
         `img[src="${mediaPosterUrl("01K2ABCDEF0123456789ABCDV0")}"]`,

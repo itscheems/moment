@@ -329,11 +329,11 @@ describe("public timeline", () => {
 
     const leadVideo = await screen.findByLabelText("首屏视频画面");
     const laterVideo = screen.getByLabelText("下方视频画面");
-    expect(leadVideo.closest('[role="group"]')).toHaveAttribute(
+    expect(leadVideo.closest("[data-media-count]")).toHaveAttribute(
       "data-compact-tall-video",
       "true",
     );
-    expect(laterVideo.closest('[role="group"]')).toHaveAttribute(
+    expect(laterVideo.closest("[data-media-count]")).toHaveAttribute(
       "data-compact-tall-video",
       "true",
     );

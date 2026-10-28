@@ -59,13 +59,13 @@ const post: PublicPost = {
   media,
   linkCards: [],
 };
-function harness(api: PublicApi, scope = "reader") {
+function harness(api: PublicApi, scope = "reader", attachments = media) {
   return (
     <NavigationProvider>
       <SessionProvider>
         <MediaViewerProvider api={api} site={site} scope={scope}>
           <span>底层阅读页</span>
-          <ImageGrid media={media} source={{ postId: post.id }} />
+          <ImageGrid media={attachments} source={{ postId: post.id }} />
         </MediaViewerProvider>
       </SessionProvider>
     </NavigationProvider>
@@ -124,6 +124,60 @@ afterEach(() => {
 });
 
 describe("published media viewer", () => {
+  it("opens a selected video and restores its position after a mixed-media round trip", async () => {
+    vi.spyOn(HTMLMediaElement.prototype, "pause").mockImplementation(() => {});
+    vi.spyOn(HTMLMediaElement.prototype, "play").mockResolvedValue(undefined);
+    const attachments = [
+      { ...media[0], mimeType: "video/mp4", altText: "First clip" },
+      { ...media[0], mediaId: "still", position: 1, altText: "Still" },
+      { ...media[1], position: 2, mimeType: "video/mp4", altText: "Last clip" },
+    ];
+    const api = mockApi();
+    vi.mocked(api.post).mockResolvedValue({ ...post, media: attachments });
+    render(harness(api, "reader", attachments));
+    fireEvent.click(screen.getAllByRole("group", { name: "视频播放器" })[1]);
+    const dialog = await screen.findByRole("dialog", { name: "媒体 3 / 3" });
+    await within(dialog).findByText("来源正文");
+    const v = within(dialog).getByLabelText("Last clip") as HTMLVideoElement;
+    Object.defineProperty(v, "duration", { configurable: true, value: 20 });
+    fireEvent.loadedMetadata(v);
+    v.currentTime = 6.5;
+    v.muted = true;
+    v.volume = 0.3;
+    v.playbackRate = 1.5;
+    fireEvent.volumeChange(v);
+    fireEvent.rateChange(v);
+    fireEvent.timeUpdate(v);
+    fireEvent.click(within(dialog).getByRole("button", { name: "上一项媒体" }));
+    expect(
+      within(dialog).getByRole("img", { name: "Still" }),
+    ).toBeInTheDocument();
+    fireEvent.click(within(dialog).getByRole("button", { name: "上一项媒体" }));
+    const other = within(dialog).getByLabelText(
+      "First clip",
+    ) as HTMLVideoElement;
+    Object.defineProperty(other, "duration", { configurable: true, value: 20 });
+    fireEvent.loadedMetadata(other);
+    expect(other.muted).toBe(true);
+    expect(other.volume).toBe(0.3);
+    expect(other.playbackRate).toBe(1.5);
+    fireEvent.click(within(dialog).getByRole("button", { name: "下一项媒体" }));
+
+    fireEvent.click(within(dialog).getByRole("button", { name: "下一项媒体" }));
+    const restored = within(dialog).getByLabelText(
+      "Last clip",
+    ) as HTMLVideoElement;
+    Object.defineProperty(restored, "duration", {
+      configurable: true,
+      value: 20,
+    });
+    fireEvent.loadedMetadata(restored);
+    expect(restored.currentTime).toBe(6.5);
+    expect(
+      within(dialog).queryByRole("button", { name: "下一项媒体" }),
+    ).toBeNull();
+  });
+
   it("opens the clicked image with the owning post and one attachment presentation", async () => {
     const api = mockApi();
     render(harness(api));

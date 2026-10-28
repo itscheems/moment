@@ -217,6 +217,11 @@ export function MediaViewerProvider({
       navigation.navigate(sourceHref(active.source), { preserveScroll: false });
   };
   const shown = currentData?.display;
+  const mediaNoun = displayedGallery?.items.some(
+    (item) => item.kind === "video",
+  )
+    ? "媒体"
+    : "图片";
   return (
     <MediaViewerContext.Provider value={context}>
       {children}
@@ -224,6 +229,7 @@ export function MediaViewerProvider({
         <MentionProvider identities={[site]}>
           <MediaLightbox
             items={displayedGallery.items}
+            playbackScope={displayedGallery.key}
             selected={active?.selected ?? null}
             returnFocus={returnFocus}
             panelShown={panelShown}
@@ -249,7 +255,7 @@ export function MediaViewerProvider({
                   >
                     <button
                       type="button"
-                      aria-label="回复图片所属内容"
+                      aria-label={`回复${mediaNoun}所属内容`}
                       data-viewer-action="reply"
                       onClick={requestReply}
                     >
@@ -284,7 +290,10 @@ export function MediaViewerProvider({
                             : async () => postShareCard(shown, site)
                         }
                         trigger={
-                          <button type="button" aria-label="分享图片所属内容">
+                          <button
+                            type="button"
+                            aria-label={`分享${mediaNoun}所属内容`}
+                          >
                             <Icon name="share" />
                           </button>
                         }

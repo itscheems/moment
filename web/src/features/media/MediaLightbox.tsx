@@ -9,6 +9,8 @@ import {
 import { Menu } from "@base-ui/react/menu";
 import { useElementSize, useMergedRef } from "@mantine/hooks";
 import { viewerMediaSize } from "./viewerMediaSize";
+import { VideoPlayer } from "./VideoPlayer";
+import { pauseVideos, type VideoPlaybackSnapshot } from "./videoPlayback";
 import { Icon } from "../../components/icons";
 import {
   ActionTooltip,
@@ -72,6 +74,7 @@ export function MediaLightbox({
   onViewPost,
   returnFocus,
   unavailable = false,
+  playbackScope = "local",
 }: {
   items: MediaLightboxItem[];
   selected: number | null;
@@ -83,8 +86,13 @@ export function MediaLightbox({
   onViewPost?: () => void;
   returnFocus?: RefObject<HTMLElement | null>;
   unavailable?: boolean;
+  playbackScope?: string;
 }) {
   const [failed, setFailed] = useState(false);
+  const playback = useRef(new Map<string, VideoPlaybackSnapshot>());
+  const preferences = useRef(
+    new Map<string, Omit<VideoPlaybackSnapshot, "time">>(),
+  );
   const item = selected === null ? null : (items[selected] ?? null);
   const open = selected !== null && item !== null;
   const mobile = useMediaQuery("(max-width: 687px)");
@@ -105,7 +113,16 @@ export function MediaLightbox({
     height: number;
   } | null>(null);
   const lastPointer = useRef<{ x: number; y: number } | null>(null);
+  const swiped = useRef(false);
   useDocumentScrollLock(open);
+  useEffect(() => {
+    if (open)
+      pauseVideos(stageRef.current?.querySelector("video") ?? undefined);
+    else {
+      playback.current.clear();
+      preferences.current.clear();
+    }
+  }, [open]);
   useEffect(() => {
     setFailed(false);
   }, [selected, item?.key]);
@@ -154,7 +171,16 @@ export function MediaLightbox({
   return (
     <Dialog.Root
       open={open}
-      onOpenChange={(next) => {
+      onOpenChange={(next, details) => {
+        if (
+          !next &&
+          details.reason === "escape-key" &&
+          document.fullscreenElement
+        ) {
+          details.cancel();
+          void document.exitFullscreen();
+          return;
+        }
         if (!next) onSelectedChange(null);
       }}
     >
@@ -205,7 +231,31 @@ export function MediaLightbox({
                 className={styles.lightboxStage}
                 ref={combinedStageRef}
                 tabIndex={-1}
+                onClickCapture={(event) => {
+                  if (swiped.current) {
+                    swiped.current = false;
+                    event.preventDefault();
+                    event.stopPropagation();
+                  }
+                }}
+                onPointerUp={(event) => {
+                  const start = lastPointer.current;
+                  if (
+                    !start ||
+                    (event.target as Element).closest(
+                      "button,input,[data-video-controls]",
+                    )
+                  )
+                    return;
+                  const dx = event.clientX - start.x,
+                    dy = event.clientY - start.y;
+                  if (Math.abs(dx) > 50 && Math.abs(dx) > Math.abs(dy) * 1.3) {
+                    swiped.current = true;
+                    select((selected ?? 0) + (dx < 0 ? 1 : -1));
+                  }
+                }}
                 onPointerDown={(event) => {
+                  swiped.current = false;
                   if (
                     event.target instanceof Element &&
                     !event.target.closest("button, a, video")
@@ -234,24 +284,47 @@ export function MediaLightbox({
                 {shown && shown.previewSrc && !failed && !unavailable ? (
                   shown.kind === "video" ? (
                     open ? (
-                      <video
-                        style={mediaStyle}
-                        onLoadedMetadata={(event) =>
+                      <VideoPlayer
+                        key={`${playbackScope}:${shown.key}`}
+                        style={{ ...mediaStyle, objectFit: "contain" }}
+                        onMetadata={(video) =>
                           setNatural({
                             key: shown.key,
-                            width: event.currentTarget.videoWidth,
-                            height: event.currentTarget.videoHeight,
+                            width: video.videoWidth,
+                            height: video.videoHeight,
                           })
                         }
-                        aria-label={shown.alt}
-                        autoPlay
-                        controls
-                        key={shown.key}
+                        label={shown.alt}
+                        autoplay
+                        initialPlayback={
+                          preferences.current.has(playbackScope)
+                            ? {
+                                ...preferences.current.get(playbackScope)!,
+                                time:
+                                  playback.current.get(
+                                    `${playbackScope}:${shown.key}`,
+                                  )?.time ?? 0,
+                              }
+                            : playback.current.get(
+                                `${playbackScope}:${shown.key}`,
+                              )
+                        }
+                        onPlayback={(state) => {
+                          playback.current.set(
+                            `${playbackScope}:${shown.key}`,
+                            state,
+                          );
+                          preferences.current.set(playbackScope, {
+                            muted: state.muted,
+                            volume: state.volume,
+                            rate: state.rate,
+                            quality: state.quality,
+                          });
+                        }}
                         onError={() => setFailed(true)}
-                        playsInline
                         poster={shown.posterSrc ?? undefined}
-                        preload="metadata"
                         src={shown.previewSrc}
+                        originalSrc={shown.originalSrc}
                       />
                     ) : null
                   ) : (
@@ -315,7 +388,7 @@ export function MediaLightbox({
                 mobile ? (
                   <Menu.Root>
                     <Menu.Trigger
-                      aria-label="图片选项"
+                      aria-label={containsVideo ? "媒体选项" : "图片选项"}
                       className={styles.lightboxToggle}
                     >
                       <ViewerIcon name="more" />
@@ -378,7 +451,9 @@ export function MediaLightbox({
             {discussion ? (
               <aside
                 className={styles.lightboxDiscussion}
-                aria-label="图片所属内容与回复"
+                aria-label={
+                  containsVideo ? "媒体所属内容与回复" : "图片所属内容与回复"
+                }
                 hidden={!open || !panelShown || mobile}
                 inert={!open || !panelShown || mobile}
               >
