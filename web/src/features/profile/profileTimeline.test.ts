@@ -176,6 +176,7 @@ describe("profile incremental feeds", () => {
   });
   it("retains continuation progress on failure and retries without losing cached content", async () => {
     let fail = true;
+    const resumed = deferred<TimelinePage>();
     const { store, timeline } = setup(async (request) => {
       if (!request.cursor) return page([post("a")], "head", null, "older");
       if (request.cursor === "head")
@@ -184,13 +185,17 @@ describe("profile incremental feeds", () => {
         fail = false;
         throw new TypeError("offline");
       }
-      return page([post("c")], "complete");
+      return resumed.promise;
     });
     await store.activate("all");
     await store.refresh("all");
     expect(store.snapshot().all.continuation).toBe("next-update");
     expect(store.snapshot().all.refreshError).toBeInstanceOf(TypeError);
-    await store.refresh("all");
+    const retry = store.refresh("all");
+    expect(store.snapshot().all.refreshing).toBe(true);
+    expect(store.snapshot().all.refreshError).toBeInstanceOf(TypeError);
+    resumed.resolve(page([post("c")], "complete"));
+    await retry;
     expect(timeline.mock.calls.at(-1)?.[0].cursor).toBe("next-update");
     expect(store.snapshot().all.items).toHaveLength(3);
     expect(store.snapshot().all.nextCursor).toBe("older");

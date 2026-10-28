@@ -10,6 +10,7 @@ import { useReadRecovery } from "../../components/useReadRecovery";
 import { useSession } from "../auth/SessionProvider";
 import { PeopleCard } from "./PeopleCard";
 import { loadSuggestedPeople } from "./loadSuggestedPeople";
+import { ReadRecoveryToast } from "../timeline/PublicStates";
 
 // Preview builds can select accounts already present in the shared test dataset.
 const configuredUsernames: unknown = import.meta.env.VITE_RECOMMENDED_USERNAMES;
@@ -89,7 +90,19 @@ export function SuggestedPeople({
   }, [api, usernames, userId, excludedUsername, scope, enabled, attempt]);
   const people = result?.scope === scope ? result.people : [];
   const error = failure?.scope === scope ? failure.error : null;
-  useReadRecovery({ error, loading, onRetry: retry, enabled, scope });
+  const recovering = useReadRecovery({
+    error,
+    loading,
+    onRetry: retry,
+    enabled,
+    scope,
+  });
+  if (recovering)
+    return (
+      <ReadRecoveryToast onRetry={retry}>
+        正在重新获取推荐用户…
+      </ReadRecoveryToast>
+    );
   if (!enabled || (!error && people.length === 0)) return null;
   return createPortal(
     <PeopleCard

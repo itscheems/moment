@@ -17,7 +17,7 @@ import { InternalLink, useNavigation } from "../../app/navigation";
 import { commentDetailPath } from "../../app/routes";
 import { useReadRecovery } from "../../components/useReadRecovery";
 import { isAdministrator, useSession } from "../auth/SessionProvider";
-import { ReadRecoveryNotice } from "../timeline/PublicStates";
+import { ReadRecoveryToast } from "../timeline/PublicStates";
 import { PostPresentation } from "../posts/PostPresentation";
 import { CommentModerationMenu } from "./CommentItem";
 import {
@@ -229,9 +229,7 @@ export function CommentDetailPage({
         </div>
       ) : null}
       {!context && (loading || recovering) && !missing ? (
-        <div className={styles.threadState} aria-busy="true">
-          正在读取评论…
-        </div>
+        <ReadRecoveryToast active={active}>正在读取评论…</ReadRecoveryToast>
       ) : null}
       {error && !recovering && !missing ? (
         <div className={styles.threadError} role="alert">
@@ -276,7 +274,7 @@ export function CommentDetailPage({
             onReplyDialogOpenChange={setReplyOpen}
             replyDialogTriggerRef={triggerRef}
           />
-          {loading && context ? <ReadRecoveryNotice /> : null}
+          {loading && context ? <ReadRecoveryToast active={active} /> : null}
         </>
       ) : null}
     </section>

@@ -48,7 +48,7 @@ import {
   type LoadSource,
 } from "../../components/LoadMoreSentinel";
 import { useReadRecovery } from "../../components/useReadRecovery";
-import { ReadRecoveryNotice } from "../timeline/PublicStates";
+import { ReadRecoveryToast } from "../timeline/PublicStates";
 import {
   isCursorProgressError,
   validateCursorPage,
@@ -832,14 +832,13 @@ export function CommentThread({
         : null}
 
       {items === null && (!loadError || recoveringThread) ? (
-        <div aria-busy="true" className={styles.threadState}>
-          <span className={styles.loadingDot} />
-          <span>{loadError ? "正在重新读取回复…" : "正在读取回复…"}</span>
-        </div>
+        <ReadRecoveryToast active={active}>
+          {loadError ? "正在重新读取回复…" : "正在读取回复…"}
+        </ReadRecoveryToast>
       ) : null}
 
       {items !== null && loadError && recoveringThread ? (
-        <ReadRecoveryNotice>正在重新读取回复…</ReadRecoveryNotice>
+        <ReadRecoveryToast active={active}>正在重新读取回复…</ReadRecoveryToast>
       ) : null}
       {loadError && !recoveringThread ? (
         <div className={styles.threadError} role="alert">
@@ -1053,9 +1052,9 @@ export function CommentThread({
           ) : null}
 
           {moreError ? (
-            <ReadRecoveryNotice error={moreError}>
+            <ReadRecoveryToast active={active} error={moreError}>
               正在重新获取更多回复…
-            </ReadRecoveryNotice>
+            </ReadRecoveryToast>
           ) : null}
 
           {nextCursor && !moreError ? (
@@ -1128,9 +1127,9 @@ function ReplyBranch({
         </button>
       ) : null}
       {paging?.error ? (
-        <ReadRecoveryNotice error={paging.error}>
+        <ReadRecoveryToast active={active} error={paging.error}>
           正在重新获取回复…
-        </ReadRecoveryNotice>
+        </ReadRecoveryToast>
       ) : null}
     </div>
   );

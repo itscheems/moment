@@ -23,6 +23,7 @@ import { useLoginNavigation } from "../auth/loginNavigation";
 import { NavigationProvider, useNavigation } from "../../app/navigation";
 import { SessionProvider, useSession } from "../auth/SessionProvider";
 import { CommentThread } from "./CommentThread";
+import { FeedbackProvider } from "../../components/Feedback";
 import type { DiscussionChange } from "./discussionChanges";
 import commentsCss from "./Comments.module.css?inline";
 import { makeAccountLimits } from "../../test/accountFixtures";
@@ -397,18 +398,20 @@ function renderThread(
   onCountChange?: (count: number) => void,
 ) {
   return render(
-    <NavigationProvider>
-      <SessionProvider>
-        {withExpireControl ? <ExpireOwnerControl /> : null}
-        <CommentThread
-          api={new PublicApi()}
-          onCountChange={onCountChange}
-          postId={postId}
-          post={post}
-          site={currentSite}
-        />
-      </SessionProvider>
-    </NavigationProvider>,
+    <FeedbackProvider>
+      <NavigationProvider>
+        <SessionProvider>
+          {withExpireControl ? <ExpireOwnerControl /> : null}
+          <CommentThread
+            api={new PublicApi()}
+            onCountChange={onCountChange}
+            postId={postId}
+            post={post}
+            site={currentSite}
+          />
+        </SessionProvider>
+      </NavigationProvider>
+    </FeedbackProvider>,
   );
 }
 

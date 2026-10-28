@@ -24,7 +24,7 @@ import {
 import { useSession } from "../auth/SessionProvider";
 import {
   PublicError,
-  ReadRecoveryNotice,
+  ReadRecoveryToast,
   TimelineLoading,
 } from "../timeline/PublicStates";
 import { ProfileEditor } from "./ProfileEditor";
@@ -144,7 +144,7 @@ export function MemberProfilePage({
         active={account.username === username}
       />
       {state === "loading" || state === "failed" ? (
-        <ReadRecoveryNotice error={error} />
+        <ReadRecoveryToast error={error} />
       ) : null}
       <div className={styles.cover}>
         <SiteCover eager site={account} />

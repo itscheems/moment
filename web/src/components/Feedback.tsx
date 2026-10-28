@@ -1,4 +1,4 @@
-import { Toast } from "@base-ui/react/toast";
+import { Toast, type ToastObject } from "@base-ui/react/toast";
 import {
   type CSSProperties,
   type ReactNode,
@@ -12,7 +12,7 @@ import { CodeCopyFeedback } from "./content/CodeCopyFeedback";
 import styles from "./Feedback.module.css";
 
 interface FeedbackData {
-  placement?: "login";
+  placement?: "login" | "corner";
 }
 
 export const feedback = Toast.createToastManager<FeedbackData>();
@@ -28,9 +28,9 @@ interface FeedbackAction {
 
 interface FeedbackOptions {
   id?: string;
-  placement?: "login";
+  placement?: "login" | "corner";
   description?: string;
-  type?: "success" | "error";
+  type?: "success" | "error" | "loading";
   action?: FeedbackAction;
 }
 
@@ -45,11 +45,13 @@ export function notify(title: string, options: FeedbackOptions = {}) {
     priority: type === "error" ? "high" : "low",
     data: { placement: options.placement },
     timeout:
-      options.placement === "login"
-        ? LOGIN_TIMEOUT
-        : type === "error" || options.description
-          ? EXPLANATORY_TIMEOUT
-          : SUCCESS_TIMEOUT,
+      type === "loading"
+        ? 0
+        : options.placement === "login"
+          ? LOGIN_TIMEOUT
+          : type === "error" || options.description
+            ? EXPLANATORY_TIMEOUT
+            : SUCCESS_TIMEOUT,
     actionProps: options.action
       ? {
           children: options.action.label,
@@ -99,47 +101,63 @@ function useLoginViewportStyle(active: boolean): CSSProperties | undefined {
 
 function FeedbackViewport() {
   const { toasts } = Toast.useToastManager<FeedbackData>();
+  const cornerToasts = toasts.filter(
+    (toast) => toast.data?.placement === "corner",
+  );
+  const ordinaryToasts = toasts.filter(
+    (toast) => toast.data?.placement !== "corner",
+  );
   // Retain placement through the closing animation, including after typing
   // closes the message, so it cannot jump back to the ordinary bottom stack.
-  const loginPlacement = toasts.some(
+  const loginPlacement = ordinaryToasts.some(
     (toast) => toast.data?.placement === "login",
   );
   const viewportStyle = useLoginViewportStyle(loginPlacement);
+  const renderToast = (toast: ToastObject<FeedbackData>) => (
+    <Toast.Root
+      aria-busy={toast.type === "loading" || undefined}
+      className={`${styles.toast} ${toast.data?.placement === "login" ? styles.loginToast : ""}`}
+      key={toast.id}
+      toast={toast}
+    >
+      {toast.data?.placement === "login" ? <LoginToastGlass /> : null}
+      <Toast.Content className={styles.content}>
+        {toast.type === "loading" ? (
+          <span aria-hidden="true" className={styles.spinner} />
+        ) : null}
+        <div className={styles.message}>
+          <Toast.Title className={styles.title} />
+          {toast.description ? (
+            <Toast.Description className={styles.description} />
+          ) : null}
+        </div>
+        <div className={styles.actions}>
+          {/* The action is a secondary offer, not the point of the message, so
+              it reads as a link rather than competing with a filled button. */}
+          <Toast.Action className={styles.action} />
+          <button
+            aria-label="关闭通知"
+            className={styles.close}
+            onClick={() => feedback.close(toast.id)}
+            type="button"
+          >
+            <Icon name="close" />
+          </button>
+        </div>
+      </Toast.Content>
+    </Toast.Root>
+  );
   return (
     <Toast.Viewport
       className={`${styles.viewport} ${loginPlacement ? styles.loginViewport : ""}`}
       style={viewportStyle}
     >
-      {toasts.map((toast) => (
-        <Toast.Root
-          className={`${styles.toast} ${toast.data?.placement === "login" ? styles.loginToast : ""}`}
-          key={toast.id}
-          toast={toast}
-        >
-          {toast.data?.placement === "login" ? <LoginToastGlass /> : null}
-          <Toast.Content className={styles.content}>
-            <div className={styles.message}>
-              <Toast.Title className={styles.title} />
-              {toast.description ? (
-                <Toast.Description className={styles.description} />
-              ) : null}
-            </div>
-            <div className={styles.actions}>
-              {/* The action is a secondary offer, not the point of the message, so
-              it reads as a link rather than competing with a filled button. */}
-              <Toast.Action className={styles.action} />
-              <button
-                aria-label="关闭通知"
-                className={styles.close}
-                onClick={() => feedback.close(toast.id)}
-                type="button"
-              >
-                <Icon name="close" />
-              </button>
-            </div>
-          </Toast.Content>
-        </Toast.Root>
-      ))}
+      {ordinaryToasts.map(renderToast)}
+      {cornerToasts.length > 0 ? (
+        <div className={styles.cornerViewport}>
+          {cornerToasts.map(renderToast)}
+        </div>
+      ) : null}
     </Toast.Viewport>
   );
 }
