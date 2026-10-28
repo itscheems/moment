@@ -1314,13 +1314,22 @@ async function prepareShareContext(
 ) {
   const left = PAD + AVATAR + 4;
   const width = WIDTH - PAD - left - inset * 2;
+  const mapHeight = input.mapViewport
+    ? (width * input.mapViewport.height) / input.mapViewport.width
+    : 340;
   const mapCard = input.mapCard;
   const [avatar, thumbnail, mapImage, media] = await Promise.all([
     loadImage(input.avatarUrl ?? initialAvatarUrl(input.displayName)),
     input.link?.thumbnailUrl ? loadImage(input.link.thumbnailUrl) : null,
     mapCard
       ? import("../maps/mapSnapshot").then(({ renderMapSnapshot }) =>
-          renderMapSnapshot(mapCard, width, 340, signal),
+          renderMapSnapshot(
+            mapCard,
+            width,
+            mapHeight,
+            signal,
+            input.mapViewport,
+          ),
         )
       : null,
     Promise.all(
@@ -1353,7 +1362,7 @@ async function prepareShareContext(
       shareBodyHeight(laid) +
       (linkShape ? 18 + linkShape.height : 0) +
       (shape ? 22 + shape.height : 0) +
-      (mapImage ? 22 + 340 : 0) +
+      (mapImage ? 22 + mapHeight : 0) +
       (location ? 40 : 0),
   );
   return {
@@ -1361,6 +1370,7 @@ async function prepareShareContext(
     avatar,
     thumbnail,
     mapImage,
+    mapHeight,
     drawable,
     laid,
     shape,
@@ -1421,11 +1431,11 @@ function drawShareContext(
     y += 22;
     ctx.save();
     ctx.beginPath();
-    ctx.roundRect(left, y, width, 340, MEDIA_RADIUS);
+    ctx.roundRect(left, y, width, value.mapHeight, MEDIA_RADIUS);
     ctx.clip();
-    ctx.drawImage(mapImage, left, y, width, 340);
+    ctx.drawImage(mapImage, left, y, width, value.mapHeight);
     ctx.restore();
-    y += 340;
+    y += value.mapHeight;
   }
   if (location) drawShareLocation(ctx, location, left, y, width);
   const start = top + AVATAR + 4;

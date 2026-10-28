@@ -403,6 +403,43 @@ describe("drawing the card", () => {
     );
   });
 
+  it.each(["quote", "context"] as const)(
+    "retains camera and drawing proportions for a %s map",
+    async (placement) => {
+      const mapViewport = {
+        longitude: 7.4,
+        latitude: 46.9,
+        zoom: 13.5,
+        bearing: 0,
+        pitch: 0,
+        width: 360,
+        height: 240,
+      };
+      const nested = input({ mapCard, mapViewport });
+      await renderShareCard(
+        input(
+          placement === "quote" ? { quote: nested } : { context: [nested] },
+        ),
+      );
+      expect(renderMapSnapshot).toHaveBeenCalledOnce();
+      const [, width, height, , viewport] =
+        vi.mocked(renderMapSnapshot).mock.calls[0];
+      expect(viewport).toEqual(mapViewport);
+      expect(height).toBeCloseTo((width * 240) / 360);
+      const mapDraw = recording
+        .of("drawImage")
+        .find((call) => call.args[0] instanceof HTMLCanvasElement);
+      expect(mapDraw?.args.slice(3)).toEqual([width, height]);
+    },
+  );
+
+  it("automatically frames an embedded map without a captured viewport", async () => {
+    await renderShareCard(input({ quote: input({ mapCard }) }));
+    const [, , height, , viewport] = vi.mocked(renderMapSnapshot).mock.calls[0];
+    expect(viewport).toBeUndefined();
+    expect(height).toBe(340);
+  });
+
   it("keeps ordinary photos alongside the map", async () => {
     await renderShareCard(
       input({ mapCard, media: [{ mediaId: "01A", mimeType: "image/jpeg" }] }),
