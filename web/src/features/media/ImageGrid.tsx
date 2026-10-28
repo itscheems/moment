@@ -16,18 +16,22 @@ function mediaAlt(
   usage: PublicMediaUsage,
   index: number,
   total: number,
+  mixed = false,
 ): string {
   if (usage.altText === "") return "";
   if (usage.altText !== null) return usage.altText;
   return isVideoMimeType(usage.mimeType)
     ? `未提供视频描述，第 ${index + 1} 项，共 ${total} 项`
-    : `未提供图片描述，第 ${index + 1} 张，共 ${total} 张`;
+    : mixed
+      ? `未提供图片描述，第 ${index + 1} 项媒体，共 ${total} 项`
+      : `未提供图片描述，第 ${index + 1} 张，共 ${total} 张`;
 }
 
 function imageTileName(
   usage: PublicMediaUsage,
   index: number,
   total: number,
+  mixed = false,
 ): string {
   const state =
     usage.altText === null
@@ -35,7 +39,9 @@ function imageTileName(
       : usage.altText === ""
         ? "明确标记为纯装饰"
         : usage.altText;
-  return `打开第 ${index + 1} 张图片，共 ${total} 张：${state}`;
+  return mixed
+    ? `打开第 ${index + 1} 项媒体，共 ${total} 项：${state}`
+    : `打开第 ${index + 1} 张图片，共 ${total} 张：${state}`;
 }
 
 function usageKey(usage: PublicMediaUsage): string {
@@ -53,6 +59,9 @@ function MediaAsset({
   original,
   eagerVideo,
   onError,
+  onOpen,
+  openOnSurface,
+  mixed,
 }: {
   usage: PublicMediaUsage;
   index: number;
@@ -60,13 +69,19 @@ function MediaAsset({
   original: boolean;
   eagerVideo: boolean;
   onError: () => void;
+  onOpen?: (trigger: HTMLElement) => void;
+  openOnSurface?: boolean;
+  mixed?: boolean;
 }) {
   if (isVideoMimeType(usage.mimeType)) {
     return (
       <ViewportVideo
         eager={eagerVideo}
-        label={mediaAlt(usage, index, total)}
+        originalSrc={mediaOriginalUrl(usage.mediaId)}
+        label={mediaAlt(usage, index, total, mixed)}
         onError={onError}
+        onOpen={onOpen}
+        openOnSurface={openOnSurface}
         poster={mediaPosterUrl(usage.mediaId)}
         src={
           original
@@ -78,7 +93,7 @@ function MediaAsset({
   }
   return (
     <img
-      alt={mediaAlt(usage, index, total)}
+      alt={mediaAlt(usage, index, total, mixed)}
       decoding="async"
       loading="lazy"
       onError={onError}
@@ -96,11 +111,12 @@ function MediaAsset({
 export function buildLightboxItems(
   media: PublicMediaUsage[],
 ): MediaLightboxItem[] {
+  const mixed = media.some((usage) => isVideoMimeType(usage.mimeType));
   return media.map((usage, index) => ({
     key: usageKey(usage),
     previewSrc: mediaPreviewUrl(usage.mediaId),
     originalSrc: mediaOriginalUrl(usage.mediaId),
-    alt: mediaAlt(usage, index, media.length),
+    alt: mediaAlt(usage, index, media.length, mixed),
     // Only a description the author wrote. "尚未填写描述" and "纯装饰" are
     // facts about the metadata, not about the picture, and printing them
     // under it told the reader nothing they wanted to know.
@@ -143,6 +159,11 @@ export function ImageGrid({
       : undefined;
   const lightboxItems = buildLightboxItems(media);
 
+  const openMedia = (index: number, trigger: HTMLElement) => {
+    if (viewer && source) viewer.open(source, lightboxItems, index, trigger);
+    else setSelected(index);
+  };
+
   const markFailed = (usage: PublicMediaUsage) => {
     setFailed((current) => new Set(current).add(usageKey(usage)));
   };
@@ -169,7 +190,7 @@ export function ImageGrid({
               className={styles.mediaFallback}
               role="img"
               aria-label={
-                mediaAlt(usage, index, media.length) ||
+                mediaAlt(usage, index, media.length, containsVideo) ||
                 (containsVideo ? "装饰媒体不可用" : "装饰图片不可用")
               }
             >
@@ -179,6 +200,9 @@ export function ImageGrid({
           ) : (
             <MediaAsset
               eagerVideo={eagerVideo}
+              mixed={containsVideo}
+              onOpen={(trigger) => openMedia(index, trigger)}
+              openOnSurface={media.length > 1}
               index={index}
               onError={() => markFailed(usage)}
               original={false}
@@ -200,19 +224,17 @@ export function ImageGrid({
           }
           return (
             <button
-              aria-label={imageTileName(usage, index, media.length)}
+              aria-label={imageTileName(
+                usage,
+                index,
+                media.length,
+                containsVideo,
+              )}
               className={`${styles.imageTile} ${styles.imageButton}`}
               key={`${usage.position}-${usage.mediaId}`}
               onClick={(event) => {
                 event.stopPropagation();
-                if (viewer && source)
-                  viewer.open(
-                    source,
-                    lightboxItems,
-                    index,
-                    event.currentTarget,
-                  );
-                else setSelected(index);
+                openMedia(index, event.currentTarget);
               }}
               style={singleMediaStyle}
               type="button"

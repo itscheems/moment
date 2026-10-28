@@ -1,0 +1,501 @@
+.player {
+  position: relative;
+  inline-size: 100%;
+  block-size: 100%;
+  min-inline-size: 0;
+  min-block-size: 0;
+  overflow: hidden;
+  background: #000;
+  color: #fff;
+  font-family: var(--font-timeline);
+  cursor: pointer;
+  isolation: isolate;
+  object-fit: cover;
+  container-type: inline-size;
+  font-feature-settings: normal;
+  font-variant-numeric: normal;
+  font-optical-sizing: auto;
+  letter-spacing: normal;
+  text-rendering: auto;
+}
+.player > video {
+  display: block;
+  inline-size: 100%;
+  block-size: 100%;
+  object-fit: inherit;
+}
+.player:focus-visible {
+  outline: 2px solid #fff;
+  outline-offset: -2px;
+}
+.player:fullscreen {
+  inline-size: 100vw !important;
+  block-size: 100dvh !important;
+  max-inline-size: none;
+  max-block-size: none;
+}
+.player:fullscreen > video {
+  object-fit: contain;
+}
+.poster {
+  position: absolute;
+  inset: 0;
+  inline-size: 100%;
+  block-size: 100%;
+  object-fit: inherit;
+  pointer-events: none;
+}
+.centerPlay,
+.loading {
+  position: absolute;
+  inset-block-start: 50%;
+  inset-inline-start: 50%;
+  transform: translate(-50%, -50%);
+  inline-size: 60px;
+  block-size: 60px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 50%;
+  padding: 0;
+  color: #fff;
+  background: rgb(15 20 25 / 75%);
+  cursor: pointer;
+}
+.centerPlay svg {
+  inline-size: 32px;
+  block-size: 32px;
+}
+.centerPlay:focus-visible {
+  outline: 2px solid #fff;
+  outline-offset: 2px;
+}
+.loading {
+  pointer-events: none;
+  background: transparent;
+}
+.loading > span {
+  inline-size: 32px;
+  block-size: 32px;
+  border: 4px solid rgb(255 255 255 / 25%);
+  border-block-start-color: #fff;
+  border-radius: 50%;
+  animation: spin 0.85s linear infinite;
+}
+.controls {
+  position: absolute;
+  inset-inline: 0;
+  inset-block-end: 0;
+  display: flex;
+  flex-direction: column;
+  padding: 0 4px 2px;
+  background: linear-gradient(0deg, rgb(0 0 0 / 77%), transparent);
+  opacity: 0;
+  transition: opacity 150ms;
+  cursor: default;
+}
+.player[data-controls-visible] .controls {
+  opacity: 1;
+}
+.row {
+  display: flex;
+  align-items: center;
+  min-inline-size: 0;
+  block-size: 40px;
+}
+.control,
+.expand {
+  display: grid;
+  place-items: center;
+  flex: 0 0 36px;
+  inline-size: 36px;
+  min-inline-size: 36px;
+  block-size: 36px;
+  min-block-size: 36px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: #fff;
+  cursor: pointer;
+}
+.control svg {
+  display: block;
+  inline-size: 20px;
+  block-size: 20px;
+}
+.control[data-video-action="fullscreen"] svg,
+.control[data-video-action="shrink"] svg {
+  inline-size: 18.75px;
+  block-size: 18.75px;
+}
+.control:hover,
+.control:focus-visible,
+.expand:hover,
+.expand:focus-visible {
+  background: rgb(255 255 255 / 10%);
+}
+.control:focus-visible,
+.expand:focus-visible {
+  outline: 2px solid #fff;
+  outline-offset: -2px;
+}
+.time {
+  font-weight: 400;
+  flex: 0 0 auto;
+  margin-inline-start: auto;
+  margin-inline-end: 4px;
+  min-inline-size: 0;
+  white-space: nowrap;
+  font-size: 15px;
+  line-height: 20px;
+  font-variant-numeric: normal;
+}
+.seek {
+  appearance: none;
+  inline-size: calc(100% - 8px);
+  block-size: 20px;
+  min-block-size: 20px;
+  margin: 0 4px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+}
+.seek::-webkit-slider-runnable-track {
+  block-size: 2px;
+  border-radius: 3px;
+  background: linear-gradient(
+    to right,
+    #fff var(--progress),
+    rgb(255 255 255 / 35%) var(--progress)
+  );
+}
+.seek::-webkit-slider-thumb {
+  appearance: none;
+  inline-size: 0;
+  block-size: 0;
+  margin-block-start: 1px;
+  border-radius: 50%;
+  background: #fff;
+}
+.seek::-moz-range-track {
+  block-size: 2px;
+  border-radius: 3px;
+  background: rgb(255 255 255 / 35%);
+}
+.seek::-moz-range-progress {
+  block-size: 2px;
+  background: #fff;
+}
+.seek::-moz-range-thumb {
+  inline-size: 12px;
+  block-size: 12px;
+  border: 0;
+  background: #fff;
+}
+.volume {
+  position: relative;
+}
+.volumePopup {
+  position: absolute;
+  inset-block-end: 100%;
+  inset-inline-start: 50%;
+  transform: translateX(-50%);
+  display: none;
+  width: 28px;
+  height: 128px;
+  padding: 16px 12px;
+  background: rgb(0 0 0 / 30%);
+  border-radius: 16px;
+}
+.volume:hover .volumePopup,
+.volume:focus-within .volumePopup {
+  display: block;
+}
+.volumePopup input {
+  appearance: none;
+  position: absolute;
+  top: 16px;
+  left: 4px;
+  writing-mode: vertical-lr;
+  direction: rtl;
+  width: 20px;
+  height: 96px;
+  min-height: 0;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+}
+.volumePopup input::-webkit-slider-runnable-track {
+  width: 4px;
+  border-radius: 8px;
+  background: linear-gradient(
+    to top,
+    #fff var(--volume),
+    rgb(255 255 255 / 33%) var(--volume)
+  );
+}
+.volumePopup input::-webkit-slider-thumb {
+  appearance: none;
+  width: 12px;
+  height: 12px;
+  margin-left: -4px;
+  border-radius: 50%;
+  background: #fff;
+}
+.volumePopup input::-moz-range-track {
+  width: 4px;
+  border-radius: 8px;
+  background: rgb(255 255 255 / 33%);
+}
+.volumePopup input::-moz-range-progress {
+  width: 4px;
+  background: #fff;
+}
+.volumePopup input::-moz-range-thumb {
+  width: 12px;
+  height: 12px;
+  border: 0;
+  background: #fff;
+}
+.seek:hover::-webkit-slider-runnable-track,
+.seek:focus-visible::-webkit-slider-runnable-track {
+  block-size: 4px;
+}
+.seek:hover::-webkit-slider-thumb,
+.seek:focus-visible::-webkit-slider-thumb {
+  inline-size: 12px;
+  block-size: 12px;
+  margin-block-start: -4px;
+}
+.expand {
+  position: absolute;
+  inset-block-start: 4px;
+  inset-inline-end: 4px;
+  background: rgb(0 0 0 / 60%);
+  opacity: 0;
+}
+.expand svg {
+  inline-size: 20px;
+  block-size: 20px;
+}
+.player:hover .expand,
+.player:focus-within .expand,
+.player[data-playback-state="paused"] .expand {
+  opacity: 1;
+}
+.positioner {
+  z-index: var(--layer-popover);
+}
+.settings {
+  inline-size: 260px;
+  max-inline-size: calc(100vw - 16px);
+  max-block-size: calc(100dvh - 16px);
+  overflow: auto;
+  border: 0;
+  border-radius: 16px;
+  padding: 8px 8px 4px;
+  background: var(--surface-elevated);
+  color: var(--text-primary);
+  font-family: var(--font-timeline);
+  font-feature-settings: normal;
+  font-variant-numeric: normal;
+  letter-spacing: normal;
+  text-rendering: auto;
+  box-shadow:
+    0 0 15px rgb(101 119 134 / 20%),
+    0 0 3px 1px rgb(101 119 134 / 15%);
+}
+.settingRow,
+.settingsTitle {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  inline-size: 100%;
+  block-size: 44px;
+  min-block-size: 44px;
+  border: 0;
+  border-radius: 0;
+  padding: 12px 16px;
+  background: transparent;
+  color: inherit;
+  font-family: inherit;
+  font-size: 15px;
+  font-weight: 400;
+  line-height: 20px;
+  letter-spacing: normal;
+  text-align: start;
+  cursor: pointer;
+}
+.settingRow strong,
+.settingsTitle strong {
+  font-weight: 700;
+}
+.settingRow > svg {
+  inline-size: 18.75px;
+  block-size: 18.75px;
+  flex: 0 0 auto;
+}
+.settingRow > span {
+  min-inline-size: 0;
+  white-space: nowrap;
+}
+.settingValue {
+  color: var(--text-secondary);
+  font-weight: 400;
+}
+.settingsTitle > svg {
+  inline-size: 18.75px;
+  block-size: 18.75px;
+  flex: 0 0 auto;
+}
+.settingRow:hover,
+.settingRow:focus-visible,
+.settingsTitle:hover,
+.settingsTitle:focus-visible {
+  background: var(--surface-hover);
+  outline: none;
+}
+.options {
+  padding: 12px 16px;
+}
+.option {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  block-size: 28px;
+  margin: 0;
+  padding: 4px 0;
+  color: inherit;
+  font-family: inherit;
+  font-size: 15px;
+  font-weight: 400;
+  line-height: 20px;
+  letter-spacing: normal;
+  cursor: pointer;
+}
+.settings[data-settings-page="speed"] {
+  padding: 0;
+}
+.settings[data-settings-page="speed"] .settingsTitle {
+  block-size: 52px;
+  min-block-size: 52px;
+  padding: 20px 24px 12px;
+}
+.settings[data-settings-page="speed"] .options {
+  padding: 12px 0 16px;
+}
+.settings[data-settings-page="speed"] .option {
+  padding-inline: 24px;
+}
+.radioTarget {
+  position: relative;
+  inline-size: 20px;
+  block-size: 20px;
+  flex: 0 0 20px;
+}
+.radioTarget::before {
+  content: "";
+  position: absolute;
+  inset: -8px;
+  border-radius: 50%;
+  transition: background-color 0.2s;
+}
+.option:hover .radioTarget::before {
+  background: rgb(83 100 113 / 10%);
+}
+.option:hover .radioTarget:has(.radio[data-checked])::before {
+  background: rgb(29 155 240 / 10%);
+}
+.radio {
+  position: relative;
+  inline-size: 20px;
+  block-size: 20px;
+  min-inline-size: 20px;
+  min-block-size: 20px;
+  flex: 0 0 20px;
+  display: grid;
+  place-items: center;
+  border: 2px solid var(--text-secondary);
+  border-radius: 50%;
+  padding: 0;
+  background: var(--surface-elevated);
+  color: #fff;
+  cursor: pointer;
+}
+.radio[data-checked] {
+  background: #1d9bf0;
+  border-color: #1d9bf0;
+}
+.radio:focus-visible {
+  outline: 2px solid #1d9bf0;
+  outline-offset: 3px;
+}
+.radioCheck {
+  display: grid;
+  place-items: center;
+}
+.radioCheck svg {
+  inline-size: 16px;
+  block-size: 16px;
+}
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .loading > span {
+    animation: none;
+  }
+  .controls {
+    transition: none;
+  }
+}
+@media (hover: none) {
+  .expand {
+    opacity: 1;
+  }
+}
+@container (max-width:300px) {
+  .time {
+    font-size: 12px;
+  }
+  .control {
+    inline-size: 28px;
+    min-inline-size: 28px;
+    flex-basis: 28px;
+  }
+}
+
+.player[data-compact] .seek,
+.player[data-compact] .time,
+.player[data-compact] [data-video-action="settings"],
+.player[data-compact] [data-video-action="pip"],
+.player[data-compact] [data-video-action="fullscreen"] {
+  display: none;
+}
+.player[data-compact] .volume {
+  margin-inline-start: auto;
+}
+.player[data-compact] .control {
+  inline-size: 32px;
+  min-inline-size: 32px;
+  block-size: 32px;
+  min-block-size: 32px;
+  flex-basis: 32px;
+}
+.player[data-compact] .row {
+  block-size: 36px;
+}
+
+@container (max-width: 300px) {
+  .player[data-compact] .volumePopup {
+    display: none;
+  }
+}

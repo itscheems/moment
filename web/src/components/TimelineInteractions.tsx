@@ -46,16 +46,18 @@ export function ActionTooltip({
   label,
   wide = false,
   placement,
+  container,
 }: {
   children: ReactElement;
   label: string;
   wide?: boolean;
   placement?: ActionTooltipPlacement;
+  container?: HTMLElement | null;
 }) {
   return (
     <Tooltip.Root>
       <Tooltip.Trigger closeDelay={80} delay={350} render={children} />
-      <Tooltip.Portal>
+      <Tooltip.Portal container={container}>
         <Tooltip.Positioner
           className={tooltipStyles.positioner}
           side={placement?.side ?? "bottom"}
