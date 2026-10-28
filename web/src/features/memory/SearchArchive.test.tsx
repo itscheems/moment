@@ -828,7 +828,7 @@ describe("search and archive memory layer", () => {
       if (url === "/api/v1/archive/months") return json(archiveMonths);
       if (url === "/api/v1/archive/month?month=2026-08") return json(august);
       if (url === "/api/v1/archive/month?month=2025-12") return json(december);
-      if (!url.startsWith("/api/v1/posts?")) return json({}, 404);
+      if (!url.startsWith("/api/v1/archive/posts?")) return json({}, 404);
       const query = new URLSearchParams(url.slice(url.indexOf("?")));
       switch (query.get("cursor")) {
         case "newer-after-0810":
@@ -870,7 +870,7 @@ describe("search and archive memory layer", () => {
   function postRequests(fetcher: ReturnType<typeof install>): string[] {
     return fetcher.mock.calls
       .map(([input]) => String(input))
-      .filter((url) => url.startsWith("/api/v1/posts?"));
+      .filter((url) => url.startsWith("/api/v1/archive/posts?"));
   }
 
   it("recovers archive month and day counts while preserving the visible list", async () => {
@@ -887,7 +887,8 @@ describe("search and archive memory layer", () => {
         days += 1;
         return days === 1 ? json({}, 503) : json(august);
       }
-      if (url.startsWith("/api/v1/posts?")) return timelinePage([first]);
+      if (url.startsWith("/api/v1/archive/posts?"))
+        return timelinePage([first]);
       return json({}, 404);
     });
     render(<App />);
@@ -925,7 +926,7 @@ describe("search and archive memory layer", () => {
     expect(screen.getByText("旧帖，后来转发")).toBeInTheDocument();
     // No position: the list starts at the newest post, with no window and
     // nothing above it to load.
-    expect(postRequests(fetcher)).toEqual(["/api/v1/posts?limit=20"]);
+    expect(postRequests(fetcher)).toEqual(["/api/v1/archive/posts?limit=20"]);
     expect(
       screen.queryByRole("button", { name: "加载更新的 Moment" }),
     ).toBeNull();
@@ -962,12 +963,12 @@ describe("search and archive memory layer", () => {
     // rows on and before it, then the first page after it.
     await waitFor(() =>
       expect(postRequests(fetcher)).toContain(
-        "/api/v1/posts?limit=20&anchor=2026-08-10",
+        "/api/v1/archive/posts?limit=20&anchor=2026-08-10",
       ),
     );
     await waitFor(() =>
       expect(postRequests(fetcher)).toContain(
-        "/api/v1/posts?limit=20&cursor=newer-after-0810",
+        "/api/v1/archive/posts?limit=20&cursor=newer-after-0810",
       ),
     );
     expect(
@@ -1000,7 +1001,7 @@ describe("search and archive memory layer", () => {
     fireEvent.click(newerButton);
     await waitFor(() =>
       expect(postRequests(fetcher)).toContain(
-        "/api/v1/posts?limit=20&cursor=newer-more",
+        "/api/v1/archive/posts?limit=20&cursor=newer-more",
       ),
     );
     await waitFor(() =>
@@ -1215,7 +1216,7 @@ describe("search and archive memory layer", () => {
     ).toBeInTheDocument();
     await waitFor(() =>
       expect(postRequests(fetcher)).toContain(
-        "/api/v1/posts?limit=20&anchor=2026-08-10",
+        "/api/v1/archive/posts?limit=20&anchor=2026-08-10",
       ),
     );
 

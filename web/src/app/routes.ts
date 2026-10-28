@@ -208,7 +208,7 @@ const routes: Array<
   },
   {
     id: "archive",
-    requiresSession: false,
+    requiresSession: true,
     title: "归档",
     eyebrow: "",
     href: "/archive",

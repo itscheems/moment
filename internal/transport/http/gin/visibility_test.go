@@ -52,9 +52,10 @@ func TestHiddenPostsAndTheirMediaAnswerOnlyToTheAuthorOverHTTP(t *testing.T) {
 	if items := search["items"].([]any); len(items) != 1 || search["year_counts"].([]any)[0].(map[string]any)["count"].(float64) != 1 {
 		t.Fatalf("visitor search = %#v", search)
 	}
-	if months := decodeDataMap(t, performRequest(fixture.engine, jsonRequest(http.MethodGet, "/api/v1/archive/months", "")))["items"].([]any); months[0].(map[string]any)["count"].(float64) != 1 {
-		t.Fatalf("visitor months = %#v", months)
+	if response := performRequest(fixture.engine, jsonRequest(http.MethodGet, "/api/v1/archive/months", "")); response.Code != http.StatusUnauthorized {
+		t.Fatalf("visitor archive = %d", response.Code)
 	}
+
 	for _, path := range []string{"/api/v1/media/" + mediaID, "/api/v1/media/" + mediaID + "/preview"} {
 		if response := performRequest(fixture.engine, httptest.NewRequest(http.MethodGet, path, nil)); response.Code != http.StatusNotFound || decodeError(t, response.Body).Error.Code != "MEDIA_NOT_FOUND" {
 			t.Fatalf("visitor %s = %d %s", path, response.Code, response.Body.String())

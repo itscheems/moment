@@ -29,17 +29,21 @@ func TestSearchHTTPStrictQueriesAggregatesAndCursor(t *testing.T) {
 		"/api/v1/search?q=a&limit=0", "/api/v1/search?q=a&from=", "/api/v1/archive/month?month=2026-1",
 		"/api/v1/archive/months?from=2026-01-02&to=2026-01-01",
 	} {
-		invalid := performRequest(fixture.engine, httptest.NewRequest(http.MethodGet, target, nil))
+		request := httptest.NewRequest(http.MethodGet, target, nil)
+		if strings.Contains(target, "/archive/") {
+			request.Header.Set("Authorization", "Bearer "+fixture.token)
+		}
+		invalid := performRequest(fixture.engine, request)
 		if invalid.Code != http.StatusBadRequest || decodeError(t, invalid.Body).Error.Code != "INVALID_ARGUMENT" {
 			t.Fatalf("%s = %d %s", target, invalid.Code, invalid.Body.String())
 		}
 	}
 
-	months := performRequest(fixture.engine, httptest.NewRequest(http.MethodGet, "/api/v1/archive/months", nil))
+	months := performRequest(fixture.engine, headerRequest(http.MethodGet, "/api/v1/archive/months", fixture.token, nil))
 	if months.Code != http.StatusOK || !strings.Contains(months.Body.String(), `"year":2026,"month":1,"count":2`) {
 		t.Fatalf("archive months = %d %s", months.Code, months.Body.String())
 	}
-	days := performRequest(fixture.engine, httptest.NewRequest(http.MethodGet, "/api/v1/archive/month?month=2026-01", nil))
+	days := performRequest(fixture.engine, headerRequest(http.MethodGet, "/api/v1/archive/month?month=2026-01", fixture.token, nil))
 	if days.Code != http.StatusOK || !strings.Contains(days.Body.String(), `"day":1,"count":2`) {
 		t.Fatalf("archive month = %d %s", days.Code, days.Body.String())
 	}

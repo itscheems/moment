@@ -233,6 +233,7 @@ describe("central session requirements", () => {
     "/compose/articles/drafts/item",
     "/m/item/edit",
     "/profile/",
+    "/archive",
   ])("requires a session for %s", (path) => {
     expect(resolveRoute(path).requiresSession).toBe(true);
   });
@@ -245,7 +246,6 @@ describe("central session requirements", () => {
     "/m/item",
     "/m/item/comments/reply",
     "/search",
-    "/archive",
   ])("keeps %s public", (path) => {
     expect(resolveRoute(path).requiresSession).toBe(false);
   });

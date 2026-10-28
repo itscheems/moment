@@ -117,7 +117,7 @@ func TestSearchArchivePostSyncAndRebuild(t *testing.T) {
 		}
 	}
 
-	months, err := service.ArchiveMonths(ctx, app.ArchiveMonthsInput{})
+	months, err := service.ArchiveMonths(ctx, app.ArchiveMonthsInput{Viewer: app.AccountViewer(testAccountID)})
 	if err != nil || len(months.Items) != 1 || months.Items[0].Count != 3 {
 		t.Fatalf("archive months = %#v, %v", months, err)
 	}
