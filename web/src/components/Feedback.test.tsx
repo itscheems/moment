@@ -28,6 +28,22 @@ function renderFeedback() {
 }
 
 describe("Feedback", () => {
+  it("honors a short timeout for a corner confirmation without changing defaults", () => {
+    vi.useFakeTimers();
+    renderFeedback();
+    act(() => {
+      notify("身份验证成功", { placement: "corner", timeout: 1800 });
+      notify("设置已保存");
+    });
+    const confirmed = screen.getByRole("dialog", { name: "身份验证成功" });
+    const ordinary = screen.getByRole("dialog", { name: "设置已保存" });
+    act(() => vi.advanceTimersByTime(1799));
+    expect(confirmed).not.toHaveAttribute("data-ending-style");
+    act(() => vi.advanceTimersByTime(1));
+    expect(confirmed).toHaveAttribute("data-ending-style");
+    expect(ordinary).not.toHaveAttribute("data-ending-style");
+  });
+
   it("limits glass styling and the shorter timeout to login notifications", () => {
     vi.useFakeTimers();
     renderFeedback();

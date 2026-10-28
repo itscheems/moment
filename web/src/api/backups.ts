@@ -1,3 +1,4 @@
+import { withCredentialConfirmation } from "./credentialConfirmation";
 import { parseMapCard, type MapCardData } from "../features/maps/types";
 import {
   ApiClient,
@@ -1633,6 +1634,30 @@ export function assertNoDuplicateJSONKeys(source: string): void {
 }
 
 export function uploadArchive(
+  path: string,
+  csrfToken: string,
+  file: File,
+  expectedSHA256: string | null,
+  onProgress: (percent: number | null) => void,
+  expectedStatus: number,
+  signal?: AbortSignal,
+): Promise<unknown> {
+  return withCredentialConfirmation(
+    () =>
+      uploadArchiveOnce(
+        path,
+        csrfToken,
+        file,
+        expectedSHA256,
+        onProgress,
+        expectedStatus,
+        signal,
+      ),
+    signal,
+  );
+}
+
+function uploadArchiveOnce(
   path: string,
   csrfToken: string,
   file: File,

@@ -1,4 +1,5 @@
 import { decodeResponse, PublicApiError } from "./public";
+import { credentialFetch } from "./credentialConfirmation";
 
 export type RegistrationMode = "open" | "approval" | "closed";
 
@@ -324,6 +325,6 @@ export function requestInit(
 export class ApiClient {
   protected readonly fetcher: Fetcher;
   constructor(fetcher: Fetcher = (input, init) => window.fetch(input, init)) {
-    this.fetcher = fetcher;
+    this.fetcher = (input, init) => credentialFetch(input, init, fetcher);
   }
 }

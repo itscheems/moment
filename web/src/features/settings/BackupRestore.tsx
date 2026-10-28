@@ -1,4 +1,4 @@
-import { credentialConfirmationStatus } from "../../api/accounts";
+import { ensureCredentialConfirmation } from "../../api/credentialConfirmation";
 import { MapCard } from "../maps/MapCard";
 import {
   backupsApi,
@@ -448,7 +448,7 @@ function importError(error: unknown, operation: "plan" | "restore"): string {
   }
   switch (error.code) {
     case "REAUTHENTICATION_REQUIRED":
-      return "请先在页面上方确认身份，再重试备份操作。";
+      return "身份验证未完成，操作未执行。";
     case "EXPORT_INVALID":
     case "EXPORT_CHECKSUM_MISMATCH":
     case "EXPORT_VERSION_UNSUPPORTED":
@@ -872,9 +872,9 @@ export function BackupRestore({
     setExportState("running");
     setExportNotice("正在把同源备份请求交给浏览器…");
     try {
-      if (!(await credentialConfirmationStatus())) {
+      if (!(await ensureCredentialConfirmation())) {
         setExportState("failed");
-        setExportNotice("请先在页面上方确认身份，再下载整站备份。");
+        setExportNotice("身份验证未完成，操作未执行。");
         return;
       }
       const anchor = document.createElement("a");
@@ -1175,9 +1175,7 @@ export function BackupRestore({
           setMergeState("failed");
           setMergeError("合并计划已过期或当前站点已变化，请重新检查合并冲突。");
         } else if (error.code === "REAUTHENTICATION_REQUIRED") {
-          setMergeError(
-            "请先在页面上方确认身份，再提交。当前审阅和选择已保留。",
-          );
+          setMergeError("身份验证未完成，操作未执行。当前审阅和选择已保留。");
         } else if (error.code === "IMPORT_IN_PROGRESS") {
           setMergeError(
             "另一项导入刚刚开始，本次合并没有提交。请稍后重新检查。",
@@ -1319,9 +1317,7 @@ export function BackupRestore({
             "审阅后当前站点已经发生变化。为保护新内容，恢复已拒绝；请重新检查备份。",
           );
         } else if (error.code === "REAUTHENTICATION_REQUIRED") {
-          setRestoreError(
-            "请先在页面上方确认身份，再提交。当前审阅和选择已保留。",
-          );
+          setRestoreError("身份验证未完成，操作未执行。当前审阅和选择已保留。");
         } else {
           setRestoreError(
             "服务器拒绝了这次恢复，当前站点没有被替换。请重新检查后再试。",

@@ -16,7 +16,7 @@ const (
 	reauthenticationCookieName = "moment_reauthentication"
 	// ReauthenticationHeader carries a base64url-encoded current password for API clients.
 	ReauthenticationHeader = "X-Moment-Password"
-	reauthenticationTTL    = 5 * time.Minute
+	reauthenticationTTL    = time.Hour
 )
 
 type reauthenticationGrant struct {

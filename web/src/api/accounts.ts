@@ -1,3 +1,4 @@
+import { credentialFetch } from "./credentialConfirmation";
 import {
   ApiClient,
   booleanField,
@@ -293,7 +294,7 @@ export interface IssuedApiCredential {
 export async function accountSecurity(
   signal?: AbortSignal,
 ): Promise<AccountSecurity> {
-  const response = await window.fetch("/api/v1/account/security", {
+  const response = await credentialFetch("/api/v1/account/security", {
     ...requestInit("GET"),
     signal,
   });
@@ -310,7 +311,7 @@ export async function setAccountPassword(
   csrfToken: string,
   password: string,
 ): Promise<void> {
-  const response = await window.fetch(
+  const response = await credentialFetch(
     "/api/v1/account/password",
     requestInit("PUT", csrfToken, { password }),
   );
@@ -321,7 +322,7 @@ export async function setAccountPassword(
 export async function listApiCredentials(
   signal?: AbortSignal,
 ): Promise<ApiCredential[]> {
-  const response = await window.fetch("/api/v1/account/tokens", {
+  const response = await credentialFetch("/api/v1/account/tokens", {
     ...requestInit("GET"),
     signal,
   });
@@ -354,7 +355,7 @@ export async function createApiCredential(
   csrfToken: string,
   label: string,
 ): Promise<IssuedApiCredential> {
-  const response = await window.fetch(
+  const response = await credentialFetch(
     "/api/v1/account/tokens",
     requestInit("POST", csrfToken, { label }),
   );
@@ -367,7 +368,7 @@ export async function revokeApiCredential(
   csrfToken: string,
   id: string,
 ): Promise<boolean> {
-  const response = await window.fetch(
+  const response = await credentialFetch(
     `/api/v1/account/tokens/${encodeURIComponent(id)}`,
     requestInit("DELETE", csrfToken),
   );
@@ -381,7 +382,7 @@ export async function setAccountRole(
   id: string,
   role: "admin" | "member",
 ): Promise<Account> {
-  const response = await window.fetch(
+  const response = await credentialFetch(
     `/api/v1/accounts/${encodeURIComponent(id)}/role`,
     requestInit("PUT", csrfToken, { role }),
   );
@@ -403,7 +404,7 @@ export async function confirmAccountCredential(
 }
 
 export async function revokeAllCredentials(csrfToken: string): Promise<void> {
-  const response = await window.fetch(
+  const response = await credentialFetch(
     "/api/v1/account/credentials",
     requestInit("DELETE", csrfToken),
   );

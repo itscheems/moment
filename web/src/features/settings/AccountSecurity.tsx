@@ -112,7 +112,7 @@ export function AccountSecurity({ instanceId }: { instanceId: string | null }) {
   function failure(next: unknown, fallback: string) {
     return next instanceof PublicApiError &&
       next.code === "REAUTHENTICATION_REQUIRED"
-      ? "请先在页面上方确认身份，再重试此操作。"
+      ? "身份验证未完成，操作未执行。"
       : fallback;
   }
   async function revokeAll() {
