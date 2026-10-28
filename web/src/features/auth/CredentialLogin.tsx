@@ -6,7 +6,7 @@ import {
 import { type FormEvent, useEffect, useId, useRef, useState } from "react";
 
 import { PublicApiError, type SiteIdentity } from "../../api/public";
-import { InternalLink, useNavigation } from "../../app/navigation";
+import { useNavigation } from "../../app/navigation";
 import { Icon } from "../../components/icons";
 import { feedback, notify } from "../../components/Feedback";
 import { useSession } from "./SessionProvider";
@@ -121,11 +121,9 @@ function stripAuthError() {
 
 export function CredentialLogin({
   site,
-  embedded = false,
   heading = true,
 }: {
   site: SiteIdentity;
-  embedded?: boolean;
   /**
    * Whether this renders its own title. The standalone sign-in page carries a
    * display headline of its own, and two headings stacked would say the same
@@ -133,7 +131,7 @@ export function CredentialLogin({
    */
   heading?: boolean;
 }) {
-  const { navigate, replace, pathname, search } = useNavigation();
+  const { navigate, replace, search } = useNavigation();
   const returnPath = safeReturnPath(new URLSearchParams(search).get("return"));
   const { account, api, state, login, logout, retryStatus } = useSession();
   const canPublish = account?.status === "active";
@@ -186,7 +184,7 @@ export function CredentialLogin({
     notify(message, {
       id: toastId,
       type: "error",
-      placement: embedded ? undefined : "login",
+      placement: "login",
     });
   };
 
@@ -201,12 +199,7 @@ export function CredentialLogin({
   useEffect(() => stripAuthError(), []);
 
   useEffect(() => {
-    if (
-      !authError ||
-      authAnnouncedRef.current ||
-      (embedded && pathname === "/login")
-    )
-      return;
+    if (!authError || authAnnouncedRef.current) return;
     authAnnouncedRef.current = true;
     // The toast provider subscribes after this child's effects mount.
     queueMicrotask(() => {
@@ -214,18 +207,18 @@ export function CredentialLogin({
         notify(authError, {
           id: toastId,
           type: "error",
-          placement: embedded ? undefined : "login",
+          placement: "login",
         });
     });
-  }, [authError, embedded, pathname, toastId]);
+  }, [authError, toastId]);
 
   useEffect(() => {
     // A cookie restore or another tab can complete sign-in without submitting
     // this form. The standalone page resumes its return path in either case.
-    if (!embedded && state === "signed-in" && account !== null) {
+    if (state === "signed-in" && account !== null) {
       replace(returnPath);
     }
-  }, [account, embedded, replace, returnPath, state]);
+  }, [account, replace, returnPath, state]);
 
   useEffect(() => {
     const timer = window.setTimeout(() => setHoldExpired(true), 2000);
@@ -341,7 +334,7 @@ export function CredentialLogin({
       // The sign-in page leaves the history with the signing in: back from
       // the page it returns to should not be a sign-in form for a session
       // that already exists.
-      if (!embedded) replace(returnPath);
+      replace(returnPath);
     } catch (nextError) {
       if (mountedRef.current)
         showError(
@@ -370,7 +363,7 @@ export function CredentialLogin({
     setError(null);
     try {
       await logout(site.instanceId);
-      if (!embedded) navigate("/");
+      navigate("/");
     } catch {
       showError("退出没有完成。当前会话仍保持登录，请检查连接后重试。");
     } finally {
@@ -381,18 +374,6 @@ export function CredentialLogin({
 
   // The panel's own title needs no answer from the server, so it is drawn
   // from the first frame; only the form under it waits.
-  if (embedded && pathname === "/login") return null;
-  if (embedded && state === "expired")
-    return (
-      <p className={styles.storageNotice} role="status">
-        登录已过期。{" "}
-        <InternalLink
-          href={`/login?return=${encodeURIComponent(`${pathname}${window.location.search}`)}`}
-        >
-          重新登录
-        </InternalLink>
-      </p>
-    );
 
   const title = heading ? (
     <>

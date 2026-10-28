@@ -1,3 +1,4 @@
+import { useLoginNavigation } from "../features/auth/loginNavigation";
 import { Menu } from "@base-ui/react/menu";
 import { Tooltip } from "@base-ui/react/tooltip";
 import {
@@ -143,10 +144,13 @@ function useHomeScrollToTop() {
   }, []);
 }
 
-function accountNav(settingsAvailable: boolean): NavItem {
+function accountNav(
+  settingsAvailable: boolean,
+  loginDestination: string,
+): NavItem {
   return {
     label: "账号",
-    href: settingsAvailable ? "/settings/account" : "/login",
+    href: settingsAvailable ? "/settings/account" : loginDestination,
     icon: "account",
     active: ["login", "settings", "edit"],
   };
@@ -164,9 +168,15 @@ function AccountRail({
   settingsAvailable: boolean;
 }) {
   const { navigate } = useNavigation();
+  const { href: loginDestination } = useLoginNavigation();
   // Nobody is signed in, so there is no face to show and one thing to offer.
   if (!account) {
-    return <NavLink item={accountNav(settingsAvailable)} route={route} />;
+    return (
+      <NavLink
+        item={accountNav(settingsAvailable, loginDestination)}
+        route={route}
+      />
+    );
   }
   // SiteAvatar reads an identity face, and an account is one: the cover is
   // never drawn at this size, so it travels only to satisfy the shape.
@@ -439,7 +449,8 @@ function MobileAccountMenu({
   profileHref: string;
 }) {
   const { navigate } = useNavigation();
-  const accountItem = accountNav(accountSettingsAvailable);
+  const { href: loginDestination } = useLoginNavigation();
+  const accountItem = accountNav(accountSettingsAvailable, loginDestination);
 
   return (
     <Menu.Root>
@@ -491,12 +502,13 @@ function MobileNavigation({
   accountSettingsAvailable: boolean;
   route: AppRoute;
 }) {
+  const { href: loginDestination } = useLoginNavigation();
   const mobileViewport = useMediaQuery(MOBILE_VIEWPORT_QUERY);
   const obscured = useMobileNavigationObscured(mobileViewport);
   const items: NavItem[] = [
     ...primaryNavFor(DEFAULT_PROFILE_HREF).slice(0, 3),
     publishNav,
-    accountNav(accountSettingsAvailable),
+    accountNav(accountSettingsAvailable, loginDestination),
   ];
   return (
     <nav

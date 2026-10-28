@@ -21,6 +21,7 @@ export interface AppRoute {
   eyebrow: string;
   href: string;
   activeAccountOnly?: boolean;
+  requiresSession?: boolean;
 }
 
 export const PROFILE_EDIT_PATH = "/settings/profile";
@@ -161,9 +162,13 @@ export function isComposeDraftsPath(pathname: string): boolean {
   return matchesPath(pathname, COMPOSE_DRAFTS_PATH);
 }
 
-const routes: Array<AppRoute & { match: (pathname: string) => boolean }> = [
+// Every registered route must explicitly classify its session requirement.
+const routes: Array<
+  AppRoute & { requiresSession: boolean; match: (pathname: string) => boolean }
+> = [
   {
     id: "comment-detail",
+    requiresSession: false,
     title: "Moment",
     eyebrow: "",
     href: "/",
@@ -171,6 +176,7 @@ const routes: Array<AppRoute & { match: (pathname: string) => boolean }> = [
   },
   {
     id: "home",
+    requiresSession: false,
     title: "时间流",
     eyebrow: "",
     href: "/",
@@ -178,6 +184,7 @@ const routes: Array<AppRoute & { match: (pathname: string) => boolean }> = [
   },
   {
     id: "detail",
+    requiresSession: false,
     title: "Moment",
     eyebrow: "",
     href: "/",
@@ -185,6 +192,7 @@ const routes: Array<AppRoute & { match: (pathname: string) => boolean }> = [
   },
   {
     id: "article-focus",
+    requiresSession: false,
     title: "文章",
     eyebrow: "",
     href: "/",
@@ -192,6 +200,7 @@ const routes: Array<AppRoute & { match: (pathname: string) => boolean }> = [
   },
   {
     id: "search",
+    requiresSession: false,
     title: "搜索",
     eyebrow: "",
     href: "/search",
@@ -199,6 +208,7 @@ const routes: Array<AppRoute & { match: (pathname: string) => boolean }> = [
   },
   {
     id: "archive",
+    requiresSession: false,
     title: "归档",
     eyebrow: "",
     href: "/archive",
@@ -206,6 +216,7 @@ const routes: Array<AppRoute & { match: (pathname: string) => boolean }> = [
   },
   {
     id: "login",
+    requiresSession: false,
     title: "登录",
     eyebrow: "",
     href: "/login",
@@ -213,6 +224,7 @@ const routes: Array<AppRoute & { match: (pathname: string) => boolean }> = [
   },
   {
     id: "register",
+    requiresSession: false,
     title: "注册",
     eyebrow: "",
     href: "/register",
@@ -222,6 +234,7 @@ const routes: Array<AppRoute & { match: (pathname: string) => boolean }> = [
   // decided by how loosely that one happens to match today.
   {
     id: "article-workspace",
+    requiresSession: true,
     title: "文章",
     eyebrow: "",
     href: ARTICLE_COMPOSE_PATH,
@@ -229,6 +242,7 @@ const routes: Array<AppRoute & { match: (pathname: string) => boolean }> = [
   },
   {
     id: "compose",
+    requiresSession: true,
     title: "发布 Moment",
     eyebrow: "",
     href: COMPOSE_PATH,
@@ -237,6 +251,7 @@ const routes: Array<AppRoute & { match: (pathname: string) => boolean }> = [
   },
   {
     id: "edit",
+    requiresSession: true,
     title: "编辑 Moment",
     eyebrow: "",
     href: "/",
@@ -245,6 +260,7 @@ const routes: Array<AppRoute & { match: (pathname: string) => boolean }> = [
   },
   {
     id: "profile-edit",
+    requiresSession: true,
     title: "编辑资料",
     eyebrow: "",
     href: PROFILE_EDIT_PATH,
@@ -252,6 +268,7 @@ const routes: Array<AppRoute & { match: (pathname: string) => boolean }> = [
   },
   {
     id: "settings",
+    requiresSession: true,
     title: "设置",
     eyebrow: "",
     href: "/settings/account",
@@ -263,6 +280,7 @@ const routes: Array<AppRoute & { match: (pathname: string) => boolean }> = [
   // the first match, so the profile route has to stay last in this array.
   {
     id: "profile",
+    requiresSession: false,
     title: "个人资料",
     eyebrow: "",
     href: "/profile",
@@ -293,6 +311,9 @@ export function resolveRoute(pathname: string): AppRoute {
             encodeURIComponent(commentDetailFromPath(pathname)?.postId ?? "")
           : route.href,
     activeAccountOnly: route.activeAccountOnly,
+    requiresSession:
+      route.requiresSession ||
+      (route.id === "profile" && profileFromPath(pathname)?.username === null),
   };
 }
 

@@ -25,6 +25,12 @@ export function CredentialConfirmation() {
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   useEffect(() => {
+    if (session) return;
+    setOpen(false);
+    setSecret("");
+    setExpires(null);
+  }, [session]);
+  useEffect(() => {
     const controller = new AbortController();
     setSecret("");
     setExpires(null);

@@ -220,3 +220,33 @@ describe("retired identity routes", () => {
     expect(resolveRoute(pathname).id).toBe("not-found");
   });
 });
+
+describe("central session requirements", () => {
+  it.each([
+    "/settings/account",
+    "/settings/site",
+    "/settings/members",
+    "/settings/backups",
+    "/settings/profile",
+    "/compose",
+    "/compose/drafts",
+    "/compose/articles/drafts/item",
+    "/m/item/edit",
+    "/profile/",
+  ])("requires a session for %s", (path) => {
+    expect(resolveRoute(path).requiresSession).toBe(true);
+  });
+  it.each([
+    "/",
+    "/login",
+    "/register",
+    "/writer",
+    "/writer/articles",
+    "/m/item",
+    "/m/item/comments/reply",
+    "/search",
+    "/archive",
+  ])("keeps %s public", (path) => {
+    expect(resolveRoute(path).requiresSession).toBe(false);
+  });
+});

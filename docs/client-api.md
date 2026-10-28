@@ -71,6 +71,8 @@ API clients send the current password as unpadded base64url UTF-8 in `X-Moment-P
 
 Normal logout ends one session. API-token sign-ins retain their source credential: revoking that token also ends its derived browser sessions, while independently issued tokens remain valid. The session-provenance migration signs out existing browser sessions once because their source credentials cannot be established retrospectively; signing keys, API tokens, passwords and content are retained. Older binaries reject the upgraded schema, so back up the database before upgrading and restore that backup before a downgrade.
 
+Browser credential forms are owned by the standalone `/login` page. Registered routes explicitly classify `requiresSession`; account-entry links and actions share `LoginLink` and `useLoginNavigation`, including return-path validation. Business components do not embed password or token forms; an ESLint boundary enforces the credential-form import rule. Session recovery retains in-progress editing while the login page is visible.
+
 Sensitive browser drafts and reader caches are separated by instance and account. A changed or unresolved account cannot inherit another account's private editing state.
 
 ## Media transfers and cleanup

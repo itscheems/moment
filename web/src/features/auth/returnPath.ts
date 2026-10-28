@@ -20,3 +20,19 @@ export function authPageHref(
     ? path
     : `${path}?return=${encodeURIComponent(safeReturnPath(requested))}`;
 }
+
+/** One destination builder for page guards, action links and reauthentication. */
+export function loginHref(returnTo: string): string {
+  let target = safeReturnPath(returnTo);
+  const parsed = new URL(target, "https://moment.invalid");
+  if (/^\/(login|register)\/?$/.test(parsed.pathname)) {
+    target = safeReturnPath(parsed.searchParams.get("return"));
+    if (
+      /^\/(login|register)\/?$/.test(
+        new URL(target, "https://moment.invalid").pathname,
+      )
+    )
+      target = "/";
+  }
+  return `/login?return=${encodeURIComponent(target)}`;
+}

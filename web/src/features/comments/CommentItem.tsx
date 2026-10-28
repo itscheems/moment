@@ -1,3 +1,4 @@
+import { LoginLink, useLoginNavigation } from "../auth/loginNavigation";
 import { AccountIdentityPreview } from "../../components/AccountIdentityPreview";
 import { commentsApi } from "../../api/comments";
 import { Dialog } from "../../components/Dialog";
@@ -21,7 +22,7 @@ import { useDocumentScrollLock } from "../../components/useDocumentScrollLock";
 import { PostPresentation } from "../posts/PostPresentation";
 import { commentAsPost } from "../share/shareCardInput";
 import { useSession } from "../auth/SessionProvider";
-import { Reauthenticate, type ReplyBlock } from "./CommentComposer";
+import { type ReplyBlock } from "./CommentComposer";
 import styles from "./Comments.module.css";
 import postStyles from "../posts/PostPresentation.module.css";
 import formStyles from "../../components/Forms.module.css";
@@ -59,9 +60,9 @@ function DeleteCommentDialog({
   const displayReauth = authExpired || (auth.state === "expired" && !session);
   const displayedError =
     error ??
-    (displayReauth ? "登录会话已过期。刷新身份后可在这里重新删除。" : null);
+    (displayReauth ? "登录会话已过期。重新登录后可在这里重新删除。" : null);
 
-  useDocumentScrollLock(open);
+  useDocumentScrollLock(open && session !== null);
 
   useEffect(() => {
     if (!authExpired || !session) return;
@@ -87,7 +88,7 @@ function DeleteCommentDialog({
     } catch (nextError) {
       if (expireIfInvalidSession(nextError)) {
         setAuthExpired(true);
-        setError("登录会话已过期。刷新身份后可在这里重新删除。");
+        setError("登录会话已过期。重新登录后可在这里重新删除。");
       } else {
         setError(
           nextError instanceof PublicApiError &&
@@ -114,7 +115,7 @@ function DeleteCommentDialog({
         setError(null);
         onOpenChange(nextOpen);
       }}
-      open={open}
+      open={open && session !== null}
     >
       <Dialog.Portal>
         <Dialog.Backdrop className={styles.dialogBackdrop} />
@@ -138,15 +139,7 @@ function DeleteCommentDialog({
                 {displayedError}
               </p>
             ) : null}
-            {displayReauth ? (
-              <Reauthenticate
-                inputId={`delete-${comment.id}-api-token`}
-                onReady={() => {
-                  setAuthExpired(false);
-                  setError(null);
-                }}
-              />
-            ) : null}
+            {displayReauth ? <LoginLink>重新登录</LoginLink> : null}
             <div className={styles.dialogActions}>
               <Dialog.Close
                 className={styles.secondaryAction}
@@ -196,6 +189,7 @@ export function CommentModerationMenu({
   onPinChange: (pinnedCommentId: string | null) => void;
 }) {
   const auth = useSession();
+  const { requestLogin } = useLoginNavigation();
   const [menuOpen, setMenuOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [pinOpen, setPinOpen] = useState(false);
@@ -208,7 +202,7 @@ export function CommentModerationMenu({
   const displayReauth =
     authExpired || (auth.state === "expired" && !auth.session);
 
-  useDocumentScrollLock(pinOpen);
+  useDocumentScrollLock(pinOpen && auth.session !== null);
 
   useEffect(() => {
     if (!authExpired || !auth.session) return;
@@ -242,7 +236,7 @@ export function CommentModerationMenu({
     } catch (nextError) {
       if (auth.expireIfInvalidSession(nextError)) {
         setAuthExpired(true);
-        setError("登录会话已过期。刷新身份后可在这里重试。");
+        setError("登录会话已过期。重新登录后可在这里重试。");
       } else {
         setError("置顶状态没有改变，可以安全重试。");
       }
@@ -278,6 +272,10 @@ export function CommentModerationMenu({
                   className={formStyles.actionsMenuItem}
                   onClick={() => {
                     setMenuOpen(false);
+                    if (!auth.session) {
+                      requestLogin();
+                      return;
+                    }
                     setError(null);
                     setPinOpen(true);
                   }}
@@ -290,6 +288,10 @@ export function CommentModerationMenu({
                 className={`${formStyles.actionsMenuItem} ${formStyles.actionsMenuDanger}`}
                 onClick={() => {
                   setMenuOpen(false);
+                  if (!auth.session) {
+                    requestLogin();
+                    return;
+                  }
                   setDeleteOpen(true);
                 }}
               >
@@ -322,7 +324,7 @@ export function CommentModerationMenu({
             window.requestAnimationFrame(() => triggerRef.current?.focus());
           }
         }}
-        open={pinOpen}
+        open={pinOpen && auth.session !== null}
       >
         <Dialog.Portal>
           <Dialog.Backdrop className={styles.dialogBackdrop} />
@@ -344,15 +346,7 @@ export function CommentModerationMenu({
                   {error}
                 </p>
               ) : null}
-              {displayReauth ? (
-                <Reauthenticate
-                  inputId={`pin-${comment.id}-api-token`}
-                  onReady={() => {
-                    setAuthExpired(false);
-                    setError(null);
-                  }}
-                />
-              ) : null}
+              {displayReauth ? <LoginLink>重新登录</LoginLink> : null}
               <div className={styles.dialogActions}>
                 <Dialog.Close
                   className={styles.secondaryAction}
@@ -378,19 +372,8 @@ export function CommentModerationMenu({
   );
 }
 
-/**
- * The reply action for a reader who is not signed in.
- *
- * It keeps the affordance and answers on press rather than disappearing.
- * Hiding it would leave a thread full of replies with no visible way to make
- * one, which reads as broken rather than as gated — and the notice above the
- * list is easy to scroll past by the time a reader reaches the comment they
- * actually want to answer.
- *
- * Press, not hover: hovering an action the reader cannot use should not throw
- * a card over the comment they are reading.
- */
-function SignInToReplyPopover({
+/** Guests enter sign-in directly; pending accounts see an approval notice. */
+function ReplyAccessAction({
   authorName,
   reason,
   count,
@@ -400,6 +383,25 @@ function SignInToReplyPopover({
   count: number;
 }) {
   const pending = reason === "pending";
+  const { requestLogin } = useLoginNavigation();
+  if (!pending)
+    return (
+      <button
+        data-post-action="reply"
+        aria-label={`回复 ${authorName}${count > 0 ? `，${count} 条回复` : ""}`}
+        className={`${postStyles.postAction} ${postStyles.replyAction}`}
+        onClick={(event) => {
+          event.stopPropagation();
+          requestLogin();
+        }}
+        type="button"
+      >
+        <Icon name="reply" />
+        {count > 0 ? (
+          <span className={postStyles.actionCount}>{count}</span>
+        ) : null}
+      </button>
+    );
   return (
     <Popover.Root>
       <Popover.Trigger
@@ -434,11 +436,6 @@ function SignInToReplyPopover({
                 ? "你的账户正在等待管理员批准，批准后就能留言。"
                 : "发表回复需要登录。过往回复继续公开可读。"}
             </Popover.Description>
-            {pending ? null : (
-              <InternalLink className={styles.signInPopupAction} href="/login">
-                登录
-              </InternalLink>
-            )}
           </Popover.Popup>
         </Popover.Positioner>
       </Popover.Portal>
@@ -576,7 +573,7 @@ export function CommentItem({
         }
         replyControl={
           !replyRootId ? null : !canReply ? (
-            <SignInToReplyPopover
+            <ReplyAccessAction
               authorName={authorName}
               reason={replyBlockedBy}
               count={projected.commentCount}

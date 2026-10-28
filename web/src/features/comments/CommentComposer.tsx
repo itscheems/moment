@@ -24,7 +24,7 @@ import {
   type SiteIdentity,
 } from "../../api/public";
 
-import { InternalLink } from "../../app/navigation";
+import { LoginLink } from "../auth/loginNavigation";
 import { SiteAvatar } from "../../components/SiteIdentity";
 import { MediaComposer } from "../media/MediaComposer";
 import {
@@ -239,69 +239,8 @@ export function SignInToReply() {
     <div className={styles.signInNotice} role="status">
       <strong>登录后回复</strong>
       <span>发表回复需要登录。过往回复继续公开可读。</span>
-      <InternalLink href="/login">登录</InternalLink>
+      <LoginLink>登录</LoginLink>
     </div>
-  );
-}
-
-export function Reauthenticate({
-  inputId,
-  onReady,
-}: {
-  inputId: string;
-  onReady: () => void;
-}) {
-  const { login } = useSession();
-  const [token, setToken] = useState("");
-  const [pending, setPending] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const pendingRef = useRef(false);
-
-  const submit = async (event: FormEvent) => {
-    event.preventDefault();
-    if (!token || pendingRef.current) return;
-    pendingRef.current = true;
-    setPending(true);
-    setError(null);
-    try {
-      await login(token, "token");
-      setToken("");
-      onReady();
-    } catch {
-      setError("身份刷新没有完成。令牌仍只在当前输入框中，可以重试。");
-    } finally {
-      pendingRef.current = false;
-      setPending(false);
-    }
-  };
-
-  return (
-    <form className={styles.reauth} onSubmit={(event) => void submit(event)}>
-      <div>
-        <strong>重新登录</strong>
-        <span>回复文字不会离开当前页面。</span>
-      </div>
-      <label htmlFor={inputId}>API 令牌</label>
-      <input
-        autoCapitalize="none"
-        autoComplete="off"
-        id={inputId}
-        onChange={(event) => setToken(event.target.value)}
-        required
-        spellCheck={false}
-        type="password"
-        value={token}
-      />
-      {error ? <p role="alert">{error}</p> : null}
-      <button
-        aria-busy={pending || undefined}
-        data-pending={pending ? "true" : undefined}
-        disabled={!token || pending}
-        type="submit"
-      >
-        {pending ? "正在确认…" : "刷新身份"}
-      </button>
-    </form>
   );
 }
 
@@ -387,7 +326,7 @@ export function CommentForm({
   const displayedError =
     error ??
     (displayReauth
-      ? "当前写入会话已失效。文字已保留，刷新身份后可以重试。"
+      ? "当前写入会话已失效。文字已保留，重新登录后可以重试。"
       : null);
   const expanded =
     (parentId !== null && !inlineTopLevel) ||
@@ -509,12 +448,19 @@ export function CommentForm({
     }
   };
 
+  const recoveryPending = useRef(false);
   useEffect(() => {
-    if (!authExpired || !auth.session) return;
+    if (displayReauth) {
+      recoveryPending.current = true;
+      return;
+    }
+    if (!recoveryPending.current || !auth.session) return;
+    recoveryPending.current = false;
     setAuthExpired(false);
     setError(null);
-    window.requestAnimationFrame(() => textareaRef.current?.focus());
-  }, [authExpired, auth.session]);
+    if (active && (content.trim() || mediaItems.length))
+      window.requestAnimationFrame(() => textareaRef.current?.focus());
+  }, [displayReauth, auth.session, active, content, mediaItems.length]);
 
   useEffect(() => {
     if (!mention) {
@@ -567,7 +513,7 @@ export function CommentForm({
     }
     if (!auth.session) {
       setAuthExpired(true);
-      setError("当前写入会话已失效。文字已保留，刷新身份后可以重试。");
+      setError("当前写入会话已失效。文字已保留，重新登录后可以重试。");
       return;
     }
     const signature = JSON.stringify([
@@ -620,7 +566,7 @@ export function CommentForm({
     } catch (nextError) {
       if (auth.expireIfInvalidSession(nextError)) {
         setAuthExpired(true);
-        setError("当前写入会话已失效。文字已保留，刷新身份后可以重试。");
+        setError("当前写入会话已失效。文字已保留，重新登录后可以重试。");
       } else {
         if (
           nextError instanceof PublicApiError &&
@@ -987,16 +933,7 @@ export function CommentForm({
             </p>
           ) : null}
         </form>
-        {displayReauth ? (
-          <Reauthenticate
-            inputId={`${formId}-api-token`}
-            onReady={() => {
-              setAuthExpired(false);
-              setError(null);
-              window.requestAnimationFrame(() => textareaRef.current?.focus());
-            }}
-          />
-        ) : null}
+        {displayReauth ? <LoginLink>重新登录</LoginLink> : null}
       </div>
     </div>
   );

@@ -326,6 +326,18 @@ function preauthenticate() {
   );
 }
 
+async function openMomentActions(trigger?: HTMLElement) {
+  const button =
+    trigger ?? (await screen.findByRole("button", { name: "更多操作" }));
+  await waitFor(() => expect(button).toBeEnabled());
+  await act(async () => {
+    button.focus();
+    fireEvent.keyDown(button, { key: "ArrowDown", code: "ArrowDown" });
+    fireEvent.keyUp(button, { key: "ArrowDown", code: "ArrowDown" });
+  });
+  await screen.findByRole("menu");
+}
+
 async function keepDraftAndResumeNavigation() {
   const dialog = await screen.findByRole("dialog", { name: "退出发布？" });
   fireEvent.click(
@@ -1781,7 +1793,7 @@ describe("owner composing flow", () => {
     });
     render(<App />);
 
-    fireEvent.click(await screen.findByRole("button", { name: "更多操作" }));
+    await openMomentActions();
     fireEvent.click(await screen.findByRole("menuitem", { name: "编辑" }));
     const editor = await screen.findByLabelText("Moment 正文");
     expect(window.location.pathname).toBe(`/m/${item.id}/edit`);
@@ -3009,7 +3021,7 @@ describe("owner composing flow", () => {
     render(<App />);
     await screen.findByText("准备删除");
     const more = screen.getByRole("button", { name: "更多操作" });
-    fireEvent.click(more);
+    await openMomentActions(more);
     fireEvent.click(await screen.findByRole("menuitem", { name: "删除" }));
     expect(
       await screen.findByRole("heading", { name: "删除这段 Moment？" }),
@@ -3030,7 +3042,7 @@ describe("owner composing flow", () => {
     expect(document.body.style.position).toBe("");
     expect(document.documentElement.style.overflow).toBe("");
 
-    fireEvent.click(more);
+    await openMomentActions(more);
     fireEvent.click(await screen.findByRole("menuitem", { name: "删除" }));
     fireEvent.click(await screen.findByRole("button", { name: "删除 Moment" }));
     await waitFor(() => expect(screen.queryByText("准备删除")).toBeNull());
@@ -3069,7 +3081,7 @@ describe("owner composing flow", () => {
     render(<App />);
     await screen.findByText("删除失败后保留");
 
-    fireEvent.click(screen.getByRole("button", { name: "更多操作" }));
+    await openMomentActions();
     fireEvent.click(await screen.findByRole("menuitem", { name: "删除" }));
     const dialog = await screen.findByRole("dialog", {
       name: "删除这段 Moment？",
