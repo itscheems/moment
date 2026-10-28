@@ -72,11 +72,14 @@ func exchangeSession(gate *Gate, cookies CookieOptions) gin.HandlerFunc {
 			return
 		}
 		var account domain.User
+		sourceTokenID := ""
+		var passwordAuthorization app.PasswordAuthorization
 		var err error
 		if request.Token != nil {
 			var verified app.TokenAuthorization
 			verified, err = gate.accounts.ResolveAPIToken(ctx.Request.Context(), *request.Token)
 			account = verified.User
+			sourceTokenID = verified.Token.ID
 			if err == nil && request.Username != nil && strings.TrimSpace(*request.Username) != "" && !strings.EqualFold(account.Username, strings.TrimSpace(*request.Username)) {
 				unauthorized(ctx)
 				return
@@ -86,7 +89,8 @@ func exchangeSession(gate *Gate, cookies CookieOptions) gin.HandlerFunc {
 				Failure(ctx, http.StatusBadRequest, "INVALID_ARGUMENT", "a username is required for password sign-in", map[string]any{"field": "username"})
 				return
 			}
-			account, err = gate.accounts.VerifyPassword(ctx.Request.Context(), *request.Username, *request.Password)
+			passwordAuthorization, err = gate.accounts.VerifyPasswordCredential(ctx.Request.Context(), *request.Username, *request.Password)
+			account = passwordAuthorization.User
 		}
 		if err != nil {
 			writeGateError(ctx, accountAuthenticationError(err))
@@ -102,7 +106,12 @@ func exchangeSession(gate *Gate, cookies CookieOptions) gin.HandlerFunc {
 			Failure(ctx, http.StatusServiceUnavailable, "AUTH_UNAVAILABLE", "session signing is unavailable", nil)
 			return
 		}
-		if _, err := gate.accounts.StartSession(ctx.Request.Context(), account.ID, sessionID, string(requestSurface(ctx)), session.ExpiresAt.UnixMilli()); err != nil {
+		if sourceTokenID != "" {
+			_, err = gate.accounts.StartTokenSession(ctx.Request.Context(), account.ID, sessionID, string(requestSurface(ctx)), session.ExpiresAt.UnixMilli(), sourceTokenID)
+		} else {
+			_, err = gate.accounts.StartPasswordSession(ctx.Request.Context(), passwordAuthorization, sessionID, string(requestSurface(ctx)), session.ExpiresAt.UnixMilli())
+		}
+		if err != nil {
 			writeAccountError(ctx, err)
 			return
 		}

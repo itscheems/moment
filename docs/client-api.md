@@ -56,10 +56,12 @@ CLI: `moment site capabilities --data-dir ./moment-data --json`, or
 Passwords, API tokens and browser sessions belong to individual accounts. Every authenticated request resolves that account's current status and role. Roles are `admin` or `member`; status is `pending`, `active` or `suspended`. Multiple administrators are supported, and role changes, suspension and deletion must leave at least one active administrator.
 
 - `POST /login/session` exchanges a password with `username`, or an account API `token`, for a browser session. `GET /account/session` returns the real account and CSRF token.
-- `GET /account/security`, `PUT /account/password`, and `GET|POST|DELETE /account/tokens[/id]` manage only the caller's credentials. Password changes revoke that account's sessions; API tokens remain independently revocable.
+- `GET /account/security`, `PUT /account/password`, and `GET|POST|DELETE /account/tokens[/id]` manage only the caller's credentials. Password changes atomically revoke all of that account's sessions and API tokens.
 - `/account/profile`, `/account/avatar`, and `/account/cover` edit the caller's personal profile. `/site` edits site configuration. `PUT /site/profile` selects the independent display account with `{user_id}`.
 - `/accounts` and `PUT /accounts/:id/role` are administrative resources. Selection as the site display account does not grant privileges or transfer content.
 - Web settings use `/settings/account`, `/settings/site`, `/settings/members`, and `/settings/backups`. Publishing uses `/compose` and editing a post uses `/m/:id/edit`.
+
+Normal logout ends one session. API-token sign-ins retain their source credential: revoking that token also ends its derived browser sessions, while independently issued tokens remain valid. The session-provenance migration signs out existing browser sessions once because their source credentials cannot be established retrospectively; signing keys, API tokens, passwords and content are retained. Older binaries reject the upgraded schema, so back up the database before upgrading and restore that backup before a downgrade.
 
 Sensitive browser drafts and reader caches are separated by instance and account. A changed or unresolved account cannot inherit another account's private editing state.
 

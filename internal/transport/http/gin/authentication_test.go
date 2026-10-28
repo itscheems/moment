@@ -220,7 +220,7 @@ func TestPasswordLoginUsesEachAccountsOwnCredential(t *testing.T) {
 	}
 }
 
-func TestPersonalPasswordUpdateRevokesTheAccountBrowserSessions(t *testing.T) {
+func TestPersonalPasswordUpdateRevokesAllAccountAccess(t *testing.T) {
 	fixture := newAuthenticationTestFixture(t, false)
 	cookie, _ := exchangeAccountSession(t, fixture, fixture.token)
 	request := jsonRequest(http.MethodPut, "/api/v1/account/password", `{"password":"replacement-password"}`)
@@ -233,8 +233,8 @@ func TestPersonalPasswordUpdateRevokesTheAccountBrowserSessions(t *testing.T) {
 	if response := performRequest(fixture.engine, expired); response.Code != http.StatusUnauthorized {
 		t.Fatal("password update left browser session live")
 	}
-	if _, err := fixture.accounts.ResolveAPIToken(context.Background(), fixture.token); err != nil {
-		t.Fatal("password update revoked an independent API token")
+	if _, err := fixture.accounts.ResolveAPIToken(context.Background(), fixture.token); !domain.HasCode(err, domain.CodeUnauthorized) {
+		t.Fatal("password update left an API token live")
 	}
 }
 

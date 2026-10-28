@@ -70,7 +70,7 @@ func registerAuthentication(application *Application) {
 	})
 	application.MustRegisterLeaf(LeafSpec{
 		Path: []string{"auth", "set-password"}, Short: "Set one account's sign-in password",
-		Long:       "Replace an account password and revoke its browser sessions. API tokens remain independently revocable.",
+		Long:       "Replace an account password and revoke all of its browser sessions and API tokens.",
 		Inputs:     "--password-file path or -. Direct mode requires --username and a stopped server; API mode acts only on itself.",
 		Output:     "Password configuration and reauthentication result; no password is returned.",
 		Errors:     "Invalid password input is refused without replacing the stored credential.",
@@ -256,7 +256,7 @@ func runAccountPasswordSet(ctx context.Context, invocation Invocation, input Com
 	if err != nil {
 		return Result{}, err
 	}
-	result := Result{Data: map[string]bool{"password_enabled": true, "reauthentication_required": true}, Text: "Password updated; browser sessions revoked"}
+	result := Result{Data: map[string]bool{"password_enabled": true, "reauthentication_required": true}, Text: "Password updated; browser sessions and API tokens revoked"}
 	if invocation.Mode() == ModeDirect {
 		return withOfflineAccount(ctx, invocation, input, func(accounts *app.AccountService, user domain.User) (Result, error) {
 			return result, accounts.SetAccountPassword(ctx, user.ID, password)

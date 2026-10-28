@@ -234,8 +234,8 @@ func TestPersonalCredentialsDirectLifecycleAndSecretInput(t *testing.T) {
 	if _, err := accounts.ResolveAPIToken(context.Background(), issued["token"].(string)); err == nil {
 		t.Fatal("revoked API token remained valid")
 	}
-	if _, err := accounts.ResolveAPIToken(context.Background(), initial["token"].(string)); err != nil {
-		t.Fatal("revocation affected another credential")
+	if _, err := accounts.ResolveAPIToken(context.Background(), initial["token"].(string)); err == nil {
+		t.Fatal("password change left the initial API credential valid")
 	}
 	signingAfter, err := os.ReadFile(filepath.Join(root, "secrets.json"))
 	if err != nil || !bytes.Equal(signingBefore, signingAfter) {

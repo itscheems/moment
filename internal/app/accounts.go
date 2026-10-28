@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
 	"io"
@@ -272,7 +273,10 @@ func (service *AccountService) LinkIdentity(ctx context.Context, userID string, 
 		return domain.NewError(domain.CodeOAuthIdentityUnusable, "the provider returned no stable account identifier", nil)
 	}
 	nowMS := domain.TimeToMillis(domain.NormalizeTime(service.clock()))
-	return service.transactions.WriteAccounts(ctx, func(accounts AccountStore, _ SessionStore) error {
+	return service.transactions.WriteAccounts(ctx, func(accounts AccountStore, sessions SessionStore) error {
+		if err := authorizeCredentialMutation(ctx, accounts, sessions, userID, nowMS); err != nil {
+			return err
+		}
 		// Whether this account may take on a credential is asked here and now,
 		// rather than inherited from whatever authorised the flow that led
 		// here. A federated link is authorised minutes before it completes, and
@@ -329,7 +333,10 @@ func (service *AccountService) LinkIdentity(ctx context.Context, userID string, 
 // a pair as "your only way in" and refused, while the delete that follows it
 // took both rows for one click.
 func (service *AccountService) UnlinkIdentity(ctx context.Context, user domain.User, provider string) error {
-	return service.transactions.WriteAccounts(ctx, func(accounts AccountStore, _ SessionStore) error {
+	return service.transactions.WriteAccounts(ctx, func(accounts AccountStore, sessions SessionStore) error {
+		if err := authorizeCredentialMutation(ctx, accounts, sessions, user.ID, domain.TimeToMillis(domain.NormalizeTime(service.clock()))); err != nil {
+			return err
+		}
 		identities, err := accounts.IdentitiesForUser(ctx, user.ID)
 		if err != nil {
 			return err
@@ -734,6 +741,19 @@ func (service *AccountService) ResolveSession(ctx context.Context, sessionID str
 		if !found || !session.Live(nowMS) {
 			return domain.NewError(domain.CodeUnauthorized, "this session is no longer valid", nil)
 		}
+		if session.SourceTokenID != nil {
+			store, err := credentialStore(accounts)
+			if err != nil {
+				return err
+			}
+			token, found, err := store.APITokenByID(ctx, *session.SourceTokenID)
+			if err != nil {
+				return err
+			}
+			if !found || !token.Live() || token.UserID != session.UserID {
+				return domain.NewError(domain.CodeUnauthorized, "this session is no longer valid", nil)
+			}
+		}
 		user, err := accounts.UserByID(ctx, session.UserID)
 		if err != nil {
 			return err
@@ -786,16 +806,64 @@ func (service *AccountService) ProfileAccount(ctx context.Context) (domain.User,
 
 // StartSession records a new sign-in and returns the row it created.
 func (service *AccountService) StartSession(ctx context.Context, userID, sessionID, surface string, expiresAtMS int64) (domain.SessionRecord, error) {
+	return service.startSession(ctx, userID, sessionID, surface, expiresAtMS, nil, nil)
+}
+
+// StartTokenSession binds a browser sign-in to the API token that authorized it.
+func (service *AccountService) StartTokenSession(ctx context.Context, userID, sessionID, surface string, expiresAtMS int64, tokenID string) (domain.SessionRecord, error) {
+	return service.startSession(ctx, userID, sessionID, surface, expiresAtMS, &tokenID, nil)
+}
+
+// StartPasswordSession refuses an authorization checked before a password change.
+func (service *AccountService) StartPasswordSession(ctx context.Context, verified PasswordAuthorization, sessionID, surface string, expiresAtMS int64) (domain.SessionRecord, error) {
+	return service.startSession(ctx, verified.User.ID, sessionID, surface, expiresAtMS, nil, &verified.version)
+}
+
+func (service *AccountService) startSession(ctx context.Context, userID, sessionID, surface string, expiresAtMS int64, sourceTokenID *string, passwordVersion *[32]byte) (domain.SessionRecord, error) {
 	nowMS := domain.TimeToMillis(domain.NormalizeTime(service.clock()))
 	record := domain.SessionRecord{
-		ID:           sessionID,
-		UserID:       userID,
-		IssuedAtMS:   nowMS,
-		ExpiresAtMS:  expiresAtMS,
-		LastSeenAtMS: nowMS,
-		Surface:      surface,
+		SourceTokenID: sourceTokenID,
+		ID:            sessionID,
+		UserID:        userID,
+		IssuedAtMS:    nowMS,
+		ExpiresAtMS:   expiresAtMS,
+		LastSeenAtMS:  nowMS,
+		Surface:       surface,
 	}
-	err := service.transactions.WriteAccounts(ctx, func(_ AccountStore, sessions SessionStore) error {
+	err := service.transactions.WriteAccounts(ctx, func(accounts AccountStore, sessions SessionStore) error {
+		user, err := accounts.UserByID(ctx, userID)
+		if err != nil {
+			return err
+		}
+		if !user.CanSignIn() {
+			return domain.NewError(domain.CodeAccountSuspended, "this account has been suspended", nil)
+		}
+		if sourceTokenID != nil {
+			store, err := credentialStore(accounts)
+			if err != nil {
+				return err
+			}
+			token, found, err := store.APITokenByID(ctx, *sourceTokenID)
+			if err != nil {
+				return err
+			}
+			if !found || !token.Live() || token.UserID != userID {
+				return domain.NewError(domain.CodeUnauthorized, "account credential is invalid", nil)
+			}
+		}
+		if passwordVersion != nil {
+			store, err := credentialStore(accounts)
+			if err != nil {
+				return err
+			}
+			hash, found, err := store.PasswordHash(ctx, userID)
+			if err != nil {
+				return err
+			}
+			if !found || sha256.Sum256(hash) != *passwordVersion {
+				return domain.NewError(domain.CodeUnauthorized, "account credential is invalid", nil)
+			}
+		}
 		return sessions.CreateSession(ctx, record)
 	})
 	return record, err

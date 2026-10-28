@@ -17,7 +17,7 @@
   "auth list-tokens": "ea4de023a4a219fa43c2861a02ef583fac561f2066f6660d2676e881f2f98ee2",
   "auth register": "9b736efd4af1bc7011e496b00c0b99af0cdbeddfde0bfd5ab6b6deb3b8459f05",
   "auth revoke-token": "ba2ceadc5607c94dd62dd566bdc73f89c85f52432c2b4c03d66228ee01680753",
-  "auth set-password": "2a122af78c0cf1204dc7a4c90e36bf0219941b7879566558155ad586cb15debb",
+  "auth set-password": "825ee0d856db0459f7b61a26be3d4279e004a14717371fd00d1640717782a75c",
   "auth status": "d14f53c3a2d5ebdbf87558e50231870fb31457d37baa89a423787607d8601947",
   "backup": "5b4e8b43557e566c7f4a9d330a6dd601263be4b41d8f84def2a270ac0ee4a0cb",
   "backup export": "e23c2346f725a8fc1eeaeb3cbbb838d666995e6f3079d80ef1831bde9a7b7421",

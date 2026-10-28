@@ -61,7 +61,20 @@ func credentialStore(accounts AccountStore) (AccountCredentialStore, error) {
 
 // VerifyPassword proves one named account, independently of its role.
 func (service *AccountService) VerifyPassword(ctx context.Context, username, password string) (domain.User, error) {
-	var user domain.User
+	verified, err := service.VerifyPasswordCredential(ctx, username, password)
+	return verified.User, err
+}
+
+// PasswordAuthorization records a successful comparison without exposing a hash
+// or retaining plaintext. Session creation checks that this password is current.
+type PasswordAuthorization struct {
+	User    domain.User
+	version [32]byte
+}
+
+// VerifyPasswordCredential proves a password and snapshots its current version.
+func (service *AccountService) VerifyPasswordCredential(ctx context.Context, username, password string) (PasswordAuthorization, error) {
+	var verified PasswordAuthorization
 	err := service.transactions.ReadAccounts(ctx, func(accounts AccountStore, _ SessionStore) error {
 		account, err := accounts.UserByUsername(ctx, strings.ToLower(strings.TrimSpace(username)))
 		if err != nil {
@@ -81,14 +94,14 @@ func (service *AccountService) VerifyPassword(ctx context.Context, username, pas
 		if !account.CanSignIn() {
 			return domain.NewError(domain.CodeAccountSuspended, "this account has been suspended", nil)
 		}
-		user = account
+		verified = PasswordAuthorization{User: account, version: sha256.Sum256(hash)}
 		return nil
 	})
-	return user, err
+	return verified, err
 }
 
 // SetAccountPassword atomically replaces a password and revokes this account's
-// browser sessions. API credentials have their own explicit revocation.
+// browser sessions and API tokens in the same transaction.
 func (service *AccountService) SetAccountPassword(ctx context.Context, userID, password string) error {
 	if err := validateAccountPassword(password); err != nil {
 		return err
@@ -99,6 +112,9 @@ func (service *AccountService) SetAccountPassword(ctx context.Context, userID, p
 	}
 	atMS := domain.TimeToMillis(domain.NormalizeTime(service.clock()))
 	return service.transactions.WriteAccounts(ctx, func(accounts AccountStore, sessions SessionStore) error {
+		if err := authorizeCredentialMutation(ctx, accounts, sessions, userID, atMS); err != nil {
+			return err
+		}
 		user, err := accounts.UserByID(ctx, userID)
 		if err != nil {
 			return err
@@ -111,6 +127,9 @@ func (service *AccountService) SetAccountPassword(ctx context.Context, userID, p
 			return err
 		}
 		if err := store.PutPasswordHash(ctx, userID, hash, atMS); err != nil {
+			return err
+		}
+		if err := store.RevokeUserAPITokens(ctx, userID, atMS); err != nil {
 			return err
 		}
 		_, err = sessions.RevokeUserSessions(ctx, userID, atMS)
@@ -135,7 +154,10 @@ func (service *AccountService) CreateAPIToken(ctx context.Context, userID, label
 		return IssuedAPIToken{}, err
 	}
 	token := domain.APIToken{ID: id, UserID: userID, Label: label, Hash: digest[:], CreatedAtMS: domain.TimeToMillis(domain.NormalizeTime(service.clock()))}
-	err = service.transactions.WriteAccounts(ctx, func(accounts AccountStore, _ SessionStore) error {
+	err = service.transactions.WriteAccounts(ctx, func(accounts AccountStore, sessions SessionStore) error {
+		if err := authorizeCredentialMutation(ctx, accounts, sessions, userID, domain.TimeToMillis(domain.NormalizeTime(service.clock()))); err != nil {
+			return err
+		}
 		user, err := accounts.UserByID(ctx, userID)
 		if err != nil {
 			return err
@@ -208,7 +230,10 @@ func (service *AccountService) APITokens(ctx context.Context, userID string) ([]
 
 // RevokeAPIToken revokes one credential belonging to the selected account.
 func (service *AccountService) RevokeAPIToken(ctx context.Context, userID, tokenID string) error {
-	return service.transactions.WriteAccounts(ctx, func(accounts AccountStore, _ SessionStore) error {
+	return service.transactions.WriteAccounts(ctx, func(accounts AccountStore, sessions SessionStore) error {
+		if err := authorizeCredentialMutation(ctx, accounts, sessions, userID, domain.TimeToMillis(domain.NormalizeTime(service.clock()))); err != nil {
+			return err
+		}
 		store, err := credentialStore(accounts)
 		if err != nil {
 			return err
@@ -220,7 +245,22 @@ func (service *AccountService) RevokeAPIToken(ctx context.Context, userID, token
 		if !found || token.UserID != userID {
 			return domain.NewError(domain.CodeAPITokenNotFound, "API credential does not exist for this account", nil)
 		}
-		return store.RevokeAPIToken(ctx, tokenID, domain.TimeToMillis(domain.NormalizeTime(service.clock())))
+		atMS := domain.TimeToMillis(domain.NormalizeTime(service.clock()))
+		if err := store.RevokeAPIToken(ctx, tokenID, atMS); err != nil {
+			return err
+		}
+		records, err := sessions.ListUserSessions(ctx, userID)
+		if err != nil {
+			return err
+		}
+		for _, session := range records {
+			if session.SourceTokenID != nil && *session.SourceTokenID == tokenID {
+				if err := sessions.RevokeSession(ctx, session.ID, atMS); err != nil {
+					return err
+				}
+			}
+		}
+		return nil
 	})
 }
 

@@ -557,10 +557,10 @@ func (store accountStore) RegistrationMode(ctx context.Context) (domain.Registra
 
 func (store accountStore) CreateSession(ctx context.Context, session domain.SessionRecord) error {
 	_, err := store.queries.ExecContext(ctx, `
-INSERT INTO sessions (id, user_id, issued_at_ms, expires_at_ms, last_seen_at_ms, revoked_at_ms, surface, label)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+INSERT INTO sessions (id, user_id, issued_at_ms, expires_at_ms, last_seen_at_ms, revoked_at_ms, surface, label, source_token_id)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		session.ID, session.UserID, session.IssuedAtMS, session.ExpiresAtMS, session.LastSeenAtMS,
-		optionalInt64(session.RevokedAtMS), session.Surface, optionalString(session.Label))
+		optionalInt64(session.RevokedAtMS), session.Surface, optionalString(session.Label), optionalString(session.SourceTokenID))
 	if err != nil {
 		return fmt.Errorf("create session: %w", err)
 	}
@@ -569,14 +569,15 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
 
 func (store accountStore) SessionByID(ctx context.Context, id string) (domain.SessionRecord, bool, error) {
 	var (
-		session domain.SessionRecord
-		revoked sql.NullInt64
-		label   sql.NullString
+		session     domain.SessionRecord
+		revoked     sql.NullInt64
+		label       sql.NullString
+		sourceToken sql.NullString
 	)
 	err := store.queries.QueryRowContext(ctx, `
-SELECT id, user_id, issued_at_ms, expires_at_ms, last_seen_at_ms, revoked_at_ms, surface, label
+SELECT id, user_id, issued_at_ms, expires_at_ms, last_seen_at_ms, revoked_at_ms, surface, label, source_token_id
 FROM sessions WHERE id = ?`, id).Scan(&session.ID, &session.UserID, &session.IssuedAtMS,
-		&session.ExpiresAtMS, &session.LastSeenAtMS, &revoked, &session.Surface, &label)
+		&session.ExpiresAtMS, &session.LastSeenAtMS, &revoked, &session.Surface, &label, &sourceToken)
 	if errors.Is(err, sql.ErrNoRows) {
 		return domain.SessionRecord{}, false, nil
 	}
@@ -589,6 +590,9 @@ FROM sessions WHERE id = ?`, id).Scan(&session.ID, &session.UserID, &session.Iss
 	}
 	if label.Valid {
 		session.Label = &label.String
+	}
+	if sourceToken.Valid {
+		session.SourceTokenID = &sourceToken.String
 	}
 	return session, true, nil
 }
@@ -626,7 +630,7 @@ func (store accountStore) TouchSession(ctx context.Context, id string, atMS int6
 
 func (store accountStore) ListUserSessions(ctx context.Context, userID string) ([]domain.SessionRecord, error) {
 	rows, err := store.queries.QueryContext(ctx, `
-SELECT id, user_id, issued_at_ms, expires_at_ms, last_seen_at_ms, revoked_at_ms, surface, label
+SELECT id, user_id, issued_at_ms, expires_at_ms, last_seen_at_ms, revoked_at_ms, surface, label, source_token_id
 FROM sessions WHERE user_id = ? ORDER BY issued_at_ms DESC`, userID)
 	if err != nil {
 		return nil, fmt.Errorf("list sessions: %w", err)
@@ -635,12 +639,13 @@ FROM sessions WHERE user_id = ? ORDER BY issued_at_ms DESC`, userID)
 	sessions := make([]domain.SessionRecord, 0, 4)
 	for rows.Next() {
 		var (
-			session domain.SessionRecord
-			revoked sql.NullInt64
-			label   sql.NullString
+			session     domain.SessionRecord
+			revoked     sql.NullInt64
+			label       sql.NullString
+			sourceToken sql.NullString
 		)
 		if err := rows.Scan(&session.ID, &session.UserID, &session.IssuedAtMS, &session.ExpiresAtMS,
-			&session.LastSeenAtMS, &revoked, &session.Surface, &label); err != nil {
+			&session.LastSeenAtMS, &revoked, &session.Surface, &label, &sourceToken); err != nil {
 			return nil, fmt.Errorf("scan session: %w", err)
 		}
 		if revoked.Valid {
@@ -649,6 +654,9 @@ FROM sessions WHERE user_id = ? ORDER BY issued_at_ms DESC`, userID)
 		}
 		if label.Valid {
 			session.Label = &label.String
+		}
+		if sourceToken.Valid {
+			session.SourceTokenID = &sourceToken.String
 		}
 		sessions = append(sessions, session)
 	}
