@@ -11,7 +11,7 @@ import { CredentialConfirmation } from "./CredentialConfirmation";
 
 const auth = {
   account: { userId: "confirmation-account" },
-  session: { csrfToken: "session-csrf" },
+  session: { csrfToken: "session-csrf" } as { csrfToken: string } | null,
   api: { loginProviders: async () => [] },
   expireIfInvalidSession: vi.fn(() => false),
 };
@@ -58,6 +58,7 @@ function install(passwordEnabled: boolean, reject = false) {
   return fetcher;
 }
 beforeEach(() => {
+  auth.session = { csrfToken: "session-csrf" };
   window.localStorage.clear();
   window.sessionStorage.clear();
   auth.expireIfInvalidSession.mockClear();
@@ -135,4 +136,19 @@ it("uses an explicit token confirmation for a passwordless browser session", asy
   expect(JSON.parse(String(request?.[1]?.body))).toEqual({
     token: "private-api-credential",
   });
+});
+
+it("dismisses credential confirmation when its session is lost", async () => {
+  install(true);
+  const view = render(<CredentialConfirmation />);
+  await waitFor(() =>
+    expect(screen.getByRole("button", { name: "确认身份" })).toBeEnabled(),
+  );
+  fireEvent.click(screen.getByRole("button", { name: "确认身份" }));
+  fireEvent.change(await screen.findByLabelText("当前密码"), {
+    target: { value: "discard-on-expiry" },
+  });
+  auth.session = null;
+  view.rerender(<CredentialConfirmation />);
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
 });

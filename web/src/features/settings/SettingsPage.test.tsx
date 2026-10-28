@@ -282,3 +282,34 @@ it("updates only this account password and requests a fresh sign-in", async () =
   expect(requests).toEqual([{ password: "a-new-account-password" }]);
   expect(window.sessionStorage.getItem(sessionKey)).toBeNull();
 });
+
+it("sends expired account settings to the standalone login page with its full return URL", async () => {
+  window.history.replaceState(
+    {},
+    "",
+    "/settings/account?section=security#credentials",
+  );
+  installApi("admin", (url) => {
+    if (url === "/api/v1/account/security")
+      return new Response(
+        JSON.stringify({
+          error: {
+            code: "UNAUTHORIZED",
+            message: "expired",
+            details: {},
+            request_id: "expired",
+          },
+        }),
+        { status: 401, headers: { "Content-Type": "application/json" } },
+      );
+    if (url === "/api/v1/login/methods")
+      return json({ methods: ["password", "token"] });
+  });
+  render(<App />);
+  await waitFor(() => expect(window.location.pathname).toBe("/login"));
+  expect(new URLSearchParams(window.location.search).get("return")).toBe(
+    "/settings/account?section=security#credentials",
+  );
+  expect(await screen.findByText("Happening now")).toBeInTheDocument();
+  expect(screen.queryByRole("navigation", { name: "主要导航" })).toBeNull();
+});

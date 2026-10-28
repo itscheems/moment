@@ -1,3 +1,4 @@
+import { useLoginNavigation } from "../auth/loginNavigation";
 import { ConfirmDialog } from "../../components/ConfirmDialog";
 import { PublicApiError } from "../../api/public";
 import { useEffect, useState, type FormEvent } from "react";
@@ -10,7 +11,6 @@ import {
   revokeAllCredentials,
   type ApiCredential,
 } from "../../api/accounts";
-import { useNavigation } from "../../app/navigation";
 import { useSession } from "../auth/SessionProvider";
 import forms from "../../components/Forms.module.css";
 import styles from "./Settings.module.css";
@@ -18,7 +18,7 @@ import styles from "./Settings.module.css";
 export function AccountSecurity({ instanceId }: { instanceId: string | null }) {
   const { session, account, forgetSession, expireIfInvalidSession } =
     useSession();
-  const navigation = useNavigation();
+  const { requestLogin } = useLoginNavigation("/settings/account");
   const [passwordEnabled, setPasswordEnabled] = useState(false);
   const [password, setPassword] = useState("");
   const [label, setLabel] = useState("");
@@ -59,7 +59,7 @@ export function AccountSecurity({ instanceId }: { instanceId: string | null }) {
       await setAccountPassword(session.csrfToken, password);
       setPassword("");
       forgetSession(instanceId);
-      navigation.navigate("/login?return=%2Fsettings%2Faccount");
+      requestLogin();
     } catch (next) {
       if (!expireIfInvalidSession(next))
         setError(failure(next, "密码没有更新，请检查输入后重试。"));
@@ -92,7 +92,7 @@ export function AccountSecurity({ instanceId }: { instanceId: string | null }) {
       if (await revokeApiCredential(session.csrfToken, token.id)) {
         setReceipt(null);
         forgetSession(instanceId);
-        navigation.navigate("/login?return=%2Fsettings%2Faccount");
+        requestLogin();
         return;
       }
       setTokens((current) =>
@@ -121,7 +121,7 @@ export function AccountSecurity({ instanceId }: { instanceId: string | null }) {
       await revokeAllCredentials(session.csrfToken);
       setReceipt(null);
       forgetSession(instanceId);
-      navigation.navigate("/login?return=%2Fsettings%2Faccount");
+      requestLogin();
     } catch (next) {
       if (!expireIfInvalidSession(next))
         setError(failure(next, "凭据未全部撤销，请重试。"));

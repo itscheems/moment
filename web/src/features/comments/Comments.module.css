@@ -358,16 +358,6 @@
   color: var(--accent);
 }
 
-.reauth input {
-  min-block-size: 2.5rem;
-  min-inline-size: 0;
-  border: 1px solid var(--border-strong);
-  border-radius: 999px;
-  padding-inline: var(--space-4);
-  color: var(--text-primary);
-  background: var(--surface);
-}
-
 .formMeta {
   color: var(--text-secondary);
   font-size: var(--text-xs);
@@ -602,7 +592,6 @@
 .primaryAction,
 .secondaryAction,
 .dangerAction,
-.reauth button,
 .threadError button {
   min-block-size: var(--target-size);
   border: 0;
@@ -700,61 +689,14 @@
 }
 
 .secondaryAction:disabled,
-.dangerAction:disabled,
-.reauth button:disabled {
+.dangerAction:disabled {
   opacity: 0.55;
   cursor: not-allowed;
 }
 
 .primaryAction[data-pending="true"],
-.dangerAction[data-pending="true"],
-.reauth button[data-pending="true"] {
+.dangerAction[data-pending="true"] {
   cursor: progress;
-}
-
-.reauth {
-  grid-column: 2;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: var(--space-3);
-  border-block-start: 1px solid var(--border-subtle);
-  margin-block-start: var(--space-3);
-  padding-block-start: var(--space-3);
-}
-
-.reauth > div,
-.reauth > p {
-  grid-column: 1 / -1;
-}
-
-.reauth strong,
-.reauth span {
-  display: block;
-}
-
-.reauth span {
-  margin-block-start: var(--space-1);
-  color: var(--text-secondary);
-  font-size: var(--text-sm);
-}
-
-.reauth label {
-  position: absolute;
-  inline-size: 1px;
-  block-size: 1px;
-  overflow: hidden;
-  clip-path: inset(50%);
-}
-
-.reauth p {
-  margin: 0;
-  color: var(--danger);
-  font-size: var(--text-sm);
-}
-
-.reauth button {
-  color: var(--button-primary-contrast);
-  background: var(--button-primary);
 }
 
 .threadState {
@@ -1218,10 +1160,6 @@
     max-inline-size: 17rem;
   }
 
-  .reauth {
-    grid-template-columns: 1fr;
-  }
-
   .dialogActions {
     flex-direction: column-reverse;
   }
@@ -1309,27 +1247,6 @@
   color: var(--text-secondary);
   font-size: 0.8125rem;
   line-height: 1.4;
-}
-
-.signInPopupAction {
-  margin-block-start: 0.6rem;
-  display: inline-flex;
-  min-block-size: 2rem;
-  align-items: center;
-  border: 1px solid var(--border-subtle);
-  border-radius: 999px;
-  padding-inline: var(--space-4);
-  color: var(--text-primary);
-  font-size: 0.8125rem;
-  font-weight: 700;
-  text-decoration: none;
-}
-
-@media (hover: hover) {
-  .signInPopupAction:hover {
-    border-color: var(--accent);
-    color: var(--accent);
-  }
 }
 
 .discussionDetail {

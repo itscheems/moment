@@ -94,7 +94,7 @@ import {
   listKeptDrafts,
 } from "./drafts";
 import { useSession } from "../auth/SessionProvider";
-import { CredentialLogin } from "../auth/CredentialLogin";
+import { LoginLink } from "../auth/loginNavigation";
 import { announcePostChanged } from "../posts/postEvents";
 import styles from "../../components/Forms.module.css";
 
@@ -2031,7 +2031,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
                 id={`${variant}-composer-error`}
                 role="alert"
               >
-                {error} {authExpired ? <span>请在下方刷新身份。</span> : null}
+                {error} {authExpired ? <span>请重新登录后重试。</span> : null}
               </p>
             ) : (
               <span id={`${variant}-composer-error`} />
@@ -2040,7 +2040,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
               {announcement}
             </p>
           </form>
-          {!session ? <CredentialLogin embedded site={site} /> : null}
+          {!session ? <LoginLink>重新登录</LoginLink> : null}
         </div>
         <Dialog.Root
           onOpenChange={(open) => {

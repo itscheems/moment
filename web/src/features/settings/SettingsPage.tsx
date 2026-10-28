@@ -1,3 +1,4 @@
+import { useLoginNavigation } from "../auth/loginNavigation";
 import { CredentialConfirmation } from "./CredentialConfirmation";
 import { useEffect, useState, type FormEvent } from "react";
 import { accountsApi } from "../../api/accounts";
@@ -7,7 +8,6 @@ import {
   type Account,
   type SiteIdentity,
 } from "../../api/public";
-import { useNavigation } from "../../app/navigation";
 import { isAdministrator, useSession } from "../auth/SessionProvider";
 import { AccountAccess } from "../auth/AccountAccess";
 import { ProfileEditor } from "../profile/ProfileEditor";
@@ -220,7 +220,7 @@ export function SettingsPage({
   site: SiteIdentity;
   onSaved: (site: SiteIdentity) => void;
 }) {
-  const navigation = useNavigation();
+  const { requestLogin } = useLoginNavigation();
   const { account, applyAccount } = useSession();
   const [restoreBusy, setRestoreBusy] = useState(false);
   const [waiting, setWaiting] = useState(0);
@@ -285,7 +285,7 @@ export function SettingsPage({
               <AccountAccess
                 timezone={site.timezone}
                 instanceId={site.instanceId}
-                onSignedOut={() => navigation.navigate("/login")}
+                onSignedOut={() => requestLogin()}
               />
             </section>
           </div>

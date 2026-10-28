@@ -25,7 +25,10 @@ import { EditPage } from "../features/posts/EditPage";
 import { LoginPage } from "../features/auth/LoginPage";
 import { RegisterPage } from "../features/auth/RegisterPage";
 import { MentionProvider } from "./mentions";
-import { CredentialLogin } from "../features/auth/CredentialLogin";
+import {
+  AccountAccessNotice,
+  useLoginNavigation,
+} from "../features/auth/loginNavigation";
 import { SessionProvider, useSession } from "../features/auth/SessionProvider";
 import { SettingsPage } from "../features/settings/SettingsPage";
 import { UsernameSetup } from "../features/auth/UsernameSetup";
@@ -124,7 +127,9 @@ function routeSearchKey(search: string): string {
 
 function PublicApp() {
   const location = useNavigation();
-  const authPage = resolveRoute(location.pathname).id;
+  const entryRoute = resolveRoute(location.pathname);
+  const authPage = entryRoute.id;
+  const { requestLogin } = useLoginNavigation();
   const authRoute = authPage === "login" || authPage === "register";
   // Reauthentication changes the address, not the work in progress. Keep the
   // original reading/editing surface mounted while the standalone login page
@@ -133,6 +138,7 @@ function PublicApp() {
     pathname: string;
     search: string;
     overlayFrom: { pathname: string; search: string } | null;
+    hash: string;
   } | null>(null);
   const expiryRedirected = useRef(false);
   const surfaceLocation = location.panel?.from ?? location;
@@ -148,7 +154,9 @@ function PublicApp() {
     // Files are intentionally not stored in text drafts. A cold media URL has
     // no buffer to edit, so return to composing rather than an empty modal.
     if (location.pathname === COMPOSE_MEDIA_PATH && !location.panel)
-      location.replace(COMPOSE_PATH);
+      location.replace(
+        `${COMPOSE_PATH}${location.search}${window.location.hash}`,
+      );
   }, [location]);
   const auth = useSession();
   const requestedRoute = resolveRoute(contentLocation.pathname);
@@ -256,11 +264,10 @@ function PublicApp() {
       pathname: location.pathname,
       search: location.search,
       overlayFrom: location.overlayFrom,
+      hash: window.location.hash,
     });
-    location.replace(
-      `/login?return=${encodeURIComponent(`${location.pathname}${location.search}`)}`,
-    );
-  }, [location, authRoute, auth.state]);
+    requestLogin({ replace: true });
+  }, [location, authRoute, auth.state, requestLogin]);
 
   useEffect(() => {
     if (!reauthLocation || authRoute) return;
@@ -274,7 +281,7 @@ function PublicApp() {
     }
     if (location.pathname === reauthLocation.pathname) {
       location.replace(
-        `${reauthLocation.pathname}${reauthLocation.search}`,
+        `${reauthLocation.pathname}${reauthLocation.search}${reauthLocation.hash}`,
         reauthLocation.overlayFrom,
       );
     }
@@ -382,7 +389,8 @@ function PublicApp() {
     // sign-in, and every way back from sign-in re-entered /profile, which
     // pushed sign-in again: the arrow on that page went nowhere, and the
     // shell flashed on each bounce.
-    location.replace(own ?? "/login?return=%2Fprofile");
+    if (own)
+      location.replace(`${own}${location.search}${window.location.hash}`);
   }, [
     displayLocation.pathname,
     requestedRoute.id,
@@ -392,28 +400,13 @@ function PublicApp() {
     auth.state,
   ]);
 
-  // Posting needs a session, and the place to get one is the sign-in page --
-  // not a login form folded into the compose dialog, which asked a visitor to
-  // sign in inside a surface they had no business seeing yet.
+  // Route metadata is the only classification of account-required pages.
+  // Waiting and unavailable are not signed-out answers; expiry keeps its
+  // existing editor-retention path above.
   useEffect(() => {
-    if (authRoute || auth.state === "expired") return;
-    const composing =
-      requestedRoute.id === "compose" ||
-      requestedRoute.id === "article-workspace" ||
-      requestedRoute.id === "profile-edit";
-    if (!composing || publishingAvailable) return;
-    // Still resolving, or unable to say. Neither is an answer to act on.
-    if (auth.state === "checking" || auth.state === "unavailable") return;
-    if (auth.session !== null) return;
-    location.replace(`/login?return=${encodeURIComponent(location.pathname)}`);
-  }, [
-    location,
-    authRoute,
-    auth.account,
-    auth.state,
-    publishingAvailable,
-    requestedRoute.id,
-  ]);
+    if (!authRoute && entryRoute.requiresSession && auth.state === "guest")
+      requestLogin({ replace: true });
+  }, [authRoute, entryRoute.requiresSession, auth.state, requestLogin]);
 
   useEffect(() => {
     const siteTitle = site.title.trim() || "Moment";
@@ -543,6 +536,8 @@ function PublicApp() {
   // Sign-in is the whole page, not a panel inside the shell. Every hook above
   // has already run, so returning here changes what is rendered without
   // changing what is evaluated.
+  if (!authRoute && entryRoute.requiresSession && auth.state === "guest")
+    return null;
   if (authRoute && !reauthLocation)
     return authPage === "login" ? <LoginPage site={site} /> : <RegisterPage />;
 
@@ -693,7 +688,7 @@ function PublicApp() {
               variant="page"
             />
           ) : (
-            <CredentialLogin embedded site={site} />
+            <AccountAccessNotice />
           )
         ) : null}
         {siteIdentityReady && route.id === "article-workspace" ? (
@@ -724,7 +719,7 @@ function PublicApp() {
               site={site}
             />
           ) : (
-            <CredentialLogin embedded site={site} />
+            <AccountAccessNotice />
           )
         ) : null}
         {siteIdentityReady && route.id === "settings" ? (
@@ -733,14 +728,16 @@ function PublicApp() {
           signedIn ? (
             <SettingsPage onSaved={setSite} site={site} />
           ) : (
-            <CredentialLogin embedded site={site} />
+            <AccountAccessNotice />
           )
         ) : null}
         {!siteLoading && placeholderRoute ? (
           <ShellState route={route} state={state} />
         ) : null}
       </AppShell>
-      {overlayCompose && siteIdentityReady ? (
+      {overlayCompose &&
+      siteIdentityReady &&
+      (publishingAvailable || auth.account?.status === "pending") ? (
         <Dialog.Root
           onOpenChange={(open, details) => {
             if (open) return;
@@ -859,7 +856,7 @@ function PublicApp() {
                   </Dialog.Title>
                 )}
                 {!publishingAvailable ? (
-                  <CredentialLogin embedded site={site} />
+                  <AccountAccessNotice />
                 ) : draftsOpen ? (
                   <ComposeDrafts
                     editing={draftsEditing}

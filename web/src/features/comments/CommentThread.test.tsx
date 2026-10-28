@@ -19,7 +19,8 @@ import {
   type PublicPost,
   type SiteIdentity,
 } from "../../api/public";
-import { NavigationProvider } from "../../app/navigation";
+import { useLoginNavigation } from "../auth/loginNavigation";
+import { NavigationProvider, useNavigation } from "../../app/navigation";
 import { SessionProvider, useSession } from "../auth/SessionProvider";
 import { CommentThread } from "./CommentThread";
 import type { DiscussionChange } from "./discussionChanges";
@@ -358,18 +359,31 @@ function installApi(
   return fetcher;
 }
 
+let completeStandaloneSignIn: () => Promise<void>;
+
 function ExpireOwnerControl() {
   const auth = useSession();
+  const navigation = useNavigation();
+  const { requestLogin } = useLoginNavigation();
+  // Complete the same provider exchange as the standalone page; this fixture
+  // exercises retained comment state rather than rendering the application router.
+  completeStandaloneSignIn = async () => {
+    await auth.login("verified-page-token", "token");
+    const target =
+      new URLSearchParams(window.location.search).get("return") ?? "/";
+    navigation.replace(target);
+  };
   return (
     <button
-      onClick={() =>
+      onClick={() => {
         auth.expireIfInvalidSession(
           new PublicApiError("expired", {
             code: "UNAUTHORIZED",
             status: 401,
           }),
-        )
-      }
+        );
+        requestLogin({ replace: true });
+      }}
       type="button"
     >
       使会话过期
@@ -440,6 +454,7 @@ function ReplyDialogHarness() {
 
 describe("public comment thread", () => {
   beforeEach(() => {
+    window.history.replaceState({}, "", `/m/${postId}`);
     window.sessionStorage.clear();
     FakeCommentResizeObserver.reset();
     vi.stubGlobal("ResizeObserver", FakeCommentResizeObserver);
@@ -1367,7 +1382,7 @@ describe("public comment thread", () => {
     expect(await screen.findByText("登录后回复")).toBeVisible();
     expect(screen.getByRole("link", { name: "登录" })).toHaveAttribute(
       "href",
-      "/login",
+      `/login?return=${encodeURIComponent(`/m/${postId}`)}`,
     );
     expect(
       screen.queryByRole("form", { name: "发表回复" }),
@@ -1385,14 +1400,11 @@ describe("public comment thread", () => {
     expect(replyActions).toHaveLength(2);
 
     fireEvent.click(replyActions[0]);
-    const prompt = await screen.findByRole("dialog");
-    // jsdom does not run the popup's entry transition, so presence is the
-    // meaningful assertion here; the rendered card is checked in a browser.
-    expect(within(prompt).getByText("登录后回复")).toBeInTheDocument();
-    expect(within(prompt).getByRole("link", { name: "登录" })).toHaveAttribute(
-      "href",
-      "/login",
+    expect(window.location.pathname).toBe("/login");
+    expect(new URLSearchParams(window.location.search).get("return")).toBe(
+      `/m/${postId}`,
     );
+    expect(screen.queryByRole("dialog")).toBeNull();
     // Pressing it must not open a composer it cannot submit.
     expect(screen.queryByLabelText("回复内容")).not.toBeInTheDocument();
   });
@@ -1460,18 +1472,11 @@ describe("public comment thread", () => {
     );
 
     fireEvent.click(screen.getByRole("button", { name: "打开回复窗口" }));
-    const dialog = await screen.findByRole("dialog", {
-      name: "回复这条 Moment",
-    });
-    expect(within(dialog).getByText("登录后回复")).toBeVisible();
-    expect(within(dialog).getByRole("link", { name: "登录" })).toHaveAttribute(
-      "href",
-      "/login",
+    await waitFor(() => expect(window.location.pathname).toBe("/login"));
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(new URLSearchParams(window.location.search).get("return")).toBe(
+      `/m/${postId}`,
     );
-    expect(within(dialog).queryByLabelText("回复内容")).not.toBeInTheDocument();
-    // The Moment being replied to stays on screen: the reader keeps the
-    // context they opened the dialog for.
-    expect(within(dialog).getByText("一段需要回应的 Moment")).toBeVisible();
   });
 
   it("keeps layout motion bounded and removes it for reduced-motion users", () => {
@@ -2174,22 +2179,25 @@ describe("public comment thread", () => {
       if (openReply) {
         fireEvent.click(screen.getByRole("button", { name: "回复 访客" }));
       }
-      const form = screen.getByRole("form", { name: formName });
-      const field = within(form).getByRole("textbox", { name: fieldName });
+      let form = screen.getByRole("form", { name: formName });
+      let field = within(form).getByRole("textbox", { name: fieldName });
       fireEvent.change(field, { target: { value: content } });
       // This harness control simulates expiration outside the modal.
       fireEvent.click(screen.getByText("使会话过期"));
 
       expect(field).toHaveValue(content);
-      const surface = form.parentElement!;
-      expect(within(surface).getByRole("alert")).toHaveTextContent(
-        "文字已保留",
+      if (!openReply)
+        expect(
+          within(form.parentElement!).getByRole("alert"),
+        ).toHaveTextContent("文字已保留");
+      expect(screen.queryByLabelText("API 令牌")).toBeNull();
+      expect(window.location.pathname).toBe("/login");
+      expect(new URLSearchParams(window.location.search).get("return")).toBe(
+        `/m/${postId}`,
       );
-      const credential = within(surface).getByLabelText("API 令牌");
-      fireEvent.change(credential, { target: { value: "new-owner-token" } });
-      fireEvent.click(
-        within(surface).getByRole("button", { name: "刷新身份" }),
-      );
+      await act(() => completeStandaloneSignIn());
+      form = await screen.findByRole("form", { name: formName });
+      field = within(form).getByRole("textbox", { name: fieldName });
       await waitFor(() =>
         expect(
           within(form).getByRole("button", { name: submitName }),
@@ -2319,7 +2327,7 @@ describe("public comment thread", () => {
     ).toBe(true);
   });
 
-  it("keeps the delete dialog mounted for inline reauthentication and retries with new CSRF", async () => {
+  it("keeps the delete dialog mounted through standalone reauthentication and retries with new CSRF", async () => {
     preauthenticate();
     let deletes = 0;
     const deleteTokens: Array<string | null> = [];
@@ -2353,17 +2361,14 @@ describe("public comment thread", () => {
             });
       }
     });
-    renderThread();
+    renderThread(site, true);
 
     await screen.findByText("顶级回应");
     await chooseFirstCommentAction("删除");
     fireEvent.click(await screen.findByRole("button", { name: "删除回复" }));
+    expect(screen.queryByLabelText("API 令牌")).toBeNull();
+    await act(() => completeStandaloneSignIn());
     const dialog = await screen.findByRole("dialog");
-    expect(dialog).toHaveTextContent("刷新身份后可在这里重新删除");
-    fireEvent.change(within(dialog).getByLabelText("API 令牌"), {
-      target: { value: "new-owner-token" },
-    });
-    fireEvent.click(within(dialog).getByRole("button", { name: "刷新身份" }));
     await waitFor(() =>
       expect(
         within(dialog).getByRole("button", { name: "删除回复" }),
@@ -2376,7 +2381,7 @@ describe("public comment thread", () => {
     expect(deleteTokens).toEqual(["csrf-from-cookie", "csrf-new"]);
   });
 
-  it("reauthenticates inside a pre-expired delete dialog and deletes once with restored focus", async () => {
+  it("requires standalone sign-in before opening an expired delete action", async () => {
     preauthenticate();
     const deleteTokens: Array<string | null> = [];
     installApi((url, init) => {
@@ -2412,15 +2417,12 @@ describe("public comment thread", () => {
     // This harness control simulates expiration outside the modal.
     fireEvent.click(screen.getByText("使会话过期"));
     await chooseFirstCommentAction("删除");
+    expect(window.location.pathname).toBe("/login");
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(screen.queryByLabelText("API 令牌")).toBeNull();
+    await act(() => completeStandaloneSignIn());
+    await chooseFirstCommentAction("删除");
     const dialog = await screen.findByRole("dialog");
-    expect(dialog).toHaveTextContent("刷新身份后可在这里重新删除");
-    expect(
-      within(dialog).getByRole("button", { name: "删除回复" }),
-    ).toBeDisabled();
-    fireEvent.change(within(dialog).getByLabelText("API 令牌"), {
-      target: { value: "new-owner-token" },
-    });
-    fireEvent.click(within(dialog).getByRole("button", { name: "刷新身份" }));
     await waitFor(() =>
       expect(
         within(dialog).getByRole("button", { name: "删除回复" }),

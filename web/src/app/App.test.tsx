@@ -760,7 +760,7 @@ describe("App shell and public routes", () => {
 
       expect(await screen.findByRole("link", { name: "账号" })).toHaveAttribute(
         "href",
-        "/login",
+        "/login?return=%2F",
       );
     });
   });
@@ -1553,5 +1553,105 @@ describe("App shell and public routes", () => {
     render(<App />);
     expect(await screen.findByText("正在重新获取内容…")).toBeInTheDocument();
     expect(screen.queryByText("直接打开的正文")).toBeNull();
+  });
+});
+
+describe("central account-required routing", () => {
+  beforeEach(() => {
+    window.sessionStorage.clear();
+    vi.stubGlobal("scrollTo", vi.fn());
+    vi.stubGlobal(
+      "matchMedia",
+      vi.fn().mockReturnValue({
+        matches: false,
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+      }),
+    );
+    installApi(async (url) => {
+      if (url === "/api/v1/site") return json(siteEnvelope);
+      if (url === "/api/v1/login/methods")
+        return json({
+          data: { methods: ["password", "token"] },
+          meta: { request_id: "methods" },
+        });
+      if (url === "/api/v1/login/oauth/providers")
+        return json({
+          data: { providers: [] },
+          meta: { request_id: "providers" },
+        });
+      return json(timelineEnvelope());
+    });
+  });
+  afterEach(() => {
+    cleanup();
+    vi.unstubAllGlobals();
+    window.sessionStorage.clear();
+  });
+  it.each([
+    "/settings/account",
+    "/settings/site",
+    "/settings/members",
+    "/settings/backups",
+    "/settings/profile",
+    "/m/post-id/edit",
+    "/compose?quote=post-id",
+    "/compose/drafts",
+    "/compose/articles/drafts/draft-id?mode=edit",
+    "/profile?from=nav",
+  ])(
+    "replaces unauthenticated %s with the standalone sign-in page",
+    async (target) => {
+      window.history.replaceState({}, "", target);
+      const length = window.history.length;
+      render(<App />);
+      await waitFor(() => expect(window.location.pathname).toBe("/login"));
+      expect(new URLSearchParams(window.location.search).get("return")).toBe(
+        target,
+      );
+      expect(window.history.length).toBe(length);
+      expect(await screen.findByText("Happening now")).toBeInTheDocument();
+      expect(screen.queryByRole("navigation", { name: "主要导航" })).toBeNull();
+      expect(screen.getAllByLabelText("用户名")).toHaveLength(1);
+    },
+  );
+  it("waits for a real session answer and offers recovery on an unavailable server", async () => {
+    window.history.replaceState({}, "", "/settings/account?section=security");
+    let resolveSession!: (response: Response) => void;
+    const pending = new Promise<Response>((resolve) => {
+      resolveSession = resolve;
+    });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) => {
+        if (String(input) === "/api/v1/account/session") return pending;
+        if (String(input) === "/api/v1/site") return json(siteEnvelope);
+        return json(timelineEnvelope());
+      }),
+    );
+    render(<App />);
+    await screen.findByText("正在确认登录状态…");
+    expect(window.location.pathname).toBe("/settings/account");
+    expect(screen.queryByLabelText("密码")).toBeNull();
+    await act(async () =>
+      resolveSession(
+        json(
+          {
+            error: {
+              code: "AUTH_UNAVAILABLE",
+              message: "temporarily unavailable",
+              details: {},
+              request_id: "session",
+            },
+          },
+          503,
+        ),
+      ),
+    );
+    expect(
+      await screen.findByRole("button", { name: "重试检查" }),
+    ).toBeInTheDocument();
+    expect(window.location.pathname).toBe("/settings/account");
+    expect(screen.queryByLabelText("用户名")).toBeNull();
   });
 });

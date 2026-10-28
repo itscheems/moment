@@ -1,3 +1,4 @@
+import { loginHref } from "../features/auth/returnPath";
 import type { AppRoute } from "../app/routes";
 import styles from "./ShellState.module.css";
 
@@ -50,7 +51,7 @@ const emptyCopy: Record<
     marker: "编辑资料",
     title: "编辑个人资料",
     detail: "登录后可以更新你的个人资料。",
-    action: { label: "登录", href: "/login?return=%2Fsettings%2Fprofile" },
+    action: { label: "登录", href: loginHref("/settings/profile") },
   },
   profile: {
     marker: "资料",

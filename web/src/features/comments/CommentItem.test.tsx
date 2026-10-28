@@ -533,14 +533,11 @@ describe("comment action bar", () => {
     expect(action).toBeInTheDocument();
 
     fireEvent.click(action);
-    const prompt = await screen.findByRole("dialog");
-    // jsdom does not run the popup's entry transition, so presence is the
-    // meaningful assertion here; the rendered card is checked in a browser.
-    expect(within(prompt).getByText("登录后回复")).toBeInTheDocument();
-    expect(within(prompt).getByRole("link", { name: "登录" })).toHaveAttribute(
-      "href",
-      "/login",
-    );
+    expect(window.location.pathname).toBe("/login");
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(
+      new URLSearchParams(window.location.search).get("return"),
+    ).toBeTruthy();
   });
 
   it("keeps the reply action when a reply target is available", () => {

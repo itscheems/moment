@@ -1,3 +1,5 @@
+import { useSession } from "../auth/SessionProvider";
+import { useLoginNavigation } from "../auth/loginNavigation";
 import { Dialog } from "../../components/Dialog";
 import {
   type RefObject,
@@ -51,13 +53,18 @@ export function PostReplyDialog({
   keepMounted?: boolean;
   formIdPrefix?: string;
 }) {
+  const auth = useSession();
+  const { requestLogin } = useLoginNavigation();
   const canCompose = useCanComment();
   const author = postAuthorSite(comment ?? post, site);
   const [closedByServer, setClosedByServer] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const canComment = commentsEnabled && !closedByServer;
 
-  useDocumentScrollLock(open);
+  useDocumentScrollLock(open && auth.session !== null);
+  useEffect(() => {
+    if (open && auth.state === "guest") requestLogin();
+  }, [open, auth.state, requestLogin]);
 
   useEffect(() => setClosedByServer(false), [post.id, commentsEnabled]);
 
@@ -70,7 +77,10 @@ export function PostReplyDialog({
   }, []);
 
   return (
-    <Dialog.Root onOpenChange={onOpenChange} open={open}>
+    <Dialog.Root
+      onOpenChange={onOpenChange}
+      open={open && auth.session !== null}
+    >
       <Dialog.Portal keepMounted={keepMounted}>
         <Dialog.Backdrop className={styles.dialogBackdrop} />
         <Dialog.Viewport className={styles.dialogViewport}>
