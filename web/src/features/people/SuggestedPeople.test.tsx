@@ -4,6 +4,7 @@ import {
   cleanup,
   fireEvent,
   render,
+  screen,
   waitFor,
   within,
 } from "@testing-library/react";
@@ -18,6 +19,7 @@ import { NavigationProvider } from "../../app/navigation";
 import { RailSlotContext } from "../../components/railSlot";
 import { SessionProvider } from "../auth/SessionProvider";
 import { SuggestedPeople } from "./SuggestedPeople";
+import { FeedbackProvider } from "../../components/Feedback";
 
 const amber: PublicAccount = {
   userId: "a".repeat(32),
@@ -78,19 +80,21 @@ function setup() {
     profileUsername: string | null = null,
     active = true,
   ) => (
-    <NavigationProvider>
-      <SessionProvider>
-        <RailSlotContext.Provider value={slot}>
-          <SuggestedPeople
-            api={api}
-            kind={kind}
-            profileUsername={profileUsername}
-            active={active}
-            usernames={usernames}
-          />
-        </RailSlotContext.Provider>
-      </SessionProvider>
-    </NavigationProvider>
+    <FeedbackProvider>
+      <NavigationProvider>
+        <SessionProvider>
+          <RailSlotContext.Provider value={slot}>
+            <SuggestedPeople
+              api={api}
+              kind={kind}
+              profileUsername={profileUsername}
+              active={active}
+              usernames={usernames}
+            />
+          </RailSlotContext.Provider>
+        </SessionProvider>
+      </NavigationProvider>
+    </FeedbackProvider>
   );
   return { view, user };
 }
@@ -189,7 +193,9 @@ describe("SuggestedPeople", () => {
     const { view, user } = setup();
     user.mockRejectedValueOnce(new Error("Offline"));
     const mounted = render(view("profile", "birch"));
-    fireEvent.click(await within(slot).findByRole("button", { name: "重试" }));
+    const retry = await screen.findByRole("button", { name: "重试" });
+    expect(slot).not.toContainElement(retry);
+    fireEvent.click(retry);
     await within(slot).findByRole("link", { name: "Amber" });
     mounted.rerender(view("home", null, false));
     expect(slot).toBeEmptyDOMElement();

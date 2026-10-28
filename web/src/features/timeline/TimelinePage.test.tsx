@@ -105,14 +105,16 @@ function renderTimeline(
   canPublish = false,
 ) {
   return render(
-    <NavigationProvider>
-      <TimelinePage
-        api={api}
-        initialSearch={initialSearch}
-        canPublish={canPublish}
-        site={site}
-      />
-    </NavigationProvider>,
+    <FeedbackProvider>
+      <NavigationProvider>
+        <TimelinePage
+          api={api}
+          initialSearch={initialSearch}
+          canPublish={canPublish}
+          site={site}
+        />
+      </NavigationProvider>
+    </FeedbackProvider>,
   );
 }
 

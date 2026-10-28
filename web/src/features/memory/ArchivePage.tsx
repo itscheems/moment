@@ -23,7 +23,7 @@ import {
 } from "../../components/useMediaQuery";
 import { siteDate, siteToday } from "../timeline/timelineDays";
 import { TimelinePage } from "../timeline/TimelinePage";
-import { ReadRecoveryNotice } from "../timeline/PublicStates";
+import { ReadRecoveryToast } from "../timeline/PublicStates";
 import { ArchiveCalendar } from "./ArchiveCalendar";
 import {
   monthKeyOf,
@@ -333,7 +333,11 @@ export function ArchivePage({
         </section>
       );
     } else if (monthsError && months === null && monthsRecovering) {
-      calendar = <ReadRecoveryNotice>正在重新获取归档…</ReadRecoveryNotice>;
+      calendar = (
+        <ReadRecoveryToast active={pathname === "/archive"}>
+          正在重新获取归档…
+        </ReadRecoveryToast>
+      );
     } else if (monthsError && months === null) {
       calendar = (
         <ArchiveMessage

@@ -26,7 +26,7 @@ import { PostPresentation } from "../posts/PostPresentation";
 import {
   PublicEmpty,
   PublicError,
-  ReadRecoveryNotice,
+  ReadRecoveryToast,
   TimelineLoading,
 } from "./PublicStates";
 import { listenForPostChanges } from "../posts/postEvents";
@@ -606,7 +606,6 @@ export function TimelinePage({
     activeMore.current = controller;
     loadingMoreRef.current = true;
     setLoadingMore(true);
-    setMoreError(null);
     const requestedCursor = nextCursor;
     try {
       if (visitedCursors.current.has(requestedCursor)) {
@@ -629,6 +628,7 @@ export function TimelinePage({
       visitedCursors.current = visited;
       setPosts(combined);
       setNextCursor(page.nextCursor);
+      setMoreError(null);
       const progress = new URLSearchParams(loadedSearchRef.current);
       progress.set("loaded_through", requestedCursor);
       loadedSearchRef.current = initialSearchRef.current = `?${progress}`;
@@ -654,7 +654,6 @@ export function TimelinePage({
     activeNewer.current = controller;
     loadingNewerRef.current = true;
     setLoadingNewer(true);
-    setNewerError(null);
     const requestedCursor = prevCursor;
     try {
       if (visitedCursors.current.has(requestedCursor)) {
@@ -683,6 +682,7 @@ export function TimelinePage({
       visitedCursors.current = visited;
       setPosts(combined);
       setPrevCursor(page.prevCursor);
+      setNewerError(null);
       const progress = new URLSearchParams(loadedSearchRef.current);
       progress.set("loaded_newer", requestedCursor);
       loadedSearchRef.current = initialSearchRef.current = `?${progress}`;
@@ -751,7 +751,7 @@ export function TimelinePage({
 
   if (loadingInitial && posts.length === 0) return <TimelineLoading />;
   if (initialError && posts.length === 0) {
-    return <PublicError recovering={recoveringInitial} />;
+    return <PublicError active={enabled} recovering={recoveringInitial} />;
   }
   if (posts.length === 0 && !nextCursor && !prevCursor) {
     return <PublicEmpty context={emptyContext} canPublish={canPublish} />;
@@ -766,15 +766,15 @@ export function TimelinePage({
       >
         {posts.length > 0 &&
         (initialError || (loadingInitial && !pendingJump.current)) ? (
-          <ReadRecoveryNotice />
+          <ReadRecoveryToast active={enabled} />
         ) : null}
         <p aria-live="polite" className={styles.srOnly}>
           已加载 {posts.length} 条 Moment
         </p>
         {newerError ? (
-          <ReadRecoveryNotice error={newerError}>
+          <ReadRecoveryToast active={enabled} error={newerError}>
             正在重新获取更新的内容…
-          </ReadRecoveryNotice>
+          </ReadRecoveryToast>
         ) : null}
         {prevCursor && !newerError ? (
           <LoadMoreSentinel
@@ -801,9 +801,9 @@ export function TimelinePage({
           />
         ))}
         {moreError ? (
-          <ReadRecoveryNotice error={moreError}>
+          <ReadRecoveryToast active={enabled} error={moreError}>
             正在重新获取后续内容…
-          </ReadRecoveryNotice>
+          </ReadRecoveryToast>
         ) : null}
         {nextCursor && !moreError ? (
           <LoadMoreSentinel

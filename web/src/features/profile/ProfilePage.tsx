@@ -42,7 +42,7 @@ import { formatMomentDate } from "../posts/dates";
 import {
   PublicEmpty,
   PublicError,
-  ReadRecoveryNotice,
+  ReadRecoveryToast,
   TimelineLoading,
 } from "../timeline/PublicStates";
 import { timelineItemKey } from "../timeline/timelineItems";
@@ -252,18 +252,19 @@ export function ProfilePage({
         (!canRecoverRead(feed.error) || feed.items.length === 0) ? (
           <PublicError recovering={canRecoverRead(feed.error)} />
         ) : null}
-        {feed.items.length > 0 &&
+        {kind === filter &&
+        feed.items.length > 0 &&
         (feed.loading || canRecoverRead(feed.error)) ? (
-          <ReadRecoveryNotice />
+          <ReadRecoveryToast />
         ) : null}
         {feed.initialized &&
         (!feed.error ||
           (canRecoverRead(feed.error) && feed.items.length > 0)) ? (
           <>
-            {feed.refreshError ? (
-              <ReadRecoveryNotice error={feed.refreshError}>
+            {kind === filter && feed.refreshError ? (
+              <ReadRecoveryToast error={feed.refreshError}>
                 正在重新获取更新的内容…
-              </ReadRecoveryNotice>
+              </ReadRecoveryToast>
             ) : null}
             {pinned ? (
               <PostPresentation
@@ -298,10 +299,10 @@ export function ProfilePage({
             {feed.items.length === 0 && !pinned ? (
               <PublicEmpty context="profile" canPublish={canPublish} />
             ) : null}
-            {feed.moreError ? (
-              <ReadRecoveryNotice error={feed.moreError}>
+            {kind === filter && feed.moreError ? (
+              <ReadRecoveryToast error={feed.moreError}>
                 正在重新获取后续内容…
-              </ReadRecoveryNotice>
+              </ReadRecoveryToast>
             ) : feed.nextCursor && kind === filter ? (
               <LoadMoreSentinel
                 className={styles.moreRow}

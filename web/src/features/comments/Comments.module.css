@@ -707,23 +707,6 @@
   font-size: var(--text-sm);
 }
 
-.loadingDot {
-  inline-size: 0.5rem;
-  block-size: 0.5rem;
-  border-radius: 50%;
-  background: var(--accent);
-  animation: comment-breathe 1.4s ease-in-out infinite alternate;
-}
-
-@keyframes comment-breathe {
-  from {
-    opacity: 0.35;
-  }
-  to {
-    opacity: 1;
-  }
-}
-
 .threadError,
 .closedNotice,
 .signInNotice,
@@ -1173,10 +1156,6 @@
   .commentItem {
     transition: none;
   }
-  .loadingDot {
-    animation: none;
-  }
-
   .dialogBackdrop,
   .dialogPopup,
   .replyDialogPopup,
