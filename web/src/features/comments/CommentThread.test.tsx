@@ -518,7 +518,17 @@ describe("public comment thread", () => {
       name: "回复排序：最早",
     });
     const open = async () => {
-      fireEvent.keyDown(trigger, { key: "ArrowDown", code: "ArrowDown" });
+      await waitFor(() =>
+        expect(trigger.closest("[data-reply-sort]")).toHaveAttribute(
+          "aria-busy",
+          "false",
+        ),
+      );
+      await act(async () => {
+        trigger.focus();
+        fireEvent.keyDown(trigger, { key: "ArrowDown", code: "ArrowDown" });
+        fireEvent.keyUp(trigger, { key: "ArrowDown", code: "ArrowDown" });
+      });
       await screen.findByRole("menuitemradio", { name: "最新" });
     };
     await open();
@@ -529,7 +539,7 @@ describe("public comment thread", () => {
         el.getAttribute("data-comment-id"),
       ),
     ).toEqual([replyId, rootId]);
-    fireEvent.keyDown(trigger, { key: "ArrowDown", code: "ArrowDown" });
+    await open();
     fireEvent.click(await screen.findByRole("menuitemradio", { name: "最早" }));
     await screen.findByRole("button", { name: "回复排序：最早" });
     fail = true;
