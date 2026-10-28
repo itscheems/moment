@@ -37,6 +37,7 @@ import { hasValidRawQueryEncoding } from "../features/memory/memoryState";
 import { SearchPage } from "../features/memory/SearchPage";
 import { MemberProfilePage } from "../features/profile/MemberProfilePage";
 import { ProfilePage } from "../features/profile/ProfilePage";
+import { ReadRecoveryToast } from "../features/timeline/PublicStates";
 import { SuggestedPeople } from "../features/people/SuggestedPeople";
 import { ThemeProvider } from "../theme/ThemeProvider";
 import { ReadingLayoutProvider } from "../features/article/ReadingLayout";
@@ -556,13 +557,11 @@ function PublicApp() {
         site={site}
         state={state}
       >
-        {siteError ? (
+        {siteRecovering ? (
+          <ReadRecoveryToast>正在自动重新获取站点资料…</ReadRecoveryToast>
+        ) : siteError ? (
           <div className={styles.siteError} role="status">
-            <span>
-              {siteRecovering
-                ? "正在自动重新获取站点资料…"
-                : "站点资料暂时无法获取。"}
-            </span>
+            <span>站点资料暂时无法获取。</span>
           </div>
         ) : null}
         {hasTimeline ? (

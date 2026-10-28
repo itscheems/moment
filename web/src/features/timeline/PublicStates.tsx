@@ -1,32 +1,41 @@
 import { InternalLink } from "../../app/navigation";
-import type { ReactNode } from "react";
+import { useEffect, useId } from "react";
 import { canRecoverRead } from "../../components/useReadRecovery";
+import { feedback, notify } from "../../components/Feedback";
 import styles from "./PublicStates.module.css";
 
-export function ReadRecoveryNotice({
+export function ReadRecoveryToast({
   children = "正在重新获取内容…",
   error,
+  active = true,
+  onRetry,
 }: {
-  children?: ReactNode;
+  children?: string;
   error?: unknown;
+  active?: boolean;
+  onRetry?: () => void;
 }) {
-  if (error && !canRecoverRead(error))
-    return (
-      <p className={styles.recovery} role="alert">
-        这部分内容暂时无法访问。
-      </p>
-    );
-  return (
-    <div
-      aria-live="polite"
-      aria-busy="true"
-      className={styles.recovery}
-      role="status"
-    >
-      <span aria-hidden="true" className={styles.recoveryDot} />
-      <span>{children}</span>
-    </div>
-  );
+  const id = useId();
+  const recovering = !error || canRecoverRead(error);
+  const title = recovering ? children : "这部分内容暂时无法访问。";
+  useEffect(() => {
+    if (!active) return;
+    let mounted = true;
+    queueMicrotask(() => {
+      if (mounted)
+        notify(title, {
+          id,
+          type: recovering ? "loading" : "error",
+          placement: "corner",
+          action: onRetry ? { label: "重试", onAction: onRetry } : undefined,
+        });
+    });
+    return () => {
+      mounted = false;
+      feedback.close(id);
+    };
+  }, [active, title, id, recovering, onRetry]);
+  return null;
 }
 
 export function TimelineLoading() {
@@ -101,11 +110,13 @@ export function PublicEmpty({
 export function PublicError({
   kind = "timeline",
   recovering = false,
+  active = true,
 }: {
   kind?: "timeline" | "detail" | "missing";
   recovering?: boolean;
+  active?: boolean;
 }) {
-  if (recovering) return <ReadRecoveryNotice />;
+  if (recovering) return <ReadRecoveryToast active={active} />;
   const content = {
     timeline: {
       marker: "无法访问",

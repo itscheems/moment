@@ -32,7 +32,7 @@ import { useNavigation } from "../../app/navigation";
 import { useReadRecovery } from "../../components/useReadRecovery";
 import {
   PublicError,
-  ReadRecoveryNotice,
+  ReadRecoveryToast,
   TimelineLoading,
 } from "./PublicStates";
 
@@ -161,7 +161,11 @@ export function DetailPage({
   if (loading && post?.id !== id) return <TimelineLoading />;
   if (error && (!recovering || post?.id !== id)) {
     return (
-      <PublicError kind={detailErrorKind(error)} recovering={recovering} />
+      <PublicError
+        active={active}
+        kind={detailErrorKind(error)}
+        recovering={recovering}
+      />
     );
   }
   if (!post || post.id !== id) return null;
@@ -182,7 +186,7 @@ export function DetailPage({
         post={post}
         active={active && !commentId && !focusReading}
       />
-      {loading || error ? <ReadRecoveryNotice /> : null}
+      {loading || error ? <ReadRecoveryToast active={active} /> : null}
       {active && !commentId && isReadArticlePost(post) && !focusReading ? (
         <HeaderActions>
           <ArticleFocusLink

@@ -497,10 +497,15 @@ describe("profile page", () => {
     expect(
       await screen.findByText("正在重新获取后续内容…"),
     ).toBeInTheDocument();
+    const recovery = screen.getByRole("dialog", {
+      name: "正在重新获取后续内容…",
+    });
+    expect(recovery.closest('[role="tabpanel"]')).toBeNull();
     expect(screen.getByText("已经读到这里")).toBeInTheDocument();
 
     expect(screen.queryByRole("button", { name: "重试加载" })).toBeNull();
     expect(await screen.findByText("重试后接上的内容")).toBeInTheDocument();
+    expect(recovery).toHaveAttribute("data-ending-style");
     expect(screen.getByText("已经读到这里")).toBeInTheDocument();
     expect(window.location.search).toContain("loaded_through=cursor-one");
   });
