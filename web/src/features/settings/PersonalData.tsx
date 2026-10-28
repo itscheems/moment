@@ -31,6 +31,7 @@ export function PersonalData() {
   const [notice, setNotice] = useState<string | null>(null);
   const operation = useRef<AbortController | null>(null);
   const checkButton = useRef<HTMLButtonElement>(null);
+  const fileInput = useRef<HTMLInputElement>(null);
   useEffect(() => () => operation.current?.abort(), []);
   async function run(commit: boolean) {
     if (!file || !session || !account || busy || (commit && !plan)) return;
@@ -79,7 +80,11 @@ export function PersonalData() {
     setNotice("已请求个人数据下载。请在浏览器下载列表确认完成状态。");
   }
   return (
-    <section aria-label="个人数据" aria-busy={busy}>
+    <section
+      aria-label="个人数据"
+      aria-busy={busy}
+      className={styles.personalData}
+    >
       <header className={styles.sectionHeader}>
         <h2>个人数据</h2>
       </header>
@@ -105,11 +110,21 @@ export function PersonalData() {
           <p>
             添加到当前账号，保留现有内容、账号资料和登录方式。相同来源的内容再次导入时会跳过。
           </p>
-          <label>
-            选择个人导出文件{" "}
+          <div className={styles.inlineActions}>
+            <button
+              className={styles.secondaryButton}
+              type="button"
+              disabled={busy || account?.status !== "active"}
+              onClick={() => fileInput.current?.click()}
+            >
+              {file ? "更换文件" : "选择 ZIP 文件"}
+            </button>
             <input
+              className={styles.fileInput}
+              ref={fileInput}
               aria-label="个人导出文件"
               type="file"
+              tabIndex={-1}
               accept=".zip,application/zip"
               disabled={busy || account?.status !== "active"}
               onChange={(event) => {
@@ -119,21 +134,30 @@ export function PersonalData() {
                 setNotice(null);
               }}
             />
-          </label>
+            {file ? (
+              <button
+                className={styles.primaryButton}
+                type="button"
+                disabled={busy || account?.status !== "active"}
+                ref={checkButton}
+                onClick={() => void run(false)}
+              >
+                {busy ? "正在处理…" : "检查文件"}
+              </button>
+            ) : null}
+          </div>
+          <p className={styles.selectedFile}>
+            {file ? file.name : "支持 Moment 个人数据 ZIP 文件"}
+          </p>
           {account?.status !== "active" ? (
             <p>账号启用后可以导入个人数据。</p>
           ) : null}
-          <button
-            className={styles.secondaryButton}
-            type="button"
-            disabled={!file || busy || account?.status !== "active"}
-            ref={checkButton}
-            onClick={() => void run(false)}
-          >
-            {busy ? "正在处理…" : "检查文件"}
-          </button>
           {plan ? (
-            <div role="region" aria-label="个人导入预览">
+            <div
+              className={styles.personalPreview}
+              role="region"
+              aria-label="个人导入预览"
+            >
               <p>
                 将读取 {plan.counts.entries} 条内容（含 {plan.counts.articles}{" "}
                 篇文章）、{plan.counts.comments} 条评论、
@@ -142,7 +166,7 @@ export function PersonalData() {
               </p>
               <p>当前站点已有的内容不会被删除或覆盖。</p>
               <button
-                className={styles.secondaryButton}
+                className={styles.primaryButton}
                 type="button"
                 disabled={busy}
                 onClick={() => void run(true)}

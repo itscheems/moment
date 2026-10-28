@@ -254,8 +254,9 @@ it("creates and revokes an account token without persisting the secret", async (
   ).not.toContain(secret);
   fireEvent.click(screen.getByRole("button", { name: "已保存，隐藏令牌" }));
   expect(screen.queryByLabelText("新 API 令牌")).toBeNull();
-  fireEvent.click(screen.getByRole("button", { name: "撤销 工作电脑" }));
-  await screen.findByText("· 已撤销");
+  const tokenRow = screen.getByText("工作电脑").closest("li")!;
+  fireEvent.click(within(tokenRow).getByRole("button", { name: "撤销" }));
+  await within(tokenRow).findByText("已撤销");
   expect(
     calls.mock.calls.some(
       ([url, init]) =>
