@@ -404,7 +404,11 @@ function PublicApp() {
   // Waiting and unavailable are not signed-out answers; expiry keeps its
   // existing editor-retention path above.
   useEffect(() => {
-    if (!authRoute && entryRoute.requiresSession && auth.state === "guest")
+    if (
+      !authRoute &&
+      entryRoute.requiresSession &&
+      (auth.state === "guest" || auth.state === "expired")
+    )
       requestLogin({ replace: true });
   }, [authRoute, entryRoute.requiresSession, auth.state, requestLogin]);
 

@@ -1,5 +1,6 @@
 import "@testing-library/jest-dom/vitest";
 import {
+  act,
   cleanup,
   fireEvent,
   render,
@@ -312,4 +313,20 @@ it("sends expired account settings to the standalone login page with its full re
   );
   expect(await screen.findByText("Happening now")).toBeInTheDocument();
   expect(screen.queryByRole("navigation", { name: "主要导航" })).toBeNull();
+  // Public reading remains available after leaving the sign-in page.
+  act(() => {
+    window.history.pushState({}, "", "/");
+    window.dispatchEvent(new PopStateEvent("popstate", { state: {} }));
+  });
+  await screen.findByRole("navigation", { name: "主要导航" });
+  expect(window.location.pathname).toBe("/");
+  // A prior redirect does not exempt later private-route entries.
+  act(() => {
+    window.history.pushState({}, "", "/compose/articles");
+    window.dispatchEvent(new PopStateEvent("popstate", { state: {} }));
+  });
+  await waitFor(() => expect(window.location.pathname).toBe("/login"));
+  expect(new URLSearchParams(window.location.search).get("return")).toBe(
+    "/compose/articles",
+  );
 });
