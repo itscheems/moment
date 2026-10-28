@@ -110,6 +110,7 @@ export function ArchivePage({
   search: string;
   site: SiteIdentity;
 }) {
+  const archiveApi = useMemo(() => api.forArchive(), [api]);
   const state = useMemo(() => parseArchiveLocation(search), [search]);
   const { pathname, navigate } = useNavigation();
   const railSlot = useRailSlot();
@@ -391,7 +392,7 @@ export function ArchivePage({
       {!state.error && !monthsEmpty ? (
         <div className={styles.archiveList}>
           <TimelinePage
-            api={api}
+            api={archiveApi}
             emptyContext="archive"
             initialSearch={listSearch}
             archiveJump={jump}

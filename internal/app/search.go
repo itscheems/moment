@@ -385,6 +385,9 @@ func (service *SearchService) Search(ctx context.Context, input SearchInput) (Se
 
 // ArchiveMonths returns non-empty site-timezone month counts.
 func (service *SearchService) ArchiveMonths(ctx context.Context, input ArchiveMonthsInput) (ArchiveMonths, error) {
+	if input.Viewer.UserID() == "" {
+		return ArchiveMonths{}, domain.NewError(domain.CodeUnauthorized, "sign in to read your archive", nil)
+	}
 	if err := contextError(ctx); err != nil {
 		return ArchiveMonths{}, err
 	}
@@ -412,6 +415,9 @@ func (service *SearchService) ArchiveMonths(ctx context.Context, input ArchiveMo
 // ArchiveMonth returns non-empty day counts for one site-timezone month, as
 // the viewer sees them.
 func (service *SearchService) ArchiveMonth(ctx context.Context, month string, viewer Viewer) (ArchiveMonth, error) {
+	if viewer.UserID() == "" {
+		return ArchiveMonth{}, domain.NewError(domain.CodeUnauthorized, "sign in to read your archive", nil)
+	}
 	if err := contextError(ctx); err != nil {
 		return ArchiveMonth{}, err
 	}

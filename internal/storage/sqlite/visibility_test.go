@@ -118,7 +118,7 @@ func TestHiddenPostsReachOnlyTheAuthorThroughEveryReadPath(t *testing.T) {
 		t.Fatalf("owner search = %+v", authorSearch)
 	}
 	visitorMonths, err := search.ArchiveMonths(ctx, app.ArchiveMonthsInput{})
-	if err != nil || len(visitorMonths.Items) != 1 || visitorMonths.Items[0].Count != 1 {
+	if !domain.HasCode(err, domain.CodeUnauthorized) || len(visitorMonths.Items) != 0 {
 		t.Fatalf("visitor months = %+v %v", visitorMonths, err)
 	}
 	authorMonths, err := search.ArchiveMonths(ctx, app.ArchiveMonthsInput{Viewer: app.AccountViewer(testAccountID)})
@@ -126,7 +126,7 @@ func TestHiddenPostsReachOnlyTheAuthorThroughEveryReadPath(t *testing.T) {
 		t.Fatalf("owner months = %+v %v", authorMonths, err)
 	}
 	visitorMonth, err := search.ArchiveMonth(ctx, "2024-03", app.PublicViewer())
-	if err != nil || visitorMonth.Days[0].Count != 1 {
+	if !domain.HasCode(err, domain.CodeUnauthorized) || len(visitorMonth.Days) != 0 {
 		t.Fatalf("visitor month = %+v %v", visitorMonth, err)
 	}
 	authorMonth, err := search.ArchiveMonth(ctx, "2024-03", app.AccountViewer(testAccountID))

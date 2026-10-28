@@ -173,8 +173,8 @@ func (store searchStore) SearchPublishedMillis(ctx context.Context, query app.Se
 func (store searchStore) ArchivePublishedMillis(ctx context.Context, viewer app.Viewer, fromMS, toMS *int64) ([]int64, error) {
 	visible, visibleArguments := visibilityPredicate(viewer, "visibility")
 	// The archive calendar counts every post, articles included.
-	statement := `SELECT published_at_ms FROM entries WHERE ` + visible
-	arguments := append([]any{}, visibleArguments...)
+	statement := `SELECT published_at_ms FROM entries WHERE ` + visible + ` AND author_user_id = ?`
+	arguments := append(append([]any{}, visibleArguments...), viewer.UserID())
 	statement, arguments = appendDateRange(statement, arguments, "published_at_ms", fromMS, toMS)
 	return queryMillis(ctx, store.queries, statement, arguments...)
 }

@@ -25,6 +25,7 @@ func RegisterPostRoutes(engine *gin.Engine, posts *app.PostService, site *app.Si
 	// The two reads stay public but are not anonymous: a session or token,
 	// when one is presented, widens what they return.
 	engine.GET("/api/v1/posts", listPosts(posts, site, gate))
+	engine.GET("/api/v1/archive/posts", gate.RequireAccount(), listPosts(posts, site, gate, true))
 	engine.GET("/api/v1/posts/:id", getPost(posts, gate))
 	authored := engine.Group("/api/v1")
 	authored.Use(gate.RequireActiveAccount())
@@ -85,7 +86,7 @@ func unpinPost(site *app.SiteService) gin.HandlerFunc {
 	}
 }
 
-func listPosts(posts *app.PostService, site *app.SiteService, gate *Gate) gin.HandlerFunc {
+func listPosts(posts *app.PostService, site *app.SiteService, gate *Gate, ownArchive ...bool) gin.HandlerFunc {
 	return func(ctx *gin.Context) {
 		input, err := postListInput(ctx)
 		if err != nil {
@@ -97,8 +98,23 @@ func listPosts(posts *app.PostService, site *app.SiteService, gate *Gate) gin.Ha
 			writePostError(ctx, err)
 			return
 		}
+		if len(ownArchive) > 0 && ownArchive[0] {
+			if input.AuthorUserID != "" {
+				writePostError(ctx, invalidPostArgument("personal archive cannot select an author", "author_user_id"))
+				return
+			}
+			user, ok := CurrentAccount(ctx)
+			if !ok {
+				unauthorized(ctx)
+				return
+			}
+			input.AuthorUserID = user.ID
+		}
 		input.Timezone = settings.Timezone
 		input.Viewer = gate.Viewer(ctx)
+		if len(ownArchive) > 0 && ownArchive[0] {
+			input.Viewer = app.AccountViewer(input.AuthorUserID)
+		}
 		page, err := posts.List(ctx.Request.Context(), input)
 		if err != nil {
 			writePostError(ctx, err)

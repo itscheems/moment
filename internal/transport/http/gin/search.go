@@ -17,8 +17,8 @@ import (
 // Like the post reads, they answer according to whoever is signed in.
 func RegisterSearchRoutes(engine *gin.Engine, service *app.SearchService, gate *Gate) {
 	engine.GET("/api/v1/search", searchEntries(service, gate))
-	engine.GET("/api/v1/archive/months", archiveMonths(service, gate))
-	engine.GET("/api/v1/archive/month", archiveMonth(service, gate))
+	engine.GET("/api/v1/archive/months", gate.RequireAccount(), archiveMonths(service))
+	engine.GET("/api/v1/archive/month", gate.RequireAccount(), archiveMonth(service))
 }
 
 func searchEntries(service *app.SearchService, gate *Gate) gin.HandlerFunc {
@@ -45,14 +45,14 @@ func searchEntries(service *app.SearchService, gate *Gate) gin.HandlerFunc {
 	}
 }
 
-func archiveMonths(service *app.SearchService, gate *Gate) gin.HandlerFunc {
+func archiveMonths(service *app.SearchService) gin.HandlerFunc {
 	return func(ctx *gin.Context) {
 		query, err := exactQuery(ctx, map[string]bool{"from": false, "to": false})
 		if err != nil {
 			writeSearchError(ctx, err)
 			return
 		}
-		result, err := service.ArchiveMonths(ctx.Request.Context(), app.ArchiveMonthsInput{FromDate: query.Get("from"), ToDate: query.Get("to"), Viewer: gate.Viewer(ctx)})
+		result, err := service.ArchiveMonths(ctx.Request.Context(), app.ArchiveMonthsInput{FromDate: query.Get("from"), ToDate: query.Get("to"), Viewer: archiveViewer(ctx)})
 		if err != nil {
 			writeSearchError(ctx, err)
 			return
@@ -61,14 +61,14 @@ func archiveMonths(service *app.SearchService, gate *Gate) gin.HandlerFunc {
 	}
 }
 
-func archiveMonth(service *app.SearchService, gate *Gate) gin.HandlerFunc {
+func archiveMonth(service *app.SearchService) gin.HandlerFunc {
 	return func(ctx *gin.Context) {
 		query, err := exactQuery(ctx, map[string]bool{"month": true})
 		if err != nil {
 			writeSearchError(ctx, err)
 			return
 		}
-		result, err := service.ArchiveMonth(ctx.Request.Context(), query.Get("month"), gate.Viewer(ctx))
+		result, err := service.ArchiveMonth(ctx.Request.Context(), query.Get("month"), archiveViewer(ctx))
 		if err != nil {
 			writeSearchError(ctx, err)
 			return
@@ -113,6 +113,10 @@ func writeSearchError(ctx *gin.Context, err error) {
 	}
 	var domainErr *domain.Error
 	if errors.As(err, &domainErr) {
+		if domainErr.Code == domain.CodeUnauthorized {
+			unauthorized(ctx)
+			return
+		}
 		if domainErr.Code == domain.CodeInvalidArgument {
 			Failure(ctx, http.StatusBadRequest, string(domainErr.Code), domainErr.Message, domainErr.Details)
 			return
@@ -123,4 +127,9 @@ func writeSearchError(ctx *gin.Context, err error) {
 		}
 	}
 	Failure(ctx, http.StatusInternalServerError, "INTERNAL", "search operation failed", nil)
+}
+
+func archiveViewer(ctx *gin.Context) app.Viewer {
+	user, ok := CurrentAccount(ctx)
+	return app.ViewerFor(user, ok)
 }

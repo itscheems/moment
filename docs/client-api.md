@@ -179,6 +179,8 @@ Historical imported comment authors can have a `username` and `avatar_media_id` 
 
 Personal format 3 is restorable through these account endpoints; earlier personal formats require a new export. Site backup endpoints do not accept personal archives. Site recovery remains an administrator operation and supports backup formats 2 through 5.
 
+`GET /archive/months`, `GET /archive/month?month=YYYY-MM` and `GET /archive/posts` require a signed-in account and always select that account, including for administrators. Archive post requests support the normal paging and calendar positioning parameters but cannot select an author. Public timeline, search and member profile visibility are unchanged.
+
 Both HTTP downloads are prepared into a private temporary file before returning
 200, then delivered with `Content-Length`, `X-Archive-Format`, and
 `X-Archive-SHA256`. Preparation is bounded to five minutes and memory remains

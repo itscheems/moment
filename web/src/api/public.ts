@@ -2491,6 +2491,7 @@ export class PublicApi {
     fetcher: Fetcher = (input, init) => window.fetch(input, init),
     authorUserId?: string,
     postKind?: PostKind,
+    private readonly ownArchive = false,
   ) {
     this.fetcher = fetcher;
     this.authorUserId = authorUserId;
@@ -2599,6 +2600,10 @@ export class PublicApi {
     });
   }
 
+  forArchive(): PublicApi {
+    return new PublicApi(this.fetcher, undefined, undefined, true);
+  }
+
   async timeline(request: TimelineRequest = {}): Promise<TimelinePage> {
     const query = new URLSearchParams();
     query.set("limit", String(request.limit ?? 20));
@@ -2612,10 +2617,13 @@ export class PublicApi {
     // the server rejects; leaving the parameter off is how both kinds are read.
     const kind = request.kind ?? this.postKind;
     if (kind) query.set("kind", kind);
-    const response = await this.fetcher(`/api/v1/posts?${query}`, {
-      headers: { Accept: "application/json" },
-      signal: request.signal,
-    });
+    const response = await this.fetcher(
+      `${this.ownArchive ? "/api/v1/archive/posts" : "/api/v1/posts"}?${query}`,
+      {
+        headers: { Accept: "application/json" },
+        signal: request.signal,
+      },
+    );
     const { data, meta } = await decodeResponse(response);
     if (!isRecord(data) || !Array.isArray(data.items)) {
       throw invalidResponse("timeline data must contain an items array");
