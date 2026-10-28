@@ -27,6 +27,7 @@ interface FeedbackAction {
 }
 
 interface FeedbackOptions {
+  timeout?: number;
   id?: string;
   placement?: "login" | "corner";
   description?: string;
@@ -45,13 +46,14 @@ export function notify(title: string, options: FeedbackOptions = {}) {
     priority: type === "error" ? "high" : "low",
     data: { placement: options.placement },
     timeout:
-      type === "loading"
+      options.timeout ??
+      (type === "loading"
         ? 0
         : options.placement === "login"
           ? LOGIN_TIMEOUT
           : type === "error" || options.description
             ? EXPLANATORY_TIMEOUT
-            : SUCCESS_TIMEOUT,
+            : SUCCESS_TIMEOUT),
     actionProps: options.action
       ? {
           children: options.action.label,

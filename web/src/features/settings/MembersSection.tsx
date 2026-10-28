@@ -312,7 +312,7 @@ export function MembersSection({
         const message =
           error instanceof PublicApiError &&
           error.code === "REAUTHENTICATION_REQUIRED"
-            ? "请先在页面上方确认身份，再重试此操作。"
+            ? "身份验证未完成，操作未执行。"
             : error instanceof PublicApiError &&
                 error.code === "LAST_ADMINISTRATOR"
               ? "至少需要保留一位已启用的管理员。"
@@ -345,7 +345,7 @@ export function MembersSection({
         const message =
           error instanceof PublicApiError &&
           error.code === "REAUTHENTICATION_REQUIRED"
-            ? "请先在页面上方确认身份，再修改注册方式。"
+            ? "身份验证未完成，操作未执行。"
             : "注册方式没有保存，站点仍按原来的规则处理新账号，可以重试。";
         setRegistrationError(message);
         notify(message, { id: "registration-mode", type: "error" });

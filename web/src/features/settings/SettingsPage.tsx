@@ -86,7 +86,7 @@ function SiteConfiguration({
         setError(
           next instanceof PublicApiError &&
             next.code === "REAUTHENTICATION_REQUIRED"
-            ? "请先在页面上方确认身份，再保存站点设置。"
+            ? "身份验证未完成，操作未执行。"
             : "站点设置没有保存。请检查时区和网址后重试。",
         );
     } finally {
@@ -111,7 +111,7 @@ function SiteConfiguration({
         setError(
           next instanceof PublicApiError &&
             next.code === "REAUTHENTICATION_REQUIRED"
-            ? "请先在页面上方确认身份，再更改展示账号。"
+            ? "身份验证未完成，操作未执行。"
             : "展示账号没有更改，请选择已启用的账号后重试。",
         );
     } finally {
@@ -261,8 +261,8 @@ export function SettingsPage({
             ) : null}
           </a>
         ))}
-        {account ? <CredentialConfirmation /> : null}
       </nav>
+      {account ? <CredentialConfirmation key={account.userId} /> : null}
       <div className={styles.settingsContent} ref={contentRef}>
         {section !== "account" && !admin ? (
           <p role="alert">此设置需要管理员权限。</p>

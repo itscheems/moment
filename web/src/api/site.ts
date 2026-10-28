@@ -1,3 +1,4 @@
+import { credentialFetch } from "./credentialConfirmation";
 import {
   ApiClient,
   decodeExactSuccess,
@@ -61,7 +62,7 @@ export async function selectSiteProfile(
   csrfToken: string,
   userId: string,
 ): Promise<SiteIdentity> {
-  const response = await window.fetch(
+  const response = await credentialFetch(
     "/api/v1/site/profile",
     requestInit("PUT", csrfToken, { user_id: userId }),
   );

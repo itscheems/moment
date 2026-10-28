@@ -1910,13 +1910,6 @@
   }
 }
 
-.confirmationTrigger {
-  flex-shrink: 0;
-  align-self: center;
-  margin-inline-start: auto;
-  white-space: nowrap;
-}
-
 .credentialDialog {
   position: relative;
 }

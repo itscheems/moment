@@ -1,4 +1,5 @@
 import { BackupsApi, parseImportPlan, parseMergeReviewEntity } from "./backups";
+import { registerCredentialConfirmation } from "./credentialConfirmation";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
@@ -310,6 +311,38 @@ describe("backup and restore owner API", () => {
 
   afterEach(() => {
     vi.unstubAllGlobals();
+  });
+
+  it("retries a challenged upload with the same file only after confirmation", async () => {
+    const confirm = vi.fn(async () => true);
+    const unregister = registerCredentialConfirmation(confirm);
+    try {
+      const file = new File(["zip bytes"], "personal.zip");
+      const result = new BackupsApi().planImport("csrf", file);
+      FakeArchiveRequest.requests[0].respondRaw(
+        JSON.stringify({
+          error: {
+            code: "REAUTHENTICATION_REQUIRED",
+            message: "confirmation required",
+            details: {},
+            request_id: "req_import",
+          },
+        }),
+        403,
+      );
+      await vi.waitFor(() =>
+        expect(FakeArchiveRequest.requests).toHaveLength(2),
+      );
+      expect(confirm).toHaveBeenCalledOnce();
+      expect(FakeArchiveRequest.requests[1].sent).toBe(file);
+      expect(FakeArchiveRequest.requests[1].headers.get("X-CSRF-Token")).toBe(
+        "csrf",
+      );
+      FakeArchiveRequest.requests[1].respond(planData(file.size));
+      expect((await result).archiveSHA256).toBe(archiveSHA);
+    } finally {
+      unregister();
+    }
   });
 
   it("uploads the selected file for a zero-persistence exact plan", async () => {

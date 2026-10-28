@@ -6,13 +6,46 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"net/http/httptest"
 	"testing"
 	"time"
 
+	gin "github.com/gin-gonic/gin"
 	"github.com/moment/moment/internal/app"
 	"github.com/moment/moment/internal/archive"
 	"github.com/moment/moment/internal/domain"
 )
+
+func TestBrowserConfirmationLastsOneHour(t *testing.T) {
+	f := newAuthenticationTestFixture(t, false)
+	cookie, session := exchangeAccountSession(t, f, f.token)
+	proof := confirmOverHTTP(t, f, cookie, session["csrf_token"].(string), string(mustJSON(t, map[string]string{"token": f.token})))
+	if proof.MaxAge != 3600 {
+		t.Fatalf("confirmation lifetime=%d, want 3600 seconds", proof.MaxAge)
+	}
+	probe := gin.New()
+	probe.GET("/confirmation", f.gate.RequireAccount(), func(ctx *gin.Context) {
+		if _, valid := f.gate.reauthenticationExpiry(ctx); valid {
+			ctx.Status(http.StatusOK)
+		} else {
+			ctx.Status(http.StatusForbidden)
+		}
+	})
+	for _, test := range []struct {
+		elapsed time.Duration
+		status  int
+	}{{5 * time.Minute, 200}, {59 * time.Minute, 200}, {time.Hour + time.Second, 403}} {
+		// Advance only confirmation time; keep the independently validated
+		// login session alive while exercising the confirmation boundary.
+		f.gate.now = func() time.Time { return proof.Expires.Add(test.elapsed - time.Hour) }
+		req := httptest.NewRequest(http.MethodGet, "/confirmation", nil)
+		req.AddCookie(cookie)
+		req.AddCookie(proof)
+		if response := performRequest(probe, req); response.Code != test.status {
+			t.Fatalf("confirmation after %s=%d want %d", test.elapsed, response.Code, test.status)
+		}
+	}
+}
 
 func TestSensitiveCredentialsRequireIndependentProof(t *testing.T) {
 	f := newAuthenticationTestFixture(t, false)
@@ -101,7 +134,7 @@ func TestConfirmationRejectsWrongProofAndBindsToOneSession(t *testing.T) {
 		}
 	}
 	proof := confirmOverHTTP(t, f, cookie, csrf, `{"password":"current-password"}`)
-	if !proof.HttpOnly || !proof.Secure || proof.Path != "/api/v1" || proof.MaxAge != 300 || proof.SameSite != http.SameSiteLaxMode {
+	if !proof.HttpOnly || !proof.Secure || proof.Path != "/api/v1" || proof.MaxAge != 3600 || proof.SameSite != http.SameSiteLaxMode {
 		t.Fatalf("unsafe confirmation cookie: %#v", proof)
 	}
 	otherCookie, otherSession := exchangeAccountSession(t, f, token)
@@ -118,7 +151,7 @@ func TestConfirmationRejectsWrongProofAndBindsToOneSession(t *testing.T) {
 			t.Fatalf("bound confirmation=%d want %d: %s", response.Code, test.status, response.Body.String())
 		}
 	}
-	for _, expires := range []int64{time.Now().Add(-time.Second).UnixMilli(), time.Now().Add(time.Hour).UnixMilli()} {
+	for _, expires := range []int64{time.Now().Add(-time.Second).UnixMilli(), time.Now().Add(2 * time.Hour).UnixMilli()} {
 		payload := mustJSON(t, reauthenticationGrant{Purpose: "sensitive-operation", AccountID: owner.User.ID, CredentialID: "session:" + mustSessionID(t, f, cookie), ExpiresAtMS: expires})
 		value, _ := f.manager.SealState(payload)
 		req := jsonRequest(http.MethodPost, "/api/v1/account/tokens", `{"label":"expired"}`)
