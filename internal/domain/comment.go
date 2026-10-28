@@ -11,13 +11,43 @@ import (
 // MaxCommentAuthorNameCodePoints bounds stored historical signatures to the profile name limit.
 const MaxCommentAuthorNameCodePoints = MaxDisplayNameLength
 
+// CommentAuthorSnapshot preserves a historical author without granting an account identity.
+type CommentAuthorSnapshot struct {
+	Username      string  `json:"username"`
+	DisplayName   string  `json:"display_name"`
+	AvatarMediaID *string `json:"avatar_media_id"`
+}
+
+// Validate checks the public display fields retained independently of accounts.
+func (value CommentAuthorSnapshot) Validate() error {
+	if value.Username != "" {
+		if err := ValidateStoredUsername(value.Username); err != nil {
+			return err
+		}
+	}
+	name, err := NormalizeDisplayName(value.DisplayName)
+	if err != nil {
+		return err
+	}
+	if name != value.DisplayName {
+		return NewError(CodeInvalidArgument, "comment author snapshot name is not canonical", nil)
+	}
+	if value.AvatarMediaID != nil {
+		if _, err := ParseID(*value.AvatarMediaID); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // Comment stores a reply relationship, content and optional real account identity.
 type Comment struct {
-	ID           ID
-	EntryID      ID
-	ParentID     *ID
-	AuthorName   string
-	AuthorUserID *string
+	AuthorSnapshot *CommentAuthorSnapshot
+	ID             ID
+	EntryID        ID
+	ParentID       *ID
+	AuthorName     string
+	AuthorUserID   *string
 	// ReplyToCommentID names the comment being answered. It is an annotation,
 	// not structure: ParentID alone decides where a reply sits and how deletion
 	// cascades, so this field takes no part in ordering, depth or cascade.
@@ -69,6 +99,11 @@ func NormalizeCommentAuthorName(value string) (string, error) {
 
 // Validate verifies the transport-independent persisted comment contract.
 func (comment Comment) Validate() error {
+	if comment.AuthorSnapshot != nil {
+		if err := comment.AuthorSnapshot.Validate(); err != nil {
+			return err
+		}
+	}
 	if _, err := ParseID(comment.ID.String()); err != nil {
 		return err
 	}

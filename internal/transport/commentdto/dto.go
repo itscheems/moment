@@ -322,7 +322,8 @@ func validateAuthor(author Author) error {
 			linked++
 		}
 	}
-	if linked != 0 && linked != 3 {
+	historical := linked == 1 && author.Username != nil
+	if linked != 0 && linked != 3 && !historical {
 		return errors.New("comment author identity is partially resolved")
 	}
 	if author.Username != nil && author.ProfileURL != nil && *author.ProfileURL != domain.ProfileURL(*author.Username) {

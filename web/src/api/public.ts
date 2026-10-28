@@ -972,10 +972,10 @@ function parseCommentAuthor(value: unknown): PublicCommentAuthor {
   const linked = [userId, username, profileUrl].filter(
     (field) => field !== null,
   ).length;
-  if (linked !== 0 && linked !== 3) {
+  if (linked !== 0 && linked !== 3 && !(linked === 1 && username !== null)) {
     throw invalidResponse("comment author identity is partially resolved");
   }
-  if (username !== null && profileUrl !== `/${username}`) {
+  if (profileUrl !== null && profileUrl !== `/${username}`) {
     throw invalidResponse("comment author profile_url does not match username");
   }
   return {

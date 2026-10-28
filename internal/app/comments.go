@@ -1234,6 +1234,9 @@ func resolveCommentAuthors(ctx context.Context, store CommentStore, records []do
 	authors := make(map[domain.ID]CommentAuthor, len(records))
 	for _, record := range records {
 		author := CommentAuthor{DisplayName: record.AuthorName}
+		if record.AuthorSnapshot != nil {
+			author = CommentAuthor{DisplayName: record.AuthorSnapshot.DisplayName, Username: record.AuthorSnapshot.Username, AvatarMediaID: record.AuthorSnapshot.AvatarMediaID}
+		}
 		if record.AuthorUserID != nil {
 			if identity, found := identities[*record.AuthorUserID]; found {
 				author = CommentAuthor{UserID: identity.UserID, Username: identity.Username, DisplayName: identity.DisplayName, AvatarMediaID: identity.AvatarMediaID, ProfileURL: domain.ProfileURL(identity.Username)}

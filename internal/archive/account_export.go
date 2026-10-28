@@ -19,16 +19,20 @@ import (
 	sqlitestore "github.com/moment/moment/internal/storage/sqlite"
 )
 
+// AccountFormatVersion identifies the restorable personal portability contract.
+const AccountFormatVersion = 3
+
 // AccountFormatHeaderValue distinguishes personal portability from site recovery.
-const AccountFormatHeaderValue = "moment-account-export-v2"
+const AccountFormatHeaderValue = "moment-account-export-v3"
 const accountFormatName = "moment-account-export"
 
 type accountManifest struct {
-	Format        string        `json:"format"`
-	FormatVersion int           `json:"format_version"`
-	CreatedAt     string        `json:"created_at"`
-	AccountID     string        `json:"account_id"`
-	Counts        countManifest `json:"counts"`
+	Format           string        `json:"format"`
+	FormatVersion    int           `json:"format_version"`
+	CreatedAt        string        `json:"created_at"`
+	AccountID        string        `json:"account_id"`
+	SourceInstanceID string        `json:"source_instance_id,omitempty"`
+	Counts           countManifest `json:"counts"`
 }
 
 // ExportAccount streams only one account's portable personal data.
@@ -57,7 +61,9 @@ func (exporter *Exporter) ExportAccount(ctx context.Context, destination io.Writ
 	}
 	defer func() { resultErr = errors.Join(resultErr, snapshot.Close()) }()
 	var account *sqlitestore.ArchiveUser
+	profiles := map[string]sqlitestore.ArchiveUser{}
 	if err := snapshot.Users(ctx, func(value sqlitestore.ArchiveUser) error {
+		profiles[value.ID] = value
 		if value.ID == accountID {
 			account = &value
 		}
@@ -82,13 +88,15 @@ func (exporter *Exporter) ExportAccount(ctx context.Context, destination io.Writ
 	}()
 	now := domain.NormalizeTime(exporter.clock())
 	protocol := &protocolWriter{zip: writer, createdAt: now}
-	if err := protocol.bytesMember("README.txt", zip.Deflate, []byte("Moment personal data export v2\nThis is not a site backup and cannot be imported.\nOnly this account's content is included; referenced posts/replies may be absent.\nChecksums cover every member except checksums.sha256 itself.\n")); err != nil {
+	if err := protocol.bytesMember("README.txt", zip.Deflate, []byte("Moment personal data export v3\nRestore into a signed-in account using personal import.\nIncludes this account's content and its comment conversations; external quoted content is excluded.\nChecksums cover every member except checksums.sha256 itself.\n")); err != nil {
 		return Summary{}, err
 	}
 	if err := protocol.jsonMember("data/account.json", portableUserRecord(*account)); err != nil {
 		return Summary{}, err
 	}
 	selected := map[string]bool{}
+	selectedSHAs := map[string]bool{}
+	resolvedSHAs := map[string]bool{}
 	for _, id := range []*string{account.AvatarMediaID, account.CoverMediaID} {
 		if id != nil {
 			selected[*id] = true
@@ -109,6 +117,23 @@ func (exporter *Exporter) ExportAccount(ctx context.Context, destination io.Writ
 		return Summary{}, err
 	}
 	selectedEntries := make(map[string]bool)
+	if err := snapshot.Entries(ctx, func(value sqlitestore.ArchiveEntry) error {
+		if value.AuthorUserID == accountID {
+			selectedEntries[value.ID] = true
+		}
+		return nil
+	}); err != nil {
+		return Summary{}, err
+	}
+	selectedComments := map[string]bool{}
+	if err := snapshot.Comments(ctx, func(value sqlitestore.ArchiveComment) error {
+		if selectedEntries[value.EntryID] {
+			selectedComments[value.ID] = true
+		}
+		return nil
+	}); err != nil {
+		return Summary{}, err
+	}
 	entries, err := protocol.jsonLines("data/entries.jsonl", func(write func(any) error) error {
 		return snapshot.Entries(ctx, func(value sqlitestore.ArchiveEntry) error {
 			if value.AuthorUserID != accountID {
@@ -122,12 +147,17 @@ func (exporter *Exporter) ExportAccount(ctx context.Context, destination io.Writ
 				selected[usage.MediaID] = true
 			}
 			for _, card := range value.LinkCards {
-				if card.Card.ThumbnailMediaID != "" {
-					selected[card.Card.ThumbnailMediaID] = true
+				for _, sha := range []string{card.ThumbnailSHA256, card.FaviconSHA256} {
+					if sha != "" {
+						selectedSHAs[sha] = true
+					}
 				}
-				if card.Card.FaviconMediaID != "" {
-					selected[card.Card.FaviconMediaID] = true
-				}
+			}
+
+			if value.QuotedEntryID != nil && !selectedEntries[*value.QuotedEntryID] || value.QuotedCommentID != nil && !selectedComments[*value.QuotedCommentID] {
+				value.QuotedEntryID = nil
+				value.QuotedCommentID = nil
+				value.QuoteUnavailable = true
 			}
 			return write(portableEntryRecord(value))
 		})
@@ -186,8 +216,17 @@ func (exporter *Exporter) ExportAccount(ctx context.Context, destination io.Writ
 	}
 	comments, err := protocol.jsonLines("data/comments.jsonl", func(write func(any) error) error {
 		return snapshot.Comments(ctx, func(value sqlitestore.ArchiveComment) error {
-			if value.AuthorUserID == nil || *value.AuthorUserID != accountID {
+			if !selectedEntries[value.EntryID] {
 				return nil
+			}
+			if value.AuthorUserID != nil && *value.AuthorUserID != accountID {
+				if profile, ok := profiles[*value.AuthorUserID]; ok {
+					value.AuthorSnapshot = &domain.CommentAuthorSnapshot{Username: profile.Username, DisplayName: profile.DisplayName, AvatarMediaID: profile.AvatarMediaID}
+				}
+				value.AuthorUserID = nil
+			}
+			if value.AuthorSnapshot != nil && value.AuthorSnapshot.AvatarMediaID != nil {
+				selected[*value.AuthorSnapshot.AvatarMediaID] = true
 			}
 			if err := validateArchiveComment(value); err != nil {
 				return err
@@ -203,9 +242,15 @@ func (exporter *Exporter) ExportAccount(ctx context.Context, destination io.Writ
 	}
 	mediaCount, err := protocol.jsonLines("data/media.jsonl", func(write func(any) error) error {
 		return snapshot.Media(ctx, func(value sqlitestore.ArchiveMedia) error {
+			if selectedSHAs[value.SHA256] {
+				selected[value.ID] = true
+				resolvedSHAs[value.SHA256] = true
+			}
 			if !selected[value.ID] {
 				return nil
 			}
+			value.Grants = []sqlitestore.ArchiveMediaGrant{}
+			value.UnreferencedSinceMS = nil
 			record, err := portableMediaRecord(value)
 			if err != nil {
 				return err
@@ -216,7 +261,7 @@ func (exporter *Exporter) ExportAccount(ctx context.Context, destination io.Writ
 	if err != nil {
 		return Summary{}, err
 	}
-	if mediaCount != int64(len(selected)) {
+	if mediaCount != int64(len(selected)) || len(resolvedSHAs) != len(selectedSHAs) {
 		return Summary{}, archiveInvalid("account references missing media", nil)
 	}
 	buffer := make([]byte, copyBufferSize)
@@ -259,7 +304,7 @@ func (exporter *Exporter) ExportAccount(ctx context.Context, destination io.Writ
 	if err != nil {
 		return Summary{}, err
 	}
-	manifest := accountManifest{Format: accountFormatName, FormatVersion: 2, CreatedAt: now.Format(time.RFC3339Nano), AccountID: accountID, Counts: countManifest{Users: 1, Identities: identities, Entries: entries, Comments: comments, Media: mediaCount, Articles: articles, ArticleDrafts: drafts}}
+	manifest := accountManifest{Format: accountFormatName, FormatVersion: AccountFormatVersion, CreatedAt: now.Format(time.RFC3339Nano), AccountID: accountID, SourceInstanceID: runtimeState.Instance.ID, Counts: countManifest{Users: 1, Identities: identities, Entries: entries, Comments: comments, Media: mediaCount, Articles: articles, ArticleDrafts: drafts}}
 	if err := protocol.jsonMember("manifest.json", manifest); err != nil {
 		return Summary{}, err
 	}
@@ -270,7 +315,7 @@ func (exporter *Exporter) ExportAccount(ctx context.Context, destination io.Writ
 		return Summary{}, err
 	}
 	closed = true
-	return Summary{FormatVersion: 2, ArchiveBytes: counted.size, ArchiveSHA256: hex.EncodeToString(digest.Sum(nil))}, nil
+	return Summary{FormatVersion: AccountFormatVersion, ArchiveBytes: counted.size, ArchiveSHA256: hex.EncodeToString(digest.Sum(nil))}, nil
 }
 
 // WriteAccountFile shares atomic publication with backups but validates the
@@ -307,6 +352,9 @@ func ValidateAccountFileContext(ctx context.Context, name string) error {
 		if file.UncompressedSize64 > uint64(defaultMaxExpandedBytes)-expanded {
 			return archiveInvalid("account archive expanded bytes exceed the budget", nil)
 		}
+		if file.UncompressedSize64 > 0 && (file.CompressedSize64 == 0 || file.UncompressedSize64/file.CompressedSize64 > defaultMaxCompression) {
+			return archiveInvalid("account member compression ratio exceeds the budget", nil)
+		}
 		expanded += file.UncompressedSize64
 		switch file.Name {
 		case "README.txt", "manifest.json", "checksums.sha256", "data/account.json", "data/entries.jsonl",
@@ -336,7 +384,7 @@ func ValidateAccountFileContext(ctx context.Context, name string) error {
 	if err := json.Unmarshal(raw, &document); err != nil {
 		return err
 	}
-	if document.Format != accountFormatName || (document.FormatVersion != 1 && document.FormatVersion != 2) || document.AccountID == "" {
+	if document.Format != accountFormatName || (document.FormatVersion != 1 && document.FormatVersion != 2 && document.FormatVersion != 3) || document.AccountID == "" {
 		return archiveInvalid("not a personal account export", nil)
 	}
 	sums, err := readChecksums(ctx, files["checksums.sha256"], len(files))

@@ -762,7 +762,7 @@ func (inspector *Inspector) preflight(ctx context.Context, archivePath string) (
 	if document.Format != formatName {
 		return manifest{}, importInvalid("archive format identifier is unsupported", nil)
 	}
-	if document.FormatVersion != 2 && document.FormatVersion != 3 && document.FormatVersion != FormatVersion {
+	if document.FormatVersion != 2 && document.FormatVersion != 3 && document.FormatVersion != 4 && document.FormatVersion != FormatVersion {
 		return manifest{}, domain.NewError(domain.CodeExportVersionUnsupported, "archive format version is not supported", map[string]any{"format_version": document.FormatVersion, "supported_version": FormatVersion})
 	}
 	// Articles are bounded by the entry budget because every article is an
@@ -1394,7 +1394,7 @@ func rebuildPortableGeneration(ctx context.Context, parent *runtimefs.Runtime, g
 			return err
 		}
 		return importer.InsertComment(ctx, sqlitestore.ArchiveComment{
-			ID: value.ID, EntryID: value.EntryID, ParentID: value.ParentID, AuthorName: value.AuthorName, AuthorUserID: value.AuthorUserID,
+			ID: value.ID, EntryID: value.EntryID, ParentID: value.ParentID, AuthorName: value.AuthorName, AuthorUserID: value.AuthorUserID, AuthorSnapshot: value.AuthorSnapshot,
 			ReplyToCommentID: value.ReplyToCommentID, ContentMD: value.ContentMD,
 			CreatedAtMS: created.UnixMilli(), Media: usages, Location: location, Pinned: value.Pinned,
 		})

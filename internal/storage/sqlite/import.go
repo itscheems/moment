@@ -603,7 +603,7 @@ func (importer *PortableImporter) InsertComment(ctx context.Context, value Archi
 	}
 	comment := domain.Comment{
 		ID: id, EntryID: entryID, ParentID: parentID,
-		AuthorName:   value.AuthorName,
+		AuthorName: value.AuthorName, AuthorSnapshot: value.AuthorSnapshot,
 		AuthorUserID: value.AuthorUserID, ReplyToCommentID: replyToID, ContentMD: value.ContentMD,
 		Location: domain.CloneLocation(value.Location), CreatedAt: time.UnixMilli(value.CreatedAtMS).UTC(),
 	}
@@ -629,6 +629,12 @@ INSERT INTO comments (id, entry_id, parent_id, author_name, author_user_id, cont
 VALUES (?, ?, ?, ?, ?, ?, ?)`, value.ID, value.EntryID, value.ParentID, value.AuthorName, value.AuthorUserID, value.ContentMD, value.CreatedAtMS); err != nil {
 		return fmt.Errorf("insert portable comment %s: %w", value.ID, err)
 	}
+	if value.AuthorSnapshot != nil {
+		if _, err := importer.tx.ExecContext(ctx, `UPDATE comments SET author_username=?,author_display_name=?,author_avatar_media_id=? WHERE id=?`, value.AuthorSnapshot.Username, value.AuthorSnapshot.DisplayName, value.AuthorSnapshot.AvatarMediaID, value.ID); err != nil {
+			return err
+		}
+	}
+
 	if value.Location != nil {
 		var latitude, longitude, coordinateSystem any
 		if value.Location.Point != nil {
@@ -698,6 +704,10 @@ VALUES (1, ?, ?, ?, ?, ?, ?, 'approval')`, value.Title, value.Timezone, value.Pu
 // Commit verifies counts, relational integrity, and the rebuilt FTS identity
 // set before publishing the isolated transaction inside the staging database.
 func (importer *PortableImporter) Commit(ctx context.Context, expected ArchiveCounts) error {
+	return importer.commit(ctx, expected, false)
+}
+
+func (importer *PortableImporter) commit(ctx context.Context, expected ArchiveCounts, appendOnly bool) error {
 	if err := importer.requireOpen(); err != nil {
 		return err
 	}
@@ -744,7 +754,13 @@ SELECT
 	if err := importer.tx.QueryRowContext(ctx, `SELECT normalizer_version FROM search_index_state WHERE id = 1`).Scan(&normalizerVersion); err != nil {
 		return fmt.Errorf("check portable import normalizer version: %w", err)
 	}
-	if ftsRows != expected.Entries || missingFTS != 0 || extraFTS != 0 || mismatchedFTS != 0 || duplicateFTS != 0 ||
+	expectedFTS := expected.Entries
+	if appendOnly {
+		if err := importer.tx.QueryRowContext(ctx, `SELECT count(*) FROM entries`).Scan(&expectedFTS); err != nil {
+			return err
+		}
+	}
+	if ftsRows != expectedFTS || missingFTS != 0 || extraFTS != 0 || mismatchedFTS != 0 || duplicateFTS != 0 ||
 		normalizerVersion != domain.ContentNormalizerVersion {
 		return errors.New("portable import FTS content or normalizer version is inconsistent")
 	}

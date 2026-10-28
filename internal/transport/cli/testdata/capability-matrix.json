@@ -2401,6 +2401,43 @@
       "parity_strategy": "api_mode_unsupported"
     },
     {
+      "command": "user import",
+      "direct": {
+        "availability": "offline",
+        "auth": "local_account",
+        "locks": [
+          "import:exclusive",
+          "serve:exclusive",
+          "maintenance:shared",
+          "media:exclusive"
+        ]
+      },
+      "api": {
+        "availability": "supported",
+        "auth": "account_token",
+        "locks": [
+          "server_managed_import_order"
+        ]
+      },
+      "destructive": {
+        "requires_yes": true,
+        "supports_dry_run": true
+      },
+      "output_schema": "account_import_v1",
+      "expected_exits": [
+        0,
+        2,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10
+      ],
+      "parity_strategy": "mode_specific_workflow_canonical_status"
+    },
+    {
       "command": "user list",
       "direct": {
         "availability": "supported",

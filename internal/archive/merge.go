@@ -574,6 +574,9 @@ func commentDependencies(value sqlitestore.ArchiveComment) []MergeRef {
 	for _, usage := range value.Media {
 		result = append(result, MergeRef{Kind: MergeMedia, ID: usage.MediaID})
 	}
+	if value.AuthorSnapshot != nil && value.AuthorSnapshot.AvatarMediaID != nil {
+		result = append(result, MergeRef{Kind: MergeMedia, ID: *value.AuthorSnapshot.AvatarMediaID})
+	}
 	return uniqueRefs(result)
 }
 
@@ -949,6 +952,11 @@ func cloneArchiveEntry(value sqlitestore.ArchiveEntry) sqlitestore.ArchiveEntry 
 	return value
 }
 func cloneArchiveComment(value sqlitestore.ArchiveComment) sqlitestore.ArchiveComment {
+	if value.AuthorSnapshot != nil {
+		snapshot := *value.AuthorSnapshot
+		snapshot.AvatarMediaID = cloneString(snapshot.AvatarMediaID)
+		value.AuthorSnapshot = &snapshot
+	}
 	value.ParentID = cloneString(value.ParentID)
 	value.AuthorUserID = cloneString(value.AuthorUserID)
 	value.ReplyToCommentID = cloneString(value.ReplyToCommentID)

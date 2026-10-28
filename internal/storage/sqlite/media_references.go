@@ -15,6 +15,7 @@ import (
 const mediaReferencedSQL = `(
     EXISTS (SELECT 1 FROM entry_media AS usage WHERE usage.media_id = media.id)
     OR EXISTS (SELECT 1 FROM comment_media AS usage WHERE usage.media_id = media.id)
+ OR EXISTS (SELECT 1 FROM comments WHERE comments.author_avatar_media_id = media.id)
     OR EXISTS (
         SELECT 1 FROM users AS account WHERE account.avatar_media_id = media.id
     )
@@ -285,7 +286,7 @@ func (repository *MediaReferenceRepository) audience(ctx context.Context, id dom
 		// One pass per EXISTS block below that joins entries and applies the
 		// visibility predicate. Adding a block without adding a pass here
 		// shifts every argument after it.
-		for range 5 {
+		for range 6 {
 			arguments = append(arguments, id.String())
 			arguments = append(arguments, publicArguments...)
 		}
@@ -328,6 +329,7 @@ SELECT
       JOIN entries AS entry ON entry.id = article.entry_id
       WHERE article.cover_media_id = ? AND `+public+`
     )
+    OR EXISTS (SELECT 1 FROM comments AS archived JOIN entries AS entry ON entry.id=archived.entry_id WHERE archived.author_avatar_media_id=? AND `+public+`)
     OR EXISTS (SELECT 1 FROM users AS account WHERE account.avatar_media_id = ? AND account.status='active')
     OR EXISTS (SELECT 1 FROM users AS account WHERE account.cover_media_id = ? AND account.status='active')
     OR EXISTS (SELECT 1 FROM article_drafts AS draft WHERE (draft.cover_media_id = ? OR EXISTS (SELECT 1 FROM article_draft_media AS usage WHERE usage.draft_id = draft.id AND usage.media_id = media_id_value.id)) AND `+draftAuthor+`)
