@@ -20,6 +20,7 @@ import {
 import styles from "./ProfilePage.module.css";
 
 export interface ProfileHeaderIdentity {
+  userId: string;
   title: string;
   postCount: number | null;
 }
@@ -73,9 +74,9 @@ export function ProfileHeader({
   }, [api, userId, account?.userId, setHeader]);
 
   useLayoutEffect(() => {
-    setHeader?.({ title, postCount });
+    setHeader?.({ userId, title, postCount });
     return () => setHeader?.(null);
-  }, [setHeader, title, postCount]);
+  }, [setHeader, userId, title, postCount]);
 
   return (
     <HeaderActions>

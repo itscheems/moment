@@ -1,3 +1,4 @@
+import { AccountName } from "./AccountName";
 import { Dialog } from "./Dialog";
 import { Menu } from "@base-ui/react/menu";
 import { useState } from "react";
@@ -116,7 +117,9 @@ export function ThemeMenu({
                 <SiteAvatar site={site} />
                 <div className={styles.previewContent}>
                   <p className={styles.previewMeta}>
-                    <strong>{title}</strong>
+                    <strong>
+                      <AccountName identity={site} name={title} />
+                    </strong>
                     <span>{previewHandle} · 刚刚</span>
                   </p>
                   <p>

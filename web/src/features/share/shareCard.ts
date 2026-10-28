@@ -1,3 +1,7 @@
+import {
+  verificationArtwork,
+  type AccountVerification,
+} from "../../components/accountVerification";
 /**
  * Draw a moment as an image somebody can send.
  *
@@ -149,6 +153,7 @@ function hostOf(url: string): string {
 
 export interface ShareCardPost {
   displayName: string;
+  verification?: AccountVerification | null;
   username: string;
   /** Same-origin URL, or null to use the shared default avatar image. */
   avatarUrl: string | null;
@@ -1193,13 +1198,27 @@ function drawShareIdentity(
 
   const availableWidth = WIDTH - rightInset;
   const textLeft = PAD + AVATAR + 4;
-  const nameWidth = availableWidth - PAD - 25 - 12 - textLeft;
+  const badgeWidth = input.verification
+    ? verificationArtwork.nameGap + verificationArtwork.size
+    : 0;
+  const nameWidth = availableWidth - PAD - 25 - 12 - textLeft - badgeWidth;
   ctx.fillStyle = INK;
   ctx.font = font(700, NAME_SIZE);
   const name = truncate(ctx, input.displayName, nameWidth);
   ctx.fillText(name, textLeft, y + (context ? 0 : 3) + baseline(ctx, name, 20));
+  if (input.verification) {
+    ctx.save();
+    ctx.translate(
+      textLeft + ctx.measureText(name).width + verificationArtwork.nameGap,
+      y + (context ? 0 : 3) + (20 - verificationArtwork.size) / 2,
+    );
+    ctx.scale(verificationArtwork.size / 22, verificationArtwork.size / 22);
+    ctx.fillStyle = verificationArtwork.color;
+    ctx.fill(new Path2D(verificationArtwork.path));
+    ctx.restore();
+  }
   if (context) {
-    const next = textLeft + ctx.measureText(name).width + 6;
+    const next = textLeft + ctx.measureText(name).width + badgeWidth + 4;
     ctx.fillStyle = MUTED;
     ctx.font = font(400, HANDLE_SIZE);
     const stamp = truncate(

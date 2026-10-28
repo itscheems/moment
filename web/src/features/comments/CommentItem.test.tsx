@@ -169,7 +169,7 @@ describe("comment identity", () => {
   it("signs a comment with the resolved author rather than the site identity", () => {
     renderItem(comment(rootId, "顶级回应"));
 
-    const name = screen.getByRole("link", { name: "Cheems" });
+    const name = screen.getByRole("link", { name: "Cheems 认证账号" });
     const handle = screen.getByRole("link", { name: "@itscheems" });
     expect(name).toHaveAttribute("href", "/itscheems");
     expect(handle).toHaveAttribute("href", "/itscheems");

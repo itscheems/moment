@@ -1,3 +1,4 @@
+import { AccountName } from "../../components/AccountName";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import {
@@ -361,7 +362,7 @@ export function ProfilePage({
           </div>
         </div>
         <h2>
-          <span>{title}</span>
+          <AccountName identity={site} name={title} prominent />
         </h2>
         <p className={styles.handle}>{handle}</p>
         {site.bio.trim() ? <p>{site.bio.trim()}</p> : null}

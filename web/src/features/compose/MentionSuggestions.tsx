@@ -1,3 +1,4 @@
+import { AccountName } from "../../components/AccountName";
 import type { CSSProperties } from "react";
 
 import type { MentionSuggestion, SiteIdentity } from "../../api/public";
@@ -52,7 +53,9 @@ export function MentionSuggestions({
           >
             <SiteAvatar site={site} />
             <span className={styles.mentionIdentity}>
-              <strong>{item.displayName}</strong>
+              <strong>
+                <AccountName identity={item} />
+              </strong>
               <small>@{item.username}</small>
             </span>
             <em>提及</em>

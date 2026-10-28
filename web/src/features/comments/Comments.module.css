@@ -1020,7 +1020,7 @@
 .replyContextByline {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.35rem;
+  gap: var(--space-1);
   margin: 0;
   color: var(--text-secondary);
   font-size: var(--text-sm);

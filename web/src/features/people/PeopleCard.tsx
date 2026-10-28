@@ -1,3 +1,4 @@
+import { AccountName } from "../../components/AccountName";
 import type { ReactNode } from "react";
 import type { PublicAccount } from "../../api/public";
 import { InternalLink, useNavigation } from "../../app/navigation";
@@ -71,7 +72,7 @@ function Person({
       <div className={styles.description}>
         <SiteIdentityPreview site={person}>
           <InternalLink className={styles.name} href={person.profileUrl}>
-            <span>{person.displayName}</span>
+            <AccountName identity={person} />
           </InternalLink>
         </SiteIdentityPreview>
         <SiteIdentityPreview site={person}>

@@ -1,3 +1,4 @@
+import { AccountName } from "../../components/AccountName";
 import { commentAsPost } from "../share/shareCardInput";
 import { MapCardEditor } from "../maps/MapCardEditor";
 import { useEditHistory } from "../../components/useEditHistory";
@@ -1774,7 +1775,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
                 <header>
                   <SiteAvatar site={postAuthorSite(quotedPost, site)} />
                   <strong>
-                    {postAuthorSite(quotedPost, site).displayName}
+                    <AccountName identity={postAuthorSite(quotedPost, site)} />
                   </strong>
                   {postAuthorSite(quotedPost, site).username ? (
                     <span>@{postAuthorSite(quotedPost, site).username}</span>

@@ -129,6 +129,52 @@ function makePost(
 }
 
 describe("shared post presentation", () => {
+  it("keeps the author's verification independent from the displayed site account", () => {
+    render(
+      <NavigationProvider>
+        <PostPresentation
+          post={makePost("Public note", "<p>Public note</p>")}
+          site={{ ...site, profileUserId: "11d003f31a23262ea0f6cbe9857981a1" }}
+        />
+      </NavigationProvider>,
+    );
+    expect(screen.queryByRole("img", { name: "认证账号" })).toBeNull();
+  });
+
+  it("shows a quoted author's mark without assigning it to the outer author", () => {
+    const post = makePost("Public note", "<p>Public note</p>");
+    render(
+      <NavigationProvider>
+        <PostPresentation
+          post={{
+            ...post,
+            quotedPost: {
+              unavailable: false,
+              id: "01K2ABCDEF0123456789ABCDE1",
+              kind: "moment",
+              article: null,
+              contentMd: "Quoted note",
+              contentHtml: "<p>Quoted note</p>",
+              publishedAt: post.publishedAt,
+              media: [],
+              location: null,
+              author: {
+                userId: "11d003f31a23262ea0f6cbe9857981a1",
+                username: "quoted_writer",
+                displayName: "Quoted writer",
+                avatarMediaId: null,
+                profileUrl: "/quoted_writer",
+              },
+            },
+          }}
+          site={site}
+        />
+      </NavigationProvider>,
+    );
+    const badge = screen.getByRole("img", { name: "认证账号" });
+    expect(badge.closest("strong")).toHaveTextContent("Quoted writer");
+  });
+
   it("shows full ancestor content with the existing action menu and no Show more", () => {
     const html = Array.from(
       { length: 80 },
@@ -763,7 +809,7 @@ describe("shared post presentation", () => {
     );
     expect(
       screen
-        .getByText("Moment", { selector: "strong" })
+        .getByText("Moment")
         .closest("header")!
         .querySelector("svg[data-icon='audience-only-me']"),
     ).toBeNull();

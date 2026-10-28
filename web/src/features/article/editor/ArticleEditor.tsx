@@ -1,3 +1,5 @@
+import { AccountName } from "../../../components/AccountName";
+import { accountVerification } from "../../../components/accountVerification";
 import { mediaApi } from "../../../api/media";
 import { Menu } from "@base-ui/react/menu";
 import { Tooltip } from "@base-ui/react/tooltip";
@@ -1262,7 +1264,7 @@ export function ArticleEditor({
                 <div className={styles.byline}>
                   <SiteAvatar site={site} size={24} />
                   <span className={styles.bylineName}>
-                    {siteDisplayName(site)}
+                    <AccountName identity={site} name={siteDisplayName(site)} />
                   </span>
                   <span className={styles.bylineHandle}>@{site.username}</span>
                 </div>
@@ -1293,6 +1295,7 @@ export function ArticleEditor({
                     excerptSource={{
                       title,
                       displayName: siteDisplayName(site),
+                      verification: accountVerification(site),
                       username: site.username,
                       avatarUrl: site.avatarMediaId
                         ? mediaPreviewUrl(site.avatarMediaId)

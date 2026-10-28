@@ -31,6 +31,7 @@ it("uses the complete author total and cancels a count when the viewed author ch
   const view = render(page("a".repeat(32), "小满"));
   await waitFor(() =>
     expect(setHeader).toHaveBeenLastCalledWith({
+      userId: "a".repeat(32),
       title: "小满",
       postCount: 137,
     }),
@@ -43,7 +44,11 @@ it("uses the complete author total and cancels a count when the viewed author ch
   timeline.mockResolvedValueOnce({ items: [], authorPostCount: 0 });
   view.rerender(page("b".repeat(32), "阿明"));
   await waitFor(() =>
-    expect(setHeader).toHaveBeenLastCalledWith({ title: "阿明", postCount: 0 }),
+    expect(setHeader).toHaveBeenLastCalledWith({
+      userId: "b".repeat(32),
+      title: "阿明",
+      postCount: 0,
+    }),
   );
   expect(firstSignal.aborted).toBe(true);
   expect(timeline).toHaveBeenLastCalledWith(

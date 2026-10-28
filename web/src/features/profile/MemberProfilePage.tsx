@@ -1,3 +1,4 @@
+import { AccountName } from "../../components/AccountName";
 import { TimelinePage } from "../timeline/TimelinePage";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
@@ -166,7 +167,7 @@ export function MemberProfilePage({
           ) : null}
         </div>
         <h2>
-          <span>{title}</span>
+          <AccountName identity={account} name={title} prominent />
         </h2>
         <p className={styles.handle}>{siteHandle(account)}</p>
         {account.bio.trim() ? <p>{account.bio.trim()}</p> : null}

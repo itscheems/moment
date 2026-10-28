@@ -1,3 +1,4 @@
+import type { AccountVerification } from "../../../components/accountVerification";
 import {
   getTextBetween,
   getTextSerializersFromSchema,
@@ -14,6 +15,7 @@ import type { ReadingRange } from "./readingAnnotations";
 export interface ReadingExcerptSource {
   title: string;
   displayName: string;
+  verification?: AccountVerification | null;
   username: string;
   avatarUrl: string | null;
   publishedLabel: string;
@@ -181,6 +183,7 @@ export function readingExcerptCard(
   try {
     return {
       displayName: source.displayName,
+      verification: source.verification,
       username: source.username,
       avatarUrl: source.avatarUrl,
       publishedLabel: source.publishedLabel,
