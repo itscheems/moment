@@ -43,7 +43,7 @@ import { RepostAction } from "../posts/RepostAction";
 import { announcePostChanged, listenForPostChanges } from "../posts/postEvents";
 import {
   PublicError,
-  ReadRecoveryNotice,
+  ReadRecoveryToast,
   TimelineLoading,
 } from "../timeline/PublicStates";
 import { buildLightboxItems } from "./ImageGrid";
@@ -427,10 +427,11 @@ function MediaDiscussion({
       setReplyOpen(true);
     }
   }, [active, replyRequest]);
+  const retryRead = useCallback(() => setAttempt((n) => n + 1), []);
   const recovering = useReadRecovery({
     error,
     loading,
-    onRetry: () => setAttempt((n) => n + 1),
+    onRetry: retryRead,
     enabled: active,
     scope: mediaSourceKey(source),
   });
@@ -490,20 +491,23 @@ function MediaDiscussion({
       }}
     >
       {loading && !post ? <TimelineLoading /> : null}
-      {unavailable || (error && !post) ? (
+      {error && !post && recovering ? (
+        <ReadRecoveryToast active={active} onRetry={retryRead} />
+      ) : null}
+      {(unavailable || (error && !post)) && !recovering ? (
         <div ref={heading} tabIndex={-1}>
           <PublicError
+            active={active}
             kind={unavailable ? "missing" : "detail"}
-            recovering={recovering}
           />
-          <button type="button" onClick={() => setAttempt((n) => n + 1)}>
+          <button type="button" onClick={retryRead}>
             重新读取
           </button>
         </div>
       ) : null}
       {post && display ? (
         <>
-          {error || loading ? <ReadRecoveryNotice /> : null}
+          {error || loading ? <ReadRecoveryToast active={active} /> : null}
           <PostPresentation
             detail
             mediaViewer

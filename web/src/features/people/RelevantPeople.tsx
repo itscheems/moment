@@ -14,6 +14,7 @@ import {
 import { useReadRecovery } from "../../components/useReadRecovery";
 import { loadRelevantPeople } from "./loadRelevantPeople";
 import { PeopleCard } from "./PeopleCard";
+import { ReadRecoveryToast } from "../timeline/PublicStates";
 
 /** The active detail owns the rail; cached, inactive discussions publish nothing. */
 export function RelevantPeople({
@@ -54,7 +55,19 @@ export function RelevantPeople({
       });
     return () => controller.abort();
   }, [api, post, context, enabled, attempt]);
-  useReadRecovery({ error, loading, onRetry: retry, enabled, scope });
+  const recovering = useReadRecovery({
+    error,
+    loading,
+    onRetry: retry,
+    enabled,
+    scope,
+  });
+  if (recovering)
+    return (
+      <ReadRecoveryToast onRetry={retry}>
+        正在重新获取相关用户…
+      </ReadRecoveryToast>
+    );
   if (!enabled || (!error && !people?.length)) return null;
   return createPortal(
     <PeopleCard

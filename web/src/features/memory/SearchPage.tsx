@@ -16,7 +16,7 @@ import {
 import { InternalLink, useNavigation } from "../../app/navigation";
 import { Icon } from "../../components/icons";
 import { useReadRecovery } from "../../components/useReadRecovery";
-import { ReadRecoveryNotice } from "../timeline/PublicStates";
+import { ReadRecoveryToast } from "../timeline/PublicStates";
 import {
   LoadMoreSentinel,
   type LoadSource,
@@ -471,10 +471,14 @@ export function SearchPage({
         </section>
       ) : null}
       {!loading && error && recovering ? (
-        <ReadRecoveryNotice>正在重新获取搜索结果…</ReadRecoveryNotice>
+        <ReadRecoveryToast active={enabled}>
+          正在重新获取搜索结果…
+        </ReadRecoveryToast>
       ) : null}
       {loading && hits.length > 0 ? (
-        <ReadRecoveryNotice>正在更新搜索结果…</ReadRecoveryNotice>
+        <ReadRecoveryToast active={enabled}>
+          正在更新搜索结果…
+        </ReadRecoveryToast>
       ) : null}
       {!loading && error && !recovering ? (
         <SearchMessage
@@ -574,9 +578,9 @@ export function SearchPage({
                 />
               ))}
               {moreError ? (
-                <ReadRecoveryNotice error={moreError}>
+                <ReadRecoveryToast active={enabled} error={moreError}>
                   正在重新获取后续结果…
-                </ReadRecoveryNotice>
+                </ReadRecoveryToast>
               ) : null}
               {nextCursor && !moreError ? (
                 <LoadMoreSentinel

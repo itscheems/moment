@@ -259,7 +259,7 @@ export class ProfileTimeline {
     if (!cursor || this.requests.has(key) || this.disposed) return null;
     const controller = new AbortController();
     this.requests.set(key, controller);
-    this.set(filter, { loadingMore: true, moreError: null });
+    this.set(filter, { loadingMore: true });
     try {
       if (this.visited[filter].has(cursor))
         throw invalidCursorProgress("profile cursor cycle detected");
@@ -279,6 +279,7 @@ export class ProfileTimeline {
       this.set(filter, {
         items: this.reconcile(combined, filter),
         nextCursor: page.nextCursor,
+        moreError: null,
       });
       return cursor;
     } catch (moreError) {
@@ -341,7 +342,7 @@ export class ProfileTimeline {
       return;
     const controller = new AbortController();
     this.requests.set(key, controller);
-    this.set(filter, { refreshing: true, refreshError: null });
+    this.set(filter, { refreshing: true });
     const generation = this.generations[filter];
     let cursor = feed.continuation ?? feed.refreshCursor;
     const visited = new Set<string>();
@@ -389,6 +390,7 @@ export class ProfileTimeline {
         if ((count + 1) % 3 === 0)
           await new Promise<void>((resolve) => setTimeout(resolve, 0));
       }
+      this.set(filter, { refreshError: null });
     } catch (refreshError) {
       if (!controller.signal.aborted) this.set(filter, { refreshError });
     } finally {

@@ -18,6 +18,7 @@ import { NavigationProvider } from "../../app/navigation";
 import { MentionProvider } from "../../app/mentions";
 import { RailSlotContext } from "../../components/railSlot";
 import { RelevantPeople } from "./RelevantPeople";
+import { FeedbackProvider } from "../../components/Feedback";
 
 const alice: PublicAccount = {
   userId: "alice",
@@ -74,14 +75,16 @@ function setup() {
   const api = new PublicApi();
   const user = vi.spyOn(api, "user").mockResolvedValue(alice);
   const view = (selected = post, active = true) => (
-    <NavigationProvider>
-      <MentionProvider identities={[alice, bob]}>
-        <RailSlotContext.Provider value={slot}>
-          <p>Reading stays available</p>
-          <RelevantPeople api={api} post={selected} active={active} />
-        </RailSlotContext.Provider>
-      </MentionProvider>
-    </NavigationProvider>
+    <FeedbackProvider>
+      <NavigationProvider>
+        <MentionProvider identities={[alice, bob]}>
+          <RailSlotContext.Provider value={slot}>
+            <p>Reading stays available</p>
+            <RelevantPeople api={api} post={selected} active={active} />
+          </RailSlotContext.Provider>
+        </MentionProvider>
+      </NavigationProvider>
+    </FeedbackProvider>
   );
   return { api, user, view };
 }
@@ -192,7 +195,8 @@ describe("RelevantPeople", () => {
     const { view, user } = setup();
     user.mockRejectedValueOnce(new Error("Offline")).mockResolvedValue(alice);
     render(view());
-    const retry = await within(slot).findByRole("button", { name: "重试" });
+    const retry = await screen.findByRole("button", { name: "重试" });
+    expect(slot).not.toContainElement(retry);
     expect(screen.getByText("Reading stays available")).toBeInTheDocument();
     fireEvent.click(retry);
     await within(slot).findByRole("link", { name: "Alice" });
