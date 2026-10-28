@@ -407,12 +407,19 @@ export function PostPresentation({
       baseUrl={site.publicBaseUrl}
       card={
         shareCard ??
-        (async () => ({
-          ...postShareCard(post, site),
-          mapViewport: post.mapCard
-            ? mapViews.current.get(mapViewKey(post.id, post.mapCard))
-            : undefined,
-        }))
+        (async () => {
+          const input = postShareCard(post, site);
+          if (post.mapCard)
+            input.mapViewport = mapViews.current.get(
+              mapViewKey(post.id, post.mapCard),
+            );
+          const quoted = post.quotedPost;
+          if (input.quote && quoted && !quoted.unavailable && quoted.mapCard)
+            input.quote.mapViewport = mapViews.current.get(
+              mapViewKey(quoted.id, quoted.mapCard),
+            );
+          return input;
+        })
       }
       href={detailHref}
       title={`${title} 的 Moment`}
@@ -492,7 +499,13 @@ export function PostPresentation({
           html={quoted.contentHtml}
         />
       )}
-      {quoted.mapCard ? <MapCard card={quoted.mapCard} preview /> : null}
+      {quoted.mapCard ? (
+        <MapCard
+          card={quoted.mapCard}
+          preview
+          onViewport={rememberMapView(quoted.id, quoted.mapCard)}
+        />
+      ) : null}
       {quoted.location ? <PostLocation location={quoted.location} /> : null}
       {quoted.article ? null : (
         <ImageGrid

@@ -20,7 +20,7 @@ The renderer preserves OpenFreeMap, OpenMapTiles and OpenStreetMap attribution. 
 
 The engine is a separate lazy chunk. Cards prefetch it near the viewport, create a map when visible, and release the instance after three seconds outside the viewport. Returning cards restore their camera. Expansion transfers the live view to the dialog instead of retaining two canvases. Readers can switch between a flat map and a globe in the expanded view. Failed map loads retain the place list and external links. Sorting loads separately for authors; the reader entry excludes its runtime.
 
-Initial framing fits all places, including nearby stops at street level. Post share images retain the current map centre, zoom and aspect ratio. Camera adjustments belong to the current page only; refreshing fits the places again without changing the saved card.
+Initial framing fits all places, including nearby stops at street level. Post share images retain each displayed map's centre, zoom and aspect ratio, including maps inside quoted content. Camera adjustments belong to the current page only; refreshing fits the places again without changing the saved card.
 
 Ordinary cards are persisted with their entries; article cards are embedded value snapshots. Reading requires no geocoding request. WGS84 and GCJ-02 source coordinates round-trip unchanged; only the renderer converts them for the basemap and external links. Map labels participate in search and summaries. Author, draft and visibility rules follow the surrounding content.
 
