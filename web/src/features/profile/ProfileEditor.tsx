@@ -12,6 +12,7 @@ import {
 } from "react";
 
 import { mediaPreviewUrl } from "../../api/mediaUrls";
+import { mediaApi } from "../../api/media";
 import {
   PublicApiError,
   type Account,
@@ -28,7 +29,7 @@ import {
   profileFromPath,
   PROFILE_EDIT_PATH,
 } from "../../app/routes";
-import { ProfileAvatarCrop } from "./ProfileAvatarCrop";
+import { ProfileMediaCrop } from "./ProfileMediaCrop";
 
 import { useSession } from "../auth/SessionProvider";
 import styles from "./ProfileEditor.module.css";
@@ -131,7 +132,10 @@ export function ProfileEditor(props: ProfileEditorProps) {
   } = useSession();
   const navigation = useNavigation();
   const routeOpen = isProfileEditPath(navigation.pathname);
-  const [cropFile, setCropFile] = useState<File | null>(null);
+  const [cropFile, setCropFile] = useState<{
+    kind: AssetKind;
+    file: File;
+  } | null>(null);
   const pictureCeiling = limits?.profilePictureBytes ?? null;
   // Falling back to the previous literals only for as long as the server has
   // not answered. These bound an input that has to render either way, unlike
@@ -214,6 +218,8 @@ export function ProfileEditor(props: ProfileEditorProps) {
     syncRoute();
   }, [routeOpen, navigation.pathname]);
   const close = (saved?: Account) => {
+    uploads.current.cover?.abort();
+    uploads.current.cover = null;
     setOpen(false);
     setCropFile(null);
     const from = navigation.panel?.from.pathname;
@@ -257,37 +263,36 @@ export function ProfileEditor(props: ProfileEditorProps) {
     }
     setError(null);
     try {
+      if (kind === "cover") {
+        const uploaded = await mediaApi.uploadMedia(
+          session.csrfToken,
+          file,
+          undefined,
+          controller.signal,
+        );
+        if (uploads.current.cover !== controller) return;
+        setCoverId(uploaded.id);
+        setCoverPreview(uploaded.previewUrl);
+        setCoverState("idle");
+        return;
+      }
       // One request ingests and binds, so the picture belongs to this
       // account the moment the response lands. There is no media id for the
       // save button to carry afterwards, and nothing orphaned on disk if the
       // reader closes the dialog on the next breath.
-      const saved =
-        kind === "avatar"
-          ? await accountsApi.uploadAccountAvatar(
-              session.csrfToken,
-              file,
-              controller.signal,
-            )
-          : await accountsApi.uploadAccountCover(
-              session.csrfToken,
-              file,
-              controller.signal,
-            );
+      const saved = await accountsApi.uploadAccountAvatar(
+        session.csrfToken,
+        file,
+        controller.signal,
+      );
       if (uploads.current[kind] !== controller) return;
       applyAccount(saved);
       saveAccount(saved);
-      if (kind === "avatar") {
-        setAvatarId(saved.avatarMediaId);
-        setBoundAvatarId(saved.avatarMediaId);
-        setAvatarPreview(mediaURL(saved.avatarMediaId));
-        setAvatarState("idle");
-      } else {
-        setCoverId(saved.coverMediaId);
-        setBoundCoverId(saved.coverMediaId);
-        setCoverPreview(mediaURL(saved.coverMediaId));
-        setCoverState("idle");
-      }
-      notify(kind === "avatar" ? "头像已更新" : "封面已更新");
+      setAvatarId(saved.avatarMediaId);
+      setBoundAvatarId(saved.avatarMediaId);
+      setAvatarPreview(mediaURL(saved.avatarMediaId));
+      setAvatarState("idle");
+      notify("头像已更新");
       return;
     } catch (nextError) {
       if (controller.signal.aborted) return;
@@ -310,10 +315,8 @@ export function ProfileEditor(props: ProfileEditorProps) {
       setError(problem);
       return;
     }
-    if (kind === "avatar") {
-      setError(null);
-      setCropFile(file);
-    } else void upload(kind, file);
+    setError(null);
+    setCropFile({ kind, file });
   };
 
   const removeAsset = (kind: AssetKind) => {
@@ -651,14 +654,16 @@ export function ProfileEditor(props: ProfileEditorProps) {
         </Dialog.Viewport>
       </Dialog.Portal>
       {cropFile && session ? (
-        <ProfileAvatarCrop
-          file={cropFile}
+        <ProfileMediaCrop
+          kind={cropFile.kind}
+          file={cropFile.file}
           csrfToken={session.csrfToken}
           onCancel={() => setCropFile(null)}
           onSessionError={expireIfInvalidSession}
           onApply={(cropped) => {
+            const { kind } = cropFile;
             setCropFile(null);
-            void upload("avatar", cropped);
+            void upload(kind, cropped);
           }}
         />
       ) : null}

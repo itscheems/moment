@@ -10,14 +10,15 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { NavigationProvider } from "../../app/navigation";
 import { mediaPreviewUrl } from "../../api/mediaUrls";
+import { mediaApi } from "../../api/media";
 import type { Account, SiteIdentity } from "../../api/public";
 import { FeedbackProvider } from "../../components/Feedback";
 import { SessionProvider } from "../auth/SessionProvider";
 import { ProfileEditor } from "./ProfileEditor";
 import { makeAccountLimits } from "../../test/accountFixtures";
 
-vi.mock("./ProfileAvatarCrop", () => ({
-  ProfileAvatarCrop: ({
+vi.mock("./ProfileMediaCrop", () => ({
+  ProfileMediaCrop: ({
     file,
     onApply,
     onCancel,
@@ -423,10 +424,11 @@ describe("profile editor for a member", () => {
         </FeedbackProvider>
       </NavigationProvider>,
     );
-    await waitFor(() =>
-      expect(screen.getByRole("button", { name: "编辑资料" })).toBeEnabled(),
-    );
-    fireEvent.click(screen.getByRole("button", { name: "编辑资料" }));
+    const trigger = await screen.findByRole("button", { name: "编辑资料" });
+    if (!screen.queryByRole("dialog", { name: "编辑资料" })) {
+      fireEvent.click(trigger);
+    }
+    await screen.findByRole("dialog", { name: "编辑资料" });
     return onSaved;
   }
 
@@ -439,6 +441,114 @@ describe("profile editor for a member", () => {
     const applyButton = screen.queryByRole("button", { name: "应用" });
     if (apply && applyButton) fireEvent.click(applyButton);
   }
+
+  function selectCover() {
+    const input = document.querySelector<HTMLInputElement>(
+      'input[data-profile-media-input="cover"]',
+    )!;
+    fireEvent.change(input, { target: { files: [png("cover.png")] } });
+  }
+
+  it("keeps a cover selection private until the profile is saved", async () => {
+    const bodies: unknown[] = [];
+    const uploaded = {
+      id: mediaId,
+      byteSize: 100,
+      width: 1200,
+      height: 400,
+      mimeType: "image/png",
+      previewMimeType: "image/png",
+      animatedOriginal: false,
+      previewUrl: mediaPreviewUrl(mediaId),
+      originalUrl: `/api/v1/media/${mediaId}/original`,
+    };
+    const upload = vi
+      .spyOn(mediaApi, "uploadMedia")
+      .mockResolvedValue(uploaded);
+    const calls: string[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        calls.push(url);
+        if (url === "/api/v1/account/session")
+          return json(memberSession("active"));
+        if (url === "/api/v1/account/profile") {
+          bodies.push(JSON.parse(String(init?.body)));
+          return json({
+            data: { ...memberWire("active"), cover_media_id: mediaId },
+            meta: { request_id: "req_cover" },
+          });
+        }
+        return json({}, 404);
+      }),
+    );
+    const onSaved = await openEditor(memberAccount("active"));
+    selectCover();
+    expect(
+      screen.getByRole("dialog", { name: "编辑媒体" }),
+    ).toBeInTheDocument();
+    expect(upload).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "返回" }));
+    expect(onSaved).not.toHaveBeenCalled();
+    expect(screen.queryByRole("img", { name: "封面预览" })).toBeNull();
+
+    selectCover();
+    fireEvent.click(screen.getByRole("button", { name: "应用" }));
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "保存" })).toBeEnabled(),
+    );
+    expect(upload).toHaveBeenCalledTimes(1);
+    expect(onSaved).not.toHaveBeenCalled();
+    expect(bodies).toEqual([]);
+    expect(calls).not.toContain("/api/v1/account/cover");
+    expect(screen.getByRole("img", { name: "封面预览" })).toHaveAttribute(
+      "src",
+      uploaded.previewUrl,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "关闭编辑资料" }));
+    fireEvent.click(screen.getByRole("button", { name: "编辑资料" }));
+    expect(screen.queryByRole("img", { name: "封面预览" })).toBeNull();
+    expect(screen.getByRole("button", { name: "保存" })).toBeDisabled();
+    expect(onSaved).not.toHaveBeenCalled();
+
+    selectCover();
+    fireEvent.click(screen.getByRole("button", { name: "应用" }));
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "保存" })).toBeEnabled(),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "保存" }));
+    await waitFor(() => expect(onSaved).toHaveBeenCalledTimes(1));
+    expect(bodies).toEqual([{ cover_media_id: mediaId }]);
+    expect(onSaved.mock.calls[0][0]).toMatchObject({ coverMediaId: mediaId });
+  });
+
+  it("aborts an unfinished cover preview when the editor closes", async () => {
+    let signal: AbortSignal | undefined;
+    vi.spyOn(mediaApi, "uploadMedia").mockImplementation(
+      (_csrf, _file, _progress, nextSignal) => {
+        signal = nextSignal;
+        return new Promise(() => undefined);
+      },
+    );
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) =>
+        String(input) === "/api/v1/account/session"
+          ? json(memberSession("active"))
+          : json({}, 404),
+      ),
+    );
+    const onSaved = await openEditor(memberAccount("active"));
+    selectCover();
+    fireEvent.click(screen.getByRole("button", { name: "应用" }));
+    expect(signal?.aborted).toBe(false);
+    expect(screen.getByRole("button", { name: "保存" })).toBeDisabled();
+    fireEvent.click(screen.getByRole("button", { name: "关闭编辑资料" }));
+    expect(signal?.aborted).toBe(true);
+    expect(onSaved).not.toHaveBeenCalled();
+  });
 
   it("binds an approved member's picture in one request and adopts the answer", async () => {
     const calls: Array<{ url: string; init?: RequestInit }> = [];
