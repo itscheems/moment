@@ -2,13 +2,14 @@ package ginhttp
 
 import (
 	"context"
-	"github.com/moment/moment/internal/app"
-	"github.com/moment/moment/internal/domain"
-	sqlitestore "github.com/moment/moment/internal/storage/sqlite"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/moment/moment/internal/app"
+	"github.com/moment/moment/internal/domain"
+	sqlitestore "github.com/moment/moment/internal/storage/sqlite"
 )
 
 func TestPersonalArchiveHTTPKeepsEveryReadWithinAuthenticatedAccount(t *testing.T) {
