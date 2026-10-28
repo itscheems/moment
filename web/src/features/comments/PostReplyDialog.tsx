@@ -1,3 +1,4 @@
+import { AccountName } from "../../components/AccountName";
 import { useSession } from "../auth/SessionProvider";
 import { useLoginNavigation } from "../auth/loginNavigation";
 import { Dialog } from "../../components/Dialog";
@@ -109,7 +110,9 @@ export function PostReplyDialog({
               </span>
               <div>
                 <p className={styles.replyContextByline}>
-                  <strong>{author.displayName}</strong>
+                  <strong>
+                    <AccountName identity={author} />
+                  </strong>
                   {author.username ? <span>@{author.username}</span> : null}
                 </p>
                 <MarkdownBody

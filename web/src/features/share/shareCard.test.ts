@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { renderMapSnapshot } from "../maps/mapSnapshot";
 import defaultAvatarUrl from "../../assets/default-avatar.png";
+import { verificationArtwork } from "../../components/accountVerification";
 
 vi.mock("../maps/mapSnapshot", () => ({
   renderMapSnapshot: vi.fn(async () => document.createElement("canvas")),
@@ -190,10 +191,13 @@ describe("drawing the card", () => {
   let recording: Recording;
   let restoreCanvas: () => void;
   let restoreImages: () => void;
+  class RecordedPath {
+    constructor(readonly value?: string) {}
+  }
 
   beforeEach(() => {
     vi.mocked(renderMapSnapshot).mockClear();
-    vi.stubGlobal("Path2D", class {});
+    vi.stubGlobal("Path2D", RecordedPath);
     const canvas = recordCanvas();
     recording = canvas.recording;
     restoreCanvas = canvas.restore;
@@ -216,6 +220,24 @@ describe("drawing the card", () => {
     location: null,
     link: null,
     ...over,
+  });
+
+  it("draws verification separately for each current, context and quoted identity", async () => {
+    await renderShareCard(
+      input({
+        verification: "blue",
+        context: [input({ verification: "blue" })],
+        quote: input({ verification: null }),
+      }),
+    );
+    const marks = recording
+      .of("fill")
+      .filter(
+        (call) =>
+          call.args[0] instanceof RecordedPath &&
+          call.args[0].value === verificationArtwork.path,
+      );
+    expect(marks).toHaveLength(2);
   });
 
   it("uses the same default image for missing current, context and quote avatars", async () => {

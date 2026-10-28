@@ -1,3 +1,4 @@
+import { AccountName } from "./AccountName";
 import { useLoginNavigation } from "../features/auth/loginNavigation";
 import { Menu } from "@base-ui/react/menu";
 import { Tooltip } from "@base-ui/react/tooltip";
@@ -199,7 +200,7 @@ function AccountRail({
           </span>
           <span className={styles.accountRailIdentity}>
             <span className={styles.accountRailName}>
-              {account.displayName}
+              <AccountName identity={account} />
             </span>
             <span className={styles.accountRailHandle}>
               @{account.username}
@@ -654,7 +655,14 @@ export function AppShell({
                       <h1>
                         {route.id === "profile" ? (
                           <span>
-                            {profileHeader?.title ?? siteDisplayName(site)}
+                            <AccountName
+                              identity={{
+                                userId: profileHeader?.userId ?? null,
+                                displayName:
+                                  profileHeader?.title ?? siteDisplayName(site),
+                              }}
+                              prominent
+                            />
                           </span>
                         ) : (
                           route.title

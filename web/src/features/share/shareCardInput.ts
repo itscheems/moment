@@ -1,3 +1,4 @@
+import { accountVerification } from "../../components/accountVerification";
 import {
   isArticlePost,
   type CommentContext,
@@ -50,6 +51,7 @@ export function postShareCard(
   const author = postAuthorSite(post, site);
   return {
     displayName: author.displayName,
+    verification: accountVerification(author),
     username: author.username,
     avatarUrl: author.avatarMediaId
       ? mediaPreviewUrl(author.avatarMediaId)

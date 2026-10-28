@@ -1,3 +1,4 @@
+import { AccountName } from "../../components/AccountName";
 import { Dialog } from "../../components/Dialog";
 import { Collapsible } from "@base-ui/react/collapsible";
 import { Menu } from "@base-ui/react/menu";
@@ -100,7 +101,9 @@ function MemberRow({
       <SiteAvatar site={entry} size={40} />
       <div className={styles.identity}>
         <div className={styles.nameLine}>
-          <strong>{entry.displayName}</strong>
+          <strong>
+            <AccountName identity={entry} />
+          </strong>
           {current ? <span className={styles.self}>你</span> : null}
         </div>
         <span className={styles.handle}>@{entry.username}</span>

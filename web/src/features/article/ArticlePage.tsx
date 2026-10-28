@@ -1,3 +1,5 @@
+import { AccountName } from "../../components/AccountName";
+import { accountVerification } from "../../components/accountVerification";
 import { useOptionalSession } from "../auth/SessionProvider";
 import { postAuthorSite } from "../../components/SiteIdentity";
 import type { MouseEventHandler } from "react";
@@ -119,7 +121,9 @@ export function ArticlePage({
                     className={postStyles.nameLink}
                     href={siteProfileHref(site)}
                   >
-                    <strong>{site.displayName}</strong>
+                    <strong>
+                      <AccountName identity={site} />
+                    </strong>
                   </InternalLink>
                 }
               />
@@ -179,6 +183,7 @@ export function ArticlePage({
           excerptSource={{
             title,
             displayName: siteName,
+            verification: accountVerification(site),
             username: site.username,
             avatarUrl: site.avatarMediaId
               ? mediaPreviewUrl(site.avatarMediaId)
@@ -200,7 +205,9 @@ export function ArticlePage({
                     <SiteAvatar site={site} size={40} />
                   </span>
                   <span className={styles.readingAuthorText}>
-                    <strong>{siteName}</strong>
+                    <strong>
+                      <AccountName identity={site} name={siteName} />
+                    </strong>
                     <span>@{site.username}</span>
                   </span>
                 </InternalLink>
@@ -243,6 +250,7 @@ export function ArticlePage({
             baseUrl={site.publicBaseUrl}
             card={{
               displayName: site.displayName,
+              verification: accountVerification(site),
               username: site.username,
               avatarUrl: site.avatarMediaId
                 ? mediaPreviewUrl(site.avatarMediaId)

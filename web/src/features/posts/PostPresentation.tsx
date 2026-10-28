@@ -1,3 +1,4 @@
+import { AccountName } from "../../components/AccountName";
 import { commentDetailPath } from "../../app/routes";
 import { MapCard } from "../maps/MapCard";
 import type { MapViewport } from "../maps/MapCanvas";
@@ -325,12 +326,16 @@ export function PostPresentation({
                 className={styles.nameLink}
                 href={siteProfileHref(site)}
               >
-                <strong>{site.displayName}</strong>
+                <strong>
+                  <AccountName identity={site} />
+                </strong>
               </InternalLink>
             }
           />
         ) : (
-          <strong>{site.displayName}</strong>
+          <strong>
+            <AccountName identity={site} />
+          </strong>
         )}
         {site.username ? (
           <InternalLink
@@ -466,7 +471,9 @@ export function PostPresentation({
     >
       <header className={styles.quoteByline}>
         <SiteAvatar site={postAuthorSite(quoted, site)} />
-        <strong>{postAuthorSite(quoted, site).displayName}</strong>
+        <strong>
+          <AccountName identity={postAuthorSite(quoted, site)} />
+        </strong>
         {postAuthorSite(quoted, site).username ? (
           <span>@{postAuthorSite(quoted, site).username}</span>
         ) : null}

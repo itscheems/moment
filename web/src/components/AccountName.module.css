@@ -1,0 +1,22 @@
+.name {
+  display: inline-flex;
+  align-items: center;
+  min-inline-size: 0;
+  max-inline-size: 100%;
+  vertical-align: bottom;
+  white-space: nowrap;
+  text-decoration: inherit;
+}
+
+.text {
+  min-inline-size: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-decoration: inherit;
+}
+
+.badge {
+  display: block;
+  flex: none;
+}

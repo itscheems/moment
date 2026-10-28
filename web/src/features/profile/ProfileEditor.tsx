@@ -1,3 +1,4 @@
+import { AccountName } from "../../components/AccountName";
 import { accountsApi, type AccountProfileUpdate } from "../../api/accounts";
 
 import { Dialog } from "../../components/Dialog";
@@ -558,7 +559,12 @@ export function ProfileEditor(props: ProfileEditorProps) {
                       </Menu.Root>
                     </div>
                     <div className={styles.identityCopy}>
-                      <strong>{displayName.trim() || "未命名"}</strong>
+                      <strong>
+                        <AccountName
+                          identity={subject}
+                          name={displayName.trim() || "未命名"}
+                        />
+                      </strong>
                       <small>@{username.trim() || "username"}</small>
                       {avatarState === "uploading" ? (
                         <em>正在上传头像…</em>

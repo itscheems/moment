@@ -1,3 +1,5 @@
+import { AccountName } from "./AccountName";
+import type { AccountIdentityKey } from "./accountVerification";
 import { Menu } from "@base-ui/react/menu";
 import { PreviewCard } from "@base-ui/react/preview-card";
 import { Tooltip } from "@base-ui/react/tooltip";
@@ -76,7 +78,7 @@ export function SiteIdentityPreview({
   site,
 }: {
   children: ReactElement;
-  site: IdentityFace & { username: string; bio: string };
+  site: IdentityFace & AccountIdentityKey & { username: string; bio: string };
 }) {
   const title = siteDisplayName(site);
   const profileHref = siteProfileHref(site);
@@ -142,7 +144,7 @@ export function SiteIdentityPreview({
                   href={profileHref}
                   onClick={closeBeforeNavigation}
                 >
-                  <span>{title}</span>
+                  <AccountName identity={site} name={title} prominent />
                 </InternalLink>
               </h2>
               <p className={styles.identityHandle}>@{site.username}</p>
