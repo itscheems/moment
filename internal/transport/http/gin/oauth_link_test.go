@@ -52,6 +52,9 @@ func (fixture linkFixture) start(t *testing.T, provider *stubProvider, query str
 	request := httptest.NewRequest(http.MethodGet, "/api/v1/login/oauth/"+provider.name+"/start"+query, nil)
 	for _, cookie := range cookies {
 		request.AddCookie(cookie)
+		if _, err := fixture.accounts.ResolveSession(context.Background(), mustSessionID(t, fixture.authenticationTestFixture, cookie)); err == nil {
+			request.AddCookie(testConfirmationCookie(t, fixture.authenticationTestFixture, cookie))
+		}
 	}
 	response := performRequest(fixture.engine, request)
 	if response.Code != http.StatusSeeOther {
@@ -66,12 +69,16 @@ func (fixture linkFixture) start(t *testing.T, provider *stubProvider, query str
 	return nil, ""
 }
 
-func (fixture linkFixture) callback(t *testing.T, provider *stubProvider, state string, flow *http.Cookie) *httptest.ResponseRecorder {
+func (fixture linkFixture) callback(t *testing.T, provider *stubProvider, state string, flow *http.Cookie, cookies ...*http.Cookie) *httptest.ResponseRecorder {
 	t.Helper()
 	target := "/api/v1/login/oauth/" + provider.name + "/callback?code=code&state=" + url.QueryEscape(state)
 	request := httptest.NewRequest(http.MethodGet, target, nil)
 	if flow != nil {
 		request.AddCookie(flow)
+	}
+	for _, cookie := range cookies {
+		request.AddCookie(cookie)
+		request.AddCookie(testConfirmationCookie(t, fixture.authenticationTestFixture, cookie))
 	}
 	return performRequest(fixture.engine, request)
 }
@@ -175,9 +182,9 @@ func TestLinkingRefusedForAnAccountSuspendedAfterTheFlowBegan(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	response := fixture.callback(t, fixture.github, state, flow)
-	if got := redirectError(t, response); got != string(domain.CodeAccountSuspended) {
-		t.Fatalf("auth_error = %q, want %q", got, domain.CodeAccountSuspended)
+	response := fixture.callback(t, fixture.github, state, flow, session)
+	if got := redirectError(t, response); got != string(domain.CodeUnauthorized) {
+		t.Fatalf("revoked initiating session: auth_error = %q, want %q", got, domain.CodeUnauthorized)
 	}
 	identities := identitiesOf(t, fixture, member.ID)
 	if len(identities) != 1 || identities[0].Provider != "google" {
@@ -198,7 +205,7 @@ func TestPendingAccountMayLinkASecondProvider(t *testing.T) {
 	}
 
 	flow, state := fixture.start(t, fixture.github, "?return="+url.QueryEscape("/owner/settings"), session)
-	response := fixture.callback(t, fixture.github, state, flow)
+	response := fixture.callback(t, fixture.github, state, flow, session)
 	if location := response.Header().Get("Location"); !strings.HasPrefix(location, "/owner/settings?auth=linked") {
 		t.Fatalf("location = %q, want a link outcome", location)
 	}
@@ -225,13 +232,13 @@ func TestAnAccountCannotHoldTwoIdentitiesFromOneProvider(t *testing.T) {
 	member, session, _ := fixture.signInAsMember(t)
 
 	flow, state := fixture.start(t, fixture.github, "", session)
-	if response := fixture.callback(t, fixture.github, state, flow); redirectError(t, response) != "" {
+	if response := fixture.callback(t, fixture.github, state, flow, session); redirectError(t, response) != "" {
 		t.Fatalf("the first github link was refused: %s", response.Header().Get("Location"))
 	}
 
 	fixture.github.identity.ProviderUserID = "999999999"
 	flow, state = fixture.start(t, fixture.github, "", session)
-	response := fixture.callback(t, fixture.github, state, flow)
+	response := fixture.callback(t, fixture.github, state, flow, session)
 	if got := redirectError(t, response); got != string(domain.CodeIdentityAlreadyLinked) {
 		t.Fatalf("auth_error = %q, want %q", got, domain.CodeIdentityAlreadyLinked)
 	}

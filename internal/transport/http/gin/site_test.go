@@ -89,6 +89,7 @@ func TestSitePatchStrictJSONCSRFAndCancellation(t *testing.T) {
 	}
 	request = jsonRequest(http.MethodPatch, "/api/v1/site", `{"title":"session title"}`)
 	request.AddCookie(cookie)
+	request.AddCookie(testConfirmationCookie(t, fixture.authenticationTestFixture, cookie))
 	request.Header.Set(CSRFHeaderName, session["csrf_token"].(string))
 	if response := performRequest(fixture.engine, request); response.Code != http.StatusOK {
 		t.Fatalf("session update=%d %s", response.Code, response.Body.String())

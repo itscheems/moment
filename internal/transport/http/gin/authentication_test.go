@@ -143,6 +143,7 @@ func TestAccountSessionCookieCSRFAndLogout(t *testing.T) {
 	}
 	allowed := jsonRequest(http.MethodPost, "/api/v1/account/tokens", `{"label":"device"}`)
 	allowed.AddCookie(cookie)
+	allowed.AddCookie(testConfirmationCookie(t, fixture, cookie))
 	allowed.Header.Set(CSRFHeaderName, data["csrf_token"].(string))
 	if response := performRequest(fixture.engine, allowed); response.Code != http.StatusCreated {
 		t.Fatalf("account token creation=%d %s", response.Code, response.Body.String())

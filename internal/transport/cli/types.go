@@ -91,15 +91,16 @@ func (capability Capability) supports(mode Mode) bool {
 
 // Options contains the common flags shared by every command.
 type Options struct {
-	DataDir   string
-	As        string
-	URL       string
-	TokenFile string
-	JSON      bool
-	LogLevel  string
-	LogFormat string
-	Timeout   time.Duration
-	NoInput   bool
+	DataDir            string
+	As                 string
+	URL                string
+	TokenFile          string
+	ReauthPasswordFile string
+	JSON               bool
+	LogLevel           string
+	LogFormat          string
+	Timeout            time.Duration
+	NoInput            bool
 }
 
 // SafetyPolicy adds confirmation flags only to commands that need them.

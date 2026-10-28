@@ -315,7 +315,7 @@ func commitMergeAPI(ctx context.Context, invocation Invocation, document mergeSe
 	request.Header.Set("Authorization", "Bearer "+accountToken)
 	request.Header.Set("Content-Type", "application/json")
 	request.Header.Set("Accept", "application/json")
-	response, err := http.DefaultClient.Do(request)
+	response, err := accountHTTPClient(invocation).Do(request)
 	if err != nil {
 		return archive.CommitResult{}, nil, err
 	}
@@ -358,7 +358,7 @@ func discardMergeAPI(ctx context.Context, invocation Invocation, stagingToken st
 	request.Header.Set("Authorization", "Bearer "+accountToken)
 	request.Header.Set("Content-Type", "application/json")
 	request.Header.Set("Accept", "application/json")
-	response, err := http.DefaultClient.Do(request)
+	response, err := accountHTTPClient(invocation).Do(request)
 	if err != nil {
 		return nil, err
 	}

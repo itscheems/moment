@@ -354,8 +354,12 @@ func TestOAuthStartedWhileSignedInLinksInsteadOfCreatingAnAccount(t *testing.T) 
 	fixture := newOAuthFixture(t)
 	accountCookie, _ := exchangeAccountSession(t, fixture.authenticationTestFixture, fixture.token)
 
-	flow, state := fixture.startFlow(t, "?return="+url.QueryEscape("/owner/settings"), accountCookie)
-	response := fixture.do(t, callbackRequest(state, "code", flow))
+	proof := testConfirmationCookie(t, fixture.authenticationTestFixture, accountCookie)
+	flow, state := fixture.startFlow(t, "?return="+url.QueryEscape("/owner/settings"), accountCookie, proof)
+	callback := callbackRequest(state, "code", flow)
+	callback.AddCookie(accountCookie)
+	callback.AddCookie(proof)
+	response := fixture.do(t, callback)
 	if response.Code != http.StatusSeeOther {
 		t.Fatalf("callback = %d", response.Code)
 	}

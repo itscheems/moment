@@ -43,13 +43,15 @@ const (
 // deleting it on arrival makes it single-use -- which is the whole job of the
 // state parameter.
 type oauthFlow struct {
-	Provider    string `json:"p"`
-	State       string `json:"s"`
-	Verifier    string `json:"v"`
-	Nonce       string `json:"n"`
-	ReturnPath  string `json:"r"`
-	LinkUserID  string `json:"l,omitempty"`
-	ExpiresAtMS int64  `json:"e"`
+	Provider     string `json:"p"`
+	State        string `json:"s"`
+	Verifier     string `json:"v"`
+	Nonce        string `json:"n"`
+	ReturnPath   string `json:"r"`
+	Confirmation bool   `json:"confirm,omitempty"`
+	CredentialID string `json:"credential,omitempty"`
+	LinkUserID   string `json:"l,omitempty"`
+	ExpiresAtMS  int64  `json:"e"`
 }
 
 // OAuthConfig binds the federated sign-in transport to its dependencies.
@@ -146,6 +148,11 @@ func startOAuth(gate *Gate, config OAuthConfig) gin.HandlerFunc {
 		// admits pending accounts to everything else they do to themselves; a
 		// suspended one never gets this far, because the gate refuses it.
 		if account, signedIn := gate.VerifiedAccount(ctx); signedIn {
+			flow.Confirmation = ctx.Query("confirm") == "1"
+			if !flow.Confirmation && !gate.requireReauthentication(ctx) {
+				return
+			}
+			flow.CredentialID, _ = CurrentCredentialID(ctx)
 			flow.LinkUserID = account.ID
 		}
 
@@ -220,6 +227,30 @@ func completeOAuth(gate *Gate, config OAuthConfig) gin.HandlerFunc {
 		}
 
 		if flow.LinkUserID != "" {
+			account, authErr := gate.authenticate(ctx)
+			if authErr != nil {
+				redirectToSignIn(ctx, domain.CodeUnauthorized)
+				return
+			}
+			credential, _ := CurrentCredentialID(ctx)
+			if account.ID != flow.LinkUserID || credential != flow.CredentialID {
+				redirectToSignIn(ctx, domain.CodeUnauthorized)
+				return
+			}
+			if flow.Confirmation {
+				if err := gate.accounts.VerifyLinkedCredential(ctx.Request.Context(), account.ID, external); err != nil {
+					redirectToSignIn(ctx, oauthFailureCode(err))
+					return
+				}
+				if _, ok := issueReauthentication(ctx, gate, config.Cookies, account.ID, credential); ok {
+					redirectToReturn(ctx, flow.ReturnPath, "confirmed", "")
+				}
+				return
+			}
+			if !gate.requireReauthentication(ctx) {
+				return
+			}
+			ctx.Request = ctx.Request.WithContext(app.WithCredentialActor(ctx.Request.Context(), credential))
 			if err := gate.accounts.LinkIdentity(ctx.Request.Context(), flow.LinkUserID, external); err != nil {
 				config.record(ctx, "warn", "auth_identity_link_failed", map[string]any{"user_id": flow.LinkUserID, "provider": flow.Provider})
 				redirectToSignIn(ctx, oauthFailureCode(err))

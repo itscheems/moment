@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -13,6 +14,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"testing/fstest"
 
@@ -326,5 +328,101 @@ func TestAccountTokenCreationRejectsAnEmptyAPIReceipt(t *testing.T) {
 	output := execute(momentTestApplication(), "", "auth", "create-token", "--url", server.URL, "--json")
 	if output.exit != ExitUnavailable {
 		t.Fatalf("empty creation receipt reported success: %#v", output)
+	}
+}
+
+func TestSensitiveAPIConfirmationAndEmergencyRevocation(t *testing.T) {
+	application := momentTestApplication()
+	root := t.TempDir()
+	commandData(t, execute(application, "", "init", "--data-dir", root, "--username", "writer", "--json"))
+	state, err := runtimefs.OpenContext(context.Background(), root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	db, err := sqlitestore.Open(context.Background(), state, sqlitestore.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = db.Close() }()
+	accounts := testAccountService(t, db, state)
+	user, err := accounts.AccountByUsername(context.Background(), "writer")
+	if err != nil {
+		t.Fatal(err)
+	}
+	password := "sensitive-current-password"
+	if err := accounts.SetAccountPassword(context.Background(), user.ID, password); err != nil {
+		t.Fatal(err)
+	}
+	token, err := accounts.CreateAPIToken(context.Background(), user.ID, "operator")
+	if err != nil {
+		t.Fatal(err)
+	}
+	manager, err := auth.NewManager(root, auth.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := manager.Load(); err != nil {
+		t.Fatal(err)
+	}
+	engine, err := ginhttp.New(ginhttp.Config{Assets: fstest.MapFS{"index.html": &fstest.MapFile{Data: []byte("Moment")}}, SessionSigner: manager, Accounts: accounts})
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := httptest.NewServer(engine)
+	defer server.Close()
+	t.Setenv("MOMENT_TOKEN", token.Value)
+	rejected := execute(application, "", "auth", "create-token", "--url", server.URL, "--json")
+	if rejected.exit != ExitUnauthorized || decodeOneDocument(t, rejected.stdout)["error"].(map[string]any)["code"] != "REAUTHENTICATION_REQUIRED" {
+		t.Fatalf("missing confirmation: %#v", rejected)
+	}
+	proof := filepath.Join(t.TempDir(), "current.password")
+	if err := os.WriteFile(proof, []byte(password+"\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	issued := commandData(t, execute(application, "", "auth", "create-token", "--url", server.URL, "--reauth-password-file", proof, "--json"))
+	directPreview := commandData(t, execute(application, "", "auth", "revoke-all", "--data-dir", root, "--username", "writer", "--dry-run", "--json"))
+	apiPreview := commandData(t, execute(application, "", "auth", "revoke-all", "--url", server.URL, "--dry-run", "--json"))
+	if !reflect.DeepEqual(directPreview, apiPreview) {
+		t.Fatalf("revoke-all preview parity: %v %v", directPreview, apiPreview)
+	}
+	if _, err := accounts.ResolveAPIToken(context.Background(), issued["token"].(string)); err != nil {
+		t.Fatal("dry-run mutated token")
+	}
+	output := execute(application, "", "auth", "revoke-all", "--url", server.URL, "--reauth-password-file", proof, "--yes", "--json")
+	commandData(t, output)
+	if strings.Contains(output.stdout+output.stderr, password) {
+		t.Fatal("confirmation password leaked")
+	}
+	for _, value := range []string{token.Value, issued["token"].(string)} {
+		if _, err := accounts.ResolveAPIToken(context.Background(), value); err == nil {
+			t.Fatal("token survived emergency revocation")
+		}
+	}
+	if _, err := accounts.VerifyPassword(context.Background(), user.Username, password); err != nil {
+		t.Fatal("emergency operation removed recovery password")
+	}
+}
+
+func TestSensitivePasswordProofDoesNotFollowRedirects(t *testing.T) {
+	var reached, confirmed atomic.Bool
+	destination := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { reached.Store(true); w.WriteHeader(http.StatusNoContent) }))
+	defer destination.Close()
+	password := "redirect-confirmation-password"
+	origin := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		confirmed.Store(r.Header.Get("X-Moment-Password") == base64.RawURLEncoding.EncodeToString([]byte(password)))
+		http.Redirect(w, r, destination.URL, http.StatusTemporaryRedirect)
+	}))
+	defer origin.Close()
+	path := filepath.Join(t.TempDir(), "confirmation.password")
+	if err := os.WriteFile(path, []byte(password), 0600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("MOMENT_TOKEN", "fixture-token")
+	output := execute(momentTestApplication(), "", "auth", "create-token", "--url", origin.URL, "--reauth-password-file", path, "--json")
+	if output.exit == ExitSuccess || !confirmed.Load() || reached.Load() {
+		t.Fatalf("redirect crossed credential boundary: exit=%d confirmed=%t forwarded=%t", output.exit, confirmed.Load(), reached.Load())
+	}
+	if strings.Contains(output.stdout+output.stderr, password) {
+		t.Fatal("confirmation password leaked into output")
 	}
 }
