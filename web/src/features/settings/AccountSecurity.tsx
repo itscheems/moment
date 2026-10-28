@@ -24,6 +24,7 @@ export function AccountSecurity({ instanceId }: { instanceId: string | null }) {
   const [label, setLabel] = useState("");
   const [tokens, setTokens] = useState<ApiCredential[]>([]);
   const [receipt, setReceipt] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
   const [pending, setPending] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -75,6 +76,7 @@ export function AccountSecurity({ instanceId }: { instanceId: string | null }) {
     try {
       const created = await createApiCredential(session.csrfToken, label);
       setReceipt(created.token);
+      setCopied(false);
       setTokens((current) => [created.credential, ...current]);
       setLabel("");
     } catch (next) {
@@ -139,6 +141,7 @@ export function AccountSecurity({ instanceId }: { instanceId: string | null }) {
         <p className={forms.formError} role="alert">
           {error}
           <button
+            className={styles.quietButton}
             onClick={() => setAttempt((value) => value + 1)}
             type="button"
           >
@@ -167,19 +170,19 @@ export function AccountSecurity({ instanceId }: { instanceId: string | null }) {
             : "设置密码后，可使用用户名和密码登录。现有 API 令牌和浏览器会话将全部撤销。"}
         </p>
         <button
-          className={forms.primaryButton}
+          className={styles.primaryButton}
           disabled={!session || !password || pending !== null}
           type="submit"
         >
           {pending === "password" ? "正在保存…" : "保存密码并重新登录"}
         </button>
       </form>
-      <h3>API 令牌</h3>
+      <h3 className={styles.securityHeading}>API 令牌</h3>
       <p>
         每个令牌仅代表你的账号，并使用账号当前的权限。撤销令牌也会结束通过它登录的会话。
       </p>
       <form
-        className={styles.settingsForm}
+        className={`${styles.settingsForm} ${styles.tokenForm}`}
         onSubmit={(event) => void issue(event)}
       >
         <label>
@@ -193,7 +196,7 @@ export function AccountSecurity({ instanceId }: { instanceId: string | null }) {
           />
         </label>
         <button
-          className={forms.secondaryButton}
+          className={styles.secondaryButton}
           disabled={
             !session || pending !== null || account?.status !== "active"
           }
@@ -205,61 +208,83 @@ export function AccountSecurity({ instanceId }: { instanceId: string | null }) {
       {receipt ? (
         <div className={styles.oneTimeCredential} role="status">
           <p>请保存此令牌，它只显示这一次。</p>
-          <textarea aria-label="新 API 令牌" readOnly value={receipt} />
-          <button
-            className={forms.secondaryButton}
-            onClick={() =>
-              void navigator.clipboard
-                .writeText(receipt)
-                .catch(() => setError("未能复制，请选择令牌后手动复制。"))
-            }
-            type="button"
-          >
-            复制令牌
-          </button>
-          <button onClick={() => setReceipt(null)} type="button">
-            已保存，隐藏令牌
-          </button>
+          <textarea
+            aria-label="新 API 令牌"
+            readOnly
+            rows={2}
+            value={receipt}
+            spellCheck={false}
+          />
+          <div className={styles.inlineActions}>
+            <button
+              className={styles.primaryButton}
+              onClick={() =>
+                void navigator.clipboard
+                  .writeText(receipt)
+                  .then(() => setCopied(true))
+                  .catch(() => setError("未能复制，请选择令牌后手动复制。"))
+              }
+              type="button"
+            >
+              {copied ? "已复制" : "复制令牌"}
+            </button>
+            <button
+              className={styles.quietButton}
+              onClick={() => setReceipt(null)}
+              type="button"
+            >
+              已保存，隐藏令牌
+            </button>
+          </div>
         </div>
       ) : null}
-      <ConfirmDialog
-        title="撤销全部访问凭据？"
-        description="全部 API 令牌和浏览器会话都会失效，包括当前会话。密码和已关联的第三方登录方式会保留；如果账号没有其他登录方式，请先设置密码。"
-        confirmLabel="撤销全部凭据并退出"
-        cancelLabel="取消"
-        danger
-        pending={pending !== null}
-        trigger={
-          <button
-            type="button"
-            className={forms.secondaryButton}
-            disabled={!session || pending !== null}
-          >
-            撤销全部访问凭据
-          </button>
-        }
-        onConfirm={revokeAll}
-      />
       <ul className={styles.credentialList}>
         {tokens.map((token) => (
           <li key={token.id}>
-            <span>{token.label || "未命名令牌"}</span>
-            <span> · {new Date(token.created_at_ms).toLocaleDateString()}</span>
+            <div className={styles.credentialInfo}>
+              <span id={`token-label-${token.id}`}>
+                {token.label || "未命名令牌"}
+              </span>
+              <small>
+                {new Date(token.created_at_ms).toLocaleDateString()} 创建
+              </small>
+            </div>
             {token.revoked_at_ms === null ? (
               <button
-                className={forms.secondaryButton}
+                className={styles.revokeToken}
+                aria-describedby={`token-label-${token.id}`}
                 disabled={pending !== null}
                 onClick={() => void revoke(token)}
                 type="button"
               >
-                撤销 {token.label || "令牌"}
+                {pending === token.id ? "正在撤销…" : "撤销"}
               </button>
             ) : (
-              <span> · 已撤销</span>
+              <span className={styles.revokedToken}>已撤销</span>
             )}
           </li>
         ))}
       </ul>
+      <div className={styles.revokeAll}>
+        <ConfirmDialog
+          title="撤销全部访问凭据？"
+          description="全部 API 令牌和浏览器会话都会失效，包括当前会话。密码和已关联的第三方登录方式会保留；如果账号没有其他登录方式，请先设置密码。"
+          confirmLabel="撤销全部凭据并退出"
+          cancelLabel="取消"
+          danger
+          pending={pending !== null}
+          trigger={
+            <button
+              type="button"
+              className={styles.revokeToken}
+              disabled={!session || pending !== null}
+            >
+              撤销全部访问凭据
+            </button>
+          }
+          onConfirm={revokeAll}
+        />
+      </div>
     </section>
   );
 }
