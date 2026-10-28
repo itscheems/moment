@@ -1074,7 +1074,7 @@ func decodeImportRequestID(raw json.RawMessage) (string, error) {
 }
 
 func validateImportInspectionAPI(value archive.Inspection, raw map[string]json.RawMessage, timeRange map[string]json.RawMessage, expectedArchiveBytes int64, observedAt time.Time) error {
-	if value.FormatVersion != archive.FormatVersion || !validLowerHex(value.ArchiveSHA256, sha256.Size) || !validImportGenerationID(value.GenerationID) {
+	if (value.FormatVersion < 2 || value.FormatVersion > archive.FormatVersion) || !validLowerHex(value.ArchiveSHA256, sha256.Size) || !validImportGenerationID(value.GenerationID) {
 		return errors.New("import inspection identity is invalid")
 	}
 	if err := validateImportPreviewAPI(value, timeRange, expectedArchiveBytes); err != nil {
@@ -1096,7 +1096,7 @@ func validateImportInspectionAPI(value archive.Inspection, raw map[string]json.R
 }
 
 func validateImportPreviewAPI(value archive.Inspection, timeRange map[string]json.RawMessage, expectedArchiveBytes int64) error {
-	if value.FormatVersion != archive.FormatVersion || !validLowerHex(value.ArchiveSHA256, sha256.Size) {
+	if (value.FormatVersion < 2 || value.FormatVersion > archive.FormatVersion) || !validLowerHex(value.ArchiveSHA256, sha256.Size) {
 		return errors.New("import preview identity is invalid")
 	}
 	if !validImportCounts(value.Counts, true) || !validImportCounts(value.Replacement.Counts, false) || value.MediaBytes < 0 || value.MissingAlt < 0 || value.Replacement.MediaBytes < 0 || value.Replacement.DataBytes < 0 || value.Replacement.MediaBytes > value.Replacement.DataBytes {
@@ -1437,7 +1437,11 @@ func downloadNamedExport(ctx context.Context, invocation Invocation, destination
 	if copied == 0 {
 		return archive.Summary{}, NewCommandError("DEPENDENCY_INVALID_RESPONSE", "the archive download was empty", "retry the export and inspect the server or reverse proxy", ExitUnavailable)
 	}
-	return archive.Summary{FormatVersion: archive.FormatVersion, ArchiveBytes: counted.size, ArchiveSHA256: hex.EncodeToString(digest.Sum(nil))}, nil
+	version := archive.FormatVersion
+	if format == archive.AccountFormatHeaderValue {
+		version = archive.AccountFormatVersion
+	}
+	return archive.Summary{FormatVersion: version, ArchiveBytes: counted.size, ArchiveSHA256: hex.EncodeToString(digest.Sum(nil))}, nil
 }
 
 func backupResult(summary archive.Summary) Result {

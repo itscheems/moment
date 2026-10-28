@@ -167,28 +167,17 @@ row appeared, which for a repost is the repost — not a publication window, so
 `from` and `to` are unchanged: a half-open window on publication in the site
 timezone, and a cursor minted under a window is valid only with that window.
 
-## Exports
+## Personal data and site backups
 
-`GET /backups/export` returns a complete `moment-export-v4` backup for an active administrator.
-`GET /account/export` returns the authenticated account's
-`moment-account-export-v2` personal archive. Pending accounts can export their own
-data; unauthenticated or revoked/suspended sessions cannot. Neither route accepts
-a body or query parameters, and personal export cannot select another account.
+`GET /backups/export` returns a complete `moment-export-v5` backup for an active administrator. `GET /account/export` returns the authenticated account's `moment-account-export-v3` personal archive. Pending accounts can export their own data; unauthenticated, revoked or suspended sessions cannot. Both routes reject query parameters and request bodies. Personal export cannot select another account.
 
-Personal archives contain:
+Personal archives contain the selected account's profile and provider metadata, its posts, full article bodies, server-side article drafts, and the complete comment conversations attached to those posts. They include referenced originals, including comment attachments and historical author avatars. Comments the account wrote elsewhere and external quoted content are excluded. External comment authors carry public display snapshots, without local account authority or provider bindings. Missing external quote targets become unavailable references. Media records contain no source account reuse grants.
 
-- `data/account.json`: the selected profile, role and status;
-- `data/identities.jsonl`: that account's provider bindings and profile metadata,
-  without passwords, bearer tokens, OAuth secrets or sessions;
-- `data/comments.jsonl`: comments attributed to that account;
-- `data/entries.jsonl`: posts and articles authored by the selected account;
-- `data/media.jsonl` and `media/<sha256>.<extension>`: only originals reachable from
-  the selected profile and content;
-- `README.txt`, `manifest.json`, and `checksums.sha256` covering every other member.
+`POST /account/import/plan` accepts `application/zip` and returns an archive hash, target account and incoming counts without adding content. `POST /account/import/restore` accepts the same file and requires its reviewed hash in `X-Moment-Archive-SHA256`. Both require an active authenticated account and browser mutations require CSRF. No account selector is accepted. A restore appends content to that account, preserves existing content and profiles, and never transfers account roles or credentials. Repeating a restore skips existing content; identifier collisions with other accounts are remapped. The response reports `dry_run`, `archive_sha256`, `account_id`, `counts`, `added` and `skipped`.
 
-Referenced posts, parents, replies and quoted IDs do not pull somebody else's
-content into a personal export. This is a portability document, not an importable
-site snapshot. The existing backup inspector rejects its distinct format.
+Historical imported comment authors can have a `username` and `avatar_media_id` while `user_id` and `profile_url` are null. Clients must render these as unlinked display data; a username alone does not identify a local account. Fully linked local authors retain their existing representation.
+
+Personal format 3 is restorable through these account endpoints; earlier personal formats require a new export. Site backup endpoints do not accept personal archives. Site recovery remains an administrator operation and supports backup formats 2 through 5.
 
 Both HTTP downloads are prepared into a private temporary file before returning
 200, then delivered with `Content-Length`, `X-Archive-Format`, and

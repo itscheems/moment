@@ -1675,6 +1675,9 @@ func loadQuotedComment(ctx context.Context, store QuoteReadStore, viewer Viewer,
 		return nil, nil
 	}
 	author := CommentAuthor{DisplayName: record.AuthorName}
+	if record.AuthorSnapshot != nil {
+		author = CommentAuthor{DisplayName: record.AuthorSnapshot.DisplayName, Username: record.AuthorSnapshot.Username, AvatarMediaID: record.AuthorSnapshot.AvatarMediaID}
+	}
 	if record.AuthorUserID != nil {
 		authors, err := readContentAuthors(ctx, store, []domain.Entry{{AuthorUserID: *record.AuthorUserID}})
 		if err != nil {

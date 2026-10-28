@@ -13,6 +13,7 @@ import { AccountAccess } from "../auth/AccountAccess";
 import { ProfileEditor } from "../profile/ProfileEditor";
 import { AccountSecurity } from "./AccountSecurity";
 import { MembersSection } from "./MembersSection";
+import { PersonalData } from "./PersonalData";
 import { BackupRestore } from "./BackupRestore";
 import {
   useSettingsSections,
@@ -277,6 +278,7 @@ export function SettingsPage({
               </p>
               <ProfileEditor account={account} onSaved={adopt} />
             </section>
+            <PersonalData key={account.userId} />
             <AccountSecurity instanceId={site.instanceId} />
             <section aria-label="登录方式与会话">
               <header className={styles.sectionHeader}>

@@ -187,6 +187,7 @@ func ArchiveLinkCardsOf(values []ArchiveLinkCard) []domain.LinkCard {
 // ArchiveComment preserves authorship when known and the historical signature otherwise.
 // ReplyToCommentID names another comment in the same conversation.
 type ArchiveComment struct {
+	AuthorSnapshot   *domain.CommentAuthorSnapshot
 	ID               string
 	EntryID          string
 	ParentID         *string
@@ -809,7 +810,7 @@ SELECT comment.id, comment.entry_id, comment.parent_id,
        location.category, location.provider, location.provider_place_id,
        location.latitude_e7, location.longitude_e7, location.coordinate_system,
        usage.media_id, usage.position, usage.alt_text,
-       pin.comment_id IS NOT NULL
+       pin.comment_id IS NOT NULL, comment.author_username, comment.author_display_name, comment.author_avatar_media_id
 FROM comments AS comment
 LEFT JOIN comment_media AS usage ON usage.comment_id = comment.id
 LEFT JOIN comment_location AS location ON location.comment_id = comment.id
@@ -828,6 +829,7 @@ ORDER BY comment.entry_id,
 	for rows.Next() {
 		var value ArchiveComment
 		var parent sql.NullString
+		var snapshotUsername, snapshotName, snapshotAvatar sql.NullString
 		var authorUserID, replyToCommentID sql.NullString
 		var mediaID, alt sql.NullString
 		var position sql.NullInt64
@@ -840,7 +842,7 @@ ORDER BY comment.entry_id,
 			&locationName, &locationDisplayName,
 			&countryCode, &country, &region, &city, &district, &category, &provider,
 			&providerPlaceID, &latitude, &longitude, &coordinateSystem,
-			&mediaID, &position, &alt, &value.Pinned,
+			&mediaID, &position, &alt, &value.Pinned, &snapshotUsername, &snapshotName, &snapshotAvatar,
 		); err != nil {
 			return fmt.Errorf("scan archive comment: %w", err)
 		}
@@ -870,6 +872,12 @@ ORDER BY comment.entry_id,
 			}
 			if err := value.Location.Validate(); err != nil {
 				return errors.New("archive comment location is invalid")
+			}
+		}
+		if snapshotName.Valid {
+			value.AuthorSnapshot = &domain.CommentAuthorSnapshot{Username: snapshotUsername.String, DisplayName: snapshotName.String}
+			if snapshotAvatar.Valid {
+				value.AuthorSnapshot.AvatarMediaID = &snapshotAvatar.String
 			}
 		}
 		if current == nil || current.ID != value.ID {

@@ -330,3 +330,62 @@ it("sends expired account settings to the standalone login page with its full re
     "/compose/articles",
   );
 });
+
+it("lets a member preview and append personal data through account endpoints", async () => {
+  const empty = {
+    entries: 0,
+    comments: 0,
+    media: 0,
+    users: 0,
+    identities: 0,
+    articles: 0,
+    article_drafts: 0,
+  };
+  const hash = "b".repeat(64),
+    file = new File(["personal archive"], "personal.zip");
+  let restored = false;
+  const calls = installApi("member", (url, init) => {
+    if (!url.startsWith("/api/v1/account/import/")) return;
+    expect(init?.body).toBe(file);
+    const commit = url.endsWith("/restore");
+    if (commit) {
+      expect(new Headers(init?.headers).get("X-Moment-Archive-SHA256")).toBe(
+        hash,
+      );
+      restored = true;
+    }
+    return json({
+      dry_run: !commit,
+      archive_sha256: hash,
+      account_id: accountId,
+      counts: { ...empty, entries: 2, comments: 3 },
+      added: commit ? { ...empty, entries: 2, comments: 3 } : empty,
+      skipped: empty,
+    });
+  });
+  render(<App />);
+  const personal = await screen.findByRole("region", { name: "个人数据" });
+  fireEvent.change(within(personal).getByLabelText("个人导出文件"), {
+    target: { files: [file] },
+  });
+  fireEvent.click(within(personal).getByRole("button", { name: "检查文件" }));
+  expect(
+    await screen.findByText("当前站点已有的内容不会被删除或覆盖。"),
+  ).toBeVisible();
+  expect(restored).toBe(false);
+  fireEvent.click(
+    within(personal).getByRole("button", { name: "确认添加到当前账号" }),
+  );
+  expect(await screen.findByText(/已添加 2 条内容、3 条评论/)).toBeVisible();
+  expect(restored).toBe(true);
+  await waitFor(() =>
+    expect(
+      within(personal).getByRole("button", { name: "检查文件" }),
+    ).toHaveFocus(),
+  );
+  expect(
+    calls.mock.calls.some(([url]) =>
+      String(url).startsWith("/api/v1/backups/import"),
+    ),
+  ).toBe(false);
+});

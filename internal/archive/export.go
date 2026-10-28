@@ -36,12 +36,12 @@ import (
 
 const (
 	// FormatVersion is the import-facing Moment export protocol version.
-	FormatVersion           = 4
+	FormatVersion           = 5
 	formatName              = "moment-export"
 	copyBufferSize          = 128 << 10
 	manifestFixedPointLimit = 32
-	// FormatHeaderValue is the fail-closed HTTP/CLI negotiation token for v4.
-	FormatHeaderValue = "moment-export-v4"
+	// FormatHeaderValue is the fail-closed HTTP/CLI negotiation token for v5.
+	FormatHeaderValue = "moment-export-v5"
 )
 
 // ErrDestinationUnavailable classifies a safe output target that cannot be
@@ -49,16 +49,17 @@ const (
 var ErrDestinationUnavailable = errors.New("archive destination is unavailable")
 
 const readme = "Moment portable export\n\n" +
-	"Format: moment-export v4\n" +
+	"Format: moment-export v5\n" +
 	"Portable records are under data/ and immutable originals are under media/.\n" +
 	"checksums.sha256 uses: <sha256>\\t<uncompressed-bytes>\\t<path>.\n" +
 	"It lists every ZIP member except checksums.sha256 itself.\n"
 
 // Exporter produces one consistent archive from the selected runtime root.
 type Exporter struct {
-	dataDir    string
-	appVersion string
-	clock      func() time.Time
+	availableBytes func(string) (uint64, error)
+	dataDir        string
+	appVersion     string
+	clock          func() time.Time
 	// afterSnapshot is a package-test seam used to force a concurrent commit
 	// immediately after SQLite establishes its WAL snapshot.
 	afterSnapshot func()
@@ -67,9 +68,10 @@ type Exporter struct {
 
 // Options supplies deterministic, non-secret export metadata.
 type Options struct {
-	DataDir    string
-	AppVersion string
-	Clock      func() time.Time
+	DataDir        string
+	AppVersion     string
+	Clock          func() time.Time
+	AvailableBytes func(string) (uint64, error)
 }
 
 // Summary is safe CLI output for both direct and API file exports.
@@ -89,7 +91,10 @@ func NewExporter(options Options) (*Exporter, error) {
 	if options.Clock == nil {
 		options.Clock = time.Now
 	}
-	return &Exporter{dataDir: options.DataDir, appVersion: options.AppVersion, clock: options.Clock}, nil
+	if options.AvailableBytes == nil {
+		options.AvailableBytes = runtimefs.AvailableBytes
+	}
+	return &Exporter{dataDir: options.DataDir, appVersion: options.AppVersion, clock: options.Clock, availableBytes: options.AvailableBytes}, nil
 }
 
 // Export streams one v3 ZIP. It holds maintenance shared from CURRENT
@@ -749,17 +754,18 @@ type locationRecord struct {
 // is compared with strict equality and an archive written before the field
 // existed must still import.
 type commentRecord struct {
-	ID               string          `json:"id"`
-	EntryID          string          `json:"entry_id"`
-	ParentID         *string         `json:"parent_id"`
-	AuthorName       string          `json:"author_name"`
-	AuthorUserID     *string         `json:"author_user_id,omitempty"`
-	ReplyToCommentID *string         `json:"reply_to_comment_id,omitempty"`
-	ContentMD        string          `json:"content_md"`
-	CreatedAt        string          `json:"created_at"`
-	Media            []usageRecord   `json:"media"`
-	Location         *locationRecord `json:"location,omitempty"`
-	Pinned           bool            `json:"pinned,omitempty"`
+	AuthorSnapshot   *domain.CommentAuthorSnapshot `json:"author_snapshot,omitempty"`
+	ID               string                        `json:"id"`
+	EntryID          string                        `json:"entry_id"`
+	ParentID         *string                       `json:"parent_id"`
+	AuthorName       string                        `json:"author_name"`
+	AuthorUserID     *string                       `json:"author_user_id,omitempty"`
+	ReplyToCommentID *string                       `json:"reply_to_comment_id,omitempty"`
+	ContentMD        string                        `json:"content_md"`
+	CreatedAt        string                        `json:"created_at"`
+	Media            []usageRecord                 `json:"media"`
+	Location         *locationRecord               `json:"location,omitempty"`
+	Pinned           bool                          `json:"pinned,omitempty"`
 }
 
 type mediaGrantRecord struct {
@@ -1002,7 +1008,7 @@ func archiveVisibility(value string) (domain.Visibility, error) {
 func portableCommentRecord(value sqlitestore.ArchiveComment) commentRecord {
 	return commentRecord{
 		ID: value.ID, EntryID: value.EntryID, ParentID: value.ParentID,
-		AuthorName: value.AuthorName, AuthorUserID: value.AuthorUserID,
+		AuthorName: value.AuthorName, AuthorUserID: value.AuthorUserID, AuthorSnapshot: value.AuthorSnapshot,
 		ReplyToCommentID: value.ReplyToCommentID, ContentMD: value.ContentMD,
 		CreatedAt: portableTime(value.CreatedAtMS), Media: portableUsageRecords(value.Media),
 		Location: portableLocation(value.Location), Pinned: value.Pinned,
@@ -1485,6 +1491,11 @@ func domainLocation(value *locationRecord) (*domain.Location, error) {
 }
 
 func validateArchiveComment(value sqlitestore.ArchiveComment) error {
+	if value.AuthorSnapshot != nil {
+		if err := value.AuthorSnapshot.Validate(); err != nil {
+			return err
+		}
+	}
 	id, err := domain.ParseID(value.ID)
 	if err != nil {
 		return err
@@ -1923,11 +1934,11 @@ func ValidateFileContext(ctx context.Context, name string) error {
 	if err := requireObjectFields(manifestFields["limits"], []string{"expanded_bytes"}, []string{"expanded_bytes"}); err != nil {
 		return archiveInvalid("prepared ZIP manifest limits are invalid", err)
 	}
-	if value.Format != formatName || (value.FormatVersion != 2 && value.FormatVersion != 3 && value.FormatVersion != FormatVersion) || validateAppVersion(value.Source.AppVersion) != nil ||
+	if value.Format != formatName || (value.FormatVersion != 2 && value.FormatVersion != 3 && value.FormatVersion != 4 && value.FormatVersion != FormatVersion) || validateAppVersion(value.Source.AppVersion) != nil ||
 		len(value.Source.InstanceID) != 32 || !isLowerHex(value.Source.InstanceID) || value.Counts.Entries < 0 || value.Counts.Comments < 0 || value.Counts.Media < 0 || value.Limits.ExpandedBytes < 1 {
 		return archiveInvalid("prepared ZIP manifest contract is invalid", nil)
 	}
-	if !bytes.Equal(readmeData, []byte(strings.Replace(readme, "v4", fmt.Sprintf("v%d", value.FormatVersion), 1))) {
+	if !bytes.Equal(readmeData, []byte(strings.Replace(readme, "v5", fmt.Sprintf("v%d", value.FormatVersion), 1))) {
 		return archiveInvalid("prepared ZIP README does not match its format version", nil)
 	}
 	_, err = parsePortableTimestamp(value.CreatedAt)
@@ -2289,11 +2300,19 @@ func validatePortableRecords(ctx context.Context, files map[string]*zip.File, me
 		}
 		if err := validateArchiveComment(sqlitestore.ArchiveComment{
 			ID: value.ID, EntryID: value.EntryID, ParentID: value.ParentID,
-			AuthorName: value.AuthorName, AuthorUserID: value.AuthorUserID,
+			AuthorName: value.AuthorName, AuthorUserID: value.AuthorUserID, AuthorSnapshot: value.AuthorSnapshot,
 			ReplyToCommentID: value.ReplyToCommentID, ContentMD: value.ContentMD,
 			CreatedAtMS: created.UnixMilli(), Media: usages, Location: location, Pinned: value.Pinned,
 		}); err != nil {
 			return err
+		}
+		if value.AuthorSnapshot != nil {
+			if document.FormatVersion < 5 {
+				return errors.New("comment author snapshots require archive format 5")
+			}
+			if value.AuthorSnapshot.AvatarMediaID != nil {
+				usageMediaIDs[*value.AuthorSnapshot.AvatarMediaID] = struct{}{}
+			}
 		}
 		commentIDs[value.ID] = commentReference{entryID: value.EntryID, parent: value.ParentID}
 		if value.ReplyToCommentID != nil {

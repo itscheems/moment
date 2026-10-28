@@ -4,6 +4,7 @@ import (
 	"archive/zip"
 	"bytes"
 	"context"
+	"encoding/json"
 	"io"
 	"net/http/httptest"
 	"path/filepath"
@@ -55,6 +56,17 @@ func TestAccountExportCLIFileParityAndIdentityBoundary(t *testing.T) {
 	api := execute(app, "", "--url", server.URL, "user", "export", "--output", apiPath, "--json")
 	if direct.exit != ExitSuccess || api.exit != ExitSuccess || direct.stderr != "" || api.stderr != "" {
 		t.Fatalf("direct=%#v api=%#v", direct, api)
+	}
+	for _, result := range []string{direct.stdout, api.stdout} {
+		var envelope struct {
+			Data archive.Summary `json:"data"`
+		}
+		if err := json.Unmarshal([]byte(result), &envelope); err != nil {
+			t.Fatal(err)
+		}
+		if envelope.Data.FormatVersion != archive.AccountFormatVersion {
+			t.Fatalf("personal format version=%d", envelope.Data.FormatVersion)
+		}
 	}
 	if err := archive.ValidateAccountFileContext(ctx, directPath); err != nil {
 		t.Fatal(err)

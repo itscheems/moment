@@ -51,8 +51,11 @@ func TestCommentAuthorRejectsPartiallyResolvedIdentity(t *testing.T) {
 	if err := validateAuthor(Author{UserID: &userID, Username: &username, DisplayName: "Cheems", ProfileURL: &profileURL}); err != nil {
 		t.Fatalf("rejected a fully resolved identity: %v", err)
 	}
-	if err := validateAuthor(Author{Username: &username, DisplayName: "Cheems"}); err == nil {
-		t.Fatal("accepted a username without a profile URL")
+	if err := validateAuthor(Author{Username: &username, DisplayName: "Cheems"}); err != nil {
+		t.Fatalf("rejected an unlinked historical author: %v", err)
+	}
+	if err := validateAuthor(Author{UserID: &userID, Username: &username, DisplayName: "Cheems"}); err == nil {
+		t.Fatal("accepted a partial local account identity")
 	}
 	mismatched := "/someone-else"
 	if err := validateAuthor(Author{UserID: &userID, Username: &username, DisplayName: "Cheems", ProfileURL: &mismatched}); err == nil {

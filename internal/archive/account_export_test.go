@@ -53,7 +53,7 @@ func TestAccountExportSelectsOnlyOwnRecordsAndMedia(t *testing.T) {
 	if bytes.Contains(members["manifest.json"], []byte(`"format":"moment-export"`)) || !bytes.Contains(members["manifest.json"], []byte(`"format":"moment-account-export"`)) {
 		t.Fatal("wrong format")
 	}
-	if len(nonemptyLines(members["data/entries.jsonl"])) != 0 || len(nonemptyLines(members["data/comments.jsonl"])) != 1 || len(nonemptyLines(members["data/identities.jsonl"])) != 2 {
+	if len(nonemptyLines(members["data/entries.jsonl"])) != 0 || len(nonemptyLines(members["data/comments.jsonl"])) != 0 || len(nonemptyLines(members["data/identities.jsonl"])) != 2 {
 		t.Fatal("account scope leaked or lost records")
 	}
 	if members["data/site.json"] != nil || members["data/users.jsonl"] != nil || members["media/"+fixture.mediaOneSHA+".jpg"] != nil {

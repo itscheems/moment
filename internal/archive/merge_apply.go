@@ -259,6 +259,9 @@ func ResolvePortableMerge(plan MergePlan, selection MergeSelection, local, incom
 	for index := range result.Authority.Comments {
 		if selectedIncomingComment(result.Authority.Comments[index].ID, result.CommentRemap, incoming.Comments, itemChoices) {
 			remapUsages(result.Authority.Comments[index].Media, mediaRemap)
+			if snapshot := result.Authority.Comments[index].AuthorSnapshot; snapshot != nil {
+				snapshot.AvatarMediaID = remappedPointer(snapshot.AvatarMediaID, mediaRemap)
+			}
 		}
 	}
 	applySiteSelection(&result.Authority.Site, incoming.Site, siteChoices, result.EntryRemap, mediaRemap)
@@ -682,6 +685,9 @@ func referencedMediaIDs(authority PortableAuthority) map[string]struct{} {
 		}
 	}
 	for _, comment := range authority.Comments {
+		if comment.AuthorSnapshot != nil && comment.AuthorSnapshot.AvatarMediaID != nil {
+			result[*comment.AuthorSnapshot.AvatarMediaID] = struct{}{}
+		}
 		for _, usage := range comment.Media {
 			result[usage.MediaID] = struct{}{}
 		}

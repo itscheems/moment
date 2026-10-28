@@ -41,6 +41,7 @@ func accountViewOf(user domain.User) accountView {
 
 func registerAccounts(application *Application, appVersion string) {
 	registerAccountExport(application, appVersion)
+	registerAccountImport(application, appVersion)
 	registerAccountAdministration(application)
 	registerProfile(application)
 	application.MustRegisterLeaf(LeafSpec{

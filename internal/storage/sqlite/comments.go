@@ -148,7 +148,8 @@ const commentColumns = `comments.id, comments.entry_id, comments.parent_id, comm
        location.name, location.display_name, location.country_code,
        location.country, location.region, location.city, location.district,
        location.category, location.provider, location.provider_place_id,
-       location.latitude_e7, location.longitude_e7, location.coordinate_system`
+       location.latitude_e7, location.longitude_e7, location.coordinate_system,
+       comments.author_username, comments.author_display_name, comments.author_avatar_media_id`
 
 // The keyset predicate and tie-breaker always use the same direction.
 func commentOrder(sort app.CommentSort) string {
@@ -365,7 +366,8 @@ SELECT comments.id, comments.entry_id, comments.parent_id, comments.author_name,
        location.name, location.display_name, location.country_code,
        location.country, location.region, location.city, location.district,
        location.category, location.provider, location.provider_place_id,
-       location.latitude_e7, location.longitude_e7, location.coordinate_system
+       location.latitude_e7, location.longitude_e7, location.coordinate_system,
+       comments.author_username, comments.author_display_name, comments.author_avatar_media_id
 FROM comments
 LEFT JOIN comment_location AS location ON location.comment_id = comments.id
 WHERE comments.id IN (`+strings.Join(placeholders, ", ")+`)`, arguments...)
@@ -441,7 +443,8 @@ SELECT id, entry_id, parent_id, author_name, author_user_id, reply_to_comment_id
      , location.name, location.display_name, location.country_code,
        location.country, location.region, location.city, location.district,
        location.category, location.provider, location.provider_place_id,
-       location.latitude_e7, location.longitude_e7, location.coordinate_system
+       location.latitude_e7, location.longitude_e7, location.coordinate_system,
+       comments.author_username, comments.author_display_name, comments.author_avatar_media_id
 FROM comments
 LEFT JOIN comment_location AS location ON location.comment_id = comments.id
 WHERE comments.id = ?`, id.String()))
@@ -460,7 +463,8 @@ SELECT child.id, child.entry_id, child.parent_id, child.author_name, child.autho
        location.name, location.display_name, location.country_code,
        location.country, location.region, location.city, location.district,
        location.category, location.provider, location.provider_place_id,
-       location.latitude_e7, location.longitude_e7, location.coordinate_system
+       location.latitude_e7, location.longitude_e7, location.coordinate_system,
+       child.author_username, child.author_display_name, child.author_avatar_media_id
 FROM comments AS child
 LEFT JOIN comments AS root ON root.id = child.parent_id
 LEFT JOIN comment_location AS location ON location.comment_id = child.id
@@ -813,6 +817,7 @@ type commentScanner interface{ Scan(...any) error }
 func scanComment(scanner commentScanner) (domain.Comment, error) {
 	var idValue, entryValue, authorName, content string
 	var parent, authorUserID, replyTarget sql.NullString
+	var snapshotUsername, snapshotName, snapshotAvatar sql.NullString
 	var createdAt int64
 	var locationName, locationDisplayName, countryCode, country, region, city, district, category, provider, providerPlaceID sql.NullString
 	var latitude, longitude sql.NullInt64
@@ -821,7 +826,7 @@ func scanComment(scanner commentScanner) (domain.Comment, error) {
 		&idValue, &entryValue, &parent, &authorName, &authorUserID, &replyTarget, &content, &createdAt,
 		&locationName, &locationDisplayName, &countryCode, &country, &region, &city,
 		&district, &category, &provider, &providerPlaceID, &latitude, &longitude,
-		&coordinateSystem,
+		&coordinateSystem, &snapshotUsername, &snapshotName, &snapshotAvatar,
 	); err != nil {
 		return domain.Comment{}, err
 	}
@@ -872,6 +877,12 @@ func scanComment(scanner commentScanner) (domain.Comment, error) {
 		replyTo = &parsed
 	}
 	record := domain.Comment{ID: id, EntryID: entryID, ParentID: parentID, AuthorName: authorName, AuthorUserID: authorUser, ReplyToCommentID: replyTo, ContentMD: content, Location: location, CreatedAt: domain.TimeFromMillis(createdAt)}
+	if snapshotName.Valid {
+		record.AuthorSnapshot = &domain.CommentAuthorSnapshot{Username: snapshotUsername.String, DisplayName: snapshotName.String}
+		if snapshotAvatar.Valid {
+			record.AuthorSnapshot.AvatarMediaID = &snapshotAvatar.String
+		}
+	}
 	if err := record.Validate(); err != nil {
 		return domain.Comment{}, domain.NewError(domain.CodeDataIntegrityFailed, "stored comment violates the comment contract", map[string]any{"comment_id": id.String()})
 	}
