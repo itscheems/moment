@@ -1,12 +1,12 @@
 import { Dialog } from "../../components/Dialog";
 import { Slider } from "@base-ui/react/slider";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import Cropper, { type Area, type MediaSize } from "react-easy-crop";
 import "react-easy-crop/react-easy-crop.css";
 import { Icon } from "../../components/icons";
 import { mediaApi } from "../../api/media";
 import { createMediaCrop, type MediaCropSource } from "../media/mediaCrop";
-import styles from "./ProfileAvatarCrop.module.css";
+import styles from "./ProfileMediaCrop.module.css";
 
 const MAX_ZOOM_FACTOR = 6;
 
@@ -23,13 +23,15 @@ function ZoomIcon({ increase }: { increase?: boolean }) {
   );
 }
 
-export function ProfileAvatarCrop({
+export function ProfileMediaCrop({
+  kind,
   file,
   csrfToken,
   onSessionError,
   onCancel,
   onApply,
 }: {
+  kind: "avatar" | "cover";
   file: File;
   csrfToken: string;
   onSessionError: (error: unknown) => boolean;
@@ -47,17 +49,29 @@ export function ProfileAvatarCrop({
   const [applying, setApplying] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const exportController = useRef<AbortController | null>(null);
+  const cropper = useRef<Cropper>(null);
   const locked = applying;
+  const isCover = kind === "cover";
+  const aspect = isCover ? 3 : 1;
   const cropSize = useMemo(() => {
-    const width = Math.min(stageSize.width - 100, stageSize.height - 50);
-    return width > 0 ? { width, height: width } : undefined;
-  }, [stageSize]);
+    const width = Math.min(
+      stageSize.width - (isCover ? 50 : 100),
+      (stageSize.height - 50) * aspect,
+    );
+    return width > 0 ? { width, height: width / aspect } : undefined;
+  }, [stageSize, isCover, aspect]);
   const minZoom =
     cropSize && media && media.width > 0 && media.height > 0
       ? Math.max(cropSize.width / media.width, cropSize.height / media.height)
       : 1;
   const maxZoomFactor = MAX_ZOOM_FACTOR;
   const maxZoomLevel = Math.log2(maxZoomFactor);
+
+  useLayoutEffect(() => {
+    // The engine handles a simultaneous zoom/frame update as a zoom change.
+    // Recompute with the committed frame so a resize cannot keep the old box.
+    if (mediaReady) cropper.current?.computeSizes();
+  }, [cropSize, mediaReady]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -71,7 +85,7 @@ export function ProfileAvatarCrop({
           /image\/hei[cf]/i.test(file.type)
         ) {
           // Use the existing owned upload/preview path for formats the browser
-          // cannot decode. This does not bind or replace the account's avatar.
+          // cannot decode. This does not bind or replace a profile picture.
           const uploaded = await mediaApi.uploadMedia(
             csrfToken,
             file,
@@ -147,7 +161,9 @@ export function ProfileAvatarCrop({
       <Dialog.Portal>
         <Dialog.Backdrop className={styles.backdrop} forceRender />
         <Dialog.Viewport className={styles.viewport}>
-          <Dialog.Popup className={styles.popup}>
+          <Dialog.Popup
+            className={`${styles.popup} ${isCover ? styles.coverMode : ""}`}
+          >
             <header className={styles.header}>
               <button
                 aria-label="返回"
@@ -168,19 +184,21 @@ export function ProfileAvatarCrop({
               </button>
             </header>
             <Dialog.Description className={styles.srOnly}>
-              拖动图片调整头像位置，使用滑块、鼠标滚轮或触控板放大或缩小。聚焦图片后可用方向键移动，按
+              拖动图片调整{isCover ? "背景" : "头像"}
+              位置，使用滑块、鼠标滚轮或触控板放大或缩小。聚焦图片后可用方向键移动，按
               Escape 返回。
             </Dialog.Description>
             <div aria-busy={locked} className={styles.stage} ref={setStage}>
               <div className={styles.cropperHost} inert={locked}>
                 {source && cropSize ? (
                   <Cropper
+                    ref={cropper}
                     image={source.url}
                     crop={crop}
                     zoom={minZoom * 2 ** zoomLevel}
                     minZoom={minZoom}
                     maxZoom={minZoom * maxZoomFactor}
-                    aspect={1}
+                    aspect={aspect}
                     zoomWithScroll
                     cropSize={cropSize}
                     showGrid={false}
@@ -188,7 +206,9 @@ export function ProfileAvatarCrop({
                     roundCropAreaPixels={false}
                     disableAutomaticStylesInjection
                     classes={{ cropAreaClassName: styles.cropArea }}
-                    cropperProps={{ "aria-label": "头像裁切区域" }}
+                    cropperProps={{
+                      "aria-label": isCover ? "背景裁切区域" : "头像裁切区域",
+                    }}
                     mediaProps={{
                       onError: () => {
                         setMediaReady(false);

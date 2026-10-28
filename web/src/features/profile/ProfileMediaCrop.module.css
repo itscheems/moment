@@ -82,6 +82,18 @@
   cursor: default;
 }
 
+.coverMode {
+  --accent: #1d9bf0;
+  grid-template-rows: 53px minmax(0, 1fr) calc(
+      48px + env(safe-area-inset-bottom)
+    );
+}
+
+.coverMode .apply {
+  color: light-dark(#fff, #0f1419);
+  background: light-dark(#0f1419, #eff3f4);
+}
+
 .stage,
 .cropperHost {
   position: relative;
@@ -129,6 +141,11 @@
   inline-size: 18.75px;
   block-size: 18.75px;
   fill: currentColor;
+}
+
+.coverMode .footer {
+  padding-block-end: env(safe-area-inset-bottom);
+  color: var(--text-secondary);
 }
 
 .slider {
@@ -205,6 +222,9 @@
   }
   .apply:hover:not(:disabled) {
     background: var(--accent-hover);
+  }
+  .coverMode .apply:hover:not(:disabled) {
+    background: light-dark(#272c30, #d7dbdc);
   }
   .sliderThumb:hover::after {
     background: color-mix(in srgb, var(--accent) 10%, transparent);
