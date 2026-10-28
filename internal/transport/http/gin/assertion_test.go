@@ -286,6 +286,7 @@ func TestLinkIdentityByAssertionAttachesToTheCurrentAccount(t *testing.T) {
 	request.Header.Set("Content-Type", "application/json")
 	request.Header.Set(CSRFHeaderName, csrf)
 	request.AddCookie(session)
+	request.AddCookie(testConfirmationCookie(t, fixture.authenticationTestFixture, session))
 	response := performRequest(fixture.engine, request)
 	if response.Code != http.StatusOK {
 		t.Fatalf("link = %d, body = %s", response.Code, response.Body.String())
@@ -380,6 +381,7 @@ func TestLinkIdentityRequiresExactlyOneCredential(t *testing.T) {
 		request.Header.Set("Content-Type", "application/json")
 		request.Header.Set(CSRFHeaderName, base.csrf)
 		request.AddCookie(base.session)
+		request.AddCookie(testConfirmationCookie(t, fixture.authenticationTestFixture, base.session))
 		response := performRequest(fixture.engine, request)
 		if response.Code != http.StatusBadRequest {
 			t.Fatalf("%s = %d, body = %s", name, response.Code, response.Body.String())
@@ -394,6 +396,7 @@ func TestUnlinkingAProviderThatIsNotAttachedIsNotAnAuthFailure(t *testing.T) {
 	request := httptest.NewRequest(http.MethodDelete, "/api/v1/account/identities/google", nil)
 	request.Header.Set(CSRFHeaderName, base.csrf)
 	request.AddCookie(base.session)
+	request.AddCookie(testConfirmationCookie(t, fixture.authenticationTestFixture, base.session))
 	response := performRequest(fixture.engine, request)
 
 	if response.Code != http.StatusNotFound {
@@ -408,6 +411,7 @@ func TestUnlinkingAProviderThatIsNotAttachedIsNotAnAuthFailure(t *testing.T) {
 	removal := httptest.NewRequest(http.MethodDelete, "/api/v1/account/identities/github", nil)
 	removal.Header.Set(CSRFHeaderName, base.csrf)
 	removal.AddCookie(base.session)
+	removal.AddCookie(testConfirmationCookie(t, fixture.authenticationTestFixture, base.session))
 	// The account signs in only with github, so removing it would leave no way
 	// back in -- which is its own refusal, and a different one.
 	if removed := performRequest(fixture.engine, removal); removed.Code != http.StatusConflict {

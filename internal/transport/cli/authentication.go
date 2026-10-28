@@ -70,7 +70,7 @@ func registerAuthentication(application *Application) {
 	})
 	application.MustRegisterLeaf(LeafSpec{
 		Path: []string{"auth", "set-password"}, Short: "Set one account's sign-in password",
-		Long:       "Replace an account password and revoke its browser sessions. API tokens remain independently revocable.",
+		Long:       "Replace an account password and revoke all of its browser sessions and API tokens.",
 		Inputs:     "--password-file path or -. Direct mode requires --username and a stopped server; API mode acts only on itself.",
 		Output:     "Password configuration and reauthentication result; no password is returned.",
 		Errors:     "Invalid password input is refused without replacing the stored credential.",
@@ -107,6 +107,18 @@ func registerAuthentication(application *Application) {
 		Args:    cobra.ExactArgs(1), Capability: CapabilityBoth, Flags: username,
 		Policy: SafetyPolicy{Destructive: true, SupportsDryRun: true, Confirmation: "Revoke this API credential?"}, Run: runAccountTokenRevoke,
 	})
+	application.MustRegisterLeaf(LeafSpec{
+		Path: []string{"auth", "revoke-all"}, Short: "Revoke all account access credentials",
+		Long:       "Revoke every API token and browser session for one account atomically. Passwords and provider identities remain configured.",
+		Inputs:     "Direct mode requires --username and a stopped server. API mode requires credential confirmation.",
+		Output:     "Revocation result, or a read-only scope preview for --dry-run.",
+		Errors:     "Unconfirmed or invalid account credentials are refused.",
+		Safety:     "Ends current access too. Requires confirmation; establish another sign-in method first.",
+		Example:    "moment auth revoke-all --data-dir ./moment-data --username writer --dry-run --json",
+		Capability: CapabilityBoth, Flags: username,
+		Policy: SafetyPolicy{Destructive: true, SupportsDryRun: true, Confirmation: "Revoke all account tokens and sessions?"}, Run: runAccountCredentialsRevokeAll,
+	})
+
 }
 
 func runAuthenticationInit(ctx context.Context, invocation Invocation, input CommandInput) (Result, error) {
@@ -256,7 +268,7 @@ func runAccountPasswordSet(ctx context.Context, invocation Invocation, input Com
 	if err != nil {
 		return Result{}, err
 	}
-	result := Result{Data: map[string]bool{"password_enabled": true, "reauthentication_required": true}, Text: "Password updated; browser sessions revoked"}
+	result := Result{Data: map[string]bool{"password_enabled": true, "reauthentication_required": true}, Text: "Password updated; browser sessions and API tokens revoked"}
 	if invocation.Mode() == ModeDirect {
 		return withOfflineAccount(ctx, invocation, input, func(accounts *app.AccountService, user domain.User) (Result, error) {
 			return result, accounts.SetAccountPassword(ctx, user.ID, password)
@@ -335,7 +347,7 @@ func runAccountTokenRevoke(ctx context.Context, invocation Invocation, input Com
 				}
 				return preview(tokens)
 			}
-			return Result{Data: map[string]bool{"revoked": true}, Text: "API credential revoked"}, accounts.RevokeAPIToken(ctx, user.ID, id)
+			return Result{Data: map[string]bool{"revoked": true, "reauthentication_required": false}, Text: "API credential revoked"}, accounts.RevokeAPIToken(ctx, user.ID, id)
 		})
 	}
 	if err := rejectAPIUsername(input); err != nil {
@@ -383,7 +395,7 @@ func accountAPIRequest(ctx context.Context, invocation Invocation, method, path 
 	if payload != nil {
 		request.Header.Set("Content-Type", "application/json")
 	}
-	response, err := http.DefaultClient.Do(request)
+	response, err := accountHTTPClient(invocation).Do(request)
 	if err != nil {
 		return nil, err
 	}
@@ -400,4 +412,29 @@ func accountAPIRequest(ctx context.Context, invocation Invocation, method, path 
 	}
 	_, meta, err := decodeStrictAPISuccess(encoded, destination)
 	return meta, err
+}
+
+func runAccountCredentialsRevokeAll(ctx context.Context, invocation Invocation, input CommandInput) (Result, error) {
+	preview := Result{Data: map[string]bool{"dry_run": true, "revoke_api_tokens": true, "revoke_browser_sessions": true}, Text: "All account access credentials would be revoked"}
+	if invocation.Mode() == ModeDirect {
+		return withOfflineAccount(ctx, invocation, input, func(accounts *app.AccountService, user domain.User) (Result, error) {
+			if invocation.Safety().DryRun {
+				return preview, nil
+			}
+			return Result{Data: map[string]bool{"revoked": true}, Text: "All account access credentials revoked"}, accounts.RevokeAccountCredentials(ctx, user.ID)
+		})
+	}
+	if err := rejectAPIUsername(input); err != nil {
+		return Result{}, err
+	}
+	if invocation.Safety().DryRun {
+		var status accountSecurityStatus
+		if _, err := accountAPIRequest(ctx, invocation, http.MethodGet, "/api/v1/account/security", nil, http.StatusOK, &status); err != nil {
+			return Result{}, err
+		}
+		return preview, nil
+	}
+	var response map[string]bool
+	meta, err := accountAPIRequest(ctx, invocation, http.MethodDelete, "/api/v1/account/credentials", nil, http.StatusOK, &response)
+	return Result{Data: response, Meta: meta, Text: "All account access credentials revoked"}, err
 }

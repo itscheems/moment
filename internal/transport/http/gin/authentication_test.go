@@ -143,6 +143,7 @@ func TestAccountSessionCookieCSRFAndLogout(t *testing.T) {
 	}
 	allowed := jsonRequest(http.MethodPost, "/api/v1/account/tokens", `{"label":"device"}`)
 	allowed.AddCookie(cookie)
+	allowed.AddCookie(testConfirmationCookie(t, fixture, cookie))
 	allowed.Header.Set(CSRFHeaderName, data["csrf_token"].(string))
 	if response := performRequest(fixture.engine, allowed); response.Code != http.StatusCreated {
 		t.Fatalf("account token creation=%d %s", response.Code, response.Body.String())
@@ -220,7 +221,7 @@ func TestPasswordLoginUsesEachAccountsOwnCredential(t *testing.T) {
 	}
 }
 
-func TestPersonalPasswordUpdateRevokesTheAccountBrowserSessions(t *testing.T) {
+func TestPersonalPasswordUpdateRevokesAllAccountAccess(t *testing.T) {
 	fixture := newAuthenticationTestFixture(t, false)
 	cookie, _ := exchangeAccountSession(t, fixture, fixture.token)
 	request := jsonRequest(http.MethodPut, "/api/v1/account/password", `{"password":"replacement-password"}`)
@@ -233,8 +234,8 @@ func TestPersonalPasswordUpdateRevokesTheAccountBrowserSessions(t *testing.T) {
 	if response := performRequest(fixture.engine, expired); response.Code != http.StatusUnauthorized {
 		t.Fatal("password update left browser session live")
 	}
-	if _, err := fixture.accounts.ResolveAPIToken(context.Background(), fixture.token); err != nil {
-		t.Fatal("password update revoked an independent API token")
+	if _, err := fixture.accounts.ResolveAPIToken(context.Background(), fixture.token); !domain.HasCode(err, domain.CodeUnauthorized) {
+		t.Fatal("password update left an API token live")
 	}
 }
 

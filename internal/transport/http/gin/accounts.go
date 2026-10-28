@@ -89,10 +89,10 @@ func RegisterAccountRoutes(engine *gin.Engine, gate *Gate, pictures *media.Store
 	account.GET("/session", currentAccountSession(gate))
 	account.PATCH("/profile", updateOwnProfile(gate))
 	account.GET("/identities", listOwnIdentities(gate))
-	account.POST("/identities/:provider", linkOwnIdentity(gate, oauth))
-	account.DELETE("/identities/:provider", unlinkOwnIdentity(gate))
+	account.POST("/identities/:provider", gate.RequireReauthentication(), linkOwnIdentity(gate, oauth))
+	account.DELETE("/identities/:provider", gate.RequireReauthentication(), unlinkOwnIdentity(gate))
 	account.GET("/sessions", listOwnSessions(gate))
-	account.DELETE("/sessions", revokeOwnSessions(gate, cookies))
+	account.DELETE("/sessions", gate.RequireReauthentication(), revokeOwnSessions(gate, cookies))
 
 	// Uploading is the one thing on an account's own profile that a pending
 	// account may not do. Everything else here is text an input validator

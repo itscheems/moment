@@ -58,6 +58,7 @@ func TestRegistrationOptionsAndSessionContract(t *testing.T) {
 	}
 	protected := jsonRequest(http.MethodPut, "/api/v1/account/password", `{"password":"replacement-password"}`)
 	protected.AddCookie(cookie)
+	protected.AddCookie(confirmOverHTTP(t, fixture, cookie, data["csrf_token"].(string), `{"password":"password123"}`))
 	protected.Header.Set(CSRFHeaderName, data["csrf_token"].(string))
 	if result := performRequest(fixture.engine, protected); result.Code != http.StatusOK {
 		t.Fatalf("registered CSRF did not authorize own account: %d %s", result.Code, result.Body.String())

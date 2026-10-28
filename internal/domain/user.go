@@ -341,14 +341,15 @@ func UsernameCandidate(displayName string) string {
 // proves the cookie was issued here without a lookup, and the row decides
 // whether it is still supposed to work.
 type SessionRecord struct {
-	ID           string
-	UserID       string
-	IssuedAtMS   int64
-	ExpiresAtMS  int64
-	LastSeenAtMS int64
-	RevokedAtMS  *int64
-	Surface      string
-	Label        *string
+	SourceTokenID *string
+	ID            string
+	UserID        string
+	IssuedAtMS    int64
+	ExpiresAtMS   int64
+	LastSeenAtMS  int64
+	RevokedAtMS   *int64
+	Surface       string
+	Label         *string
 }
 
 // Live reports whether this session should still be honoured at the given

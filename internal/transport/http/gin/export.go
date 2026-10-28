@@ -21,7 +21,7 @@ type ArchiveExporter interface {
 // RegisterExportRoutes installs the authenticated full-site backup download.
 func RegisterExportRoutes(engine *gin.Engine, exporter ArchiveExporter, gate *Gate) {
 	backups := engine.Group("/api/v1/backups")
-	backups.Use(gate.RequireAdmin())
+	backups.Use(gate.RequireAdmin(), gate.RequireReauthentication())
 	backups.GET("/export", streamExport(exporter))
 	if personal, ok := exporter.(interface {
 		ExportAccount(context.Context, io.Writer, string) (archive.Summary, error)

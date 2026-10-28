@@ -333,6 +333,7 @@ func (application *Application) buildRoot(streams Streams) (*cobra.Command, *Opt
 	flags.StringVar(&options.DataDir, "data-dir", defaultDataDir, "local Moment data directory (direct mode)")
 	flags.StringVar(&options.URL, "url", "", "Moment HTTP API base URL (API mode)")
 	flags.StringVar(&options.TokenFile, "token-file", "", "file containing an account API token")
+	flags.StringVar(&options.ReauthPasswordFile, "reauth-password-file", "", "private file containing the current password for sensitive API operations")
 	flags.StringVar(&options.As, "as", "", "local account username for content operations; not accepted in API mode")
 	flags.BoolVar(&options.JSON, "json", false, "write one machine-readable JSON document to stdout")
 	flags.StringVar(&options.LogLevel, "log-level", "info", "stderr log level: error, warn, info, or debug")
@@ -512,7 +513,13 @@ func (application *Application) buildLeaf(
 
 func resolveTransport(root *cobra.Command, options Options) (Transport, error) {
 	dataDirChanged := root.PersistentFlags().Changed("data-dir")
+	if options.ReauthPasswordFile == "-" {
+		return nil, invalidArgument("--reauth-password-file requires a regular file", "use a private file, separate from password or archive stdin")
+	}
 	if options.URL == "" {
+		if options.ReauthPasswordFile != "" {
+			return nil, invalidArgument("--reauth-password-file requires --url", "omit it for offline credential recovery")
+		}
 		if options.TokenFile != "" {
 			return nil, invalidArgument("--token-file requires --url", "provide --url for API mode or remove --token-file")
 		}

@@ -1,3 +1,4 @@
+import { credentialConfirmationStatus } from "../../api/accounts";
 import {
   accountsApi,
   type AccountIdentity,
@@ -93,6 +94,11 @@ function RowDetails({
 }
 
 function unlinkMessage(error: unknown, expired: boolean): string {
+  if (
+    error instanceof PublicApiError &&
+    error.code === "REAUTHENTICATION_REQUIRED"
+  )
+    return "请先在页面上方确认身份，再重试此操作。";
   if (expired) return "会话已过期。请重新登录后再解绑。";
   if (error instanceof PublicApiError && error.code === "LAST_CREDENTIAL") {
     return "这是这个账户唯一的登录方式，解绑后就再也登录不进来了。请先绑定另一个登录方式，或设置密码。";
@@ -218,11 +224,19 @@ export function AccountAccess({
     [api, expireIfInvalidSession, session, unlinking],
   );
 
-  const link = (provider: string) => {
+  const link = async (provider: string) => {
     // The session cookie travels with this navigation, which is what makes the
     // server treat the trip as a binding rather than a sign-in. It names the
     // provider again on the way back, so nothing has to be remembered here.
-    window.location.assign(oauthStartUrl(provider, RETURN_PATH));
+    try {
+      if (!(await credentialConfirmationStatus())) {
+        setUnlinkError("请先在页面上方确认身份，再关联登录方式。");
+        return;
+      }
+      window.location.assign(oauthStartUrl(provider, RETURN_PATH));
+    } catch {
+      setUnlinkError("暂时无法确认登录状态，请重试。");
+    }
   };
 
   const revokeEverything = useCallback(async () => {

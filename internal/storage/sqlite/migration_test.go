@@ -150,3 +150,43 @@ func openRawMigrationPool(t *testing.T) *sql.DB {
 	t.Cleanup(func() { _ = pool.Close() })
 	return pool
 }
+
+func TestSessionProvenanceUpgradePreservesAccountsAndCredentials(t *testing.T) {
+	pool := openRawMigrationPool(t)
+	migrations, err := embeddedMigrations()
+	if err != nil {
+		t.Fatal(err)
+	}
+	const before = 3
+	if err := applyMigrations(testAccountContext(), pool, migrations[:before], time.Unix(1, 0)); err != nil {
+		t.Fatal(err)
+	}
+	_, err = pool.ExecContext(testAccountContext(), `
+INSERT INTO users(id,username,display_name,role,status,created_at_ms,updated_at_ms) VALUES ('11111111111111111111111111111111','upgrade_writer','Upgrade Writer','admin','active',1,1);
+INSERT INTO api_tokens(id,user_id,label,token_hash,created_at_ms) VALUES ('22222222222222222222222222222222','11111111111111111111111111111111','existing',zeroblob(32),1);
+INSERT INTO account_passwords(user_id,password_hash,updated_at_ms) VALUES ('11111111111111111111111111111111',x'010203',1);
+INSERT INTO sessions(id,user_id,issued_at_ms,expires_at_ms,last_seen_at_ms,surface) VALUES ('33333333333333333333333333333333','11111111111111111111111111111111',1,9999999999999,1,'web');`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := applyMigrations(testAccountContext(), pool, migrations, time.Unix(2, 0)); err != nil {
+		t.Fatal(err)
+	}
+	var sessions, tokens, passwords, users int
+	for query, destination := range map[string]*int{
+		`SELECT count(*) FROM sessions WHERE revoked_at_ms IS NOT NULL AND source_token_id IS NULL`:       &sessions,
+		`SELECT count(*) FROM api_tokens WHERE revoked_at_ms IS NULL AND token_hash=zeroblob(32)`:         &tokens,
+		`SELECT count(*) FROM account_passwords WHERE password_hash=x'010203'`:                            &passwords,
+		`SELECT count(*) FROM users WHERE username='upgrade_writer' AND role='admin' AND status='active'`: &users,
+	} {
+		if err := pool.QueryRowContext(testAccountContext(), query).Scan(destination); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if sessions != 1 || tokens != 1 || passwords != 1 || users != 1 {
+		t.Fatalf("migration changed authoritative data: sessions=%d tokens=%d passwords=%d users=%d", sessions, tokens, passwords, users)
+	}
+	if err := applyMigrations(testAccountContext(), pool, migrations, time.Unix(3, 0)); err != nil {
+		t.Fatalf("upgrade not idempotent: %v", err)
+	}
+}

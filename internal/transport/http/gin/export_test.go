@@ -46,7 +46,10 @@ func TestExportSessionSignerStrictInputAndDownloadHeaders(t *testing.T) {
 
 	for _, authorize := range []func(*http.Request){
 		func(request *http.Request) { request.Header.Set("Authorization", "Bearer "+fixture.token) },
-		func(request *http.Request) { request.AddCookie(cookie) },
+		func(request *http.Request) {
+			request.AddCookie(cookie)
+			request.AddCookie(testConfirmationCookie(t, fixture, cookie))
+		},
 	} {
 		request, _ := http.NewRequest(http.MethodGet, server.URL+"/api/v1/backups/export", http.NoBody)
 		authorize(request)

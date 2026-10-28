@@ -366,13 +366,15 @@ export async function createApiCredential(
 export async function revokeApiCredential(
   csrfToken: string,
   id: string,
-): Promise<void> {
+): Promise<boolean> {
   const response = await window.fetch(
     `/api/v1/account/tokens/${encodeURIComponent(id)}`,
     requestInit("DELETE", csrfToken),
   );
-  if (objectData((await decodeResponse(response)).data).revoked !== true)
+  const data = objectData((await decodeResponse(response)).data);
+  if (data.revoked !== true)
     throw invalidResponse("API token revocation was not confirmed");
+  return booleanField(data, "reauthentication_required");
 }
 export async function setAccountRole(
   csrfToken: string,
@@ -384,4 +386,39 @@ export async function setAccountRole(
     requestInit("PUT", csrfToken, { role }),
   );
   return parsePrivateAccount((await decodeResponse(response)).data);
+}
+
+export async function confirmAccountCredential(
+  csrfToken: string,
+  credential: { password: string } | { token: string },
+): Promise<string> {
+  const response = await window.fetch(
+    "/api/v1/account/reauthentication",
+    requestInit("POST", csrfToken, credential),
+  );
+  return utcInstantField(
+    objectData((await decodeResponse(response)).data),
+    "expires_at",
+  );
+}
+
+export async function revokeAllCredentials(csrfToken: string): Promise<void> {
+  const response = await window.fetch(
+    "/api/v1/account/credentials",
+    requestInit("DELETE", csrfToken),
+  );
+  if (objectData((await decodeResponse(response)).data).revoked !== true)
+    throw invalidResponse("credential revocation was not confirmed");
+}
+
+export async function credentialConfirmationStatus(
+  signal?: AbortSignal,
+): Promise<string | null> {
+  const response = await window.fetch("/api/v1/account/reauthentication", {
+    ...requestInit("GET"),
+    signal,
+  });
+  const data = objectData((await decodeResponse(response)).data);
+  if (!booleanField(data, "confirmed")) return null;
+  return utcInstantField(data, "expires_at");
 }

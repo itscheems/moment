@@ -3,6 +3,7 @@ package cli
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"io"
@@ -150,7 +151,7 @@ func authenticatedAPIRawRequest(ctx context.Context, invocation Invocation, meth
 	}
 	request.Header.Set("Authorization", "Bearer "+token)
 	request.Header.Set("Accept", "application/json")
-	response, err := http.DefaultClient.Do(request)
+	response, err := accountHTTPClient(invocation).Do(request)
 	if err != nil {
 		return nil, nil, 0, err
 	}
@@ -431,4 +432,45 @@ func runtimeError(err error) error {
 		"run 'moment init --username <name> --data-dir <path> --json' for an empty instance or inspect the existing directory",
 		ExitIO,
 	).WithCause(err)
+}
+
+// Sensitive API requests carry confirmation only to the configured origin.
+// The password is never placed in argv, URL queries or output envelopes.
+type reauthenticationTransport struct {
+	base         http.RoundTripper
+	passwordFile string
+}
+
+func (transport reauthenticationTransport) RoundTrip(request *http.Request) (*http.Response, error) {
+	path := request.URL.Path
+	sensitive := strings.HasSuffix(path, "/api/v1/backups/export") || (isSensitiveHTTPMethod(request.Method) && (strings.Contains(path, "/api/v1/backups/") || strings.Contains(path, "/api/v1/accounts/") || strings.Contains(path, "/api/v1/site") || strings.Contains(path, "/api/v1/account/password") || strings.Contains(path, "/api/v1/account/tokens") || strings.Contains(path, "/api/v1/account/credentials") || strings.Contains(path, "/api/v1/account/identities/") || strings.Contains(path, "/api/v1/account/sessions")))
+	if transport.passwordFile != "" && sensitive {
+		if transport.passwordFile == "-" {
+			return nil, invalidArgument("credential confirmation needs a regular file", "provide a private file to --reauth-password-file")
+		}
+		password, err := readPasswordInput(nil, transport.passwordFile)
+		if err != nil {
+			return nil, err
+		}
+		if password == "" || len(password) > 72 {
+			return nil, invalidArgument("confirmation password is invalid", "provide the current account password")
+		}
+		request = request.Clone(request.Context())
+		request.Header.Set("X-Moment-Password", base64.RawURLEncoding.EncodeToString([]byte(password)))
+	}
+	return transport.base.RoundTrip(request)
+}
+func accountHTTPClient(invocation Invocation) *http.Client {
+	client := *http.DefaultClient
+	base := client.Transport
+	if base == nil {
+		base = http.DefaultTransport
+	}
+	client.Transport = reauthenticationTransport{base: base, passwordFile: invocation.Options().ReauthPasswordFile}
+	client.CheckRedirect = func(_ *http.Request, _ []*http.Request) error { return http.ErrUseLastResponse }
+	return &client
+}
+
+func isSensitiveHTTPMethod(method string) bool {
+	return method != http.MethodGet && method != http.MethodHead && method != http.MethodOptions
 }

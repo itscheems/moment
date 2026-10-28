@@ -173,6 +173,9 @@ func canonicalPublicError(code, message string, details map[string]any, httpStat
 	case "OAUTH_PROVIDER_UNAVAILABLE":
 		exit = ExitUnavailable
 		suggestion = "check that the provider is configured on the selected Moment server"
+	case "REAUTHENTICATION_REQUIRED":
+		exit = ExitUnauthorized
+		suggestion = "provide the current password through --reauth-password-file for this sensitive API operation"
 	case "UNAUTHORIZED", "CSRF_INVALID", "ACCOUNT_TOKEN_REQUIRED", "ACCOUNT_SUSPENDED", "ACCOUNT_NOT_APPROVED":
 		exit = ExitUnauthorized
 		suggestion = "use valid credentials belonging to an admitted account"

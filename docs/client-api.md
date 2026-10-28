@@ -56,10 +56,20 @@ CLI: `moment site capabilities --data-dir ./moment-data --json`, or
 Passwords, API tokens and browser sessions belong to individual accounts. Every authenticated request resolves that account's current status and role. Roles are `admin` or `member`; status is `pending`, `active` or `suspended`. Multiple administrators are supported, and role changes, suspension and deletion must leave at least one active administrator.
 
 - `POST /login/session` exchanges a password with `username`, or an account API `token`, for a browser session. `GET /account/session` returns the real account and CSRF token.
-- `GET /account/security`, `PUT /account/password`, and `GET|POST|DELETE /account/tokens[/id]` manage only the caller's credentials. Password changes revoke that account's sessions; API tokens remain independently revocable.
+- `GET /account/security`, `PUT /account/password`, and `GET|POST|DELETE /account/tokens[/id]` manage only the caller's credentials. Password changes atomically revoke all of that account's sessions and API tokens.
 - `/account/profile`, `/account/avatar`, and `/account/cover` edit the caller's personal profile. `/site` edits site configuration. `PUT /site/profile` selects the independent display account with `{user_id}`.
 - `/accounts` and `PUT /accounts/:id/role` are administrative resources. Selection as the site display account does not grant privileges or transfer content.
 - Web settings use `/settings/account`, `/settings/site`, `/settings/members`, and `/settings/backups`. Publishing uses `/compose` and editing a post uses `/m/:id/edit`.
+
+Sensitive account changes, identity linking/unlinking, administrative writes, full-site exports, and import operations require credential confirmation in addition to ordinary authorization. Accounts with a password must confirm the current password; their API token alone is insufficient. Passwordless accounts can confirm an existing account API token or an already-linked browser OAuth identity. A passwordless API token remains a full-trust credential: configure a password to require independent confirmation for sensitive API operations.
+
+Browser clients use `POST /account/reauthentication` with exactly one of `{password}` or `{token}` and the session CSRF header. Success sets a five-minute HttpOnly cookie bound to the current session. `GET /account/reauthentication` returns `{confirmed, expires_at}`; confirmation cannot be transferred to another session. For passwordless OAuth confirmation, start a configured provider's browser flow with `confirm=1`; its returned identity must already belong to the current account, and the initiating session must still be valid. Failure to confirm returns `403 REAUTHENTICATION_REQUIRED` without running the protected operation.
+
+API clients send the current password as unpadded base64url UTF-8 in `X-Moment-Password` over HTTPS. This is an encoding, not encryption. CLI API operations accept `--reauth-password-file <private-file>` and never put the password in arguments or URLs. Direct credential operations remain available only while the server is stopped.
+
+`DELETE /account/credentials` atomically revokes every API token and browser session for the caller, including current access; passwords and provider identities remain configured. CLI: `moment auth revoke-all --username writer --data-dir ./moment-data --dry-run --json`, then `--yes` to execute. API mode acts only on the authenticated account. Single-token revocation reports `reauthentication_required` when it ends the calling browser session.
+
+Normal logout ends one session. API-token sign-ins retain their source credential: revoking that token also ends its derived browser sessions, while independently issued tokens remain valid. The session-provenance migration signs out existing browser sessions once because their source credentials cannot be established retrospectively; signing keys, API tokens, passwords and content are retained. Older binaries reject the upgraded schema, so back up the database before upgrading and restore that backup before a downgrade.
 
 Sensitive browser drafts and reader caches are separated by instance and account. A changed or unresolved account cannot inherit another account's private editing state.
 

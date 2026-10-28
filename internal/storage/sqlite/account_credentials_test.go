@@ -224,3 +224,145 @@ func TestPendingAccountsCannotMintTokensAndInvalidPasswordsDoNotReplaceCredentia
 		t.Fatal(err)
 	}
 }
+
+func TestCredentialRecoveryUsesAtomicRevocationAndStoredSessionProvenance(t *testing.T) {
+	_, accounts := newAccountFixture(t)
+	ctx := testAccountContext()
+	alice := activeCredentialAccount(t, accounts, "recovery-writer")
+	bob := activeCredentialAccount(t, accounts, "unrelated-writer")
+	original, err := accounts.CreateAPIToken(ctx, alice.ID, "original")
+	if err != nil {
+		t.Fatal(err)
+	}
+	independent, err := accounts.CreateAPIToken(ctx, alice.ID, "independent")
+	if err != nil {
+		t.Fatal(err)
+	}
+	unrelated, err := accounts.CreateAPIToken(ctx, bob.ID, "unrelated")
+	if err != nil {
+		t.Fatal(err)
+	}
+	sessionID, err := app.NewSessionID()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := accounts.StartTokenSession(ctx, alice.ID, sessionID, "web", time.Now().Add(time.Hour).UnixMilli(), original.Token.ID); err != nil {
+		t.Fatal(err)
+	}
+	resolved, err := accounts.ResolveSession(ctx, sessionID)
+	if err != nil || resolved.Session.SourceTokenID == nil || *resolved.Session.SourceTokenID != original.Token.ID {
+		t.Fatalf("session provenance not persisted: %+v %v", resolved, err)
+	}
+	if err := accounts.RevokeAPIToken(ctx, alice.ID, original.Token.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := accounts.ResolveSession(ctx, sessionID); !domain.HasCode(err, domain.CodeUnauthorized) {
+		t.Fatalf("derived session survived: %v", err)
+	}
+	if _, err := accounts.ResolveAPIToken(ctx, independent.Value); err != nil {
+		t.Fatalf("independent token revoked: %v", err)
+	}
+	if err := accounts.SetAccountPassword(ctx, alice.ID, "replacement-password"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := accounts.ResolveAPIToken(ctx, independent.Value); !domain.HasCode(err, domain.CodeUnauthorized) {
+		t.Fatal("token survived password update")
+	}
+	token, err := accounts.CreateAPIToken(ctx, alice.ID, "renewed")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := accounts.VerifySensitiveCredential(ctx, alice.ID, "", token.Value); !domain.HasCode(err, domain.CodeUnauthorized) {
+		t.Fatal("token bypassed configured password")
+	}
+	if err := accounts.VerifySensitiveCredential(ctx, alice.ID, "replacement-password", ""); err != nil {
+		t.Fatal(err)
+	}
+	if err := accounts.RevokeAccountCredentials(ctx, alice.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := accounts.ResolveAPIToken(ctx, token.Value); !domain.HasCode(err, domain.CodeUnauthorized) {
+		t.Fatal("token survived account revocation")
+	}
+	if _, err := accounts.ResolveAPIToken(ctx, unrelated.Value); err != nil {
+		t.Fatalf("unrelated account changed: %v", err)
+	}
+	if _, err := accounts.VerifyPassword(ctx, alice.Username, "replacement-password"); err != nil {
+		t.Fatalf("recovery removed password: %v", err)
+	}
+}
+
+type failingSessionRevocation struct {
+	app.SessionStore
+	failure error
+}
+
+func (store failingSessionRevocation) RevokeUserSessions(context.Context, string, int64) (int, error) {
+	return 0, store.failure
+}
+
+type failedSessionTransactions struct {
+	app.AccountTransactions
+	failure error
+}
+
+func (transactions failedSessionTransactions) WriteAccounts(ctx context.Context, operation func(app.AccountStore, app.SessionStore) error) error {
+	return transactions.AccountTransactions.WriteAccounts(ctx, func(accounts app.AccountStore, sessions app.SessionStore) error {
+		return operation(accounts, failingSessionRevocation{SessionStore: sessions, failure: transactions.failure})
+	})
+}
+func TestPasswordAndEmergencyRevocationRollbackTogether(t *testing.T) {
+	repository, accounts := newAccountFixture(t)
+	ctx := testAccountContext()
+	user := activeCredentialAccount(t, accounts, "rollback_writer")
+	if err := accounts.SetAccountPassword(ctx, user.ID, "original-password"); err != nil {
+		t.Fatal(err)
+	}
+	issued, err := accounts.CreateAPIToken(ctx, user.ID, "existing")
+	if err != nil {
+		t.Fatal(err)
+	}
+	failure := errors.New("session storage unavailable")
+	failing, err := app.NewAccountService(failedSessionTransactions{AccountTransactions: repository, failure: failure})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := failing.SetAccountPassword(ctx, user.ID, "replacement-password"); !errors.Is(err, failure) {
+		t.Fatalf("failure swallowed: %v", err)
+	}
+	if _, err := accounts.VerifyPassword(ctx, user.Username, "original-password"); err != nil {
+		t.Fatal("failed operation replaced password")
+	}
+	if _, err := accounts.ResolveAPIToken(ctx, issued.Value); err != nil {
+		t.Fatal("failed password operation revoked token")
+	}
+	if err := failing.RevokeAccountCredentials(ctx, user.ID); !errors.Is(err, failure) {
+		t.Fatalf("revocation failure swallowed: %v", err)
+	}
+	if _, err := accounts.ResolveAPIToken(ctx, issued.Value); err != nil {
+		t.Fatal("failed emergency operation partially revoked token")
+	}
+}
+
+func TestPasswordChangeRejectsAnAlreadyVerifiedOldPasswordLogin(t *testing.T) {
+	_, accounts := newAccountFixture(t)
+	ctx := testAccountContext()
+	user := activeCredentialAccount(t, accounts, "password_race_writer")
+	if err := accounts.SetAccountPassword(ctx, user.ID, "original-password"); err != nil {
+		t.Fatal(err)
+	}
+	proof, err := accounts.VerifyPasswordCredential(ctx, user.Username, "original-password")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := accounts.SetAccountPassword(ctx, user.ID, "replacement-password"); err != nil {
+		t.Fatal(err)
+	}
+	id, err := app.NewSessionID()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := accounts.StartPasswordSession(ctx, proof, id, "web", time.Now().Add(time.Hour).UnixMilli()); !domain.HasCode(err, domain.CodeUnauthorized) {
+		t.Fatalf("old password authorization survived replacement: %v", err)
+	}
+}

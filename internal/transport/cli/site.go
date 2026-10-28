@@ -285,7 +285,7 @@ func requestAPIJSON(
 		}
 		request.Header.Set("Authorization", "Bearer "+token)
 	}
-	response, err := http.DefaultClient.Do(request)
+	response, err := accountHTTPClient(invocation).Do(request)
 	if err != nil {
 		return nil, nil, err
 	}

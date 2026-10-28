@@ -426,7 +426,7 @@ func uploadImportInspection(ctx context.Context, invocation Invocation, archiveP
 	request.Header.Set("Authorization", "Bearer "+token)
 	request.Header.Set("Content-Type", "application/zip")
 	request.Header.Set("Accept", "application/json")
-	response, err := http.DefaultClient.Do(request)
+	response, err := accountHTTPClient(invocation).Do(request)
 	if err != nil {
 		return archive.Inspection{}, nil, err
 	}
@@ -527,7 +527,7 @@ func uploadImportArchiveBounded(ctx context.Context, invocation Invocation, arch
 	if expectedArchiveSHA != "" {
 		request.Header.Set("X-Moment-Archive-SHA256", expectedArchiveSHA)
 	}
-	response, err := http.DefaultClient.Do(request)
+	response, err := accountHTTPClient(invocation).Do(request)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -572,7 +572,7 @@ func commitImportAPI(ctx context.Context, invocation Invocation, stagingToken st
 	request.Header.Set("Authorization", "Bearer "+accountToken)
 	request.Header.Set("Content-Type", "application/json")
 	request.Header.Set("Accept", "application/json")
-	response, err := http.DefaultClient.Do(request)
+	response, err := accountHTTPClient(invocation).Do(request)
 	if err != nil {
 		return archive.CommitResult{}, nil, err
 	}
@@ -616,7 +616,7 @@ func importStatusAPI(ctx context.Context, invocation Invocation) (archive.Commit
 	}
 	request.Header.Set("Authorization", "Bearer "+accountToken)
 	request.Header.Set("Accept", "application/json")
-	response, err := http.DefaultClient.Do(request)
+	response, err := accountHTTPClient(invocation).Do(request)
 	if err != nil {
 		return archive.CommitStatus{}, nil, err
 	}
@@ -1390,7 +1390,7 @@ func downloadNamedExport(ctx context.Context, invocation Invocation, destination
 	}
 	request.Header.Set("Authorization", "Bearer "+token)
 	request.Header.Set("Accept", "application/zip")
-	response, err := http.DefaultClient.Do(request)
+	response, err := accountHTTPClient(invocation).Do(request)
 	if err != nil {
 		return archive.Summary{}, err
 	}

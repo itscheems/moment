@@ -534,6 +534,42 @@
       ]
     },
     {
+      "command": "auth revoke-all",
+      "direct": {
+        "availability": "offline",
+        "auth": "local_data_access",
+        "locks": [
+          "import:exclusive",
+          "serve:exclusive"
+        ]
+      },
+      "api": {
+        "availability": "supported",
+        "auth": "account_token",
+        "locks": [
+          "server_managed"
+        ]
+      },
+      "destructive": {
+        "requires_yes": true,
+        "supports_dry_run": true
+      },
+      "output_schema": "credential_revocation_v1",
+      "parity_strategy": "account_credential_application_services",
+      "expected_exits": [
+        0,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10
+      ]
+    },
+    {
       "command": "auth revoke-token",
       "direct": {
         "availability": "offline",

@@ -60,7 +60,7 @@ func NewGate(manager *auth.Manager, accounts *app.AccountService) *Gate {
 // can still read the site and correct the name a provider guessed for them;
 // neither of those reaches another person.
 func (gate *Gate) RequireAccount() gin.HandlerFunc {
-	return gate.admit(func(domain.User) error { return nil })
+	return gate.admit(func(domain.User) error { return nil }, false)
 }
 
 // RequireActiveAccount admits only approved accounts. Every route that writes
@@ -71,7 +71,7 @@ func (gate *Gate) RequireActiveAccount() gin.HandlerFunc {
 			return domain.NewError(domain.CodeAccountNotApproved, "this account is waiting to be approved by an administrator", nil)
 		}
 		return nil
-	})
+	}, false)
 }
 
 // RequireAdmin admits active administrators, independently of content authorship.
@@ -84,11 +84,11 @@ func (gate *Gate) RequireAdmin() gin.HandlerFunc {
 			return domain.NewError(domain.CodeUnauthorized, "administrator access is required", nil)
 		}
 		return nil
-	})
+	}, true)
 }
 
 // admit runs the shared credential resolution and then one extra test.
-func (gate *Gate) admit(check func(domain.User) error) gin.HandlerFunc {
+func (gate *Gate) admit(check func(domain.User) error, sensitive bool) gin.HandlerFunc {
 	return func(ctx *gin.Context) {
 		user, err := gate.authenticate(ctx)
 		if err != nil {
@@ -104,7 +104,11 @@ func (gate *Gate) admit(check func(domain.User) error) gin.HandlerFunc {
 			writeAccountError(ctx, failure)
 			return
 		}
-		ctx.Request = ctx.Request.WithContext(app.WithContentActor(ctx.Request.Context(), user))
+		if sensitive && isUnsafeMethod(ctx.Request.Method) && !gate.requireReauthentication(ctx) {
+			return
+		}
+		credential, _ := CurrentCredentialID(ctx)
+		ctx.Request = ctx.Request.WithContext(app.WithCredentialActor(app.WithContentActor(ctx.Request.Context(), user), credential))
 		ctx.Next()
 	}
 }

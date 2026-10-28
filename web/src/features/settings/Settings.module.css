@@ -1802,3 +1802,18 @@
   resize: vertical;
   overflow-wrap: anywhere;
 }
+
+.confirmationTrigger {
+  flex-shrink: 0;
+  align-self: center;
+  margin-inline-start: auto;
+  white-space: nowrap;
+}
+
+.credentialDialog {
+  position: relative;
+}
+
+.credentialDialog h2 {
+  padding-inline-end: var(--target-size);
+}

@@ -49,10 +49,13 @@ func RegisterAuthenticationRoutes(engine *gin.Engine, gate *Gate, cookies Cookie
 	account := engine.Group("/api/v1/account")
 	account.Use(gate.RequireAccount())
 	account.GET("/security", accountSecurity(gate))
-	account.PUT("/password", setAccountPassword(gate, cookies))
+	account.POST("/reauthentication", confirmAccountCredential(gate, cookies))
+	account.GET("/reauthentication", confirmedCredential(gate))
+	account.DELETE("/credentials", gate.RequireReauthentication(), revokeAllAccountCredentials(gate, cookies))
+	account.PUT("/password", gate.RequireReauthentication(), setAccountPassword(gate, cookies))
 	account.GET("/tokens", listAccountTokens(gate))
-	account.POST("/tokens", gate.RequireActiveAccount(), createAccountToken(gate))
-	account.DELETE("/tokens/:id", revokeAccountToken(gate))
+	account.POST("/tokens", gate.RequireActiveAccount(), gate.RequireReauthentication(), createAccountToken(gate))
+	account.DELETE("/tokens/:id", gate.RequireReauthentication(), revokeAccountToken(gate, cookies))
 }
 
 func exchangeSession(gate *Gate, cookies CookieOptions) gin.HandlerFunc {
@@ -72,11 +75,14 @@ func exchangeSession(gate *Gate, cookies CookieOptions) gin.HandlerFunc {
 			return
 		}
 		var account domain.User
+		sourceTokenID := ""
+		var passwordAuthorization app.PasswordAuthorization
 		var err error
 		if request.Token != nil {
 			var verified app.TokenAuthorization
 			verified, err = gate.accounts.ResolveAPIToken(ctx.Request.Context(), *request.Token)
 			account = verified.User
+			sourceTokenID = verified.Token.ID
 			if err == nil && request.Username != nil && strings.TrimSpace(*request.Username) != "" && !strings.EqualFold(account.Username, strings.TrimSpace(*request.Username)) {
 				unauthorized(ctx)
 				return
@@ -86,7 +92,8 @@ func exchangeSession(gate *Gate, cookies CookieOptions) gin.HandlerFunc {
 				Failure(ctx, http.StatusBadRequest, "INVALID_ARGUMENT", "a username is required for password sign-in", map[string]any{"field": "username"})
 				return
 			}
-			account, err = gate.accounts.VerifyPassword(ctx.Request.Context(), *request.Username, *request.Password)
+			passwordAuthorization, err = gate.accounts.VerifyPasswordCredential(ctx.Request.Context(), *request.Username, *request.Password)
+			account = passwordAuthorization.User
 		}
 		if err != nil {
 			writeGateError(ctx, accountAuthenticationError(err))
@@ -102,7 +109,12 @@ func exchangeSession(gate *Gate, cookies CookieOptions) gin.HandlerFunc {
 			Failure(ctx, http.StatusServiceUnavailable, "AUTH_UNAVAILABLE", "session signing is unavailable", nil)
 			return
 		}
-		if _, err := gate.accounts.StartSession(ctx.Request.Context(), account.ID, sessionID, string(requestSurface(ctx)), session.ExpiresAt.UnixMilli()); err != nil {
+		if sourceTokenID != "" {
+			_, err = gate.accounts.StartTokenSession(ctx.Request.Context(), account.ID, sessionID, string(requestSurface(ctx)), session.ExpiresAt.UnixMilli(), sourceTokenID)
+		} else {
+			_, err = gate.accounts.StartPasswordSession(ctx.Request.Context(), passwordAuthorization, sessionID, string(requestSurface(ctx)), session.ExpiresAt.UnixMilli())
+		}
+		if err != nil {
 			writeAccountError(ctx, err)
 			return
 		}
@@ -208,7 +220,7 @@ func createAccountToken(gate *Gate) gin.HandlerFunc {
 	}
 }
 
-func revokeAccountToken(gate *Gate) gin.HandlerFunc {
+func revokeAccountToken(gate *Gate, cookies CookieOptions) gin.HandlerFunc {
 	return func(ctx *gin.Context) {
 		account, ok := CurrentAccount(ctx)
 		if !ok {
@@ -219,7 +231,12 @@ func revokeAccountToken(gate *Gate) gin.HandlerFunc {
 			writeAccountError(ctx, err)
 			return
 		}
-		Success(ctx, http.StatusOK, map[string]bool{"revoked": true}, nil)
+		session, hasSession := CurrentSession(ctx)
+		reauthenticate := hasSession && session.SourceTokenID != nil && *session.SourceTokenID == ctx.Param("id")
+		if reauthenticate {
+			clearSessionCookie(ctx, cookies)
+		}
+		Success(ctx, http.StatusOK, map[string]bool{"revoked": true, "reauthentication_required": reauthenticate}, nil)
 	}
 }
 
@@ -261,6 +278,7 @@ func setSessionCookie(ctx *gin.Context, value string, expiresAt time.Time, optio
 }
 
 func clearSessionCookie(ctx *gin.Context, options CookieOptions) {
+	http.SetCookie(ctx.Writer, &http.Cookie{Name: reauthenticationCookieName, Path: "/api/v1", Expires: time.Unix(1, 0).UTC(), MaxAge: -1, HttpOnly: true, Secure: options.Secure, SameSite: http.SameSiteLaxMode})
 	http.SetCookie(ctx.Writer, &http.Cookie{
 		Name:     SessionCookieName,
 		Value:    "",
