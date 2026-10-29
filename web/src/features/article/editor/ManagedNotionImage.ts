@@ -25,6 +25,9 @@ function ManagedImageView(props: NodeViewProps) {
 }
 
 export const ManagedNotionImage = ManagedImage.extend({
+  // Captions are editable text, but their media container is not a body paragraph.
+  isolating: true,
+
   addNodeView() {
     const render = ReactNodeViewRenderer(ManagedImageView, {
       attrs: { contenteditable: "false" },
