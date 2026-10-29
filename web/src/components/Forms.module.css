@@ -282,6 +282,7 @@
 }
 
 .homepageComposer {
+  --reply-audience-margin-start: -14px;
   padding-block-start: 9px;
 }
 
@@ -402,6 +403,11 @@
 
 .inlineComposer .composerEditor textarea {
   min-block-size: 52px;
+}
+
+.homepageComposer
+  :is(.composerHighlight, .composerMentionMeasure, .composerEditor textarea) {
+  line-height: 28px;
 }
 
 .replyAudienceRow {

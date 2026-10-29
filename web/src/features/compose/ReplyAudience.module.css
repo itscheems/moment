@@ -14,7 +14,7 @@
   border: 1px solid transparent;
   border-radius: 9999px;
   padding: 0 12px;
-  margin-inline-start: -18px;
+  margin-inline-start: var(--reply-audience-margin-start, -18px);
   color: #1d9bf0;
   background: transparent;
   font-size: 14px;
