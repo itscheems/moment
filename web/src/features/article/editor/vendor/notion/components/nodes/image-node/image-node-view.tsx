@@ -1,6 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { Editor, NodeViewProps } from "@tiptap/react";
-import { NodeViewWrapper, NodeViewContent } from "@tiptap/react";
+import {
+  NodeViewWrapper,
+  NodeViewContent,
+  useEditorState,
+} from "@tiptap/react";
 import { NodeSelection } from "@tiptap/pm/state";
 
 import { isValidPosition } from "@notion/lib/editor-utils";
@@ -74,6 +78,11 @@ export const ResizableImage: React.FC<ResizableImageProps> = ({
   onUpdateAttributes,
   getPos,
 }) => {
+  const editable =
+    useEditorState({
+      editor: editor ?? null,
+      selector: ({ editor }) => editor?.isEditable ?? false,
+    }) ?? false;
   const [resizeParams, setResizeParams] = useState<ResizeParams | undefined>();
   const [width, setWidth] = useState<number | undefined>(initialWidth);
   const [showHandles, setShowHandles] = useState(false);
@@ -301,6 +310,7 @@ export const ResizableImage: React.FC<ResizableImageProps> = ({
 
   return (
     <NodeViewWrapper
+      contentEditable={false}
       onMouseEnter={wrapperMouseEnterHandler}
       onMouseLeave={wrapperMouseLeaveHandler}
       onTouchStart={wrapperTouchStartHandler}
@@ -316,7 +326,7 @@ export const ResizableImage: React.FC<ResizableImageProps> = ({
         <div
           className="tiptap-image-content"
           data-drag-handle=""
-          draggable={editor?.isEditable}
+          draggable={editable}
         >
           <img
             {...imageAttributes}
@@ -351,6 +361,7 @@ export const ResizableImage: React.FC<ResizableImageProps> = ({
         {shouldShowCaption && (
           <NodeViewContent
             as="div"
+            contentEditable={editable}
             className="tiptap-image-caption"
             data-placeholder={
               editor?.isEditable ? "Add a caption..." : undefined

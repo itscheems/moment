@@ -12,6 +12,7 @@
   line-height: 1.5;
   min-height: 50vh;
   padding-inline: var(--article-inset);
+  padding-block-start: 18px;
   padding-bottom: 30vh;
   color: var(--tt-theme-text);
 }
@@ -34,6 +35,58 @@
 .notion-like-editor [data-map-node][data-selected] {
   outline: 2px solid var(--tt-brand-color-500);
   border-radius: var(--tt-radius-xs, 0.25rem);
+}
+
+.article-block-drag-preview {
+  position: fixed;
+  left: -10000px;
+  top: 0;
+  overflow: hidden;
+  pointer-events: none;
+  opacity: 0.65;
+  border-radius: 8px;
+  background: var(--tt-bg-color);
+  box-shadow: 0 8px 24px rgb(0 0 0 / 18%);
+}
+
+.article-block-drag-preview .tiptap-image-handle {
+  display: none;
+}
+
+body[data-article-block-dragging]
+  .notion-like-editor
+  :is(.ProseMirror-selectednode, .ProseMirror-selectednoderange) {
+  opacity: 0.3;
+}
+
+body[data-article-block-dragging] .notion-like-editor {
+  cursor: grabbing;
+}
+
+.article-block-dropcursor {
+  color: var(--tt-brand-color-500);
+  border-radius: 2px;
+  transition:
+    top 160ms ease-out,
+    left 160ms ease-out,
+    width 160ms ease-out;
+}
+
+.article-block-dropcursor.prosemirror-dropcursor-block::before {
+  content: "";
+  position: absolute;
+  width: 12px;
+  height: 15px;
+  left: -24px;
+  top: -6px;
+  background: radial-gradient(circle, currentColor 1.25px, transparent 1.75px)
+    center / 6px 5px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .article-block-dropcursor {
+    transition: none;
+  }
 }
 
 /* Keep the template's fixed toolbar below Moment's sticky article header. */

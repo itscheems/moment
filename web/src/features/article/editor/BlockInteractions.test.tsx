@@ -3,7 +3,7 @@ import { Editor } from "@tiptap/core";
 import { EditorContent } from "@tiptap/react";
 import { NodeRangeSelection } from "@tiptap/extension-node-range";
 import { DOMParser } from "@tiptap/pm/model";
-import { cleanup, render, waitFor } from "@testing-library/react";
+import { act, cleanup, render, waitFor } from "@testing-library/react";
 import { afterEach, expect, it } from "vitest";
 import { articleEditorExtensions } from "./schema";
 import { toArticleDocument } from "./document";
@@ -84,6 +84,46 @@ it("retains managed media when the actual editor serializes a copied block range
   const restored = DOMParser.fromSchema(editor.schema).parse(dom);
   expect(toArticleDocument(restored.toJSON())).toEqual(
     toArticleDocument(editor.getJSON()),
+  );
+});
+
+it("keeps image chrome noneditable while captions follow editor editability", async () => {
+  setup();
+  editor.commands.setContent({
+    type: "doc",
+    content: [
+      {
+        type: "image",
+        attrs: {
+          media_id: mediaId,
+          src: `/api/v1/media/${mediaId}/preview`,
+          showCaption: true,
+        },
+        content: [{ type: "text", text: "Caption" }],
+      },
+    ],
+  });
+  render(<EditorContent editor={editor} />);
+  await waitFor(() =>
+    expect(
+      editor.view.dom.querySelector(".tiptap-image-caption"),
+    ).toHaveAttribute("contenteditable", "true"),
+  );
+  expect(editor.view.dom.querySelector(".tiptap-image")).toHaveAttribute(
+    "contenteditable",
+    "false",
+  );
+  act(() => editor.setEditable(false));
+  await waitFor(() =>
+    expect(
+      editor.view.dom.querySelector(".tiptap-image-caption"),
+    ).toHaveAttribute("contenteditable", "false"),
+  );
+  act(() => editor.setEditable(true));
+  await waitFor(() =>
+    expect(
+      editor.view.dom.querySelector(".tiptap-image-caption"),
+    ).toHaveAttribute("contenteditable", "true"),
   );
 });
 

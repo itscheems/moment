@@ -2,6 +2,8 @@ import { t } from "../../../i18n";
 import { InteractiveMapNode } from "./MapNodeView";
 import type { Extensions } from "@tiptap/core";
 import { DraftHistory } from "./draftHistory";
+import { BlockMotion } from "./BlockMotion";
+import { BlockGap } from "./BlockGap";
 import { ReactNodeViewRenderer } from "@tiptap/react";
 import {
   CharacterCount,
@@ -80,13 +82,19 @@ export function articleEditorExtensions(
       ),
     UndoRedo,
     DraftHistory,
-    Dropcursor.configure({ width: 2 }),
+    Dropcursor.configure({
+      width: 2,
+      class: "article-block-dropcursor",
+      color: "var(--tt-brand-color-500)",
+    }),
     Gapcursor,
     ListKeymap,
     TableKit.configure({ table: { resizable: true, cellMinWidth: 120 } }),
     TableHandleExtension,
     Selection,
     NodeRange.configure({ key: null }),
+    BlockMotion,
+    BlockGap,
     ListNormalizationExtension,
     UiState,
     ManagedNotionImage,

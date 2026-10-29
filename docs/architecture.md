@@ -37,6 +37,14 @@ The session owns the account preference. A language provider combines it with a 
 
 The vendored Tiptap UI for the pinned 3.31.3 editor retains its upstream actions, focus management, keyboard navigation, plugins and node views. Local changes resolve labels, tooltips, placeholders, search text and accessibility descriptions through the shared language resources. Recent color data retains semantic color names; presentation translates those names when shown.
 
+## Article block editing
+
+The article editor uses Tiptap's NodeRange and DragHandle extensions for block selection, keyboard expansion and reordering. A selected range remains intact when its drag handle is pressed. Clipboard HTML carries stable media identities and map snapshots, including image captions; image views resolve delivery URLs from those identities after paste.
+
+Drag previews and insertion feedback are temporary presentation state. Motion 13.1.0 animates surrounding blocks through styles outside the editable DOM, so ProseMirror's mutation observer does not replace the drag selection with a browser caret. Drop transactions and undo remain upstream responsibilities. Reduced motion removes the animated transition. Clicking an empty boundary next to media inserts a paragraph only when needed and reuses an existing empty paragraph.
+
+In article editing, the embedded map surface participates in block selection and dragging. Map controls and the expanded map retain their own interactions. These editor behaviors do not alter the stored document schema or article reading views.
+
 
 ## Typography
 
