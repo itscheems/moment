@@ -1602,5 +1602,7 @@
   "{{value1}}年{{value2}}月，{{value3}} 条 Moment_one": "{{value1}}-{{value2}}, {{value3}} Moment",
   "{{value1}}年{{value2}}月，{{value3}} 条 Moment_other": "{{value1}}-{{value2}}, {{value3}} Moments",
   "{{value1}}，{{value2}} 条 Moment{{value3}}_one": "{{value1}}, {{value2}} Moment{{value3}}",
-  "{{value1}}，{{value2}} 条 Moment{{value3}}_other": "{{value1}}, {{value2}} Moments{{value3}}"
+  "{{value1}}，{{value2}} 条 Moment{{value3}}_other": "{{value1}}, {{value2}} Moments{{value3}}",
+  "Who to follow": "Who to follow",
+  "You might like": "You might like"
 }

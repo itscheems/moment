@@ -109,7 +109,7 @@ export function SuggestedPeople({
   if (!enabled || (!error && people.length === 0)) return null;
   return createPortal(
     <PeopleCard
-      title={kind === "home" ? "Who to follow" : "You might like"}
+      title={t(kind === "home" ? "Who to follow" : "You might like")}
       people={people}
       compact
       error={!!error}

@@ -20,6 +20,7 @@ import { RailSlotContext } from "../../components/railSlot";
 import { SessionProvider } from "../auth/SessionProvider";
 import { SuggestedPeople } from "./SuggestedPeople";
 import { FeedbackProvider } from "../../components/Feedback";
+import i18n from "../../i18n";
 
 const amber: PublicAccount = {
   userId: "a".repeat(32),
@@ -105,7 +106,7 @@ describe("SuggestedPeople", () => {
     const { view } = setup();
     render(view());
     const card = await within(slot).findByRole("region", {
-      name: "Who to follow",
+      name: "推荐关注",
     });
     expect(within(card).getAllByRole("listitem")).toHaveLength(2);
     expect(
@@ -135,7 +136,7 @@ describe("SuggestedPeople", () => {
     expect(slot).toBeEmptyDOMElement();
     await act(async () => resolveSession(session));
     const card = await within(slot).findByRole("region", {
-      name: "Who to follow",
+      name: "推荐关注",
     });
     expect(
       within(card).queryByRole("link", { name: "Amber" }),
@@ -150,7 +151,7 @@ describe("SuggestedPeople", () => {
     const { view } = setup();
     const mounted = render(view("profile", "birch"));
     const card = await within(slot).findByRole("region", {
-      name: "You might like",
+      name: "你可能喜欢",
     });
     expect(
       within(card).getByRole("link", { name: "Amber" }),
@@ -171,7 +172,7 @@ describe("SuggestedPeople", () => {
     await waitFor(() => expect(authApi.accountSession).toHaveBeenCalled());
     expect(user).not.toHaveBeenCalled();
     mounted.rerender(view());
-    await within(slot).findByRole("region", { name: "Who to follow" });
+    await within(slot).findByRole("region", { name: "推荐关注" });
     mounted.rerender(view("home", null, false));
     expect(slot).toBeEmptyDOMElement();
     user.mockClear();
@@ -201,4 +202,37 @@ describe("SuggestedPeople", () => {
     mounted.rerender(view("home", null, false));
     expect(slot).toBeEmptyDOMElement();
   });
+
+  it.each(["home", "profile"] as const)(
+    "updates localized titles in the mounted %s card without reloading profiles",
+    async (kind) => {
+      const { view, user } = setup();
+      render(view(kind, kind === "profile" ? "birch" : null));
+      const chinese = kind === "home" ? "推荐关注" : "你可能喜欢";
+      const english = kind === "home" ? "Who to follow" : "You might like";
+      const card = await within(slot).findByRole("region", { name: chinese });
+      const heading = within(card).getByRole("heading", { name: chinese });
+      const person = within(card).getAllByRole("listitem")[0];
+      const requests = user.mock.calls.length;
+
+      await act(async () => {
+        await i18n.changeLanguage("en");
+      });
+      expect(within(slot).getByRole("region", { name: english })).toBe(card);
+      expect(within(card).getByRole("heading", { name: english })).toBe(
+        heading,
+      );
+      expect(within(card).getAllByRole("listitem")[0]).toBe(person);
+      expect(user).toHaveBeenCalledTimes(requests);
+
+      await act(async () => {
+        await i18n.changeLanguage("zh-CN");
+      });
+      expect(within(slot).getByRole("region", { name: chinese })).toBe(card);
+      expect(within(card).getByRole("heading", { name: chinese })).toBe(
+        heading,
+      );
+      expect(user).toHaveBeenCalledTimes(requests);
+    },
+  );
 });
