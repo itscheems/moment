@@ -112,7 +112,7 @@ listening_pid() {
   # Capture first, then take the first line: an early-exiting consumer on
   # a pipe would turn lsof's SIGPIPE into a failure under pipefail.
   local pids
-  pids="$(lsof -nP -iTCP:"$port" -sTCP:LISTEN -t 2>/dev/null || true)"
+  pids="$(lsof -nP -iTCP@127.0.0.1:"$port" -sTCP:LISTEN -t 2>/dev/null || true)"
   printf '%s\n' "$pids" | sed -n '1p'
 }
 
