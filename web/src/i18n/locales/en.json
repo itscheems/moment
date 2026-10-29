@@ -1602,6 +1602,8 @@
   "{{value1}}年{{value2}}月，{{value3}} 条 Moment_other": "{{value1}}-{{value2}}, {{value3}} Moments",
   "{{value1}}，{{value2}} 条 Moment{{value3}}_one": "{{value1}}, {{value2}} Moment{{value3}}",
   "{{value1}}，{{value2}} 条 Moment{{value3}}_other": "{{value1}}, {{value2}} Moments{{value3}}",
+  "Who to follow": "Who to follow",
+  "You might like": "You might like",
   "搜索内容或用户": "Search content or people",
   "无法搜索用户": "Could not search people",
   "搜索类型": "Search type",

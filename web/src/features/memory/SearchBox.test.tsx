@@ -9,6 +9,7 @@ import {
 } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { PublicApi } from "../../api/public";
+import i18n from "../../i18n";
 import { NavigationProvider } from "../../app/navigation";
 import { SearchBox } from "./RailSearch";
 import {
@@ -54,8 +55,9 @@ describe("shared content and people search", () => {
     window.history.replaceState({}, "", "/search");
     vi.stubGlobal("scrollTo", vi.fn());
   });
-  afterEach(() => {
+  afterEach(async () => {
     cleanup();
+    await i18n.changeLanguage("zh-CN");
     vi.restoreAllMocks();
     vi.unstubAllGlobals();
   });
@@ -127,5 +129,32 @@ describe("shared content and people search", () => {
     fireEvent.submit(input.closest("form")!);
     expect(window.location.search).toBe("?q=pine");
     expect(JSON.parse(localStorage.getItem(scope!)!)).toEqual(["pine"]);
+  });
+
+  it("updates interface labels without replacing typed content or fetching profiles again", async () => {
+    const fetcher = vi.fn<typeof fetch>(async () => json([wire]));
+    mount(fetcher);
+    const input = screen.getByRole("combobox", { name: "搜索内容或用户" });
+    fireEvent.focus(input);
+    fireEvent.change(input, { target: { value: "杉木" } });
+    await screen.findByRole("option", { name: "杉木 @cedar" });
+    expect(fetcher).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      await i18n.changeLanguage("en");
+    });
+
+    expect(
+      screen.getByRole("combobox", { name: "Search content or people" }),
+    ).toBe(input);
+    expect(input).toHaveValue("杉木");
+    expect(
+      screen.getByRole("option", { name: "杉木 @cedar" }),
+    ).toBeInTheDocument();
+    expect(fetcher).toHaveBeenCalledTimes(1);
+    fireEvent.keyDown(input, { key: "Escape" });
+    expect(
+      screen.getByRole("button", { name: "Clear search" }),
+    ).toBeInTheDocument();
   });
 });
