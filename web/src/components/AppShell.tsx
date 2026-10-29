@@ -49,10 +49,10 @@ interface NavItem {
 // `/profile` remains the fallback for a visitor who has not signed in.
 const DEFAULT_PROFILE_HREF = "/profile";
 
-function primaryNavFor(profileHref: string): NavItem[] {
+function primaryNavFor(profileHref: string, homeLabel = "首页"): NavItem[] {
   return [
     {
-      label: "首页",
+      label: homeLabel,
       href: "/",
       icon: "home",
       active: ["home", "detail", "comment-detail"],
@@ -359,7 +359,7 @@ function LeftRail({
   onSignOut: () => void;
 }) {
   const { navigateOverlay } = useNavigation();
-  const items = primaryNavFor(profileHref);
+  const items = primaryNavFor(profileHref, "主页");
   return (
     <Tooltip.Provider delay={400}>
       <aside aria-label="站点导航" className={styles.leftRail}>
