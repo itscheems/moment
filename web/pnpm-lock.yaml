@@ -172,9 +172,6 @@ importers:
       i18next:
         specifier: 26.5.11
         version: 26.5.11(typescript@6.0.2)
-      inter-ui:
-        specifier: 4.1.1
-        version: 4.1.1
       lodash.throttle:
         specifier: 4.1.1
         version: 4.1.1
@@ -2713,13 +2710,6 @@ packages:
         integrity: sha512-EdDDZu4A2OyIK7Lr/2zG+w5jmbuk1DVBnEwREQvBzspBJkCEbRa8GxU1lghYcaGJCnRWibjDXlq779X1/y5xwg==,
       }
     engines: { node: ">=8" }
-
-  inter-ui@4.1.1:
-    resolution:
-      {
-        integrity: sha512-451h0J29HyOmA+JXgSi/6M12tL7ZCZ8arYKZUXiOXTJpJbAKqJvFh3k5SiV3x7tKe0C0KyrKUUiQIvvZ2PQDcA==,
-      }
-    engines: { node: ">=16.0.0" }
 
   is-emoji-supported@0.0.5:
     resolution:
@@ -5549,8 +5539,6 @@ snapshots:
   imurmurhash@0.1.4: {}
 
   indent-string@4.0.0: {}
-
-  inter-ui@4.1.1: {}
 
   is-emoji-supported@0.0.5: {}
 

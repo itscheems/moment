@@ -12,7 +12,7 @@
   --text-primary: var(--site-text-primary);
   --text-secondary: var(--site-text-secondary);
   --border-subtle: var(--site-border-subtle);
-  font: 14px/1.45 var(--font-timeline);
+  font: 14px/1.45 var(--font-sans);
   letter-spacing: normal;
   color: var(--text-primary);
 }
@@ -111,7 +111,7 @@
   list-style: none !important;
   margin: 0 !important;
   padding: 0 !important;
-  font: 13px/1.45 var(--font-timeline);
+  font: 13px/1.45 var(--font-sans);
 }
 .places > li {
   margin: 0 !important;
@@ -179,7 +179,7 @@
   gap: 6px;
   margin: 0 !important;
   padding: 8px 18px 12px !important;
-  font: 12px/1 var(--font-timeline);
+  font: 12px/1 var(--font-sans);
 }
 .placePageControl {
   display: grid;
@@ -205,7 +205,7 @@
   text-decoration: none;
 }
 .placePageControl[data-active] {
-  font-weight: 650;
+  font-weight: 700;
 }
 .placePageControl svg {
   width: 14px;

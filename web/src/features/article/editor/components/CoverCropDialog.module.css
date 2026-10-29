@@ -22,7 +22,7 @@
   border-radius: 16px;
   color: var(--text-primary);
   background: var(--surface);
-  font-family: var(--font-timeline);
+  font-family: var(--font-sans);
   font-size: 15px;
   line-height: 20px;
 }

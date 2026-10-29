@@ -22,7 +22,7 @@
   border-radius: 16px;
   color: var(--text-primary);
   background: var(--surface);
-  font-family: var(--font-timeline);
+  font-family: var(--font-sans);
   font-size: 15px;
   line-height: 20px;
 }
@@ -59,7 +59,7 @@
   margin: 0;
   padding-block: 2px;
   padding-inline-start: 28px;
-  font-family: var(--font-timeline);
+  font-family: var(--font-sans);
   font-size: 20px;
   font-weight: 700;
   line-height: 24px;
@@ -73,7 +73,7 @@
   padding: 0 16px;
   color: var(--accent-contrast);
   background: var(--accent);
-  font: 700 14px / 16px var(--font-timeline);
+  font: 700 14px / 16px var(--font-sans);
   cursor: pointer;
 }
 

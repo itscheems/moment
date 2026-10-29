@@ -202,7 +202,7 @@
   padding-inline: var(--space-4);
   color: var(--button-primary-contrast);
   background: var(--button-primary);
-  font-weight: 650;
+  font-weight: 700;
   text-decoration: none;
   cursor: pointer;
 }
@@ -260,7 +260,7 @@
 .message h2 {
   margin: 0;
   font-size: var(--text-lg);
-  font-weight: 750;
+  font-weight: 800;
 }
 
 .message p {
@@ -305,7 +305,7 @@
 
 .searchSummary strong {
   color: var(--text-primary);
-  font-family: var(--font-utility);
+  font-family: var(--font-sans);
 }
 
 .searchSummary > a,
@@ -372,14 +372,14 @@
 }
 
 .yearTrack strong {
-  font-family: var(--font-display);
+  font-family: var(--font-sans);
   font-size: var(--text-lg);
 }
 
 .yearTrack span {
   margin-block-start: var(--space-1);
   color: var(--text-tertiary);
-  font-family: var(--font-utility);
+  font-family: var(--font-sans);
   font-size: var(--text-xs);
 }
 
@@ -492,11 +492,11 @@
   padding-inline: var(--space-2);
   color: var(--text-primary);
   background: transparent;
-  font-family: var(--font-display);
+  font-family: var(--font-sans);
   font-size: var(--text-lg);
   font-weight: 800;
   font-variant-numeric: tabular-nums;
-  letter-spacing: -0.02em;
+  letter-spacing: normal;
   cursor: pointer;
   transition: background var(--motion-fast) var(--ease-out);
 }
@@ -586,7 +586,7 @@
 
 .weekHeader {
   color: var(--text-tertiary);
-  font-family: var(--font-utility);
+  font-family: var(--font-sans);
   font-size: var(--text-xs);
   text-align: center;
 }
@@ -648,7 +648,7 @@
 
 .calendarDay strong,
 .calendarEmptyDay > span {
-  font-family: var(--font-utility);
+  font-family: var(--font-sans);
   font-size: var(--text-sm);
   font-variant-numeric: tabular-nums;
 }
@@ -665,9 +665,9 @@
   padding-inline: 0.2rem;
   color: var(--accent-contrast);
   background: var(--accent);
-  font-family: var(--font-utility);
+  font-family: var(--font-sans);
   font-size: 0.625rem;
-  font-weight: 750;
+  font-weight: 800;
   line-height: 1;
 }
 
@@ -703,7 +703,7 @@
   display: inline-flex;
   align-items: center;
   color: var(--accent);
-  font-weight: 650;
+  font-weight: 700;
   text-decoration: none;
 }
 
@@ -795,9 +795,9 @@
 }
 
 .pickerYear strong {
-  font-family: var(--font-display);
+  font-family: var(--font-sans);
   font-size: var(--text-md);
-  font-weight: 750;
+  font-weight: 800;
   font-variant-numeric: tabular-nums;
 }
 

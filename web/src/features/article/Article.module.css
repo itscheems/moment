@@ -11,7 +11,7 @@
 .quoted,
 .cardTitle,
 .quotedTitle {
-  font-family: var(--font-timeline);
+  font-family: var(--font-sans);
   font-feature-settings: normal;
   font-synthesis: weight style small-caps;
   letter-spacing: normal;
@@ -135,7 +135,7 @@
   border-block-start: 1px solid #eff3f4;
   padding-block-start: 2rem;
   color: #0f1419;
-  font-family: var(--font-timeline);
+  font-family: var(--font-sans);
   font-feature-settings: normal;
   font-synthesis: weight style small-caps;
   letter-spacing: normal;

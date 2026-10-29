@@ -7,7 +7,7 @@
   margin-inline: auto;
   padding: 3rem var(--article-inset) 4rem;
   color: var(--tt-theme-text);
-  font-family: var(--font-body);
+  font-family: var(--font-sans);
   font-feature-settings: normal;
   letter-spacing: normal;
   text-rendering: auto;
@@ -23,7 +23,7 @@
   resize: none;
   color: var(--article-title-color);
   background: transparent;
-  font-family: var(--font-timeline);
+  font-family: var(--font-sans);
   font-size: 2.125rem;
   font-weight: 800;
   line-height: 2.75rem;

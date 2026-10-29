@@ -19,7 +19,7 @@
   padding-inline: var(--space-4);
   color: var(--danger);
   background: transparent;
-  font-weight: 650;
+  font-weight: 700;
   cursor: pointer;
 }
 
@@ -138,9 +138,9 @@
 
 .exitDialog h2 {
   margin: 0;
-  font-family: var(--font-display);
+  font-family: var(--font-sans);
   font-size: var(--text-xl);
-  letter-spacing: -0.025em;
+  letter-spacing: normal;
 }
 
 .exitDialog p {
@@ -300,7 +300,7 @@
   padding-inline: 0.25rem;
   color: var(--button-primary-contrast);
   background: var(--accent);
-  font-family: var(--font-utility);
+  font-family: var(--font-sans);
   font-size: var(--text-xs);
   font-variant-numeric: tabular-nums;
 }
@@ -343,7 +343,7 @@
   margin: 0;
   overflow: hidden;
   font-size: var(--text-lg);
-  font-weight: 750;
+  font-weight: 800;
   text-overflow: ellipsis;
   white-space: nowrap;
 }

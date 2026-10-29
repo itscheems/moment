@@ -1,7 +1,7 @@
 .thread {
   border-block-end: 1px solid var(--border-subtle);
   background: var(--surface);
-  font-family: var(--font-timeline);
+  font-family: var(--font-sans);
   font-feature-settings: normal;
   letter-spacing: normal;
   text-rendering: auto;
@@ -32,7 +32,7 @@
   margin-block-start: 0.1rem;
   font-size: 1.25rem;
   font-weight: 800;
-  letter-spacing: -0.02em;
+  letter-spacing: normal;
 }
 
 .threadHeader div > span {
@@ -289,13 +289,13 @@
 .commentForm header p {
   color: var(--accent);
   font-size: var(--text-xs);
-  font-weight: 650;
+  font-weight: 700;
 }
 
 .commentForm header h3 {
   margin-block-start: 0.1rem;
   font-size: 1rem;
-  font-weight: 750;
+  font-weight: 800;
 }
 
 .commentForm header > span {
@@ -304,7 +304,7 @@
   padding: 0.14rem 0.48rem;
   color: var(--text-secondary);
   font-size: 0.7rem;
-  font-weight: 600;
+  font-weight: 700;
   white-space: nowrap;
 }
 
@@ -374,7 +374,7 @@
   outline: 0;
   color: var(--text-primary);
   background: transparent;
-  font-family: var(--font-timeline);
+  font-family: var(--font-sans);
   font-feature-settings: normal;
   font-size: 1.25rem;
   letter-spacing: normal;
@@ -571,7 +571,7 @@
   padding-inline: var(--space-3);
   color: var(--danger);
   background: transparent;
-  font-weight: 650;
+  font-weight: 700;
   cursor: pointer;
 }
 
@@ -1095,7 +1095,7 @@
 .dialogTitle {
   margin: 0;
   font-size: var(--text-xl);
-  font-weight: 750;
+  font-weight: 800;
 }
 
 .dialogDescription,

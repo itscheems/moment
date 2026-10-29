@@ -28,7 +28,7 @@ import type { MapViewport } from "../maps/MapCanvas";
 import { initialAvatarUrl } from "../../components/initialAvatar";
 
 const FACE =
-  '-apple-system, "system-ui", "Segoe UI", Roboto, Helvetica, Arial, sans-serif';
+  '"TwitterChirp", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif';
 const MONO = '"SFMono-Regular", Consolas, "Liberation Mono", monospace';
 
 /**
@@ -585,7 +585,7 @@ function linkLayout(
         ),
       )
     : 0;
-  ruler.font = font(650, LINK_TITLE_SIZE);
+  ruler.font = font(700, LINK_TITLE_SIZE);
   const wrapped =
     link.title === "" ? [] : wrap(ruler, link.title, width - LINK_PAD * 2);
   const title = wrapped.slice(0, LINK_TITLE_LINES);
@@ -650,7 +650,7 @@ function drawLinkCard(
   }
   cursor += LINK_SITE_LINE + (laid.title.length > 0 ? 3 : 0);
   ctx.fillStyle = INK;
-  ctx.font = font(650, LINK_TITLE_SIZE);
+  ctx.font = font(700, LINK_TITLE_SIZE);
   laid.title.forEach((line, row) => {
     ctx.fillText(
       line,

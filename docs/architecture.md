@@ -36,3 +36,10 @@ The web application uses one i18next instance with bundled Simplified Chinese an
 The session owns the account preference. A language provider combines it with a separate visitor choice, saves account changes through the account service, and applies a change only after successful persistence. It ignores responses for an ended or replaced session. Neither the app nor its editors are keyed by language.
 
 The vendored Tiptap UI for the pinned 3.31.3 editor retains its upstream actions, focus management, keyboard navigation, plugins and node views. Local changes resolve labels, tooltips, placeholders, search text and accessibility descriptions through the shared language resources. Recent color data retains semantic color names; presentation translates those names when shown.
+
+
+## Typography
+
+Interface text uses one self-hosted family with regular, medium, bold and heavy faces. Body text, headings, controls, navigation, reading and editing surfaces share that family; text roles specify size, line height and weight. The browser chooses fallback fonts per glyph, so Latin letters and Chinese characters can use their appropriate faces within the same text node, without changing content or introducing language-specific markup. Handles retain their alternate-glyph feature, code and credential fields retain monospace, and the sign-in display face remains an explicit extended-width exception.
+
+Font files are loaded before canvas share cards measure text. Duplicate sidebar, profile and recommendation font families and the separate variable interface font are removed, so a family name cannot silently resolve to different font versions on adjacent surfaces.

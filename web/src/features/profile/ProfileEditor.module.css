@@ -59,7 +59,7 @@
   color: var(--text-primary);
   background: var(--surface);
   box-shadow: none;
-  font-family: var(--font-timeline);
+  font-family: var(--font-sans);
   transform-origin: center;
   transition:
     transform var(--motion-dialog) var(--ease-out),
@@ -101,7 +101,7 @@
   margin: 0;
   padding-block: 2px;
   padding-inline-start: 28px;
-  font-family: var(--font-timeline);
+  font-family: var(--font-sans);
   font-size: 20px;
   font-weight: 700;
   line-height: 24px;
@@ -142,7 +142,7 @@
   padding: 0 16px;
   color: var(--accent-contrast);
   background: var(--accent);
-  font: 700 14px / 16px var(--font-timeline);
+  font: 700 14px / 16px var(--font-sans);
   cursor: pointer;
 }
 
@@ -383,8 +383,8 @@
   outline: 0;
   cursor: pointer;
   font-size: var(--text-sm);
-  font-weight: 600;
-  letter-spacing: var(--tracking-body);
+  font-weight: 700;
+  letter-spacing: normal;
   background: var(--surface-elevated);
   transition:
     color var(--motion-menu) var(--ease-out),
@@ -421,9 +421,9 @@
 .identityCopy > strong {
   overflow: hidden;
   color: var(--text-primary);
-  font-family: var(--font-display);
+  font-family: var(--font-sans);
   font-size: var(--text-lg);
-  letter-spacing: var(--tracking-display);
+  letter-spacing: normal;
   line-height: 1.2;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -498,7 +498,7 @@
   inset-inline-start: var(--space-4);
   color: var(--text-secondary);
   font-size: var(--text-xs);
-  font-weight: 650;
+  font-weight: 700;
 }
 
 .fields label > small {

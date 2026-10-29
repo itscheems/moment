@@ -7,7 +7,7 @@
   overflow: hidden;
   background: #000;
   color: #fff;
-  font-family: var(--font-timeline);
+  font-family: var(--font-sans);
   cursor: pointer;
   isolation: isolate;
   object-fit: cover;
@@ -301,7 +301,7 @@
   padding: 8px 8px 4px;
   background: var(--surface-elevated);
   color: var(--text-primary);
-  font-family: var(--font-timeline);
+  font-family: var(--font-sans);
   font-feature-settings: normal;
   font-variant-numeric: normal;
   letter-spacing: normal;

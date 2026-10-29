@@ -97,7 +97,7 @@
   padding-inline: var(--space-5);
   color: var(--accent);
   background: var(--surface);
-  font-weight: 650;
+  font-weight: 700;
   cursor: pointer;
 }
 
@@ -116,7 +116,7 @@
 .endMark {
   margin: 0;
   color: var(--text-tertiary);
-  font-family: var(--font-utility);
+  font-family: var(--font-sans);
   font-size: var(--text-xs);
 }
 

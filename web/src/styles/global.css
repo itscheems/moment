@@ -1,22 +1,6 @@
 @font-face {
-  font-family: "MomentSidebar";
-  src: url("../assets/fonts/sidebar-regular.woff") format("woff");
-  font-style: normal;
-  font-weight: 400;
-  font-display: swap;
-}
-
-@font-face {
-  font-family: "MomentSidebar";
-  src: url("../assets/fonts/sidebar-bold.woff") format("woff");
-  font-style: normal;
-  font-weight: 700;
-  font-display: swap;
-}
-
-@font-face {
   font-family: "TwitterChirp";
-  src: url("/fonts/twitter-chirp-regular.woff") format("woff");
+  src: url("/fonts/twitter-chirp-regular.woff2") format("woff2");
   font-style: normal;
   font-weight: 400;
   font-display: swap;
@@ -24,7 +8,7 @@
 
 @font-face {
   font-family: "TwitterChirp";
-  src: url("/fonts/twitter-chirp-medium.woff") format("woff");
+  src: url("/fonts/twitter-chirp-medium.woff2") format("woff2");
   font-style: normal;
   font-weight: 500;
   font-display: swap;
@@ -32,7 +16,7 @@
 
 @font-face {
   font-family: "TwitterChirp";
-  src: url("/fonts/twitter-chirp-bold.woff") format("woff");
+  src: url("/fonts/twitter-chirp-bold.woff2") format("woff2");
   font-style: normal;
   font-weight: 700;
   font-display: swap;
@@ -40,7 +24,7 @@
 
 @font-face {
   font-family: "TwitterChirp";
-  src: url("/fonts/twitter-chirp-heavy.woff") format("woff");
+  src: url("/fonts/twitter-chirp-heavy.woff2") format("woff2");
   font-style: normal;
   font-weight: 800;
   font-display: swap;
@@ -60,39 +44,19 @@
 
 :root {
   color-scheme: light;
-  font-family: var(--font-body);
-  font-feature-settings:
-    "liga" 1,
-    "calt" 1;
+  font-family: var(--font-sans);
+  font-feature-settings: normal;
   font-optical-sizing: auto;
-  font-synthesis: none;
-  text-rendering: optimizeLegibility;
+  font-synthesis: weight style small-caps;
+  text-rendering: auto;
 
-  --font-body:
-    InterVariable, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
-    Helvetica, Arial, "PingFang SC", "PingFang TC", "PingFang HK",
-    "Noto Sans CJK SC", "Noto Sans SC", "Microsoft YaHei", sans-serif;
-  --font-display:
-    InterVariable, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
-    Helvetica, Arial, "PingFang SC", "PingFang TC", "PingFang HK",
-    "Noto Sans CJK SC", "Noto Sans SC", "Microsoft YaHei", sans-serif;
-  --font-utility:
-    InterVariable, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
-    Helvetica, Arial, "PingFang SC", "PingFang TC", "PingFang HK",
-    "Noto Sans CJK SC", "Noto Sans SC", "Microsoft YaHei", sans-serif;
-  --font-timeline:
-    "TwitterChirp", -apple-system, "system-ui", "Segoe UI", Roboto, Helvetica,
-    Arial, sans-serif;
-  --font-sidebar:
-    "MomentSidebar", -apple-system, "system-ui", "Segoe UI", Roboto, Helvetica,
-    Arial, sans-serif;
+  --font-sans:
+    "TwitterChirp", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+    Helvetica, Arial, sans-serif;
   --font-signin-display:
     "TwitterChirpExtendedHeavy", "TwitterChirp", -apple-system, "system-ui",
     "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
   --font-mono: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
-  --tracking-display: -0.022em;
-  --tracking-body: -0.006em;
-  --tracking-utility: 0.006em;
 
   --site-canvas: #ffffff;
   --canvas: var(--site-canvas);
@@ -172,12 +136,12 @@
   --space-6: 1.5rem;
   --space-8: 2rem;
   --space-10: 2.5rem;
-  --text-xs: 0.75rem;
+  --text-xs: 0.8125rem;
   --text-sm: 0.875rem;
   --text-md: 0.9375rem;
-  --text-lg: 1.125rem;
-  --text-xl: 1.375rem;
-  --text-2xl: 1.65rem;
+  --text-lg: 1.0625rem;
+  --text-xl: 1.25rem;
+  --text-2xl: 1.9375rem;
   --radius-action: 0.75rem;
   --radius-panel: 1rem;
   --target-size: 2.75rem;
@@ -452,9 +416,9 @@ body {
   background: var(--canvas);
   color: var(--text-primary);
   font-size: var(--text-md);
-  letter-spacing: var(--tracking-body);
-  line-height: 1.4;
-  -webkit-font-smoothing: antialiased;
+  letter-spacing: normal;
+  line-height: 20px;
+  -webkit-font-smoothing: auto;
 }
 
 button,
@@ -466,13 +430,14 @@ select {
 }
 
 :where(h1, h2, h3, h4, h5, h6) {
-  font-family: var(--font-display);
-  letter-spacing: var(--tracking-display);
+  font-family: var(--font-sans);
+  line-height: 1.2;
+  letter-spacing: normal;
 }
 
 :where(button, input, select, small, time) {
-  font-family: var(--font-utility);
-  letter-spacing: var(--tracking-utility);
+  font-family: var(--font-sans);
+  letter-spacing: normal;
 }
 
 button,

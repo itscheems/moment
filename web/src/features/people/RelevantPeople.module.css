@@ -1,34 +1,10 @@
-@font-face {
-  font-family: "RecommendationChirp";
-  src: url("/fonts/recommendation-chirp-regular.woff2") format("woff2");
-  font-style: normal;
-  font-weight: 400;
-  font-display: swap;
-}
-
-@font-face {
-  font-family: "RecommendationChirp";
-  src: url("/fonts/recommendation-chirp-bold.woff2") format("woff2");
-  font-style: normal;
-  font-weight: 700;
-  font-display: swap;
-}
-
-@font-face {
-  font-family: "RecommendationChirp";
-  src: url("/fonts/recommendation-chirp-heavy.woff2") format("woff2");
-  font-style: normal;
-  font-weight: 800;
-  font-display: swap;
-}
-
 .card {
   overflow: hidden;
   border: 1px solid var(--border-subtle);
   border-radius: 16px;
   background: var(--surface);
   color: var(--text-primary);
-  font-family: var(--font-timeline);
+  font-family: var(--font-sans);
   font-size: 15px;
   font-feature-settings: normal;
   font-synthesis: weight style small-caps;
@@ -60,7 +36,7 @@
 }
 
 .compact {
-  font-family: "RecommendationChirp", var(--font-timeline);
+  font-family: var(--font-sans);
 }
 
 .compact h2 {

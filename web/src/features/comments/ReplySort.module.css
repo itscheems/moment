@@ -10,7 +10,7 @@
   border: 0;
   background: transparent;
   color: var(--text-secondary);
-  font: 500 14px/16px var(--font-timeline);
+  font: 500 14px/16px var(--font-sans);
   cursor: pointer;
   letter-spacing: normal;
 }
@@ -36,7 +36,7 @@
   border-radius: 12px;
   background: var(--surface-elevated);
   color: var(--text-primary);
-  font-family: var(--font-timeline);
+  font-family: var(--font-sans);
   font-feature-settings: normal;
   letter-spacing: normal;
   text-rendering: auto;

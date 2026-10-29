@@ -1,6 +1,6 @@
 .trigger,
 .card {
-  font-family: var(--font-timeline);
+  font-family: var(--font-sans);
   font-synthesis: weight;
   letter-spacing: normal;
 }
