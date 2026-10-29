@@ -215,7 +215,7 @@ export async function transitionArchiveWindow(
     document.querySelector("#main-content > header")?.getBoundingClientRect()
       .bottom ?? 0;
   const nav = document
-    .querySelector('nav[aria-label="移动导航"]')
+    .querySelector("nav[data-mobile-navigation]")
     ?.getBoundingClientRect();
   const bottom = nav && nav.height > 0 ? Math.max(0, innerHeight - nav.top) : 0;
   root.style.viewTransitionName = "none";

@@ -1,3 +1,4 @@
+import { t } from "../../../../../../../i18n";
 import { Node, mergeAttributes } from "@tiptap/core";
 
 export interface TocNodeAttrs {
@@ -49,7 +50,9 @@ declare module "@tiptap/core" {
 export const TocNode = Node.create<TocNodeOptions>({
   name: "tocNode",
 
-  group: "block customNode",
+  get group() {
+    return t("block customNode");
+  },
 
   draggable: true,
 

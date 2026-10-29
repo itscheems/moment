@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import { AccountName } from "../../components/AccountName";
 import { commentDetailPath } from "../../app/routes";
 import { MapCard } from "../maps/MapCard";
@@ -126,13 +127,18 @@ export function PostLocation({
 }: {
   location: NonNullable<PublicPost["location"]>;
 }) {
+  const { t } = useTranslation();
+
   const name = location.name.trim();
   const address = location.displayName.trim();
   const hasDetails = address !== "" && address !== name;
 
   if (!hasDetails) {
     return (
-      <p aria-label={`地点：${name}`} className={styles.postLocation}>
+      <p
+        aria-label={t("地点：{{value1}}", { value1: name })}
+        className={styles.postLocation}
+      >
         <Icon name="location" />
         <span>{name}</span>
       </p>
@@ -142,7 +148,7 @@ export function PostLocation({
   return (
     <Popover.Root>
       <Popover.Trigger
-        aria-label={`地点：${name}。查看详细地址`}
+        aria-label={t("地点：{{value1}}。查看详细地址", { value1: name })}
         className={`${styles.postLocation} ${styles.postLocationTrigger}`}
         closeDelay={120}
         delay={280}
@@ -236,6 +242,8 @@ export function PostPresentation({
   embedded?: boolean;
   mediaViewer?: boolean;
 }) {
+  const { t } = useTranslation();
+
   const { navigate } = useNavigation();
   const [expandedPostId, setExpandedPostId] = useState<string | null>(null);
   const mapViews = useRef(new Map<string, MapViewport>());
@@ -288,7 +296,7 @@ export function PostPresentation({
       author={post.author ?? { userId: null, username: null }}
       children={
         <InternalLink
-          aria-label={`查看 ${title} 的个人资料`}
+          aria-label={t("查看 {{value1}} 的个人资料", { value1: title })}
           className={styles.identityLink}
           href={siteProfileHref(site)}
         >
@@ -304,7 +312,7 @@ export function PostPresentation({
   const pinLabel = pinned ? (
     <div className={styles.pinnedLabel}>
       <Icon name="pin" />
-      <span>已置顶</span>
+      <span>{t("已置顶")}</span>
     </div>
   ) : null;
   const hidden = post.visibility === "only_me";
@@ -312,7 +320,7 @@ export function PostPresentation({
     post.timelineItemKind === "repost" ? (
       <div className={styles.repostedLabel}>
         <Icon name="repost" />
-        <span>已转发</span>
+        <span>{t("已转发")}</span>
       </div>
     ) : null;
   const byline = (
@@ -358,7 +366,7 @@ export function PostPresentation({
                       className={styles.timeLink}
                       aria-label={
                         post.commentPostId
-                          ? "查看" + title + "的评论详情"
+                          ? t("查看") + title + t("的评论详情")
                           : undefined
                       }
                       data-focus-key={`${timelineKey}:relative-time`}
@@ -377,9 +385,9 @@ export function PostPresentation({
               />
             </span>
             {hidden ? (
-              <ActionTooltip label="仅自己可见">
+              <ActionTooltip label={t("仅自己可见")}>
                 <span
-                  aria-label="仅自己可见"
+                  aria-label={t("仅自己可见")}
                   className={styles.hiddenMark}
                   role="img"
                 >
@@ -422,14 +430,14 @@ export function PostPresentation({
         })
       }
       href={detailHref}
-      title={`${title} 的 Moment`}
+      title={t("{{value1}} 的 Moment", { value1: title })}
       trigger={
         <button
           data-post-action="share"
           aria-label={
             post.commentPostId && !detail
-              ? "分享 " + title + " 的评论"
-              : "分享这条 Moment"
+              ? t("分享 ") + title + t(" 的评论")
+              : t("分享这条 Moment")
           }
           className={`${styles.postAction} ${styles.shareAction}`}
           type="button"
@@ -442,11 +450,11 @@ export function PostPresentation({
   const quoted = post.quotedPost;
   const quoteCard = quoted?.unavailable ? (
     <div className={styles.quoteUnavailable} role="status">
-      This post is unavailable.
+      {t("This post is unavailable.")}
     </div>
   ) : quoted ? (
     <div
-      aria-label="打开被引用的 Moment"
+      aria-label={t("打开被引用的 Moment")}
       className={styles.quoteCard}
       onClick={(event) => {
         event.stopPropagation();
@@ -524,8 +532,11 @@ export function PostPresentation({
       <article
         aria-label={
           post.commentPostId && !detail
-            ? `${title}的回复`
-            : `${title}发布的 Moment，${published.absolute}`
+            ? t("{{value1}}的回复", { value1: title })
+            : t("{{value1}}发布的 Moment，{{value2}}", {
+                value1: title,
+                value2: published.absolute,
+              })
         }
         className={`${styles.post} ${styles.detail} ${mediaViewer ? styles.mediaDetail : ""} ${conversation ? styles.conversation : ""} ${fresh ? styles.fresh : ""}`}
         data-connected={connected || undefined}
@@ -571,26 +582,31 @@ export function PostPresentation({
           )}
           {quoteCard}
           <p className={styles.publishedLine}>
-            {!mediaViewer ? <span>发布于</span> : null}
+            {!mediaViewer ? <span>{t("发布于")}</span> : null}
             <time dateTime={post.publishedAt}>{published.absolute}</time>
             {hidden ? (
               <span className={styles.hiddenNote}>
                 <Icon name="audience-only-me" />
-                仅自己可见
+                {t("仅自己可见")}
               </span>
             ) : null}
           </p>
           {!mediaViewer && post.commentCount > 0 ? (
             <a className={styles.detailStats} href={"#" + commentsId}>
               <strong>{post.commentCount}</strong>
-              <span>条回复</span>
+              <span>{t("条回复")}</span>
             </a>
           ) : null}
           <div data-post-actions="" className={styles.postActions}>
-            <ActionTooltip label="回复">
+            <ActionTooltip label={t("回复")}>
               <button
                 data-post-action="reply"
-                aria-label={`回复这条 Moment${post.commentCount > 0 ? `，${post.commentCount} 条回复` : ""}`}
+                aria-label={t("回复这条 Moment{{value1}}", {
+                  value1:
+                    post.commentCount > 0
+                      ? `，${post.commentCount} 条回复`
+                      : "",
+                })}
                 className={`${styles.postAction} ${styles.replyAction}`}
                 onClick={onReply}
                 type="button"
@@ -617,8 +633,11 @@ export function PostPresentation({
     <article
       aria-label={
         post.commentPostId && !detail
-          ? `${title}的回复`
-          : `${title}发布的 Moment，${published.absolute}`
+          ? t("{{value1}}的回复", { value1: title })
+          : t("{{value1}}发布的 Moment，{{value2}}", {
+              value1: title,
+              value2: published.absolute,
+            })
       }
       className={`${styles.post} ${conversation ? styles.conversation : ""} ${useTimelineDensity ? styles.timelineDensity : ""} ${fresh ? styles.fresh : ""}`}
       data-embedded={embedded || undefined}
@@ -632,12 +651,12 @@ export function PostPresentation({
     >
       {navigable ? (
         <InternalLink
-          aria-label="打开这条 Moment 详情"
+          aria-label={t("打开这条 Moment 详情")}
           className={styles.surfaceLink}
           data-focus-key={`${timelineKey}:surface-link`}
           href={detailHref}
         >
-          <span className={styles.srOnly}>打开这条 Moment 详情</span>
+          <span className={styles.srOnly}>{t("打开这条 Moment 详情")}</span>
         </InternalLink>
       ) : null}
       {pinLabel}
@@ -667,7 +686,7 @@ export function PostPresentation({
             }}
             type="button"
           >
-            显示更多
+            {t("显示更多")}
           </button>
         ) : null}
         {post.mapCard ? (
@@ -699,12 +718,14 @@ export function PostPresentation({
           {replyControl !== undefined ? (
             replyControl
           ) : (
-            <ActionTooltip label="回复">
+            <ActionTooltip label={t("回复")}>
               {onReply ? (
                 <button
                   data-post-action="reply"
                   aria-label={
-                    post.commentPostId ? "回复 " + title : "回复这条 Moment"
+                    post.commentPostId
+                      ? t("回复 ") + title
+                      : t("回复这条 Moment")
                   }
                   className={`${styles.postAction} ${styles.replyAction}`}
                   data-focus-key={`${timelineKey}:reply`}
@@ -720,7 +741,12 @@ export function PostPresentation({
                 </button>
               ) : (
                 <InternalLink
-                  aria-label={`打开完整 Moment${post.commentCount > 0 ? `，${post.commentCount} 条回复` : ""}`}
+                  aria-label={t("打开完整 Moment{{value1}}", {
+                    value1:
+                      post.commentCount > 0
+                        ? `，${post.commentCount} 条回复`
+                        : "",
+                  })}
                   className={`${styles.postAction} ${styles.replyAction}`}
                   data-focus-key={`${timelineKey}:open-post`}
                   href={detailHref}

@@ -1,3 +1,6 @@
+import { getLocale } from "../../i18n";
+import { t } from "../../i18n";
+import { useTranslation } from "react-i18next";
 import { AccountName } from "../../components/AccountName";
 import { commentAsPost } from "../share/shareCardInput";
 import { MapCardEditor } from "../maps/MapCardEditor";
@@ -123,21 +126,21 @@ function createIdempotencyKey(): string {
 
 function messageFor(error: unknown): string {
   if (!(error instanceof PublicApiError)) {
-    return "发布没有完成，文字已保留。检查连接后可以安全重试。";
+    return t("发布没有完成，文字已保留。检查连接后可以安全重试。");
   }
   switch (error.code) {
     case "CONTENT_EMPTY":
-      return "写下一些内容后再发布。";
+      return t("写下一些内容后再发布。");
     case "CONTENT_TOO_LARGE":
-      return "正文超过 20,000 个字符，请缩短后重试。";
+      return t("正文超过 20,000 个字符，请缩短后重试。");
     case "EXTERNAL_IMAGE_NOT_ALLOWED":
-      return "Markdown 不能引用外部图片；请移除图片语法后重试。";
+      return t("Markdown 不能引用外部图片；请移除图片语法后重试。");
     case "POST_NOT_FOUND":
-      return "这个 Moment 已不存在，无法继续编辑。";
+      return t("这个 Moment 已不存在，无法继续编辑。");
     case "IDEMPOTENCY_KEY_REUSED":
-      return "这次重试与最初内容不一致，请刷新后重新发布。";
+      return t("这次重试与最初内容不一致，请刷新后重新发布。");
     default:
-      return "操作没有完成，文字已保留。可以安全重试。";
+      return t("操作没有完成，文字已保留。可以安全重试。");
   }
 }
 
@@ -214,6 +217,8 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
     },
     ref,
   ) {
+    const { t } = useTranslation();
+
     const { navigate, goBack, setNavigationBlocker } = useNavigation();
     const { account, session, expireIfInvalidSession } = useSession();
     const draftScope = accountCacheScope(
@@ -671,7 +676,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
         dirtyRef.current = true;
         setDirty(true);
         allowLeaveRef.current = false;
-        setAnnouncement("已载入草稿；图片需要重新选择。");
+        setAnnouncement(t("已载入草稿；图片需要重新选择。"));
         window.requestAnimationFrame(() => textareaRef.current?.focus());
       },
       [draftScope],
@@ -915,15 +920,21 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
               return;
             }
             setAnnouncement(
-              "有一张本地缩略图暂时无法显示；原文件仍可继续上传。",
+              t("有一张本地缩略图暂时无法显示；原文件仍可继续上传。"),
             );
           });
       }
       replaceMedia(next);
       markMediaEdited(
         source === "paste"
-          ? `已从剪贴板加入 ${files.length} 张图片。`
-          : `已加入 ${files.length} 张图片。`,
+          ? t("已从剪贴板加入 {{value1}} 张图片。", {
+              count: files.length,
+              value1: files.length,
+            })
+          : t("已加入 {{value1}} 张图片。", {
+              count: files.length,
+              value1: files.length,
+            }),
       );
       window.requestAnimationFrame(() => textareaRef.current?.focus());
       if (session) {
@@ -933,7 +944,9 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
             if (expireIfInvalidSession(nextError)) {
               setAuthExpired(true);
               setError(
-                "当前写入会话已失效。文字、媒体和上传结果已保留，刷新身份后可以重试。",
+                t(
+                  "当前写入会话已失效。文字、媒体和上传结果已保留，刷新身份后可以重试。",
+                ),
               );
             }
           });
@@ -1028,7 +1041,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
       if (!session || !authExpired) return;
       setAuthExpired(false);
       setError(null);
-      setAnnouncement("会话已刷新，可以重试当前操作。");
+      setAnnouncement(t("会话已刷新，可以重试当前操作。"));
       window.requestAnimationFrame(() => textareaRef.current?.focus());
     }, [authExpired, session]);
 
@@ -1287,16 +1300,18 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
     const retryUpload = async (key: string) => {
       if (!session || pendingRef.current) return;
       setError(null);
-      setAnnouncement("正在重试图片上传…");
+      setAnnouncement(t("正在重试图片上传…"));
       try {
         await uploadOne(key, session.csrfToken);
-        setAnnouncement("图片已就绪，可以继续发布。 ");
+        setAnnouncement(t("图片已就绪，可以继续发布。 "));
       } catch (nextError) {
         if (!mountedRef.current) return;
         if (expireIfInvalidSession(nextError)) {
           setAuthExpired(true);
           setError(
-            "当前写入会话已失效。文字、图片和上传结果已保留，刷新身份后可以重试。",
+            t(
+              "当前写入会话已失效。文字、图片和上传结果已保留，刷新身份后可以重试。",
+            ),
           );
         }
         setAnnouncement("");
@@ -1312,10 +1327,10 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
       setAuthExpired(false);
       setAnnouncement(
         variant === "edit"
-          ? "正在保存…"
+          ? t("正在保存…")
           : repostOnly
-            ? "正在转发…"
-            : "正在发布…",
+            ? t("正在转发…")
+            : t("正在发布…"),
       );
       let submittedDraft: ComposeDraft | null = null;
       if (!post) {
@@ -1346,7 +1361,12 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
         for (const item of [...mediaItemsRef.current]) {
           if (!item.mediaId) {
             setAnnouncement(
-              `正在处理第 ${mediaItemsRef.current.findIndex((candidate) => candidate.key === item.key) + 1} 张图片…`,
+              t("正在处理第 {{value1}} 张图片…", {
+                value1:
+                  mediaItemsRef.current.findIndex(
+                    (candidate) => candidate.key === item.key,
+                  ) + 1,
+              }),
             );
             await uploadOne(item.key, session.csrfToken);
           }
@@ -1354,10 +1374,10 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
         const usages = mediaInput(mediaItemsRef.current);
         setAnnouncement(
           variant === "edit"
-            ? "正在保存…"
+            ? t("正在保存…")
             : repostOnly
-              ? "正在转发…"
-              : "正在发布…",
+              ? t("正在转发…")
+              : t("正在发布…"),
         );
         const saved = post
           ? await postsApi.update(
@@ -1409,16 +1429,18 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
           kind: post ? "updated" : repostOnly ? "reordered" : "created",
           post: saved,
         });
-        setAnnouncement(post ? "已保存" : repostOnly ? "已转发" : "已发布");
+        setAnnouncement(
+          post ? t("已保存") : repostOnly ? t("已转发") : t("已发布"),
+        );
         notify(
           post
-            ? "Moment 已保存"
+            ? t("Moment 已保存")
             : repostOnly
-              ? "已转发到时间流顶部"
-              : "Moment 已发布",
+              ? t("已转发到时间流顶部")
+              : t("Moment 已发布"),
           {
             action: {
-              label: "查看 Moment",
+              label: t("查看 Moment"),
               onAction: () => navigate(`/m/${encodeURIComponent(saved.id)}`),
             },
           },
@@ -1449,7 +1471,9 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
         if (expireIfInvalidSession(nextError)) {
           setAuthExpired(true);
           setError(
-            "当前写入会话已失效。文字、图片和上传结果已保留，刷新身份后可以重试。",
+            t(
+              "当前写入会话已失效。文字、图片和上传结果已保留，刷新身份后可以重试。",
+            ),
           );
         } else {
           setError(
@@ -1473,7 +1497,8 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
     return (
       <section
         {...historyEvents}
-        aria-label={post ? "编辑 Moment" : "发布 Moment"}
+        data-writing-surface
+        aria-label={post ? t("编辑 Moment") : t("发布 Moment")}
         className={`${styles.composer} ${inlineLayout ? styles.inlineComposer : styles.pageComposer} ${variant === "inline" ? styles.homepageComposer : ""} ${hasAttachments ? styles.composerHasAttachments : ""}`}
         data-expanded={expanded ? "true" : "false"}
         onBlur={(event) => {
@@ -1509,7 +1534,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
                 onClick={() => setDraftsEditing((on) => !on)}
                 type="button"
               >
-                {draftsEditing ? "完成" : "编辑"}
+                {draftsEditing ? t("完成") : t("编辑")}
               </button>
             ) : null}
             {drafting && (keptCount > 0 || draftsListOpen) ? (
@@ -1522,7 +1547,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
                 }}
                 type="button"
               >
-                草稿
+                {t("草稿")}
                 {keptCount > 0 ? <small>{keptCount}</small> : null}
                 <Icon name="chevron-down" />
               </button>
@@ -1579,7 +1604,11 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
                     allowLeaveRef.current = false;
                     setVisibility(next);
                     setError(null);
-                    setAnnouncement(`受众已设为${audienceLabel(next)}`);
+                    setAnnouncement(
+                      t("受众已设为{{value1}}", {
+                        value1: audienceLabel(next),
+                      }),
+                    );
                     idempotencyKey.current = createIdempotencyKey();
                     if (variant === "edit") {
                       dirtyRef.current = true;
@@ -1597,7 +1626,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
               </div>
             </div>
             <label htmlFor={`${variant}-composer-content`}>
-              {post ? "Moment 正文" : "此刻想到什么？"}
+              {post ? t("Moment 正文") : t("此刻想到什么？")}
             </label>
             <div className={styles.composerEditor} ref={editorRef}>
               <div
@@ -1700,7 +1729,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
                     event.currentTarget.scrollLeft;
                   updateMentionPosition();
                 }}
-                placeholder={post ? "编辑 Moment" : "有什么新鲜事？"}
+                placeholder={post ? t("编辑 Moment") : t("有什么新鲜事？")}
                 ref={textareaRef}
                 rows={inlineLayout || hasAttachments ? 1 : 4}
                 value={content}
@@ -1725,19 +1754,19 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
               className={styles.composerGuidance}
               id={`${variant}-composer-guidance`}
             >
-              支持 Markdown。按 Command 或 Control 加 Enter 发布。
+              {t("支持 Markdown。按 Command 或 Control 加 Enter 发布。")}
             </p>
             {count >= MAX_CONTENT * 0.9 ? (
               <p
                 className={`${styles.composerCount} ${count > MAX_CONTENT ? styles.countInvalid : ""}`}
               >
-                {count.toLocaleString("zh-CN")} /{" "}
-                {MAX_CONTENT.toLocaleString("zh-CN")}
+                {count.toLocaleString(getLocale())} /{" "}
+                {MAX_CONTENT.toLocaleString(getLocale())}
               </p>
             ) : null}
             {linkPreview.status === "loading" ? (
               <p className={styles.linkPreviewPending} role="status">
-                正在获取链接预览…
+                {t("正在获取链接预览…")}
               </p>
             ) : null}
             {linkPreview.card ? (
@@ -1746,7 +1775,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
                 disabled={pending}
                 onRemove={() => {
                   linkPreview.dismiss();
-                  setAnnouncement("链接卡片已移除");
+                  setAnnouncement(t("链接卡片已移除"));
                   window.requestAnimationFrame(() =>
                     textareaRef.current?.focus(),
                   );
@@ -1762,7 +1791,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
                   setLocationChanged(true);
                   dirtyRef.current = true;
                   setDirty(true);
-                  setAnnouncement("位置已移除");
+                  setAnnouncement(t("位置已移除"));
                   window.requestAnimationFrame(() =>
                     textareaRef.current?.focus(),
                   );
@@ -1781,7 +1810,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
                     <span>@{postAuthorSite(quotedPost, site).username}</span>
                   ) : null}
                   <button
-                    aria-label="移除引用的 Moment"
+                    aria-label={t("移除引用的 Moment")}
                     disabled={pending}
                     onClick={() => {
                       clearQuote();
@@ -1814,14 +1843,14 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
             ) : null}
             {quoteError ? (
               <p className={styles.formError}>
-                无法载入引用内容。
+                {t("无法载入引用内容。")}
                 <button
                   type="button"
                   onClick={() => {
                     clearQuote();
                   }}
                 >
-                  取消引用
+                  {t("取消引用")}
                 </button>
               </p>
             ) : null}
@@ -1868,12 +1897,15 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
                 <div className={styles.composerFooterActions}>
                   {variant === "page" && (count > 0 || hasAttachments) && (
                     <ActionTooltip
-                      label={`${count.toLocaleString("zh-CN")} / ${MAX_CONTENT.toLocaleString("zh-CN")} 字`}
+                      label={t("{{value1}} / {{value2}} 字", {
+                        value1: count.toLocaleString(getLocale()),
+                        value2: MAX_CONTENT.toLocaleString(getLocale()),
+                      })}
                     >
                       <span
                         className={styles.composerCharacterCount}
                         role="progressbar"
-                        aria-label="正文字数"
+                        aria-label={t("正文字数")}
                         aria-valuemin={0}
                         aria-valuemax={MAX_CONTENT}
                         aria-valuenow={Math.min(count, MAX_CONTENT)}
@@ -1910,11 +1942,11 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
                   >
                     {pending
                       ? post
-                        ? "正在保存…"
-                        : "正在发布…"
+                        ? t("正在保存…")
+                        : t("正在发布…")
                       : post
-                        ? "保存更改"
-                        : "发布"}
+                        ? t("保存更改")
+                        : t("发布")}
                   </button>
                 </div>
               }
@@ -1952,8 +1984,10 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
                       setError(null);
                       setAnnouncement(
                         nextLocation
-                          ? `已添加位置：${nextLocation.name}`
-                          : "位置已移除",
+                          ? t("已添加位置：{{value1}}", {
+                              value1: nextLocation.name,
+                            })
+                          : t("位置已移除"),
                       );
                       idempotencyKey.current = createIdempotencyKey();
                     }}
@@ -1992,7 +2026,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
                 mediaUploadsRef.current.delete(key);
                 const next = current.filter((item) => item.key !== key);
                 replaceMedia(next);
-                markMediaEdited("图片已移除，其余图片顺序已更新。");
+                markMediaEdited(t("图片已移除，其余图片顺序已更新。"));
                 const restoredInitialMedia =
                   next.length === initialMedia.length &&
                   next.every((item, index) => {
@@ -2013,7 +2047,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
             {mediaItems.some((item) => item.altMode === "missing") ? (
               <p className={styles.srOnly} role="status">
                 {mediaItems.filter((item) => item.altMode === "missing").length}{" "}
-                张图片尚未描述；这不会阻止发布。
+                {t("张图片尚未描述；这不会阻止发布。")}
               </p>
             ) : null}
             {mediaError ? (
@@ -2023,7 +2057,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
             ) : null}
             {draftUnavailable && variant !== "edit" ? (
               <p className={styles.storageNotice}>
-                本地草稿恢复不可用；仍可正常发布。
+                {t("本地草稿恢复不可用；仍可正常发布。")}
               </p>
             ) : null}
             {error ? (
@@ -2032,7 +2066,8 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
                 id={`${variant}-composer-error`}
                 role="alert"
               >
-                {error} {authExpired ? <span>请重新登录后重试。</span> : null}
+                {error}{" "}
+                {authExpired ? <span>{t("请重新登录后重试。")}</span> : null}
               </p>
             ) : (
               <span id={`${variant}-composer-error`} />
@@ -2041,7 +2076,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
               {announcement}
             </p>
           </form>
-          {!session ? <LoginLink>重新登录</LoginLink> : null}
+          {!session ? <LoginLink>{t("重新登录")}</LoginLink> : null}
         </div>
         <Dialog.Root
           onOpenChange={(open) => {
@@ -2055,16 +2090,20 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
             <Dialog.Viewport className={styles.dialogViewport}>
               <Dialog.Popup className={styles.dialogPopup}>
                 <Dialog.Title className={styles.dialogTitle}>
-                  {variant === "edit" ? "放弃未保存的更改？" : "退出发布？"}
+                  {variant === "edit"
+                    ? t("放弃未保存的更改？")
+                    : t("退出发布？")}
                 </Dialog.Title>
                 <Dialog.Description className={styles.dialogDescription}>
                   {variant === "edit"
-                    ? "离开后，本次编辑不会保存。"
-                    : "文字可以保留为这台浏览器里的草稿；已添加的图片不会保存。"}
+                    ? t("离开后，本次编辑不会保存。")
+                    : t(
+                        "文字可以保留为这台浏览器里的草稿；已添加的图片不会保存。",
+                      )}
                 </Dialog.Description>
                 <div className={styles.dialogActions}>
                   <Dialog.Close className={styles.secondaryButton}>
-                    继续编辑
+                    {t("继续编辑")}
                   </Dialog.Close>
                   {variant !== "edit" ? (
                     <button
@@ -2072,7 +2111,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
                       onClick={() => finishPendingNavigation(false)}
                       type="button"
                     >
-                      保留草稿并退出
+                      {t("保留草稿并退出")}
                     </button>
                   ) : null}
                   <button
@@ -2080,7 +2119,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
                     onClick={() => finishPendingNavigation(true)}
                     type="button"
                   >
-                    {variant === "edit" ? "放弃更改并离开" : "丢弃并退出"}
+                    {variant === "edit" ? t("放弃更改并离开") : t("丢弃并退出")}
                   </button>
                 </div>
               </Dialog.Popup>

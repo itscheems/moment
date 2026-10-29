@@ -1,3 +1,5 @@
+import { t } from "../../i18n";
+import { useTranslation } from "react-i18next";
 import { AccountName } from "../../components/AccountName";
 import { Dialog } from "../../components/Dialog";
 import { Collapsible } from "@base-ui/react/collapsible";
@@ -22,9 +24,15 @@ import settings from "./Settings.module.css";
 import styles from "./Members.module.css";
 
 const statusLabels: Record<AccountStatus, string> = {
-  pending: "待批准",
-  active: "已启用",
-  suspended: "已停用",
+  get pending() {
+    return t("待批准");
+  },
+  get active() {
+    return t("已启用");
+  },
+  get suspended() {
+    return t("已停用");
+  },
 };
 const statusOrder: Record<AccountStatus, number> = {
   pending: 0,
@@ -38,18 +46,30 @@ const registrationChoices: {
 }[] = [
   {
     mode: "open",
-    label: "开放注册",
-    detail: "新账号登录后即可发布内容和回复。",
+    get label() {
+      return t("开放注册");
+    },
+    get detail() {
+      return t("新账号登录后即可发布内容和回复。");
+    },
   },
   {
     mode: "approval",
-    label: "需要审核",
-    detail: "新账号可以登录和阅读，经你批准后才能发布内容。",
+    get label() {
+      return t("需要审核");
+    },
+    get detail() {
+      return t("新账号可以登录和阅读，经你批准后才能发布内容。");
+    },
   },
   {
     mode: "closed",
-    label: "关闭注册",
-    detail: "暂停接受新账号，已有账号仍可登录。",
+    get label() {
+      return t("关闭注册");
+    },
+    get detail() {
+      return t("暂停接受新账号，已有账号仍可登录。");
+    },
   },
 ];
 type MemberChange =
@@ -77,6 +97,8 @@ function MemberRow({
   onChange: (entry: Account, change: MemberChange) => Promise<boolean>;
   onConfirm: (decision: Decision) => void;
 }) {
+  const { t } = useTranslation();
+
   const [menuOpen, setMenuOpen] = useState(false);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const pending = busy === entry.userId;
@@ -104,15 +126,15 @@ function MemberRow({
           <strong>
             <AccountName identity={entry} />
           </strong>
-          {current ? <span className={styles.self}>你</span> : null}
+          {current ? <span className={styles.self}>{t("你")}</span> : null}
         </div>
         <span className={styles.handle}>@{entry.username}</span>
         <div className={styles.memberMeta}>
           <span className={styles.status} data-status={entry.status}>
             {statusLabels[entry.status]}
           </span>
-          {entry.role === "admin" ? <span>管理员</span> : null}
-          {pending ? <span role="status">正在保存…</span> : null}
+          {entry.role === "admin" ? <span>{t("管理员")}</span> : null}
+          {pending ? <span role="status">{t("正在保存…")}</span> : null}
         </div>
       </div>
       <div className={styles.rowActions}>
@@ -127,12 +149,16 @@ function MemberRow({
             onClick={() => void apply()}
             type="button"
           >
-            {pending ? "处理中…" : entry.status === "pending" ? "批准" : "恢复"}
+            {pending
+              ? t("处理中…")
+              : entry.status === "pending"
+                ? t("批准")
+                : t("恢复")}
           </button>
         ) : null}
         <Menu.Root open={menuOpen} onOpenChange={setMenuOpen}>
           <Menu.Trigger
-            aria-label={`管理 ${entry.displayName}`}
+            aria-label={t("管理 {{value1}}", { value1: entry.displayName })}
             className={forms.actionsMenuTrigger}
             disabled={busy !== null}
             ref={triggerRef}
@@ -147,7 +173,9 @@ function MemberRow({
               className={forms.actionsMenuPositioner}
             >
               <Menu.Popup
-                aria-label={`${entry.displayName} 的管理操作`}
+                aria-label={t("{{value1}} 的管理操作", {
+                  value1: entry.displayName,
+                })}
                 className={forms.actionsMenuPopup}
               >
                 <Menu.Item
@@ -162,11 +190,13 @@ function MemberRow({
                 >
                   <Icon name="account" />
                   <span>
-                    {entry.role === "admin" ? "设为成员" : "设为管理员"}
+                    {entry.role === "admin" ? t("设为成员") : t("设为管理员")}
                   </span>
                 </Menu.Item>
                 {lastAdmin ? (
-                  <p className={styles.menuHint}>至少保留一位已启用的管理员</p>
+                  <p className={styles.menuHint}>
+                    {t("至少保留一位已启用的管理员")}
+                  </p>
                 ) : null}
                 {!current && entry.status === "active" ? (
                   <Menu.Item
@@ -174,7 +204,7 @@ function MemberRow({
                     onClick={() => ask({ kind: "status", value: "suspended" })}
                   >
                     <Icon name="close" />
-                    <span>停用账号</span>
+                    <span>{t("停用账号")}</span>
                   </Menu.Item>
                 ) : null}
               </Menu.Popup>
@@ -189,6 +219,8 @@ function MemberRow({
 export function MembersSection({
   onWaitingChange,
 }: { onWaitingChange?: (waiting: number) => void } = {}) {
+  const { t } = useTranslation();
+
   const { session, account, applyAccount, expireIfInvalidSession } =
     useSession();
   const [accounts, setAccounts] = useState<Account[] | null>(null);
@@ -302,8 +334,19 @@ export function MembersSection({
       if (saved.userId === account?.userId) applyAccount(saved);
       const message =
         change.kind === "role"
-          ? `已将 ${saved.displayName} 设为${saved.role === "admin" ? "管理员" : "成员"}。`
-          : `已${change.value === "suspended" ? "停用" : entry.status === "pending" ? "批准" : "恢复"} ${saved.displayName}。`;
+          ? t("已将 {{value1}} 设为{{value2}}。", {
+              value1: saved.displayName,
+              value2: saved.role === "admin" ? t("管理员") : t("成员"),
+            })
+          : t("已{{value1}} {{value2}}。", {
+              value1:
+                change.value === "suspended"
+                  ? t("停用")
+                  : entry.status === "pending"
+                    ? t("批准")
+                    : t("恢复"),
+              value2: saved.displayName,
+            });
       setNotice(message);
       notify(message, { id: "members-action" });
       return true;
@@ -312,11 +355,11 @@ export function MembersSection({
         const message =
           error instanceof PublicApiError &&
           error.code === "REAUTHENTICATION_REQUIRED"
-            ? "身份验证未完成，操作未执行。"
+            ? t("身份验证未完成，操作未执行。")
             : error instanceof PublicApiError &&
                 error.code === "LAST_ADMINISTRATOR"
-              ? "至少需要保留一位已启用的管理员。"
-              : "这次改动没有保存，账号保持原样。请重试。";
+              ? t("至少需要保留一位已启用的管理员。")
+              : t("这次改动没有保存，账号保持原样。请重试。");
         setActionFailure({ entry, change, message });
         notify(message, { id: "members-action", type: "error" });
       }
@@ -338,15 +381,17 @@ export function MembersSection({
       const label = registrationChoices.find(
         (choice) => choice.mode === next,
       )?.label;
-      setRegistrationNotice(`已保存：${label}`);
-      notify(`加入方式已更新为${label}。`, { id: "registration-mode" });
+      setRegistrationNotice(t("已保存：{{value1}}", { value1: label }));
+      notify(t("加入方式已更新为{{value1}}。", { value1: label }), {
+        id: "registration-mode",
+      });
     } catch (error) {
       if (mounted.current && !expireIfInvalidSession(error)) {
         const message =
           error instanceof PublicApiError &&
           error.code === "REAUTHENTICATION_REQUIRED"
-            ? "身份验证未完成，操作未执行。"
-            : "注册方式没有保存，站点仍按原来的规则处理新账号，可以重试。";
+            ? t("身份验证未完成，操作未执行。")
+            : t("注册方式没有保存，站点仍按原来的规则处理新账号，可以重试。");
         setRegistrationError(message);
         notify(message, { id: "registration-mode", type: "error" });
       }
@@ -357,9 +402,9 @@ export function MembersSection({
   const confirmLabel =
     decision?.change.kind === "role"
       ? decision.change.value === "admin"
-        ? "设为管理员"
-        : "设为成员"
-      : "停用账号";
+        ? t("设为管理员")
+        : t("设为成员")
+      : t("停用账号");
   const confirmationError =
     decision && actionFailure?.entry.userId === decision.entry.userId
       ? actionFailure.message
@@ -368,11 +413,13 @@ export function MembersSection({
     <section aria-labelledby="members-title" className={styles.membersSection}>
       <header className={`${settings.sectionHeader} ${styles.heading}`}>
         <div>
-          <h2 id="members-title">成员管理</h2>
-          <p>审核新成员，管理账号状态与权限。</p>
+          <h2 id="members-title">{t("成员管理")}</h2>
+          <p>{t("审核新成员，管理账号状态与权限。")}</p>
         </div>
         {counts.pending > 0 ? (
-          <span className={styles.waitingCount}>{counts.pending} 位待审核</span>
+          <span className={styles.waitingCount}>
+            {counts.pending} {t("位待审核")}
+          </span>
         ) : null}
       </header>
       {registrationMode ? (
@@ -384,7 +431,7 @@ export function MembersSection({
           <div className={styles.policySummary}>
             <div>
               <h3>
-                加入方式 ·{" "}
+                {t("加入方式 ·")}{" "}
                 {
                   registrationChoices.find(
                     (choice) => choice.mode === registrationMode,
@@ -400,10 +447,10 @@ export function MembersSection({
               </p>
             </div>
             <Collapsible.Trigger
-              aria-label={policyOpen ? "收起加入方式" : "更改加入方式"}
+              aria-label={policyOpen ? t("收起加入方式") : t("更改加入方式")}
               className={styles.policyTrigger}
             >
-              <span>{policyOpen ? "收起" : "更改"}</span>
+              <span>{policyOpen ? t("收起") : t("更改")}</span>
               <Icon name="chevron-down" />
             </Collapsible.Trigger>
           </div>
@@ -412,9 +459,9 @@ export function MembersSection({
               className={styles.registrationModes}
               aria-busy={registrationPending}
             >
-              <legend>谁可以加入</legend>
+              <legend>{t("谁可以加入")}</legend>
               <p className={styles.sectionNote}>
-                选择新账号加入站点的方式，更改后自动保存。
+                {t("选择新账号加入站点的方式，更改后自动保存。")}
               </p>
               <div className={styles.policyOptions}>
                 {registrationChoices.map((choice) => (
@@ -442,7 +489,9 @@ export function MembersSection({
                 ))}
               </div>
               <p aria-live="polite" className={styles.policyFeedback}>
-                {registrationPending ? "正在保存加入方式…" : registrationNotice}
+                {registrationPending
+                  ? t("正在保存加入方式…")
+                  : registrationNotice}
               </p>
               {registrationError ? (
                 <p className={forms.formError} role="alert">
@@ -455,26 +504,30 @@ export function MembersSection({
       ) : null}
       <div className={styles.rosterHeader}>
         <h3 id="members-roster-title" tabIndex={-1}>
-          站点成员
+          {t("站点成员")}
         </h3>
-        {accounts ? <span>{counts.all} 个账号</span> : null}
+        {accounts ? (
+          <span>
+            {counts.all} {t("个账号")}
+          </span>
+        ) : null}
       </div>
       {failed ? (
         <div className={styles.emptyState} role="alert">
           <Icon name="info" />
-          <strong>暂时无法读取成员列表</strong>
-          <p>请检查网络连接后重试。</p>
+          <strong>{t("暂时无法读取成员列表")}</strong>
+          <p>{t("请检查网络连接后重试。")}</p>
           <button
             className={forms.secondaryButton}
             onClick={() => setAttempt((value) => value + 1)}
             type="button"
           >
-            重试
+            {t("重试")}
           </button>
         </div>
       ) : accounts === null ? (
         <div className={styles.loadingState} aria-busy="true" role="status">
-          正在读取成员…
+          {t("正在读取成员…")}
           <span />
           <span />
           <span />
@@ -484,15 +537,15 @@ export function MembersSection({
           <div className={styles.searchField}>
             <Icon name="search" />
             <input
-              aria-label="搜索成员"
+              aria-label={t("搜索成员")}
               onChange={(event) => setQuery(event.target.value)}
-              placeholder="搜索昵称或用户名"
+              placeholder={t("搜索昵称或用户名")}
               type="search"
               value={query}
             />
             {query ? (
               <button
-                aria-label="清除成员搜索"
+                aria-label={t("清除成员搜索")}
                 onClick={() => setQuery("")}
                 type="button"
               >
@@ -500,7 +553,11 @@ export function MembersSection({
               </button>
             ) : null}
           </div>
-          <div aria-label="筛选成员" className={styles.filters} role="group">
+          <div
+            aria-label={t("筛选成员")}
+            className={styles.filters}
+            role="group"
+          >
             {(["all", "pending", "active", "suspended"] as const).map(
               (value) => (
                 <button
@@ -509,14 +566,14 @@ export function MembersSection({
                   onClick={() => setFilter(value)}
                   type="button"
                 >
-                  {value === "all" ? "全部" : statusLabels[value]}
+                  {value === "all" ? t("全部") : statusLabels[value]}
                   <span>{counts[value]}</span>
                 </button>
               ),
             )}
           </div>
           {visible.length > 0 ? (
-            <ul aria-label="站点成员" className={styles.memberList}>
+            <ul aria-label={t("站点成员")} className={styles.memberList}>
               {visible.map((entry) => (
                 <MemberRow
                   key={entry.userId}
@@ -542,17 +599,17 @@ export function MembersSection({
               <Icon name="account" />
               <strong>
                 {search
-                  ? "没有找到匹配的成员"
+                  ? t("没有找到匹配的成员")
                   : filter === "pending"
-                    ? "没有待审核的成员"
-                    : "这里还没有成员"}
+                    ? t("没有待审核的成员")
+                    : t("这里还没有成员")}
               </strong>
               <p>
                 {search
-                  ? "试试其他昵称或用户名。"
+                  ? t("试试其他昵称或用户名。")
                   : filter === "pending"
-                    ? "新的加入申请会显示在这里。"
-                    : "可以切换到其他状态查看。"}
+                    ? t("新的加入申请会显示在这里。")
+                    : t("可以切换到其他状态查看。")}
               </p>
               {search ? (
                 <button
@@ -560,7 +617,7 @@ export function MembersSection({
                   onClick={() => setQuery("")}
                   type="button"
                 >
-                  清除搜索
+                  {t("清除搜索")}
                 </button>
               ) : null}
             </div>
@@ -577,7 +634,7 @@ export function MembersSection({
             disabled={busy !== null}
             type="button"
           >
-            重试
+            {t("重试")}
           </button>
         </div>
       ) : null}
@@ -605,10 +662,14 @@ export function MembersSection({
               </Dialog.Title>
               <Dialog.Description className={forms.dialogDescription}>
                 {decision?.change.kind === "status"
-                  ? "停用后，该账号将无法登录或发布新内容。已发布的内容会保留。"
+                  ? t(
+                      "停用后，该账号将无法登录或发布新内容。已发布的内容会保留。",
+                    )
                   : decision?.change.value === "admin"
-                    ? "管理员可以管理站点、成员和备份。其他账号的私密内容与草稿仍仅作者可见。"
-                    : "该账号将不再拥有站点管理权限，已发布的内容会保留。"}
+                    ? t(
+                        "管理员可以管理站点、成员和备份。其他账号的私密内容与草稿仍仅作者可见。",
+                      )
+                    : t("该账号将不再拥有站点管理权限，已发布的内容会保留。")}
               </Dialog.Description>
               {confirmationError ? (
                 <p className={forms.dialogError} role="alert">
@@ -634,16 +695,16 @@ export function MembersSection({
                   type="button"
                 >
                   {busy
-                    ? "正在保存…"
+                    ? t("正在保存…")
                     : confirmationError
-                      ? "重试"
+                      ? t("重试")
                       : confirmLabel}
                 </button>
                 <Dialog.Close
                   className={forms.secondaryButton}
                   disabled={busy !== null}
                 >
-                  取消
+                  {t("取消")}
                 </Dialog.Close>
               </div>
             </Dialog.Popup>

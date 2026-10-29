@@ -1,5 +1,7 @@
 "use client";
 
+import { useTranslation } from "react-i18next";
+
 import { useCallback, useMemo } from "react";
 import type { ElementType, HTMLAttributes } from "react";
 import type {
@@ -22,6 +24,8 @@ export function TocContent(props: {
   options?: { topOffset?: number; maxShowCount?: number; showTitle?: boolean };
   HTMLAttributes?: HTMLAttributes<HTMLDivElement>;
 }) {
+  const { t } = useTranslation();
+
   const Wrapper = props.wrapper ?? "div";
   const { tocContent, navigateToHeading, normalizeHeadingDepths } = useToc();
 
@@ -89,7 +93,7 @@ export function TocContent(props: {
     return (
       <Wrapper {...wrapperProps}>
         <div className="tiptap-table-of-contents-empty">
-          添加标题后，这里会显示目录。
+          {t("添加标题后，这里会显示目录。")}
         </div>
       </Wrapper>
     );
@@ -97,8 +101,10 @@ export function TocContent(props: {
 
   return (
     <Wrapper {...wrapperProps}>
-      {showTitle && <div className="tiptap-table-of-contents-title">目录</div>}
-      <nav aria-label="目录" className="tiptap-table-of-contents-list">
+      {showTitle && (
+        <div className="tiptap-table-of-contents-title">{t("目录")}</div>
+      )}
+      <nav aria-label={t("目录")} className="tiptap-table-of-contents-list">
         {flatTocList.map((node, index) => (
           <a
             key={node.item.id ?? `${index}-${node.item.textContent}`}

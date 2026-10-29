@@ -1,5 +1,7 @@
 "use client";
 
+import { t } from "../../../../../../../../i18n";
+
 import { forwardRef, useCallback } from "react";
 
 // --- Lib ---
@@ -105,7 +107,7 @@ export const EmojiTriggerButton = forwardRef<
         disabled={!canAddTrigger}
         data-disabled={!canAddTrigger}
         aria-label={label}
-        tooltip="Add emoji"
+        tooltip={t("Add emoji")}
         onClick={handleClick}
         {...buttonProps}
         ref={ref}

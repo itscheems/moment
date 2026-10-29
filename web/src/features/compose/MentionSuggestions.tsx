@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import { AccountName } from "../../components/AccountName";
 import type { CSSProperties } from "react";
 
@@ -20,6 +21,8 @@ export function MentionSuggestions({
     width: number;
   };
 }) {
+  const { t } = useTranslation();
+
   if (items.length === 0) return null;
   const style = position
     ? ({
@@ -30,7 +33,7 @@ export function MentionSuggestions({
     : undefined;
   return (
     <div
-      aria-label="提及用户建议"
+      aria-label={t("提及用户建议")}
       className={`${styles.mentionSuggestions} ${position ? styles.mentionSuggestionsCaret : ""}`}
       data-placement={position ? "caret" : "form"}
       role="listbox"
@@ -58,7 +61,7 @@ export function MentionSuggestions({
               </strong>
               <small>@{item.username}</small>
             </span>
-            <em>提及</em>
+            <em>{t("提及")}</em>
           </button>
         );
       })}

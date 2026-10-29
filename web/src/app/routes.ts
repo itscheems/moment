@@ -1,3 +1,4 @@
+import { t } from "../i18n";
 export type RouteId =
   | "home"
   | "detail"
@@ -169,7 +170,7 @@ const routes: Array<
   {
     id: "comment-detail",
     requiresSession: false,
-    title: "Moment",
+    title: t("Moment"),
     eyebrow: "",
     href: "/",
     match: (pathname) => commentDetailFromPath(pathname) !== null,
@@ -177,7 +178,9 @@ const routes: Array<
   {
     id: "home",
     requiresSession: false,
-    title: "时间流",
+    get title() {
+      return t("时间流");
+    },
     eyebrow: "",
     href: "/",
     match: (pathname) => pathname === "/",
@@ -185,7 +188,7 @@ const routes: Array<
   {
     id: "detail",
     requiresSession: false,
-    title: "Moment",
+    title: t("Moment"),
     eyebrow: "",
     href: "/",
     match: (pathname) => /^\/m\/[^/]+\/?$/.test(pathname),
@@ -193,7 +196,9 @@ const routes: Array<
   {
     id: "article-focus",
     requiresSession: false,
-    title: "文章",
+    get title() {
+      return t("文章");
+    },
     eyebrow: "",
     href: "/",
     match: (pathname) => articleFocusIdFromPath(pathname) !== null,
@@ -201,7 +206,9 @@ const routes: Array<
   {
     id: "search",
     requiresSession: false,
-    title: "搜索",
+    get title() {
+      return t("搜索");
+    },
     eyebrow: "",
     href: "/search",
     match: (pathname) => pathname === "/search" || pathname === "/search/",
@@ -209,7 +216,9 @@ const routes: Array<
   {
     id: "archive",
     requiresSession: true,
-    title: "归档",
+    get title() {
+      return t("归档");
+    },
     eyebrow: "",
     href: "/archive",
     match: (pathname) => pathname === "/archive" || pathname === "/archive/",
@@ -217,7 +226,9 @@ const routes: Array<
   {
     id: "login",
     requiresSession: false,
-    title: "登录",
+    get title() {
+      return t("登录");
+    },
     eyebrow: "",
     href: "/login",
     match: (pathname) => pathname === "/login" || pathname === "/login/",
@@ -225,7 +236,9 @@ const routes: Array<
   {
     id: "register",
     requiresSession: false,
-    title: "注册",
+    get title() {
+      return t("注册");
+    },
     eyebrow: "",
     href: "/register",
     match: (pathname) => pathname === "/register" || pathname === "/register/",
@@ -235,7 +248,9 @@ const routes: Array<
   {
     id: "article-workspace",
     requiresSession: true,
-    title: "文章",
+    get title() {
+      return t("文章");
+    },
     eyebrow: "",
     href: ARTICLE_COMPOSE_PATH,
     match: isArticleComposePath,
@@ -243,7 +258,9 @@ const routes: Array<
   {
     id: "compose",
     requiresSession: true,
-    title: "发布 Moment",
+    get title() {
+      return t("发布 Moment");
+    },
     eyebrow: "",
     href: COMPOSE_PATH,
     activeAccountOnly: true,
@@ -252,7 +269,9 @@ const routes: Array<
   {
     id: "edit",
     requiresSession: true,
-    title: "编辑 Moment",
+    get title() {
+      return t("编辑 Moment");
+    },
     eyebrow: "",
     href: "/",
     activeAccountOnly: true,
@@ -261,7 +280,9 @@ const routes: Array<
   {
     id: "profile-edit",
     requiresSession: true,
-    title: "编辑资料",
+    get title() {
+      return t("编辑资料");
+    },
     eyebrow: "",
     href: PROFILE_EDIT_PATH,
     match: isProfileEditPath,
@@ -269,7 +290,9 @@ const routes: Array<
   {
     id: "settings",
     requiresSession: true,
-    title: "设置",
+    get title() {
+      return t("设置");
+    },
     eyebrow: "",
     href: "/settings/account",
     match: (pathname) =>
@@ -281,7 +304,9 @@ const routes: Array<
   {
     id: "profile",
     requiresSession: false,
-    title: "个人资料",
+    get title() {
+      return t("个人资料");
+    },
     eyebrow: "",
     href: "/profile",
     match: (pathname) => profileFromPath(pathname) !== null,
@@ -290,7 +315,9 @@ const routes: Array<
 
 const notFound: AppRoute = {
   id: "not-found",
-  title: "没有这个页面",
+  get title() {
+    return t("没有这个页面");
+  },
   eyebrow: "",
   href: "/",
 };

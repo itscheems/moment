@@ -1,3 +1,5 @@
+import { getLocale } from "../../i18n";
+import { useTranslation } from "react-i18next";
 import { type ReactNode, useCallback, useState } from "react";
 
 import type { PublicLinkCard } from "../../api/public";
@@ -47,10 +49,10 @@ function playbackUrl(embedUrl: string): string {
  * label, where reading it out is the whole point.
  */
 function formatCount(value: number): string {
-  if (value < 10_000) return String(value);
-  const scaled = value / 10_000;
-  const digits = scaled < 100 ? 1 : 0;
-  return `${scaled.toFixed(digits).replace(/\.0$/, "")}万`;
+  return new Intl.NumberFormat(getLocale(), {
+    notation: "compact",
+    maximumFractionDigits: 1,
+  }).format(value);
 }
 
 function hostLabel(card: PublicLinkCard): string {
@@ -75,6 +77,8 @@ function hostLabel(card: PublicLinkCard): string {
  * server still considers its origin embeddable.
  */
 export function LinkCard({ card }: { card: PublicLinkCard }) {
+  const { t } = useTranslation();
+
   const [playing, setPlaying] = useState(false);
   const [playbackFailed, setPlaybackFailed] = useState(false);
   const embeddable = card.embedUrl !== null && card.cardKind === "video";
@@ -111,20 +115,30 @@ export function LinkCard({ card }: { card: PublicLinkCard }) {
     stats.push({
       key: "author",
       icon: <Icon name="uploader" />,
-      label: "作者",
+      label: t("作者"),
       display: card.authorName.trim(),
       exact: card.authorName.trim(),
     });
   }
   for (const entry of [
-    { key: "views", icon: "play-count", label: "播放", value: card.viewCount },
+    {
+      key: "views",
+      icon: "play-count",
+      label: t("播放"),
+      value: card.viewCount,
+    },
     {
       key: "comments",
       icon: "danmaku-count",
-      label: "弹幕",
+      label: t("弹幕"),
       value: card.commentCount,
     },
-    { key: "likes", icon: "like-count", label: "点赞", value: card.likeCount },
+    {
+      key: "likes",
+      icon: "like-count",
+      label: t("点赞"),
+      value: card.likeCount,
+    },
   ] as const) {
     if (entry.value === null) continue;
     stats.push({
@@ -132,7 +146,7 @@ export function LinkCard({ card }: { card: PublicLinkCard }) {
       icon: <Icon name={entry.icon} />,
       label: entry.label,
       display: formatCount(entry.value),
-      exact: entry.value.toLocaleString("zh-CN"),
+      exact: entry.value.toLocaleString(getLocale()),
     });
   }
 
@@ -172,7 +186,7 @@ export function LinkCard({ card }: { card: PublicLinkCard }) {
 
   if (playing && card.embedUrl) {
     return (
-      <section aria-label="链接预览" className={styles.card}>
+      <section aria-label={t("链接预览")} className={styles.card}>
         <div className={styles.frame}>
           <iframe
             allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
@@ -189,14 +203,15 @@ export function LinkCard({ card }: { card: PublicLinkCard }) {
           rel="nofollow noopener noreferrer"
           target="_blank"
         >
-          <Icon name="open" />在 {site} 打开
+          <Icon name="open" />
+          {t("在")} {site} {t("打开")}
         </a>
       </section>
     );
   }
 
   return (
-    <section aria-label="链接预览" className={styles.card}>
+    <section aria-label={t("链接预览")} className={styles.card}>
       <a
         className={styles.surface}
         href={card.canonicalUrl}
@@ -217,7 +232,9 @@ export function LinkCard({ card }: { card: PublicLinkCard }) {
       </a>
       {embeddable ? (
         <button
-          aria-label={title ? `播放 ${title}` : "播放"}
+          aria-label={
+            title ? t("播放 {{value1}}", { value1: title }) : t("播放")
+          }
           className={styles.play}
           onClick={(event) => {
             event.preventDefault();
@@ -231,7 +248,7 @@ export function LinkCard({ card }: { card: PublicLinkCard }) {
       ) : null}
       {playbackFailed ? (
         <p className={styles.playbackError} role="status">
-          无法在此播放，请在 {site} 打开。
+          {t("无法在此播放，请在")} {site} {t("打开。")}
         </p>
       ) : null}
     </section>

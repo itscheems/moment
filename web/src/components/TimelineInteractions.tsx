@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import { AccountName } from "./AccountName";
 import type { AccountIdentityKey } from "./accountVerification";
 import { Menu } from "@base-ui/react/menu";
@@ -82,6 +83,8 @@ export function SiteIdentityPreview({
   children: ReactElement;
   site: IdentityFace & AccountIdentityKey & { username: string; bio: string };
 }) {
+  const { t } = useTranslation();
+
   const title = siteDisplayName(site);
   const profileHref = siteProfileHref(site);
   const previewActionsRef = useRef<PreviewCard.Root.Actions>(null);
@@ -131,7 +134,7 @@ export function SiteIdentityPreview({
             </div>
             <div className={styles.identityBody}>
               <InternalLink
-                aria-label={`查看 ${title} 的个人资料`}
+                aria-label={t("查看 {{value1}} 的个人资料", { value1: title })}
                 className={styles.identityAvatarLink}
                 href={profileHref}
                 onClick={closeBeforeNavigation}
@@ -183,6 +186,8 @@ export function ShareMenu({
   trigger: ReactElement;
   tooltipPlacement?: ActionTooltipPlacement;
 }) {
+  const { t } = useTranslation();
+
   const triggerRef = useRef<HTMLButtonElement>(null);
   const [cardOpen, setCardOpen] = useState(false);
   const cardOwnsFocus = useRef(false);
@@ -200,25 +205,25 @@ export function ShareMenu({
     try {
       if (!navigator.clipboard) throw new Error("clipboard unavailable");
       await navigator.clipboard.writeText(url());
-      notify("链接已复制");
+      notify(t("链接已复制"));
     } catch {
-      notify("暂时无法复制链接", { type: "error" });
+      notify(t("暂时无法复制链接"), { type: "error" });
     }
   };
 
   const share = async () => {
     try {
       await navigator.share({ title, url: url() });
-      notify("已打开系统分享");
+      notify(t("已打开系统分享"));
     } catch (error) {
       if (error instanceof DOMException && error.name === "AbortError") return;
-      notify("暂时无法分享", { type: "error" });
+      notify(t("暂时无法分享"), { type: "error" });
     }
   };
 
   return (
     <Menu.Root>
-      <ActionTooltip label="分享" placement={tooltipPlacement}>
+      <ActionTooltip label={t("分享")} placement={tooltipPlacement}>
         <Menu.Trigger ref={triggerRef} render={trigger} />
       </ActionTooltip>
       <Menu.Portal>
@@ -231,14 +236,14 @@ export function ShareMenu({
           sideOffset={4}
         >
           <Menu.Popup
-            aria-label="分享"
+            aria-label={t("分享")}
             className={styles.sharePopup}
             finalFocus={restoreMenuFocus}
             onClick={stopCardNavigation}
           >
             <Menu.Item className={styles.shareItem} onClick={() => void copy()}>
               <Icon name="link" />
-              复制链接
+              {t("复制链接")}
             </Menu.Item>
             {typeof navigator.share === "function" ? (
               <Menu.Item
@@ -246,7 +251,7 @@ export function ShareMenu({
                 onClick={() => void share()}
               >
                 <Icon name="share" />
-                系统分享
+                {t("系统分享")}
               </Menu.Item>
             ) : null}
             <Menu.Item
@@ -256,7 +261,7 @@ export function ShareMenu({
               }
             >
               <Icon name="open" />
-              在新标签页打开
+              {t("在新标签页打开")}
             </Menu.Item>
             {card ? (
               <Menu.Item
@@ -267,7 +272,7 @@ export function ShareMenu({
                 }}
               >
                 <Icon name="media" />
-                生成分享图片
+                {t("生成分享图片")}
               </Menu.Item>
             ) : null}
           </Menu.Popup>

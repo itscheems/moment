@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import { Icon } from "../../../../components/icons";
 import { Tabs } from "@base-ui/react/tabs";
 import { ConfirmDialog } from "../../../../components/ConfirmDialog";
@@ -30,8 +31,10 @@ export function DraftRail({
   onOpenPublished: (id: string) => Promise<void>;
   disabled: boolean;
 }) {
+  const { t } = useTranslation();
+
   return (
-    <nav aria-label="文章草稿" className={styles.rail}>
+    <nav aria-label={t("文章草稿")} className={styles.rail}>
       <button
         className={styles.newDraft}
         onClick={onNew}
@@ -39,31 +42,31 @@ export function DraftRail({
         type="button"
       >
         <Icon name="compose" />
-        <span>新文章</span>
+        <span>{t("新文章")}</span>
       </button>
       <Tabs.Root defaultValue="drafts">
-        <Tabs.List className={styles.railTabs} aria-label="文章列表">
+        <Tabs.List className={styles.railTabs} aria-label={t("文章列表")}>
           <Tabs.Tab className={styles.railTab} value="drafts">
-            草稿
+            {t("草稿")}
           </Tabs.Tab>
           <Tabs.Tab className={styles.railTab} value="published">
-            已发布
+            {t("已发布")}
           </Tabs.Tab>
         </Tabs.List>
         <Tabs.Panel value="drafts">
           <div className={styles.railHead}>
-            <h2 className={styles.railTitle}>草稿</h2>
+            <h2 className={styles.railTitle}>{t("草稿")}</h2>
             <span className={styles.railCount}>
               {drafts.length} / {MAX_ARTICLE_DRAFTS}
             </span>
           </div>
           {error ? <p className={styles.railError}>{error}</p> : null}
           {!error && loading && drafts.length === 0 ? (
-            <p className={styles.railEmpty}>正在读取草稿…</p>
+            <p className={styles.railEmpty}>{t("正在读取草稿…")}</p>
           ) : null}
           {!error && !loading && drafts.length === 0 ? (
             <p className={styles.railEmpty}>
-              还没有草稿。写点什么，它会自己保存。
+              {t("还没有草稿。写点什么，它会自己保存。")}
             </p>
           ) : null}
           <ol className={styles.draftList}>
@@ -86,24 +89,29 @@ export function DraftRail({
                     <span
                       className={`${styles.draftName} ${title === "" ? styles.draftUntitled : ""}`}
                     >
-                      {title === "" ? "无标题" : title}
+                      {title === "" ? t("无标题") : title}
                     </span>
                     <span className={styles.draftWhen}>
-                      {saved.relative}保存
+                      {saved.relative}
+                      {t("保存")}
                       {draft.publishedEntryId === null
                         ? ""
-                        : " · 已发布文章的修改"}
+                        : t(" · 已发布文章的修改")}
                     </span>
                   </button>
                   <ConfirmDialog
-                    confirmLabel="删除草稿"
+                    confirmLabel={t("删除草稿")}
                     danger
-                    description="删除后无法找回。"
+                    description={t("删除后无法找回。")}
                     onConfirm={() => onDiscard(draft)}
-                    title={`删除「${title === "" ? "无标题" : title}」？`}
+                    title={t("删除「{{value1}}」？", {
+                      value1: title === "" ? t("无标题") : title,
+                    })}
                     trigger={
                       <button
-                        aria-label={`删除草稿：${title === "" ? "无标题" : title}`}
+                        aria-label={t("删除草稿：{{value1}}", {
+                          value1: title === "" ? t("无标题") : title,
+                        })}
                         className={styles.draftDiscard}
                         disabled={disabled}
                         type="button"

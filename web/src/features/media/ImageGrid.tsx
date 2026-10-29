@@ -1,3 +1,5 @@
+import { t } from "../../i18n";
+import { useTranslation } from "react-i18next";
 import { useState, type CSSProperties } from "react";
 
 import type { PublicMediaUsage } from "../../api/public";
@@ -21,10 +23,19 @@ function mediaAlt(
   if (usage.altText === "") return "";
   if (usage.altText !== null) return usage.altText;
   return isVideoMimeType(usage.mimeType)
-    ? `未提供视频描述，第 ${index + 1} 项，共 ${total} 项`
+    ? t("未提供视频描述，第 {{value1}} 项，共 {{value2}} 项", {
+        value1: index + 1,
+        value2: total,
+      })
     : mixed
-      ? `未提供图片描述，第 ${index + 1} 项媒体，共 ${total} 项`
-      : `未提供图片描述，第 ${index + 1} 张，共 ${total} 张`;
+      ? t("未提供图片描述，第 {{value1}} 项媒体，共 {{value2}} 项", {
+          value1: index + 1,
+          value2: total,
+        })
+      : t("未提供图片描述，第 {{value1}} 张，共 {{value2}} 张", {
+          value1: index + 1,
+          value2: total,
+        });
 }
 
 function imageTileName(
@@ -35,13 +46,21 @@ function imageTileName(
 ): string {
   const state =
     usage.altText === null
-      ? "尚未提供图片描述"
+      ? t("尚未提供图片描述")
       : usage.altText === ""
-        ? "明确标记为纯装饰"
+        ? t("明确标记为纯装饰")
         : usage.altText;
   return mixed
-    ? `打开第 ${index + 1} 项媒体，共 ${total} 项：${state}`
-    : `打开第 ${index + 1} 张图片，共 ${total} 张：${state}`;
+    ? t("打开第 {{value1}} 项媒体，共 {{value2}} 项：{{value3}}", {
+        value1: index + 1,
+        value2: total,
+        value3: state,
+      })
+    : t("打开第 {{value1}} 张图片，共 {{value2}} 张：{{value3}}", {
+        value1: index + 1,
+        value2: total,
+        value3: state,
+      });
 }
 
 function usageKey(usage: PublicMediaUsage): string {
@@ -141,6 +160,8 @@ export function ImageGrid({
   compactTallVideo?: boolean;
   source?: MediaSource;
 }) {
+  const { t } = useTranslation();
+
   const viewer = useMediaViewer();
   const [selected, setSelected] = useState<number | null>(null);
   const [failed, setFailed] = useState(() => new Set<string>());
@@ -172,7 +193,15 @@ export function ImageGrid({
     <>
       <div
         aria-label={
-          containsVideo ? `${media.length} 项媒体` : `${media.length} 张图片`
+          containsVideo
+            ? t("{{value1}} 项媒体", {
+                count: media.length,
+                value1: media.length,
+              })
+            : t("{{value1}} 张图片", {
+                count: media.length,
+                value1: media.length,
+              })
         }
         className={styles.imageGrid}
         data-compact-tall-video={
@@ -191,11 +220,11 @@ export function ImageGrid({
               role="img"
               aria-label={
                 mediaAlt(usage, index, media.length, containsVideo) ||
-                (containsVideo ? "装饰媒体不可用" : "装饰图片不可用")
+                (containsVideo ? t("装饰媒体不可用") : t("装饰图片不可用"))
               }
             >
               <span aria-hidden="true">×</span>
-              {containsVideo ? "媒体暂不可用" : "图片暂不可用"}
+              {containsVideo ? t("媒体暂不可用") : t("图片暂不可用")}
             </span>
           ) : (
             <MediaAsset

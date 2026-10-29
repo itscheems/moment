@@ -1,3 +1,5 @@
+import { t } from "../../i18n";
+import { useTranslation } from "react-i18next";
 import { AccountName } from "../../components/AccountName";
 import { accountsApi, type AccountProfileUpdate } from "../../api/accounts";
 
@@ -37,8 +39,8 @@ import styles from "./ProfileEditor.module.css";
 type AssetKind = "avatar" | "cover";
 type UploadState = "idle" | "uploading" | "failed";
 
-const NOT_APPROVED = "账户通过审核后就能上传图片";
-const NOT_AN_IMAGE = "这里只能放图片";
+const NOT_APPROVED = () => t("账户通过审核后就能上传图片");
+const NOT_AN_IMAGE = () => t("这里只能放图片");
 
 /**
  * How big a picture may be, in the reader's units.
@@ -50,8 +52,10 @@ const NOT_AN_IMAGE = "这里只能放图片";
  */
 function tooLargeMessage(ceilingBytes: number | null): string {
   return ceilingBytes === null
-    ? "这张图片太大了，请换一张小一些的。"
-    : `图片不能超过 ${Math.round(ceilingBytes / 1024 / 1024)} MB`;
+    ? t("这张图片太大了，请换一张小一些的。")
+    : t("图片不能超过 {{value1}} MB", {
+        value1: Math.round(ceilingBytes / 1024 / 1024),
+      });
 }
 
 type ProfileEditorProps = {
@@ -79,9 +83,9 @@ function pictureFailure(
   ceilingBytes: number | null,
 ): string | null {
   if (!(error instanceof PublicApiError)) return null;
-  if (error.code === "ACCOUNT_NOT_APPROVED") return NOT_APPROVED;
+  if (error.code === "ACCOUNT_NOT_APPROVED") return NOT_APPROVED();
   if (error.code === "MEDIA_TOO_LARGE") return tooLargeMessage(ceilingBytes);
-  if (error.code === "MEDIA_TYPE_UNSUPPORTED") return NOT_AN_IMAGE;
+  if (error.code === "MEDIA_TYPE_UNSUPPORTED") return NOT_AN_IMAGE();
   return null;
 }
 
@@ -97,7 +101,7 @@ function accountPictureProblem(
   ceilingBytes: number | null,
 ): string | null {
   if (!file.type.startsWith("image/") && !/\.(heic|heif)$/i.test(file.name)) {
-    return NOT_AN_IMAGE;
+    return NOT_AN_IMAGE();
   }
   // Nothing is assumed about the ceiling. Until the server has named one there
   // is no local rule to apply, and the upload is left to be refused by the
@@ -109,19 +113,21 @@ function accountPictureProblem(
 function saveFailure(error: unknown): string {
   if (error instanceof PublicApiError) {
     if (error.code === "MEDIA_NOT_FOUND") {
-      return "所选图片已不可用，请重新选择。";
+      return t("所选图片已不可用，请重新选择。");
     }
     if (error.code === "USERNAME_TAKEN") {
-      return "这个用户名已经有人用了，换一个吧。";
+      return t("这个用户名已经有人用了，换一个吧。");
     }
     if (error.code === "USERNAME_RESERVED") {
-      return "这个用户名被站点保留，换一个吧。";
+      return t("这个用户名被站点保留，换一个吧。");
     }
   }
-  return "个人资料没有保存。当前更改仍保留，可以重试。";
+  return t("个人资料没有保存。当前更改仍保留，可以重试。");
 }
 
 export function ProfileEditor(props: ProfileEditorProps) {
+  const { t } = useTranslation();
+
   const {
     account: viewer,
 
@@ -148,9 +154,9 @@ export function ProfileEditor(props: ProfileEditorProps) {
   const saveAccount = props.onSaved;
   const uploadNote =
     viewer?.status === "pending"
-      ? NOT_APPROVED
+      ? NOT_APPROVED()
       : viewer?.status === "suspended"
-        ? "账户已停用，暂时不能上传图片"
+        ? t("账户已停用，暂时不能上传图片")
         : null;
   const canUpload = uploadNote === null;
   const [open, setOpen] = useState(routeOpen);
@@ -292,7 +298,7 @@ export function ProfileEditor(props: ProfileEditorProps) {
       setBoundAvatarId(saved.avatarMediaId);
       setAvatarPreview(mediaURL(saved.avatarMediaId));
       setAvatarState("idle");
-      notify("头像已更新");
+      notify(t("头像已更新"));
       return;
     } catch (nextError) {
       if (controller.signal.aborted) return;
@@ -301,7 +307,7 @@ export function ProfileEditor(props: ProfileEditorProps) {
       else setCoverState("failed");
       setError(
         pictureFailure(nextError, pictureCeiling) ??
-          "图片没有上传完成，头像和封面保持原样，可以重新选择。",
+          t("图片没有上传完成，头像和封面保持原样，可以重新选择。"),
       );
     }
   };
@@ -367,7 +373,7 @@ export function ProfileEditor(props: ProfileEditorProps) {
       );
       applyAccount(saved);
       saveAccount(saved);
-      notify("个人资料已更新");
+      notify(t("个人资料已更新"));
       close(saved);
     } catch (nextError) {
       if (!expireIfInvalidSession(nextError)) {
@@ -394,7 +400,7 @@ export function ProfileEditor(props: ProfileEditorProps) {
       <Dialog.Trigger
         className={`${styles.trigger} ${props.triggerClassName ?? ""}`}
       >
-        编辑资料
+        {t("编辑资料")}
       </Dialog.Trigger>
       <Dialog.Portal keepMounted={open}>
         <Dialog.Backdrop
@@ -424,13 +430,13 @@ export function ProfileEditor(props: ProfileEditorProps) {
             >
               <header className={styles.header}>
                 <Dialog.Close
-                  aria-label="关闭编辑资料"
+                  aria-label={t("关闭编辑资料")}
                   className={styles.iconButton}
-                  title="关闭"
+                  title={t("关闭")}
                 >
                   <Icon name="media-remove" />
                 </Dialog.Close>
-                <Dialog.Title>编辑资料</Dialog.Title>
+                <Dialog.Title>{t("编辑资料")}</Dialog.Title>
                 <div className={styles.headerActions}>
                   <button
                     className={styles.saveButton}
@@ -440,19 +446,19 @@ export function ProfileEditor(props: ProfileEditorProps) {
                     onClick={() => void save()}
                     type="button"
                   >
-                    {saving ? "保存中" : "保存"}
+                    {saving ? t("保存中") : t("保存")}
                   </button>
                 </div>
               </header>
 
               <div className={styles.body}>
                 <section
-                  aria-label="个人资料预览"
+                  aria-label={t("个人资料预览")}
                   className={styles.identityStage}
                 >
                   <div className={styles.coverEditor}>
                     {coverPreview ? (
-                      <img alt="封面预览" src={coverPreview} />
+                      <img alt={t("封面预览")} src={coverPreview} />
                     ) : (
                       <div
                         aria-hidden="true"
@@ -462,9 +468,9 @@ export function ProfileEditor(props: ProfileEditorProps) {
                     <div className={styles.coverActions}>
                       <Menu.Root>
                         <Menu.Trigger
-                          aria-label="编辑封面"
+                          aria-label={t("编辑封面")}
                           ref={coverMenuTrigger}
-                          title="编辑封面"
+                          title={t("编辑封面")}
                           type="button"
                         >
                           <Icon name="camera" />
@@ -486,7 +492,7 @@ export function ProfileEditor(props: ProfileEditorProps) {
                                 onClick={() => coverInput.current?.click()}
                               >
                                 <Icon name="camera" />
-                                <span>更换封面</span>
+                                <span>{t("更换封面")}</span>
                               </Menu.Item>
                               <Menu.Item
                                 className={`${styles.mediaMenuItem} ${styles.mediaMenuDanger}`}
@@ -494,7 +500,7 @@ export function ProfileEditor(props: ProfileEditorProps) {
                                 onClick={() => removeAsset("cover")}
                               >
                                 <Icon name="delete" />
-                                <span>移除封面</span>
+                                <span>{t("移除封面")}</span>
                               </Menu.Item>
                             </Menu.Popup>
                           </Menu.Positioner>
@@ -503,7 +509,7 @@ export function ProfileEditor(props: ProfileEditorProps) {
                     </div>
                     {coverState === "uploading" ? (
                       <small className={styles.coverUploadStatus}>
-                        正在上传封面…
+                        {t("正在上传封面…")}
                       </small>
                     ) : null}
                   </div>
@@ -512,7 +518,7 @@ export function ProfileEditor(props: ProfileEditorProps) {
                     <div className={styles.avatarEditor}>
                       <div className={styles.avatarMedia}>
                         {avatarPreview ? (
-                          <img alt="头像预览" src={avatarPreview} />
+                          <img alt={t("头像预览")} src={avatarPreview} />
                         ) : (
                           <SiteAvatar
                             site={{ ...subject, avatarMediaId: null }}
@@ -521,10 +527,10 @@ export function ProfileEditor(props: ProfileEditorProps) {
                       </div>
                       <Menu.Root>
                         <Menu.Trigger
-                          aria-label="编辑头像"
+                          aria-label={t("编辑头像")}
                           className={styles.avatarChangeButton}
                           ref={avatarMenuTrigger}
-                          title="编辑头像"
+                          title={t("编辑头像")}
                           type="button"
                         >
                           <Icon name="camera" />
@@ -546,7 +552,7 @@ export function ProfileEditor(props: ProfileEditorProps) {
                                 onClick={() => avatarInput.current?.click()}
                               >
                                 <Icon name="camera" />
-                                <span>更换头像</span>
+                                <span>{t("更换头像")}</span>
                               </Menu.Item>
                               <Menu.Item
                                 className={`${styles.mediaMenuItem} ${styles.mediaMenuDanger}`}
@@ -554,7 +560,7 @@ export function ProfileEditor(props: ProfileEditorProps) {
                                 onClick={() => removeAsset("avatar")}
                               >
                                 <Icon name="delete" />
-                                <span>移除头像</span>
+                                <span>{t("移除头像")}</span>
                               </Menu.Item>
                             </Menu.Popup>
                           </Menu.Positioner>
@@ -565,12 +571,12 @@ export function ProfileEditor(props: ProfileEditorProps) {
                       <strong>
                         <AccountName
                           identity={subject}
-                          name={displayName.trim() || "未命名"}
+                          name={displayName.trim() || t("未命名")}
                         />
                       </strong>
                       <small>@{username.trim() || "username"}</small>
                       {avatarState === "uploading" ? (
-                        <em>正在上传头像…</em>
+                        <em>{t("正在上传头像…")}</em>
                       ) : null}
                     </div>
                   </div>
@@ -597,9 +603,12 @@ export function ProfileEditor(props: ProfileEditorProps) {
                   type="file"
                 />
 
-                <section aria-label="个人资料字段" className={styles.fields}>
+                <section
+                  aria-label={t("个人资料字段")}
+                  className={styles.fields}
+                >
                   <label>
-                    <span>显示名称</span>
+                    <span>{t("显示名称")}</span>
                     <input
                       maxLength={nameLimit}
                       onChange={(event) => setDisplayName(event.target.value)}
@@ -609,7 +618,7 @@ export function ProfileEditor(props: ProfileEditorProps) {
                     />
                   </label>
                   <label>
-                    <span>用户名</span>
+                    <span>{t("用户名")}</span>
                     <div className={styles.usernameField}>
                       <span aria-hidden="true">@</span>
                       <input
@@ -631,7 +640,7 @@ export function ProfileEditor(props: ProfileEditorProps) {
                   </label>
 
                   <label className={`${styles.fieldWide} ${styles.bioField}`}>
-                    <span>简介</span>
+                    <span>{t("简介")}</span>
                     <textarea
                       maxLength={bioLimit}
                       onChange={(event) => setBio(event.currentTarget.value)}

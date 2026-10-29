@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import { InternalLink } from "../../app/navigation";
 import { articleFocusPath } from "../../app/routes";
 import { ActionTooltip } from "../../components/TimelineInteractions";
@@ -10,10 +11,12 @@ export function ArticleFocusLink({
   id: string;
   username: string;
 }) {
+  const { t } = useTranslation();
+
   return (
-    <ActionTooltip label="全屏阅读">
+    <ActionTooltip label={t("全屏阅读")}>
       <InternalLink
-        aria-label="全屏阅读"
+        aria-label={t("全屏阅读")}
         className={styles.focusLink}
         data-focus-key={`article-focus-${id}`}
         href={articleFocusPath(username, id)}

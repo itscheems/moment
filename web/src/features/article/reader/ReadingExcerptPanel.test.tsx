@@ -286,10 +286,8 @@ it("keeps the panel across equal-body rerenders and search but clears it on body
 it("removes the entrance when the existing clear-all action clears decorations", async () => {
   const { editor } = show();
   mark(editor, 2, 6);
-  fireEvent.click(screen.getByRole("button", { name: "Reading tools" }));
-  fireEvent.click(
-    await screen.findByRole("button", { name: "Clear all marks" }),
-  );
+  fireEvent.click(screen.getByRole("button", { name: "阅读工具" }));
+  fireEvent.click(await screen.findByRole("button", { name: "清除所有标记" }));
   expect(readingExcerptRanges(editor)).toEqual([]);
   await waitFor(() =>
     expect(screen.queryByRole("button", { name: "本次摘录" })).toBeNull(),

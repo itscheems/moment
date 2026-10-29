@@ -1,5 +1,7 @@
 "use client";
 
+import { t } from "../../../../../../../../i18n";
+
 import { useCallback } from "react";
 import type { Editor } from "@tiptap/react";
 
@@ -40,110 +42,198 @@ export interface SlashMenuConfig {
 const texts = {
   // Style
   text: {
-    title: "Text",
-    subtext: "Regular text paragraph",
+    get title() {
+      return t("Text");
+    },
+    get subtext() {
+      return t("Regular text paragraph");
+    },
     keywords: ["p", "paragraph", "text"],
     badge: TypeIcon,
-    group: "Style",
+    get group() {
+      return t("Style");
+    },
   },
   heading_1: {
-    title: "Heading 1",
-    subtext: "Top-level heading",
+    get title() {
+      return t("Heading 1");
+    },
+    get subtext() {
+      return t("Top-level heading");
+    },
     keywords: ["h", "heading1", "h1"],
     badge: HeadingOneIcon,
-    group: "Style",
+    get group() {
+      return t("Style");
+    },
   },
   heading_2: {
-    title: "Heading 2",
-    subtext: "Key section heading",
+    get title() {
+      return t("Heading 2");
+    },
+    get subtext() {
+      return t("Key section heading");
+    },
     keywords: ["h2", "heading2", "subheading"],
     badge: HeadingTwoIcon,
-    group: "Style",
+    get group() {
+      return t("Style");
+    },
   },
   heading_3: {
-    title: "Heading 3",
-    subtext: "Subsection and group heading",
+    get title() {
+      return t("Heading 3");
+    },
+    get subtext() {
+      return t("Subsection and group heading");
+    },
     keywords: ["h3", "heading3", "subheading"],
     badge: HeadingThreeIcon,
-    group: "Style",
+    get group() {
+      return t("Style");
+    },
   },
   bullet_list: {
-    title: "Bullet List",
-    subtext: "List with unordered items",
+    get title() {
+      return t("Bullet List");
+    },
+    get subtext() {
+      return t("List with unordered items");
+    },
     keywords: ["ul", "li", "list", "bulletlist", "bullet list"],
     badge: ListIcon,
-    group: "Style",
+    get group() {
+      return t("Style");
+    },
   },
   ordered_list: {
-    title: "Numbered List",
-    subtext: "List with ordered items",
+    get title() {
+      return t("Numbered List");
+    },
+    get subtext() {
+      return t("List with ordered items");
+    },
     keywords: ["ol", "li", "list", "numberedlist", "numbered list"],
     badge: ListOrderedIcon,
-    group: "Style",
+    get group() {
+      return t("Style");
+    },
   },
   task_list: {
-    title: "To-do list",
-    subtext: "List with tasks",
+    get title() {
+      return t("To-do list");
+    },
+    get subtext() {
+      return t("List with tasks");
+    },
     keywords: ["tasklist", "task list", "todo", "checklist"],
     badge: ListTodoIcon,
-    group: "Style",
+    get group() {
+      return t("Style");
+    },
   },
   quote: {
-    title: "Blockquote",
-    subtext: "Blockquote block",
+    get title() {
+      return t("Blockquote");
+    },
+    get subtext() {
+      return t("Blockquote block");
+    },
     keywords: ["quote", "blockquote"],
     badge: BlockquoteIcon,
-    group: "Style",
+    get group() {
+      return t("Style");
+    },
   },
   code_block: {
-    title: "Code Block",
-    subtext: "Code block with syntax highlighting",
+    get title() {
+      return t("Code Block");
+    },
+    get subtext() {
+      return t("Code block with syntax highlighting");
+    },
     keywords: ["code", "pre"],
     badge: CodeBlockIcon,
-    group: "Style",
+    get group() {
+      return t("Style");
+    },
   },
 
   // Insert
   mention: {
-    title: "Mention",
-    subtext: "Mention a user or item",
+    get title() {
+      return t("Mention");
+    },
+    get subtext() {
+      return t("Mention a user or item");
+    },
     keywords: ["mention", "user", "item", "tag"],
     badge: AtSignIcon,
-    group: "Insert",
+    get group() {
+      return t("Insert");
+    },
   },
   emoji: {
-    title: "Emoji",
-    subtext: "Insert an emoji",
+    get title() {
+      return t("Emoji");
+    },
+    get subtext() {
+      return t("Insert an emoji");
+    },
     keywords: ["emoji", "emoticon", "smiley"],
     badge: SmilePlusIcon,
-    group: "Insert",
+    get group() {
+      return t("Insert");
+    },
   },
   table: {
-    title: "Table",
-    subtext: "Insert a table",
+    get title() {
+      return t("Table");
+    },
+    get subtext() {
+      return t("Insert a table");
+    },
     aliases: ["table", "insertTable"],
     badge: TableIcon,
-    group: "Insert",
+    get group() {
+      return t("Insert");
+    },
   },
   divider: {
-    title: "Separator",
-    subtext: "Horizontal line to separate content",
+    get title() {
+      return t("Separator");
+    },
+    get subtext() {
+      return t("Horizontal line to separate content");
+    },
     keywords: ["hr", "horizontalRule", "line", "separator"],
     badge: MinusIcon,
-    group: "Insert",
+    get group() {
+      return t("Insert");
+    },
   },
   toc: {
-    title: "Table of contents",
-    subtext: "Insert a table of contents",
+    get title() {
+      return t("Table of contents");
+    },
+    get subtext() {
+      return t("Insert a table of contents");
+    },
     keywords: ["toc", "tableofcontents", "table of contents"],
     badge: ListIndentedIcon,
-    group: "Insert",
+    get group() {
+      return t("Insert");
+    },
   },
 
   // Upload
   image: {
-    title: "Image",
-    subtext: "Resizable image with caption",
+    get title() {
+      return t("Image");
+    },
+    get subtext() {
+      return t("Resizable image with caption");
+    },
     keywords: [
       "image",
       "imageUpload",
@@ -154,7 +244,9 @@ const texts = {
       "url",
     ],
     badge: ImageIcon,
-    group: "Upload",
+    get group() {
+      return t("Upload");
+    },
   },
 };
 

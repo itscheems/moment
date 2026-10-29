@@ -86,6 +86,7 @@
     "reposted_at",
     "role",
     "status",
+    "ui_locale",
     "updated_at",
     "user_id",
     "username",

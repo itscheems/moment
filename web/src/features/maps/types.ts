@@ -1,3 +1,4 @@
+import { t } from "../../i18n";
 export const MAX_MAP_PLACES = 20;
 
 export interface MapPlace {
@@ -40,7 +41,7 @@ export function mapCardPayload(card: MapCardData): MapCardWire {
 export function parseMapCard(value: unknown): MapCardData {
   const object = (item: unknown): Record<string, unknown> => {
     if (!item || typeof item !== "object" || Array.isArray(item))
-      throw new Error("地图数据无效");
+      throw new Error(t("地图数据无效"));
     return item as Record<string, unknown>;
   };
   const card = object(value);
@@ -54,7 +55,7 @@ export function parseMapCard(value: unknown): MapCardData {
     ) ||
     (card.connect_points && card.places.length < 2)
   )
-    throw new Error("地图地点或连线设置无效");
+    throw new Error(t("地图地点或连线设置无效"));
   return {
     connectPoints: card.connect_points,
     places: card.places.map((item) => {
@@ -77,7 +78,7 @@ export function parseMapCard(value: unknown): MapCardData {
         Math.abs(place.longitude) > 180 ||
         !["wgs84", "gcj02"].includes(String(place.coordinate_system))
       )
-        throw new Error("地图地点无效");
+        throw new Error(t("地图地点无效"));
       return {
         name: place.name,
         displayName: place.display_name,

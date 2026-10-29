@@ -1,3 +1,6 @@
+import { getLocale } from "../../i18n";
+import { t } from "../../i18n";
+import { useTranslation } from "react-i18next";
 import { AccountName } from "../../components/AccountName";
 import { TimelinePage } from "../timeline/TimelinePage";
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -36,7 +39,9 @@ import styles from "./ProfilePage.module.css";
 
 const missingRoute = {
   id: "not-found",
-  title: "没有这个用户",
+  get title() {
+    return t("没有这个用户");
+  },
   eyebrow: "",
   href: "/",
 } as const;
@@ -50,6 +55,8 @@ export function MemberProfilePage({
   username: string;
   site: SiteIdentity;
 }) {
+  const { t } = useTranslation();
+
   const { account: viewer } = useSession();
   const navigation = useNavigation();
   const filter = profileFromPath(navigation.pathname)?.filter ?? "all";
@@ -120,7 +127,7 @@ export function MemberProfilePage({
 
   const title = siteDisplayName(account);
   const joined = account.joinedAt
-    ? new Intl.DateTimeFormat("zh-CN", {
+    ? new Intl.DateTimeFormat(getLocale(), {
         year: "numeric",
         month: "long",
         timeZone: site.timezone,
@@ -135,7 +142,7 @@ export function MemberProfilePage({
     });
   };
   return (
-    <section aria-label={`${title} 的个人资料`}>
+    <section aria-label={t("{{value1}} 的个人资料", { value1: title })}>
       <ProfileHeader api={api} userId={account.userId} title={title} />
       <SuggestedPeople
         api={api}
@@ -177,7 +184,8 @@ export function MemberProfilePage({
               exact={joinedExact}
               children={
                 <time dateTime={account.joinedAt}>
-                  <Icon name="calendar" /> {joined}加入
+                  <Icon name="calendar" /> {joined}
+                  {t("加入")}
                 </time>
               }
             />

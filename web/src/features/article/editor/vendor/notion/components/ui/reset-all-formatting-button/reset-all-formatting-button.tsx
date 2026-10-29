@@ -1,5 +1,7 @@
 "use client";
 
+import { t } from "../../../../../../../../i18n";
+
 import { forwardRef, useCallback } from "react";
 
 // --- Lib ---
@@ -103,7 +105,7 @@ export const ResetAllFormattingButton = forwardRef<
         role="button"
         tabIndex={-1}
         aria-label={label}
-        tooltip="Reset formatting"
+        tooltip={t("Reset formatting")}
         onClick={handleClick}
         {...buttonProps}
         ref={ref}

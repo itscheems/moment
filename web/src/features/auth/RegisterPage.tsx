@@ -1,3 +1,5 @@
+import { t } from "../../i18n";
+import { useTranslation } from "react-i18next";
 import { type FormEvent, useEffect, useId, useRef, useState } from "react";
 
 import { authApi, type RegistrationOptions } from "../../api/auth";
@@ -17,26 +19,30 @@ function registrationError(error: unknown): {
 } {
   if (!(error instanceof PublicApiError)) {
     return {
-      message:
+      message: t(
         "没有收到注册结果。请先尝试用刚才的用户名和密码登录，再决定是否重试。",
+      ),
       field: null,
     };
   }
   if (error.code === "USERNAME_TAKEN") {
     return {
-      message: "这个用户名已被使用。如果刚提交过注册，请先尝试用它登录。",
+      message: t("这个用户名已被使用。如果刚提交过注册，请先尝试用它登录。"),
       field: "username",
     };
   }
   if (error.code === "USERNAME_RESERVED") {
-    return { message: "这个用户名由站点保留，请换一个。", field: "username" };
+    return {
+      message: t("这个用户名由站点保留，请换一个。"),
+      field: "username",
+    };
   }
   if (error.code === "REGISTRATION_CLOSED") {
-    return { message: "本站当前不接受新注册。", field: null };
+    return { message: t("本站当前不接受新注册。"), field: null };
   }
   if (error.code === "ALREADY_SIGNED_IN") {
     return {
-      message: "当前已有账号登录。请先退出，再注册新账号。",
+      message: t("当前已有账号登录。请先退出，再注册新账号。"),
       field: null,
     };
   }
@@ -44,24 +50,28 @@ function registrationError(error: unknown): {
     const field = error.details.field;
     if (field === "username") {
       return {
-        message: "用户名需为 3–30 位，以字母开头，只能包含字母、数字和下划线。",
+        message: t(
+          "用户名需为 3–30 位，以字母开头，只能包含字母、数字和下划线。",
+        ),
         field,
       };
     }
     if (field === "password") {
-      return { message: "密码需为 8–72 字节，首尾不能留空白。", field };
+      return { message: t("密码需为 8–72 字节，首尾不能留空白。"), field };
     }
   }
   return {
     message:
       error.status === 0
-        ? "无法确认注册结果。请先尝试用刚才的用户名和密码登录。"
-        : "注册没有完成，请稍后重试。输入内容已保留。",
+        ? t("无法确认注册结果。请先尝试用刚才的用户名和密码登录。")
+        : t("注册没有完成，请稍后重试。输入内容已保留。"),
     field: null,
   };
 }
 
 export function RegisterPage() {
+  const { t } = useTranslation();
+
   const { replace, search } = useNavigation();
   const returnPath = safeReturnPath(new URLSearchParams(search).get("return"));
   const { account, register, retryStatus, state } = useSession();
@@ -133,7 +143,13 @@ export function RegisterPage() {
     );
     if (!usernamePattern.test(normalizedUsername)) {
       showError(
-        `用户名需为 ${options.usernameMinLength}–${options.usernameMaxLength} 位，以字母开头，只能包含字母、数字和下划线。`,
+        t(
+          "用户名需为 {{value1}}–{{value2}} 位，以字母开头，只能包含字母、数字和下划线。",
+          {
+            value1: options.usernameMinLength,
+            value2: options.usernameMaxLength,
+          },
+        ),
         "username",
       );
       return;
@@ -145,13 +161,16 @@ export function RegisterPage() {
       password.trim() !== password
     ) {
       showError(
-        `密码需为 ${options.passwordMinBytes}–${options.passwordMaxBytes} 字节，首尾不能留空白。`,
+        t("密码需为 {{value1}}–{{value2}} 字节，首尾不能留空白。", {
+          value1: options.passwordMinBytes,
+          value2: options.passwordMaxBytes,
+        }),
         "password",
       );
       return;
     }
     if (confirm !== password) {
-      showError("两次输入的密码不一致。", "confirm");
+      showError(t("两次输入的密码不一致。"), "confirm");
       return;
     }
     pendingRef.current = true;
@@ -166,7 +185,7 @@ export function RegisterPage() {
         replace(returnPath);
       } else {
         setCreatedUsername(registered.username);
-        notify("账号已创建，正在等待管理员批准。", { placement: "login" });
+        notify(t("账号已创建，正在等待管理员批准。"), { placement: "login" });
       }
     } catch (nextError) {
       if (!mountedRef.current) return;
@@ -180,11 +199,14 @@ export function RegisterPage() {
         setSessionUnconfirmed(true);
         setPassword("");
         setConfirm("");
-        notify("账号已创建，但暂时无法确认登录状态。请重试检查或用密码登录。", {
-          id: toastId,
-          type: "error",
-          placement: "login",
-        });
+        notify(
+          t("账号已创建，但暂时无法确认登录状态。请重试检查或用密码登录。"),
+          {
+            id: toastId,
+            type: "error",
+            placement: "login",
+          },
+        );
       } else {
         const mapped = registrationError(nextError);
         if (
@@ -214,12 +236,12 @@ export function RegisterPage() {
         <p className={styles.registerStatus} role="status">
           {account.status === "pending"
             ? createdUsername
-              ? "账号已创建，正在等待管理员批准。批准后即可发布和回复。"
-              : "你已登录，账号正在等待管理员批准。"
-            : "你已经登录，可以继续浏览。"}
+              ? t("账号已创建，正在等待管理员批准。批准后即可发布和回复。")
+              : t("你已登录，账号正在等待管理员批准。")
+            : t("你已经登录，可以继续浏览。")}
         </p>
         <InternalLink className={styles.registerContinue} href={returnPath}>
-          继续浏览
+          {t("继续浏览")}
         </InternalLink>
       </section>
     );
@@ -227,15 +249,17 @@ export function RegisterPage() {
     content = (
       <section className={styles.loginGate}>
         <p className={styles.registerStatus} role="status">
-          账号 {createdUsername}{" "}
-          已创建，暂时无法确认登录状态。请重试检查，或使用刚才设置的密码登录。
+          {t("账号")} {createdUsername}{" "}
+          {t(
+            "已创建，暂时无法确认登录状态。请重试检查，或使用刚才设置的密码登录。",
+          )}
         </p>
         <button
           className={styles.secondaryButton}
           onClick={retryStatus}
           type="button"
         >
-          重试检查
+          {t("重试检查")}
         </button>
       </section>
     );
@@ -243,7 +267,7 @@ export function RegisterPage() {
     content = (
       <section
         aria-busy="true"
-        aria-label="正在准备注册"
+        aria-label={t("正在准备注册")}
         className={styles.loginGate}
       />
     );
@@ -252,8 +276,8 @@ export function RegisterPage() {
       <section className={styles.loginGate}>
         <p className={styles.registerStatus} role="alert">
           {optionsError
-            ? "暂时无法读取注册状态。"
-            : "暂时无法确认当前登录状态。"}
+            ? t("暂时无法读取注册状态。")
+            : t("暂时无法确认当前登录状态。")}
         </p>
         <button
           className={styles.secondaryButton}
@@ -267,7 +291,7 @@ export function RegisterPage() {
           }}
           type="button"
         >
-          重试检查
+          {t("重试检查")}
         </button>
       </section>
     );
@@ -275,7 +299,7 @@ export function RegisterPage() {
     content = (
       <section className={styles.loginGate}>
         <p className={styles.registerStatus} role="status">
-          本站当前不接受新注册。
+          {t("本站当前不接受新注册。")}
         </p>
       </section>
     );
@@ -284,7 +308,7 @@ export function RegisterPage() {
       <section className={styles.loginGate}>
         {options?.registrationMode === "approval" ? (
           <p className={styles.registerStatus}>
-            注册后需要管理员批准。等待期间可以登录和浏览，暂时不能发布。
+            {t("注册后需要管理员批准。等待期间可以登录和浏览，暂时不能发布。")}
           </p>
         ) : null}
         <form
@@ -292,7 +316,7 @@ export function RegisterPage() {
           noValidate
           onSubmit={(event) => void submit(event)}
         >
-          <label htmlFor="register-username">用户名</label>
+          <label htmlFor="register-username">{t("用户名")}</label>
           <div className={styles.tokenField}>
             <input
               aria-describedby={
@@ -306,7 +330,7 @@ export function RegisterPage() {
                 setUsername(event.target.value);
                 clearError();
               }}
-              placeholder="选择用户名"
+              placeholder={t("选择用户名")}
               readOnly={pending}
               ref={usernameInput}
               spellCheck={false}
@@ -314,7 +338,7 @@ export function RegisterPage() {
               value={username}
             />
           </div>
-          <label htmlFor="register-password">密码</label>
+          <label htmlFor="register-password">{t("密码")}</label>
           <div className={styles.tokenField}>
             <input
               aria-describedby={
@@ -333,15 +357,15 @@ export function RegisterPage() {
               value={password}
             />
             <button
-              aria-label={showPassword ? "隐藏密码" : "显示密码"}
+              aria-label={showPassword ? t("隐藏密码") : t("显示密码")}
               aria-pressed={showPassword}
               onClick={() => setShowPassword((value) => !value)}
               type="button"
             >
-              {showPassword ? "隐藏" : "显示"}
+              {showPassword ? t("隐藏") : t("显示")}
             </button>
           </div>
-          <label htmlFor="register-confirm">确认密码</label>
+          <label htmlFor="register-confirm">{t("确认密码")}</label>
           <div className={styles.tokenField}>
             <input
               aria-describedby={
@@ -360,12 +384,12 @@ export function RegisterPage() {
               value={confirm}
             />
             <button
-              aria-label={showConfirm ? "隐藏确认密码" : "显示确认密码"}
+              aria-label={showConfirm ? t("隐藏确认密码") : t("显示确认密码")}
               aria-pressed={showConfirm}
               onClick={() => setShowConfirm((value) => !value)}
               type="button"
             >
-              {showConfirm ? "隐藏" : "显示"}
+              {showConfirm ? t("隐藏") : t("显示")}
             </button>
           </div>
           <p className={styles.srOnly} id={errorId}>
@@ -376,7 +400,7 @@ export function RegisterPage() {
             disabled={pending}
             type="submit"
           >
-            {pending ? "正在注册…" : "注册"}
+            {pending ? t("正在注册…") : t("注册")}
           </button>
         </form>
       </section>
@@ -384,13 +408,16 @@ export function RegisterPage() {
   }
 
   return (
-    <AuthPageFrame headline="Join Moment" subtitle="创建账号，开始记录此刻。">
+    <AuthPageFrame
+      headline="Join Moment"
+      subtitle={t("创建账号，开始记录此刻。")}
+    >
       {content}
       {state === "signed-in" && account !== null ? null : (
         <p className={styles.authSwitch}>
-          已有账号？{" "}
+          {t("已有账号？")}{" "}
           <InternalLink authSwitch href={authPageHref("/login", search)}>
-            立即登录
+            {t("立即登录")}
           </InternalLink>
         </p>
       )}

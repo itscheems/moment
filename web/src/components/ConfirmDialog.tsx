@@ -1,3 +1,5 @@
+import { t } from "../i18n";
+import { useTranslation } from "react-i18next";
 import { Dialog } from "./Dialog";
 import { type ComponentProps, type ReactElement, useState } from "react";
 
@@ -14,7 +16,7 @@ export function ConfirmDialog({
   menuItem = false,
   open: controlledOpen,
   onOpenChange,
-  cancelLabel = "保留",
+  cancelLabel = t("保留"),
   finalFocus,
   onConfirm,
 }: {
@@ -31,6 +33,8 @@ export function ConfirmDialog({
   finalFocus?: ComponentProps<typeof Dialog.Popup>["finalFocus"];
   onConfirm: () => void | Promise<void>;
 }) {
+  const { t } = useTranslation();
+
   const [localOpen, setLocalOpen] = useState(false);
   const open = controlledOpen ?? localOpen;
   const setOpen = (next: boolean) => {
@@ -70,7 +74,7 @@ export function ConfirmDialog({
                 }}
                 type="button"
               >
-                {pending ? "正在处理…" : confirmLabel}
+                {pending ? t("正在处理…") : confirmLabel}
               </button>
               <Dialog.Close
                 className={styles.secondaryButton}

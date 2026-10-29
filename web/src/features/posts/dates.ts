@@ -1,6 +1,5 @@
-const relativeFormatter = new Intl.RelativeTimeFormat("zh-CN", {
-  numeric: "auto",
-});
+import { getLocale } from "../../i18n";
+import { t } from "../../i18n";
 
 export interface MomentDate {
   absolute: string;
@@ -13,12 +12,15 @@ export function formatMomentDate(
   timezone: string,
   now = new Date(),
 ): MomentDate {
+  const relativeFormatter = new Intl.RelativeTimeFormat(getLocale(), {
+    numeric: "auto",
+  });
   const instant = new Date(value);
   const deltaSeconds = Math.round((instant.valueOf() - now.valueOf()) / 1000);
   const magnitude = Math.abs(deltaSeconds);
   let relative: string;
   if (magnitude < 45) {
-    relative = "刚刚";
+    relative = t("刚刚");
   } else if (magnitude < 60 * 60) {
     relative = relativeFormatter.format(
       Math.round(deltaSeconds / 60),
@@ -41,7 +43,7 @@ export function formatMomentDate(
         year: "numeric",
         timeZone: timezone,
       }).format(value);
-    relative = new Intl.DateTimeFormat("zh-CN", {
+    relative = new Intl.DateTimeFormat(getLocale(), {
       ...(yearOf(instant) === yearOf(now) ? {} : { year: "numeric" }),
       month: "short",
       day: "numeric",
@@ -49,12 +51,12 @@ export function formatMomentDate(
     }).format(instant);
   }
 
-  const absolute = new Intl.DateTimeFormat("zh-CN", {
+  const absolute = new Intl.DateTimeFormat(getLocale(), {
     dateStyle: "long",
     timeStyle: "short",
     timeZone: timezone,
   }).format(instant);
-  const parts = new Intl.DateTimeFormat("zh-CN", {
+  const parts = new Intl.DateTimeFormat(getLocale(), {
     month: "2-digit",
     day: "2-digit",
     timeZone: timezone,

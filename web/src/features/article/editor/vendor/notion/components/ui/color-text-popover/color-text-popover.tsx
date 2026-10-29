@@ -1,5 +1,8 @@
 "use client";
 
+import { t } from "../../../../../../../../i18n";
+import { useTranslation } from "react-i18next";
+
 import { forwardRef, useCallback, useMemo, useRef, useState } from "react";
 
 // --- Hooks ---
@@ -75,7 +78,7 @@ export const RecentColorButton: React.FC<RenderColorButtonProps> = ({
   const color = getColorByValue(colorObj.value, colorSet);
 
   const commonProps = {
-    tooltip: color.label,
+    tooltip: t(color.label),
     text: withLabel ? color.label : undefined,
     onApplied: () =>
       onColorChanged?.({
@@ -120,6 +123,8 @@ export const ColorGroup: React.FC<ColorGroupProps> = ({
   selectedIndex,
   startIndexOffset,
 }) => {
+  const { t } = useTranslation();
+
   return colors.map((group, groupIndex) => (
     <ButtonGroup key={`${type}-group-${groupIndex}`} orientation="horizontal">
       {group.map((color, colorIndex) => {
@@ -131,12 +136,15 @@ export const ColorGroup: React.FC<ColorGroupProps> = ({
         const isHighlighted = selectedIndex === itemIndex;
 
         const commonProps = {
-          tooltip: color.label,
+          tooltip: t(color.label),
           onApplied: () =>
             onColorSelected({ type, label: color.label, value: color.value }),
           tabIndex: isHighlighted ? 0 : -1,
           "data-highlighted": isHighlighted,
-          "aria-label": `${color.label} ${type === "text" ? "text" : "highlight"} color`,
+          "aria-label": t("{{value1}} {{value2}} color", {
+            value1: t(color.label),
+            value2: type === "text" ? t("文字") : t("高亮"),
+          }),
         };
 
         return type === "text" ? (
@@ -177,11 +185,13 @@ const RecentColorsSection: React.FC<RecentColorsSectionProps> = ({
   onColorSelected,
   selectedIndex,
 }) => {
+  const { t } = useTranslation();
+
   if (recentColors.length === 0) return null;
 
   return (
     <CardItemGroup>
-      <CardGroupLabel>Recently used</CardGroupLabel>
+      <CardGroupLabel>{t("Recently used")}</CardGroupLabel>
       <ButtonGroup orientation="horizontal">
         {recentColors.map((colorObj, index) => (
           <RecentColorButton
@@ -216,6 +226,8 @@ export const TextStyleColorPanel: React.FC<TextStyleColorPanelProps> = ({
   maxRecentColors = 3,
   onColorChanged,
 }) => {
+  const { t } = useTranslation();
+
   const { recentColors, addRecentColor, isInitialized } =
     useRecentColors(maxRecentColors);
 
@@ -259,8 +271,10 @@ export const TextStyleColorPanel: React.FC<TextStyleColorPanelProps> = ({
         ...recentColors.map((color) => ({
           type: color.type,
           value: color.value,
-          label: `Recent ${color.type === "text" ? "text" : "highlight"} color`,
-          group: "recent",
+          label: t("Recent {{value1}} color", {
+            value1: color.type === "text" ? t("文字") : t("高亮"),
+          }),
+          group: t("recent"),
         })),
       );
     }
@@ -270,7 +284,7 @@ export const TextStyleColorPanel: React.FC<TextStyleColorPanelProps> = ({
         type: "text" as ColorType,
         value: color.value,
         label: color.label,
-        group: "text",
+        group: t("text"),
       })),
     );
 
@@ -279,12 +293,12 @@ export const TextStyleColorPanel: React.FC<TextStyleColorPanelProps> = ({
         type: "highlight" as ColorType,
         value: color.value,
         label: color.label,
-        group: "highlight",
+        group: t("highlight"),
       })),
     );
 
     return items;
-  }, [isInitialized, recentColors, allTextColors, allHighlightColors]);
+  }, [t, isInitialized, recentColors, allTextColors, allHighlightColors]);
 
   const handleColorSelected = useCallback(
     ({
@@ -330,7 +344,7 @@ export const TextStyleColorPanel: React.FC<TextStyleColorPanelProps> = ({
         )}
 
         <CardItemGroup>
-          <CardGroupLabel>Text color</CardGroupLabel>
+          <CardGroupLabel>{t("Text color")}</CardGroupLabel>
           <ColorGroup
             type="text"
             colors={textColorGroups}
@@ -341,7 +355,7 @@ export const TextStyleColorPanel: React.FC<TextStyleColorPanelProps> = ({
         </CardItemGroup>
 
         <CardItemGroup>
-          <CardGroupLabel>Highlight color</CardGroupLabel>
+          <CardGroupLabel>{t("Highlight color")}</CardGroupLabel>
           <ColorGroup
             type="highlight"
             colors={highlightColorGroups}
@@ -455,7 +469,7 @@ export const ColorTextPopover = forwardRef<
         </PopoverTrigger>
 
         <PopoverContent
-          aria-label="Text color options"
+          aria-label={t("Text color options")}
           side="bottom"
           align="start"
         >

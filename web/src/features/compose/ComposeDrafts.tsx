@@ -1,3 +1,5 @@
+import { getLocale } from "../../i18n";
+import { useTranslation } from "react-i18next";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { Icon } from "../../components/icons";
@@ -21,6 +23,8 @@ export function ComposeDrafts({
   onEditingChange: (editing: boolean) => void;
   onOpenDraft: (draft: KeptDraft) => void;
 }) {
+  const { t } = useTranslation();
+
   const [drafts, setDrafts] = useState<KeptDraft[]>(() =>
     listKeptDrafts(instanceId),
   );
@@ -54,10 +58,10 @@ export function ComposeDrafts({
   // Only the first exists here, so it takes the row; a second tab splits it
   // without touching anything else.
   const tabs = (
-    <nav aria-label="草稿" className={styles.draftsTabs}>
+    <nav aria-label={t("草稿")} className={styles.draftsTabs}>
       <div role="tablist">
         <button aria-selected="true" role="tab" type="button">
-          <span>未发布</span>
+          <span>{t("未发布")}</span>
         </button>
       </div>
     </nav>
@@ -68,7 +72,9 @@ export function ComposeDrafts({
       <>
         {tabs}
         <p className={styles.draftsEmpty}>
-          这台浏览器里还没有草稿。退出发布时选择「保留草稿并退出」，文字就会留在这里。
+          {t(
+            "这台浏览器里还没有草稿。退出发布时选择「保留草稿并退出」，文字就会留在这里。",
+          )}
         </p>
       </>
     );
@@ -115,16 +121,20 @@ export function ComposeDrafts({
                   {preview(
                     draft.contentMd ||
                       (draft.mapCard
-                        ? `地图：${draft.mapCard.places.map((place) => place.name).join("、")}`
+                        ? t("地图：{{value1}}", {
+                            value1: draft.mapCard.places
+                              .map((place) => place.name)
+                              .join("、"),
+                          })
                         : draft.quote
                           ? draft.quote.commentPostId
-                            ? "引用评论"
-                            : "引用 Moment"
+                            ? t("引用评论")
+                            : t("引用 Moment")
                           : ""),
                   )}
                 </span>
                 <time dateTime={draft.savedAt}>
-                  {new Date(draft.savedAt).toLocaleString("zh-CN")}
+                  {new Date(draft.savedAt).toLocaleString(getLocale())}
                 </time>
               </span>
             </button>
@@ -132,17 +142,24 @@ export function ComposeDrafts({
                 copy of that text. It folds away while editing, where the
                 bottom bar's 删除 does the same job for a selection. */}
             <ConfirmDialog
-              confirmLabel="删除草稿"
+              confirmLabel={t("删除草稿")}
               danger
-              description="这段文字只存在这台浏览器里，删除后无法找回。"
+              description={t("这段文字只存在这台浏览器里，删除后无法找回。")}
               onConfirm={() => {
                 dropKeptDraft(instanceId, draft.id);
                 refresh();
               }}
-              title="删除这份草稿？"
+              title={t("删除这份草稿？")}
               trigger={
                 <button
-                  aria-label={`删除草稿：${preview(draft.contentMd || (draft.mapCard ? `地图：${draft.mapCard.places.map((place) => place.name).join("、")}` : "")).slice(0, 24)}`}
+                  aria-label={t("删除草稿：{{value1}}", {
+                    value1: preview(
+                      draft.contentMd ||
+                        (draft.mapCard
+                          ? `地图：${draft.mapCard.places.map((place) => place.name).join("、")}`
+                          : ""),
+                    ).slice(0, 24),
+                  })}
                   className={styles.draftsDelete}
                   disabled={editing}
                   type="button"
@@ -165,27 +182,30 @@ export function ComposeDrafts({
             }
             type="button"
           >
-            {allPicked ? "取消全选" : "全选"}
+            {allPicked ? t("取消全选") : t("全选")}
           </button>
           {/* Disabled until something is picked, so it cannot be hovered
               either -- there is nothing for it to do yet. */}
           <ConfirmDialog
-            confirmLabel="删除"
+            confirmLabel={t("删除")}
             danger
-            description={`这 ${pickedHere.length} 段文字只存在这台浏览器里，删除后无法找回。`}
+            description={t(
+              "这 {{value1}} 段文字只存在这台浏览器里，删除后无法找回。",
+              { value1: pickedHere.length },
+            )}
             onConfirm={() => {
               for (const one of pickedHere) dropKeptDraft(instanceId, one.id);
               setPicked(new Set());
               refresh();
             }}
-            title="删除选中的草稿？"
+            title={t("删除选中的草稿？")}
             trigger={
               <button
                 className={styles.draftsDeletePicked}
                 disabled={pickedHere.length === 0}
                 type="button"
               >
-                删除
+                {t("删除")}
               </button>
             }
           />

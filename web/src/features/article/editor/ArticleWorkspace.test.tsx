@@ -172,7 +172,7 @@ describe("author article workspace", () => {
     expect(window.location.pathname).toBe(
       `/compose/articles/drafts/${draft.id}`,
     );
-    expect(screen.getByText("(Needs title)")).toBeInTheDocument();
+    expect(screen.getByText("（未填写标题）")).toBeInTheDocument();
   });
   it("retries an uncertain create with the same idempotency key", async () => {
     const create = vi
@@ -220,9 +220,9 @@ describe("author article workspace", () => {
         sourceState: "working_copy",
       });
     mount();
-    fireEvent.click(screen.getByRole("tab", { name: "Published" }));
+    fireEvent.click(screen.getByRole("tab", { name: "已发布" }));
     fireEvent.click(
-      await screen.findByRole("button", { name: /Published.*已发布文章/ }),
+      await screen.findByRole("button", { name: /已发布.*已发布文章/ }),
     );
     await screen.findByText("已发布文章 正文展示");
     expect(edit).not.toHaveBeenCalled();

@@ -1,5 +1,7 @@
 "use client";
 
+import { t } from "../../../../../../../../i18n";
+
 import { useCallback, useEffect, useState } from "react";
 import { type Editor } from "@tiptap/react";
 import { useHotkeys } from "react-hotkeys-hook";
@@ -285,7 +287,9 @@ export function useColorText(config: UseColorTextConfig) {
     isActive,
     handleColorText,
     canColorText: canColorTextState,
-    label: label || `Color text to ${textColor}`,
+    label: label
+      ? t(label)
+      : t("Color text to {{color}}", { color: textColor }),
     shortcutKeys: COLOR_TEXT_SHORTCUT_KEY,
     Icon: TextColorSmallIcon,
   };

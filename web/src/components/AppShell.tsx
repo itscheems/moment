@@ -1,3 +1,5 @@
+import { t } from "../i18n";
+import { useTranslation } from "react-i18next";
 import { AccountName } from "./AccountName";
 import { useLoginNavigation } from "../features/auth/loginNavigation";
 import { Menu } from "@base-ui/react/menu";
@@ -49,7 +51,7 @@ interface NavItem {
 // `/profile` remains the fallback for a visitor who has not signed in.
 const DEFAULT_PROFILE_HREF = "/profile";
 
-function primaryNavFor(profileHref: string, homeLabel = "首页"): NavItem[] {
+function primaryNavFor(profileHref: string, homeLabel = t("首页")): NavItem[] {
   return [
     {
       label: homeLabel,
@@ -57,16 +59,21 @@ function primaryNavFor(profileHref: string, homeLabel = "首页"): NavItem[] {
       icon: "home",
       active: ["home", "detail", "comment-detail"],
     },
-    { label: "搜索", href: "/search", icon: "search", active: ["search"] },
-    { label: "归档", href: "/archive", icon: "archive", active: ["archive"] },
+    { label: t("搜索"), href: "/search", icon: "search", active: ["search"] },
     {
-      label: "个人资料",
+      label: t("归档"),
+      href: "/archive",
+      icon: "archive",
+      active: ["archive"],
+    },
+    {
+      label: t("个人资料"),
       href: profileHref,
       icon: "account",
       active: ["profile"],
     },
     {
-      label: "文章",
+      label: t("文章"),
       href: "/compose/articles",
       icon: "article",
       active: ["article-workspace"],
@@ -75,7 +82,9 @@ function primaryNavFor(profileHref: string, homeLabel = "首页"): NavItem[] {
 }
 
 const publishNav: NavItem = {
-  label: "发布",
+  get label() {
+    return t("发布");
+  },
   href: "/compose",
   icon: "compose",
   active: ["compose", "article-workspace"],
@@ -150,7 +159,7 @@ function accountNav(
   loginDestination: string,
 ): NavItem {
   return {
-    label: "账号",
+    label: t("账号"),
     href: settingsAvailable ? "/settings/account" : loginDestination,
     icon: "account",
     active: ["login", "settings", "edit"],
@@ -168,6 +177,8 @@ function AccountRail({
   route: AppRoute;
   settingsAvailable: boolean;
 }) {
+  const { t } = useTranslation();
+
   const { navigate } = useNavigation();
   const { href: loginDestination } = useLoginNavigation();
   // Nobody is signed in, so there is no face to show and one thing to offer.
@@ -190,9 +201,11 @@ function AccountRail({
   };
   return (
     <Menu.Root>
-      <SidebarTooltip label="账户">
+      <SidebarTooltip label={t("账户")}>
         <Menu.Trigger
-          aria-label={`${account.displayName} 的账户菜单`}
+          aria-label={t("{{value1}} 的账户菜单", {
+            value1: account.displayName,
+          })}
           className={styles.accountRail}
         >
           <span className={styles.accountRailAvatar}>
@@ -219,7 +232,7 @@ function AccountRail({
           sideOffset={10}
         >
           <Menu.Popup
-            aria-label="账户"
+            aria-label={t("账户")}
             className={`${styles.mobileAccountPopup} ${styles.accountRailPopup}`}
           >
             {/* No profile entry: the rail already carries one, and a menu that
@@ -229,11 +242,14 @@ function AccountRail({
               onClick={() => navigate("/compose/articles")}
             >
               <Icon name="article" />
-              <span>文章</span>
+              <span>{t("文章")}</span>
             </Menu.Item>
             <Menu.Item className={styles.mobileAccountItem} onClick={onSignOut}>
               <Icon name="close" />
-              <span>退出 @{account.username}</span>
+              <span>
+                {t("退出 @")}
+                {account.username}
+              </span>
             </Menu.Item>
           </Menu.Popup>
         </Menu.Positioner>
@@ -252,11 +268,7 @@ function focusedComposerControl(): boolean {
   ) {
     return false;
   }
-  return Boolean(
-    active.closest(
-      'section[aria-label="发布 Moment"], section[aria-label="编辑 Moment"], form[aria-label="发表回复"], form[aria-label^="回复 "]',
-    ),
-  );
+  return Boolean(active.closest("[data-writing-surface]"));
 }
 
 function useMobileNavigationObscured(mobileViewport: boolean): boolean {
@@ -304,12 +316,14 @@ function useMobileNavigationObscured(mobileViewport: boolean): boolean {
 }
 
 function Brand({ site }: { site: SiteIdentity }) {
+  const { t } = useTranslation();
+
   const title = site.title.trim() || "Moment";
   const { pathname } = useNavigation();
   const scrollHomeToTop = useHomeScrollToTop();
   return (
     <InternalLink
-      aria-label={`${title}首页`}
+      aria-label={t("{{value1}}首页", { value1: title })}
       className={styles.brand}
       href="/"
       onClick={pathname === "/" ? scrollHomeToTop : undefined}
@@ -358,27 +372,29 @@ function LeftRail({
   account: Account | null;
   onSignOut: () => void;
 }) {
+  const { t } = useTranslation();
+
   const { navigateOverlay } = useNavigation();
-  const items = primaryNavFor(profileHref, "主页");
+  const items = primaryNavFor(profileHref, t("主页"));
   return (
     <Tooltip.Provider delay={400}>
-      <aside aria-label="站点导航" className={styles.leftRail}>
+      <aside aria-label={t("站点导航")} className={styles.leftRail}>
         <div className={styles.leftRailInner}>
           <Brand site={site} />
-          <nav aria-label="主要导航" className={styles.desktopNav}>
+          <nav aria-label={t("主要导航")} className={styles.desktopNav}>
             {items.slice(0, 2).map((item) => (
               <NavLink item={item} key={item.href} route={route} />
             ))}
-            <SidebarTooltip label="通知">
+            <SidebarTooltip label={t("通知")}>
               <button
-                aria-label="通知"
+                aria-label={t("通知")}
                 className={styles.navLink}
-                data-compact-label="通知"
+                data-compact-label={t("通知")}
                 type="button"
               >
                 <span className={styles.navPill}>
                   <Icon name="notification" variant="navigation" />
-                  <span className={styles.navLabel}>通知</span>
+                  <span className={styles.navLabel}>{t("通知")}</span>
                 </span>
               </button>
             </SidebarTooltip>
@@ -387,7 +403,7 @@ function LeftRail({
             ))}
             <NavLink
               item={{
-                label: "设置",
+                label: t("设置"),
                 href: "/settings/account",
                 icon: "settings",
                 active: ["settings"],
@@ -396,11 +412,11 @@ function LeftRail({
             />
             <ThemeMenu account={account} navigation site={site} />
           </nav>
-          <SidebarTooltip label="发帖">
+          <SidebarTooltip label={t("发帖")}>
             <InternalLink
-              aria-label="发帖"
+              aria-label={t("发帖")}
               className={styles.publishAction}
-              data-compact-label="发帖"
+              data-compact-label={t("发帖")}
               data-focus-key="shell:compose"
               href="/compose"
               onClick={(event) => {
@@ -418,7 +434,7 @@ function LeftRail({
               }}
             >
               <Icon name="sidebar-publish" />
-              <span>发帖</span>
+              <span>{t("发帖")}</span>
             </InternalLink>
           </SidebarTooltip>
           <div className={styles.railBottom}>
@@ -450,9 +466,11 @@ function MemoryRail({
   scope: string | null;
   slotRef: (element: HTMLDivElement | null) => void;
 }) {
+  const { t } = useTranslation();
+
   if (route.id === "search") return null;
   return (
-    <aside aria-label="记忆导航" className={styles.rightRail}>
+    <aside aria-label={t("记忆导航")} className={styles.rightRail}>
       <RailSearch scope={scope} />
       <div className={styles.railSlot} ref={slotRef} />
     </aside>
@@ -468,13 +486,18 @@ function MobileAccountMenu({
   site: SiteIdentity;
   profileHref: string;
 }) {
+  const { t } = useTranslation();
+
   const { navigate } = useNavigation();
   const { href: loginDestination } = useLoginNavigation();
   const accountItem = accountNav(accountSettingsAvailable, loginDestination);
 
   return (
     <Menu.Root>
-      <Menu.Trigger aria-label="打开账户菜单" className={styles.mobileAvatar}>
+      <Menu.Trigger
+        aria-label={t("打开账户菜单")}
+        className={styles.mobileAvatar}
+      >
         <SiteAvatar eager site={site} />
       </Menu.Trigger>
       <Menu.Portal>
@@ -486,27 +509,32 @@ function MobileAccountMenu({
           side="bottom"
           sideOffset={6}
         >
-          <Menu.Popup aria-label="账户" className={styles.mobileAccountPopup}>
+          <Menu.Popup
+            aria-label={t("账户")}
+            className={styles.mobileAccountPopup}
+          >
             <Menu.Item
               className={styles.mobileAccountItem}
               onClick={() => navigate(profileHref)}
             >
               <Icon name="account" />
-              <span>个人资料</span>
+              <span>{t("个人资料")}</span>
             </Menu.Item>
             <Menu.Item
               className={styles.mobileAccountItem}
               onClick={() => navigate("/compose/articles")}
             >
               <Icon name="article" />
-              <span>文章</span>
+              <span>{t("文章")}</span>
             </Menu.Item>
             <Menu.Item
               className={styles.mobileAccountItem}
               onClick={() => navigate(accountItem.href)}
             >
               <Icon name="settings" />
-              <span>{accountSettingsAvailable ? "账号设置" : "账号登录"}</span>
+              <span>
+                {accountSettingsAvailable ? t("账号设置") : t("账号登录")}
+              </span>
             </Menu.Item>
           </Menu.Popup>
         </Menu.Positioner>
@@ -522,6 +550,8 @@ function MobileNavigation({
   accountSettingsAvailable: boolean;
   route: AppRoute;
 }) {
+  const { t } = useTranslation();
+
   const { href: loginDestination } = useLoginNavigation();
   const mobileViewport = useMediaQuery(MOBILE_VIEWPORT_QUERY);
   const obscured = useMobileNavigationObscured(mobileViewport);
@@ -532,7 +562,8 @@ function MobileNavigation({
   ];
   return (
     <nav
-      aria-label="移动导航"
+      data-mobile-navigation
+      aria-label={t("移动导航")}
       className={styles.mobileNav}
       data-viewport-obscured={obscured || undefined}
     >
@@ -562,6 +593,8 @@ export function AppShell({
   account?: Account | null;
   onSignOut?: () => void;
 }) {
+  const { t } = useTranslation();
+
   const { goBack, pathname } = useNavigation();
   const workspace = route.id === "article-workspace";
   const focusWriting =
@@ -612,10 +645,10 @@ export function AppShell({
                     <InternalLink
                       aria-label={
                         focusReading
-                          ? "退出全屏阅读"
+                          ? t("退出全屏阅读")
                           : route.id === "comment-detail"
-                            ? "返回上一级"
-                            : "返回时间流"
+                            ? t("返回上一级")
+                            : t("返回时间流")
                       }
                       className={styles.backLink}
                       href={
@@ -651,7 +684,7 @@ export function AppShell({
                   )}
                   {route.id === "home" ? (
                     <nav
-                      aria-label="首页时间流"
+                      aria-label={t("首页时间流")}
                       className={styles.homeHeaderNav}
                     >
                       <InternalLink
@@ -691,7 +724,16 @@ export function AppShell({
                         <span className={styles.profileCount}>
                           {profileHeader?.postCount == null
                             ? null
-                            : `${profileHeader.postCount.toLocaleString("zh-CN")} 条帖子`}
+                            : t("{{value1}} 条帖子", {
+                                count:
+                                  profileHeader.postCount.toLocaleString(
+                                    "zh-CN",
+                                  ),
+                                value1:
+                                  profileHeader.postCount.toLocaleString(
+                                    "zh-CN",
+                                  ),
+                              })}
                         </span>
                       ) : null}
                     </div>

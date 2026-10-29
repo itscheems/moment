@@ -202,7 +202,7 @@ it("uses the source duplicate action and undo without losing block content", () 
       <DuplicateButton editor={editor} />
     </>,
   );
-  fireEvent.click(screen.getByRole("button", { name: "Duplicate node" }));
+  fireEvent.click(screen.getByRole("button", { name: "复制节点" }));
   expect(editor.state.doc.childCount).toBe(3);
   expect(editor.state.doc.child(1).textContent).toBe("first");
   act(() => {
@@ -220,7 +220,7 @@ it("persists native alignment through save and reopen", () => {
       <TextAlignButton editor={editor} align="center" />
     </>,
   );
-  fireEvent.click(screen.getByRole("button", { name: "Align center" }));
+  fireEvent.click(screen.getByRole("button", { name: "居中" }));
   const saved = toArticleDocument(editor.getJSON());
   expect(saved.content[0].attrs?.textAlign).toBe("center");
   act(() => {

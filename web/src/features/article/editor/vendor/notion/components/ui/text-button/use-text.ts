@@ -1,5 +1,7 @@
 "use client";
 
+import { useTranslation } from "react-i18next";
+
 import { useCallback, useEffect, useState } from "react";
 import { type Editor } from "@tiptap/react";
 import { useHotkeys } from "react-hotkeys-hook";
@@ -221,6 +223,8 @@ export function shouldShowButton(props: {
  * ```
  */
 export function useText(config?: UseTextConfig) {
+  const { t } = useTranslation();
+
   const {
     editor: providedEditor,
     hideWhenUnavailable = false,
@@ -277,7 +281,7 @@ export function useText(config?: UseTextConfig) {
     isActive,
     handleToggle,
     canToggle,
-    label: "Text",
+    label: t("Text"),
     shortcutKeys: TEXT_SHORTCUT_KEY,
     Icon: TypeIcon,
   };

@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import { Menu } from "@base-ui/react/menu";
 import { Tabs } from "@base-ui/react/tabs";
 import {
@@ -58,6 +59,8 @@ function asSummary(draft: ArticleDraft): ArticleDraftSummary {
 }
 
 export default function ArticleWorkspace({ site }: { site: SiteIdentity }) {
+  const { t } = useTranslation();
+
   const session = useSession();
   const account = session.account;
   const navigation = useNavigation();
@@ -313,7 +316,7 @@ export default function ArticleWorkspace({ site }: { site: SiteIdentity }) {
       announcePostChanged({ kind: "deleted", post });
       announceChange(post.id, "unpublished");
       navigation.replace(articleDraftPath(draft.id));
-      notify("文章已移至草稿。");
+      notify(t("文章已移至草稿。"));
     } catch (error) {
       session.expireIfInvalidSession(error);
       notify(articleDraftErrorMessage(error), { type: "error" });
@@ -344,7 +347,7 @@ export default function ArticleWorkspace({ site }: { site: SiteIdentity }) {
           isPublished ? articlePublishedPath() : ARTICLE_COMPOSE_PATH,
         );
       void refresh();
-      notify("文章已删除。");
+      notify(t("文章已删除。"));
     } catch (error) {
       notify(articleDraftErrorMessage(error), { type: "error" });
     } finally {
@@ -356,9 +359,9 @@ export default function ArticleWorkspace({ site }: { site: SiteIdentity }) {
   const copyLink = async (post: PublicPost) => {
     try {
       await writeToClipboard(new URL(link(post), window.location.origin).href);
-      notify("链接已复制");
+      notify(t("链接已复制"));
     } catch {
-      notify("暂时无法复制链接", { type: "error" });
+      notify(t("暂时无法复制链接"), { type: "error" });
     }
   };
   const loadMore = async () => {
@@ -402,7 +405,11 @@ export default function ArticleWorkspace({ site }: { site: SiteIdentity }) {
   ) => (
     <Menu.Root>
       <Menu.Trigger
-        aria-label={`更多：${isPublished ? (item as PublicPost).article?.title : (item as ArticleDraftSummary).title || "无标题"}`}
+        aria-label={t("更多：{{value1}}", {
+          value1: isPublished
+            ? (item as PublicPost).article?.title
+            : (item as ArticleDraftSummary).title || t("无标题"),
+        })}
         className={styles.toolButton}
       >
         <Icon name="more" />
@@ -415,7 +422,7 @@ export default function ArticleWorkspace({ site }: { site: SiteIdentity }) {
           sideOffset={4}
           collisionPadding={8}
         >
-          <Menu.Popup className={styles.menuPopup} aria-label="文章操作">
+          <Menu.Popup className={styles.menuPopup} aria-label={t("文章操作")}>
             {isPublished ? (
               <>
                 <Menu.Item
@@ -423,14 +430,14 @@ export default function ArticleWorkspace({ site }: { site: SiteIdentity }) {
                   onClick={() => void copyLink(item as PublicPost)}
                 >
                   <Icon name="article-link" />
-                  复制文章链接
+                  {t("复制文章链接")}
                 </Menu.Item>
                 <Menu.Item
                   className={styles.menuItem}
                   onClick={() => navigation.navigate(link(item as PublicPost))}
                 >
                   <Icon name="article-link" />
-                  查看文章
+                  {t("查看文章")}
                 </Menu.Item>
                 <Menu.Item
                   disabled={busy}
@@ -438,7 +445,7 @@ export default function ArticleWorkspace({ site }: { site: SiteIdentity }) {
                   onClick={() => void edit(item as PublicPost)}
                 >
                   <Icon name="edit" />
-                  编辑文章
+                  {t("编辑文章")}
                 </Menu.Item>
                 <Menu.Item
                   disabled={busy}
@@ -446,20 +453,20 @@ export default function ArticleWorkspace({ site }: { site: SiteIdentity }) {
                   onClick={() => void withdraw(item as PublicPost)}
                 >
                   <Icon name="article-unpublish" />
-                  取消发布，移至草稿
+                  {t("取消发布，移至草稿")}
                 </Menu.Item>
               </>
             ) : null}
             <ConfirmDialog
               menuItem
-              title="删除这篇文章？"
+              title={t("删除这篇文章？")}
               description={
                 isPublished ||
                 (item as ArticleDraftSummary).sourceState === "withdrawn"
-                  ? "文章、关联草稿和评论将被永久删除，无法找回。"
-                  : "删除这份草稿后无法找回。已发布的文章不受影响。"
+                  ? t("文章、关联草稿和评论将被永久删除，无法找回。")
+                  : t("删除这份草稿后无法找回。已发布的文章不受影响。")
               }
-              confirmLabel="删除文章"
+              confirmLabel={t("删除文章")}
               danger
               pending={busy}
               onConfirm={() => remove(item, isPublished)}
@@ -470,7 +477,7 @@ export default function ArticleWorkspace({ site }: { site: SiteIdentity }) {
                   className={`${styles.menuItem} ${styles.menuItemDanger}`}
                 >
                   <Icon name="delete" />
-                  删除文章
+                  {t("删除文章")}
                 </Menu.Item>
               }
             />
@@ -486,7 +493,7 @@ export default function ArticleWorkspace({ site }: { site: SiteIdentity }) {
       onClick={() => void newArticle()}
       type="button"
     >
-      {busy ? "正在创建…" : "写文章"}
+      {busy ? t("正在创建…") : t("写文章")}
     </button>
   );
   return (
@@ -500,19 +507,19 @@ export default function ArticleWorkspace({ site }: { site: SiteIdentity }) {
         hidden={route.focus || (narrow && route.id !== null)}
       >
         <header className={styles.workspaceListHeader}>
-          <h1>Articles</h1>
+          <h1>{t("Articles")}</h1>
         </header>
         <Tabs.Root value={route.section} onValueChange={changeTab}>
           <Tabs.List
             className={styles.workspaceTabs}
-            aria-label="文章列表"
+            aria-label={t("文章列表")}
             data-section={route.section}
           >
             <Tabs.Tab className={styles.workspaceTab} value="drafts">
-              Drafts
+              {t("Drafts")}
             </Tabs.Tab>
             <Tabs.Tab className={styles.workspaceTab} value="published">
-              Published
+              {t("Published")}
             </Tabs.Tab>
             <Tabs.Indicator className={styles.workspaceIndicator} />
           </Tabs.List>
@@ -526,7 +533,7 @@ export default function ArticleWorkspace({ site }: { site: SiteIdentity }) {
         >
           {loading ? (
             <p className={styles.workspaceNotice} role="status">
-              正在读取文章…
+              {t("正在读取文章…")}
             </p>
           ) : null}
           {error ? (
@@ -537,7 +544,7 @@ export default function ArticleWorkspace({ site }: { site: SiteIdentity }) {
                 onClick={() => void refresh()}
                 type="button"
               >
-                重试
+                {t("重试")}
               </button>
             </div>
           ) : null}
@@ -559,7 +566,7 @@ export default function ArticleWorkspace({ site }: { site: SiteIdentity }) {
                       }
                     >
                       <span className={styles.workspaceRowMeta}>
-                        <span className={styles.draftBadge}>Draft</span>
+                        <span className={styles.draftBadge}>{t("Draft")}</span>
                         <span aria-hidden="true">·</span>
                         <ArticleTime
                           value={draft.updatedAt}
@@ -572,7 +579,7 @@ export default function ArticleWorkspace({ site }: { site: SiteIdentity }) {
                           className={styles.workspaceRowTitle}
                           data-empty={!draft.title.trim() || undefined}
                         >
-                          {draft.title.trim() || "(Needs title)"}
+                          {draft.title.trim() || t("(Needs title)")}
                         </strong>
                         {draft.excerpt ? (
                           <span className={styles.workspaceExcerpt}>
@@ -602,7 +609,9 @@ export default function ArticleWorkspace({ site }: { site: SiteIdentity }) {
                       }
                     >
                       <span className={styles.workspaceRowMeta}>
-                        <span className={styles.publishedBadge}>Published</span>
+                        <span className={styles.publishedBadge}>
+                          {t("Published")}
+                        </span>
                         <span aria-hidden="true">·</span>
                         <ArticleTime
                           value={post.publishedAt}
@@ -632,13 +641,13 @@ export default function ArticleWorkspace({ site }: { site: SiteIdentity }) {
             <div className={styles.workspaceEmptyList}>
               <h2>
                 {route.section === "drafts"
-                  ? "草稿会保存在这里"
-                  : "还没有已发布的文章"}
+                  ? t("草稿会保存在这里")
+                  : t("还没有已发布的文章")}
               </h2>
               <p>
                 {route.section === "drafts"
-                  ? "开始写作，随时回来继续。"
-                  : "发布后的文章将在这里显示。"}
+                  ? t("开始写作，随时回来继续。")
+                  : t("发布后的文章将在这里显示。")}
               </p>
             </div>
           ) : null}
@@ -649,7 +658,7 @@ export default function ArticleWorkspace({ site }: { site: SiteIdentity }) {
               onClick={() => void loadMore()}
               type="button"
             >
-              {loadingMore ? "正在加载…" : "加载更多"}
+              {loadingMore ? t("正在加载…") : t("加载更多")}
             </button>
           ) : null}
         </div>
@@ -699,7 +708,7 @@ export default function ArticleWorkspace({ site }: { site: SiteIdentity }) {
             <header className={styles.workspacePublishedHeader}>
               <button
                 className={styles.toolButton}
-                aria-label="返回文章列表"
+                aria-label={t("返回文章列表")}
                 type="button"
                 onClick={() =>
                   navigation.navigate(articlePublishedPath(), {
@@ -709,7 +718,7 @@ export default function ArticleWorkspace({ site }: { site: SiteIdentity }) {
               >
                 <Icon name="arrow-left" />
               </button>
-              <span className={styles.publishedBadge}>Published</span>
+              <span className={styles.publishedBadge}>{t("Published")}</span>
               {reading ? (
                 <>
                   <span aria-hidden="true">·</span>
@@ -728,7 +737,7 @@ export default function ArticleWorkspace({ site }: { site: SiteIdentity }) {
                     disabled={busy}
                     onClick={() => void edit(reading)}
                   >
-                    编辑文章
+                    {t("编辑文章")}
                   </button>
                   {menu(reading, true)}
                 </>
@@ -742,14 +751,14 @@ export default function ArticleWorkspace({ site }: { site: SiteIdentity }) {
               <ArticlePage post={reading} site={site} showActions={false} />
             ) : (
               <p className={styles.workspaceNotice} role="status">
-                正在读取文章…
+                {t("正在读取文章…")}
               </p>
             )}
           </>
         ) : (
           <div className={styles.workspaceWelcome}>
-            <h2>在这里写文章</h2>
-            <p>继续一份草稿，或者开始写一篇新文章。</p>
+            <h2>{t("在这里写文章")}</h2>
+            <p>{t("继续一份草稿，或者开始写一篇新文章。")}</p>
             {writeAction}
           </div>
         )}

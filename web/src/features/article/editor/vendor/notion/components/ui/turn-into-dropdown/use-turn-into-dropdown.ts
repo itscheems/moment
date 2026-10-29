@@ -1,5 +1,9 @@
 "use client";
 
+import { useTranslation } from "react-i18next";
+
+import { t } from "../../../../../../../../i18n";
+
 import { useCallback, useEffect, useState } from "react";
 import type { Editor } from "@tiptap/react";
 import { NodeSelection } from "@tiptap/pm/state";
@@ -50,7 +54,9 @@ export interface UseTurnIntoDropdownConfig {
 export const blockTypeOptions = [
   {
     type: "paragraph",
-    label: "Text",
+    get label() {
+      return t("Text");
+    },
     isActive: (editor: Editor) =>
       editor.isActive("paragraph") &&
       !editor.isActive("heading") &&
@@ -62,45 +68,61 @@ export const blockTypeOptions = [
   },
   {
     type: "heading",
-    label: "Heading 1",
+    get label() {
+      return t("Heading 1");
+    },
     level: 1 as Level,
     isActive: (editor: Editor) => editor.isActive("heading", { level: 1 }),
   },
   {
     type: "heading",
-    label: "Heading 2",
+    get label() {
+      return t("Heading 2");
+    },
     level: 2 as Level,
     isActive: (editor: Editor) => editor.isActive("heading", { level: 2 }),
   },
   {
     type: "heading",
-    label: "Heading 3",
+    get label() {
+      return t("Heading 3");
+    },
     level: 3 as Level,
     isActive: (editor: Editor) => editor.isActive("heading", { level: 3 }),
   },
   {
     type: "bulletList",
-    label: "Bulleted list",
+    get label() {
+      return t("Bulleted list");
+    },
     isActive: (editor: Editor) => editor.isActive("bulletList"),
   },
   {
     type: "orderedList",
-    label: "Numbered list",
+    get label() {
+      return t("Numbered list");
+    },
     isActive: (editor: Editor) => editor.isActive("orderedList"),
   },
   {
     type: "taskList",
-    label: "To-do list",
+    get label() {
+      return t("To-do list");
+    },
     isActive: (editor: Editor) => editor.isActive("taskList"),
   },
   {
     type: "blockquote",
-    label: "Blockquote",
+    get label() {
+      return t("Blockquote");
+    },
     isActive: (editor: Editor) => editor.isActive("blockquote"),
   },
   {
     type: "codeBlock",
-    label: "Code block",
+    get label() {
+      return t("Code block");
+    },
     isActive: (editor: Editor) => editor.isActive("codeBlock"),
   },
 ];
@@ -217,6 +239,8 @@ export function shouldShowTurnInto(params: {
  * ```
  */
 export function useTurnIntoDropdown(config?: UseTurnIntoDropdownConfig) {
+  const { t } = useTranslation();
+
   const {
     editor: providedEditor,
     hideWhenUnavailable = false,
@@ -269,7 +293,9 @@ export function useTurnIntoDropdown(config?: UseTurnIntoDropdownConfig) {
     activeBlockType,
     handleOpenChange,
     filteredOptions: getFilteredBlockTypeOptions(blockTypes),
-    label: `Turn into (current: ${activeBlockType?.label || "Text"})`,
+    label: t("Turn into (current: {{value1}})", {
+      value1: activeBlockType?.label || "Text",
+    }),
     Icon: ChevronDownIcon,
   };
 }

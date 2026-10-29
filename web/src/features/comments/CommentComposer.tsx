@@ -1,3 +1,5 @@
+import { t } from "../../i18n";
+import { useTranslation } from "react-i18next";
 import { locationsApi } from "../../api/locations";
 import { useEditHistory } from "../../components/useEditHistory";
 import { EditMediaHistory } from "../media/editMediaHistory";
@@ -159,36 +161,36 @@ function createIdempotencyKey(): string {
 
 function messageFor(error: unknown, replying: boolean): string {
   if (!(error instanceof PublicApiError)) {
-    return "回复没有发出，文字已保留。检查连接后可以安全重试。";
+    return t("回复没有发出，文字已保留。检查连接后可以安全重试。");
   }
   switch (error.code) {
     case "CONTENT_EMPTY":
-      return "写下一些内容后再发表。";
+      return t("写下一些内容后再发表。");
     case "CONTENT_TOO_LARGE":
-      return "回复超过 2,000 个字符，请缩短后重试。";
+      return t("回复超过 2,000 个字符，请缩短后重试。");
     case "EXTERNAL_IMAGE_NOT_ALLOWED":
-      return "回复不能引用 Markdown 图片；普通链接仍然可以使用。";
+      return t("回复不能引用 Markdown 图片；普通链接仍然可以使用。");
     case "INVALID_ARGUMENT":
-      return "请检查回复内容后重试。";
+      return t("请检查回复内容后重试。");
     case "COMMENT_NOT_FOUND":
       return replying
-        ? "上级回复已被删除。这段文字仍保留，可以改为直接回复 Moment。"
-        : "这条回复已不存在。文字仍保留，可以重新加载后再试。";
+        ? t("上级回复已被删除。这段文字仍保留，可以改为直接回复 Moment。")
+        : t("这条回复已不存在。文字仍保留，可以重新加载后再试。");
     case "COMMENTS_DISABLED":
-      return "回复刚刚被关闭；这段文字仍保留在当前页面。";
+      return t("回复刚刚被关闭；这段文字仍保留在当前页面。");
     // Reachable when approval is withdrawn, or granted and then withdrawn,
     // while a composer is already open. Retrying will not help, so this is one
     // of the few failures that does not offer it.
     case "ACCOUNT_NOT_APPROVED":
-      return "你的账户正在等待管理员批准，暂时还不能留言。文字已保留。";
+      return t("你的账户正在等待管理员批准，暂时还不能留言。文字已保留。");
     case "COMMENT_REJECTED":
-      return "这次回复没有通过防滥用检查，文字仍保留。";
+      return t("这次回复没有通过防滥用检查，文字仍保留。");
     case "IDEMPOTENCY_KEY_REUSED":
-      return "这次重试与最初内容不一致。再编辑一个字符即可重新发表。";
+      return t("这次重试与最初内容不一致。再编辑一个字符即可重新发表。");
     case "API_RESPONSE_INVALID":
-      return "服务器返回了不完整的回复数据。文字已保留，请稍后重试。";
+      return t("服务器返回了不完整的回复数据。文字已保留，请稍后重试。");
     default:
-      return "回复没有发出，文字已保留。可以安全重试。";
+      return t("回复没有发出，文字已保留。可以安全重试。");
   }
 }
 
@@ -224,22 +226,24 @@ export function useReplyBlock(): ReplyBlock | null {
  * and point at the way in.
  */
 export function SignInToReply() {
+  const { t } = useTranslation();
+
   const block = useReplyBlock();
   // Signed in already, just not cleared to write yet. Offering them a login
   // link would send them round a loop they have already been through.
   if (block === "pending") {
     return (
       <div className={styles.signInNotice} role="status">
-        <strong>正在等待管理员批准</strong>
-        <span>你的账户正在等待管理员批准，批准后就能留言。</span>
+        <strong>{t("正在等待管理员批准")}</strong>
+        <span>{t("你的账户正在等待管理员批准，批准后就能留言。")}</span>
       </div>
     );
   }
   return (
     <div className={styles.signInNotice} role="status">
-      <strong>登录后回复</strong>
-      <span>发表回复需要登录。过往回复继续公开可读。</span>
-      <LoginLink>登录</LoginLink>
+      <strong>{t("登录后回复")}</strong>
+      <span>{t("发表回复需要登录。过往回复继续公开可读。")}</span>
+      <LoginLink>{t("登录")}</LoginLink>
     </div>
   );
 }
@@ -282,6 +286,8 @@ export function CommentForm({
   textareaRef?: RefObject<HTMLTextAreaElement | null>;
   topLevelTargetUsername?: string;
 }) {
+  const { t } = useTranslation();
+
   const auth = useSession();
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -326,7 +332,7 @@ export function CommentForm({
   const displayedError =
     error ??
     (displayReauth
-      ? "当前写入会话已失效。文字已保留，重新登录后可以重试。"
+      ? t("当前写入会话已失效。文字已保留，重新登录后可以重试。")
       : null);
   const expanded =
     (parentId !== null && !inlineTopLevel) ||
@@ -513,7 +519,7 @@ export function CommentForm({
     }
     if (!auth.session) {
       setAuthExpired(true);
-      setError("当前写入会话已失效。文字已保留，重新登录后可以重试。");
+      setError(t("当前写入会话已失效。文字已保留，重新登录后可以重试。"));
       return;
     }
     const signature = JSON.stringify([
@@ -566,7 +572,7 @@ export function CommentForm({
     } catch (nextError) {
       if (auth.expireIfInvalidSession(nextError)) {
         setAuthExpired(true);
-        setError("当前写入会话已失效。文字已保留，重新登录后可以重试。");
+        setError(t("当前写入会话已失效。文字已保留，重新登录后可以重试。"));
       } else {
         if (
           nextError instanceof PublicApiError &&
@@ -630,25 +636,32 @@ export function CommentForm({
           />
         </span>
         <form
+          data-writing-surface
           aria-label={
-            parentId ? `回复 ${replyTargetAuthor ?? "这条回复"}` : "发表回复"
+            parentId
+              ? t("回复 {{value1}}", {
+                  value1: replyTargetAuthor ?? t("这条回复"),
+                })
+              : t("发表回复")
           }
           className={styles.commentForm}
           onSubmit={(event) => void submit(event)}
         >
           <header className={styles.commentComposerHeader}>
             <div className={styles.srOnly}>
-              <p>{parentId ? "一级回复" : "加入这段对话"}</p>
+              <p>{parentId ? t("一级回复") : t("加入这段对话")}</p>
               <h3>
                 {parentId
-                  ? `回复 ${replyTargetAuthor ?? "这条回复"}`
-                  : "写下回复"}
+                  ? t("回复 {{value1}}", {
+                      value1: replyTargetAuthor ?? t("这条回复"),
+                    })
+                  : t("写下回复")}
               </h3>
             </div>
           </header>
           {!inlineTopLevel && parentId && replyTargetAuthor ? (
             <p className={styles.replyTarget}>
-              正在回复{" "}
+              {t("正在回复")}{" "}
               {/*
                * The label arrives whole. A handle carries its own @; a legacy
                * row that has no account carries a plain display name, and
@@ -667,12 +680,12 @@ export function CommentForm({
               className={`${styles.replyTargetRow} ${expanded ? "" : styles.replyTargetRowCollapsed}`}
             >
               <p className={styles.replyTarget}>
-                正在回复 <span>@{topLevelTargetUsername}</span>
+                {t("正在回复")} <span>@{topLevelTargetUsername}</span>
               </p>
             </div>
           ) : null}
           <label className={styles.srOnly} htmlFor={`${formId}-content`}>
-            回复内容
+            {t("回复内容")}
           </label>
           <div className={styles.commentInputRow}>
             <textarea
@@ -730,7 +743,7 @@ export function CommentForm({
                   event.currentTarget.form?.requestSubmit();
                 }
               }}
-              placeholder="发布你的回复"
+              placeholder={t("发布你的回复")}
               ref={textareaRef}
               required={commentLocation === null}
               rows={inlineTopLevel ? 2 : parentId ? 1 : 2}
@@ -738,12 +751,12 @@ export function CommentForm({
             />
             {!expanded ? (
               <button
-                aria-label="回复"
+                aria-label={t("回复")}
                 className={styles.collapsedReplyAction}
                 disabled
                 type="button"
               >
-                回复
+                {t("回复")}
               </button>
             ) : null}
           </div>
@@ -754,7 +767,7 @@ export function CommentForm({
           />
           <div className={styles.formMeta} id={`${formId}-guidance`}>
             <span className={styles.srOnly}>
-              支持 Markdown；请勿粘贴图片语法。Ctrl/⌘ + Enter 发表
+              {t("支持 Markdown；请勿粘贴图片语法。Ctrl/⌘ + Enter 发表")}
             </span>
             <span
               className={
@@ -764,7 +777,10 @@ export function CommentForm({
                     ? ""
                     : styles.srOnly
               }
-              aria-label={`回复 ${contentCount} / ${MAX_COMMENT} 字`}
+              aria-label={t("回复 {{value1}} / {{value2}} 字", {
+                value1: contentCount,
+                value2: MAX_COMMENT,
+              })}
             >
               {contentCount}/{MAX_COMMENT}
             </span>
@@ -805,12 +821,12 @@ export function CommentForm({
                           onClick={onCancel}
                           type="button"
                         >
-                          取消
+                          {t("取消")}
                         </button>
                       ) : null}
                       <button
                         aria-busy={pending || undefined}
-                        aria-label="发表回复"
+                        aria-label={t("发表回复")}
                         className={styles.primaryAction}
                         data-pending={pending ? "true" : undefined}
                         disabled={
@@ -823,7 +839,7 @@ export function CommentForm({
                         type="submit"
                       >
                         <span aria-hidden="true">
-                          {pending ? "正在发表…" : "回复"}
+                          {pending ? t("正在发表…") : t("回复")}
                         </span>
                       </button>
                     </div>
@@ -832,8 +848,8 @@ export function CommentForm({
                 items={mediaItems}
                 maximum={4}
                 maximumTotalBytes={MAX_TOTAL_BYTES}
-                pickerTooltip={inlineTopLevel ? "媒体" : undefined}
-                subject="回复"
+                pickerTooltip={inlineTopLevel ? t("媒体") : undefined}
+                subject={t("回复")}
                 toolbarAction={
                   <LocationPicker
                     api={locationsApi}
@@ -843,7 +859,7 @@ export function CommentForm({
                       setActivated(true);
                       setError(null);
                     }}
-                    pickerTooltip="位置"
+                    pickerTooltip={t("位置")}
                     value={commentLocation}
                   />
                 }
@@ -919,21 +935,21 @@ export function CommentForm({
             >
               <span>{displayedError}</span>
               {parentId &&
-              displayedError.includes("改为直接回复 Moment") &&
+              displayedError.includes(t("改为直接回复 Moment")) &&
               onPromote ? (
                 <button onClick={onPromote} type="button">
-                  直接回复 Moment
+                  {t("直接回复 Moment")}
                 </button>
               ) : null}
             </div>
           ) : null}
           {!commentsEnabled ? (
             <p className={styles.closedInline} role="status">
-              回复已关闭。文字仍保留在当前页面，便于复制。
+              {t("回复已关闭。文字仍保留在当前页面，便于复制。")}
             </p>
           ) : null}
         </form>
-        {displayReauth ? <LoginLink>重新登录</LoginLink> : null}
+        {displayReauth ? <LoginLink>{t("重新登录")}</LoginLink> : null}
       </div>
     </div>
   );

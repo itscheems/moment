@@ -1,3 +1,4 @@
+import { t } from "../../../../../../../../i18n";
 import { mergeAttributes, Node } from "@tiptap/react";
 import { ReactNodeViewRenderer } from "@tiptap/react";
 import { ImageUploadNode as ImageUploadNodeComponent } from "@notion/components/nodes/image-upload-node/image-upload-node";
@@ -66,7 +67,9 @@ declare module "@tiptap/react" {
 export const ImageUploadNode = Node.create<ImageUploadNodeOptions>({
   name: "imageUpload",
 
-  group: "block",
+  get group() {
+    return t("block");
+  },
 
   draggable: true,
 

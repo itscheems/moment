@@ -1616,15 +1616,15 @@ describe("owner composing flow", () => {
     const input = await screen.findByLabelText("此刻想到什么？");
     const composer = input.closest("section")!;
     expect(
-      screen.queryByRole("button", { name: "Everyone can reply" }),
+      screen.queryByRole("button", { name: "所有人都能回复" }),
     ).not.toBeInTheDocument();
     fireEvent.focus(input);
-    const trigger = screen.getByRole("button", { name: "Everyone can reply" });
+    const trigger = screen.getByRole("button", { name: "所有人都能回复" });
     fireEvent.click(trigger);
-    const menu = await screen.findByRole("menu", { name: "Who can reply?" });
+    const menu = await screen.findByRole("menu", { name: "谁可以回复？" });
     const options = within(menu).getAllByRole("menuitemradio");
     expect(options).toHaveLength(1);
-    expect(options[0]).toHaveTextContent("Everyone");
+    expect(options[0]).toHaveTextContent("所有人");
     expect(options[0]).toHaveAttribute("aria-checked", "true");
     expect(composer).toHaveAttribute("data-expanded", "true");
     fireEvent.click(options[0]);
@@ -1645,7 +1645,7 @@ describe("owner composing flow", () => {
     );
     await waitFor(() =>
       expect(
-        screen.queryByRole("button", { name: "Everyone can reply" }),
+        screen.queryByRole("button", { name: "所有人都能回复" }),
       ).not.toBeInTheDocument(),
     );
   });

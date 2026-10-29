@@ -1,5 +1,7 @@
 "use client";
 
+import { useTranslation } from "react-i18next";
+
 import { forwardRef, useCallback, useMemo } from "react";
 
 // --- Lib ---
@@ -68,6 +70,7 @@ export const ColorTextButton = forwardRef<
     },
     ref,
   ) => {
+    const { t } = useTranslation();
     const { editor } = useTiptapEditor(providedEditor);
     const {
       isVisible,
@@ -80,7 +83,7 @@ export const ColorTextButton = forwardRef<
     } = useColorText({
       editor,
       textColor,
-      label: text || `Color text to ${textColor}`,
+      label: text || t("Color text to {{color}}", { color: textColor }),
       hideWhenUnavailable,
       onApplied,
     });

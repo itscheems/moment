@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import { postsApi } from "../../api/posts";
 import { useEffect, useRef, useState } from "react";
 import { Menu } from "@base-ui/react/menu";
@@ -25,6 +26,8 @@ export function RepostAction({
   post: PublicPost;
   tooltipPlacement?: ActionTooltipPlacement;
 }) {
+  const { t } = useTranslation();
+
   const { navigateOverlay } = useNavigation();
   const { account, session, expireIfInvalidSession } = useSession();
   const [current, setCurrent] = useState(post);
@@ -54,12 +57,12 @@ export function RepostAction({
       } else {
         announcePostChanged({ kind: "reordered", post: updated });
       }
-      notify(nextActive ? "已转发到时间流顶部" : "已取消转发");
+      notify(nextActive ? t("已转发到时间流顶部") : t("已取消转发"));
     } catch (error) {
       notify(
         expireIfInvalidSession(error)
-          ? "登录已过期，重新登录后再操作。"
-          : "转发状态没有改变，可以安全重试。",
+          ? t("登录已过期，重新登录后再操作。")
+          : t("转发状态没有改变，可以安全重试。"),
         { type: "error" },
       );
     } finally {
@@ -71,12 +74,12 @@ export function RepostAction({
   return (
     <Menu.Root>
       <ActionTooltip
-        label={active ? "转发选项" : "转发"}
+        label={active ? t("转发选项") : t("转发")}
         placement={tooltipPlacement}
       >
         <Menu.Trigger
           data-post-action="repost"
-          aria-label={isComment ? "转发这条评论" : "转发这条 Moment"}
+          aria-label={isComment ? t("转发这条评论") : t("转发这条 Moment")}
           aria-pressed={active}
           className={`${postStyles.postAction} ${postStyles.repostAction} ${active ? postStyles.repostActive : ""}`}
           data-focus-key={`${post.id}:${post.timelineItemKind}:repost`}
@@ -99,7 +102,7 @@ export function RepostAction({
           sideOffset={4}
         >
           <Menu.Popup
-            aria-label="转发选项"
+            aria-label={t("转发选项")}
             className={styles.actionsMenuPopup}
             onClick={(event) => event.stopPropagation()}
           >
@@ -109,7 +112,7 @@ export function RepostAction({
                 onClick={() => void change(!active)}
               >
                 <Icon name="repost" />
-                <span>{active ? "取消转发" : "转发"}</span>
+                <span>{active ? t("取消转发") : t("转发")}</span>
               </Menu.Item>
             ) : null}
             <Menu.Item
@@ -123,7 +126,7 @@ export function RepostAction({
               }
             >
               <Icon name="edit" />
-              <span>{isComment ? "引用评论" : "引用 Moment"}</span>
+              <span>{isComment ? t("引用评论") : t("引用 Moment")}</span>
             </Menu.Item>
           </Menu.Popup>
         </Menu.Positioner>

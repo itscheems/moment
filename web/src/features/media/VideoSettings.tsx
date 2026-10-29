@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import { useState } from "react";
 import { Popover } from "@base-ui/react/popover";
 import { Radio } from "@base-ui/react/radio";
@@ -26,6 +27,8 @@ export function VideoSettings({
   onQualityChange: (value: VideoQuality) => void;
   onOpenChange: (open: boolean) => void;
 }) {
+  const { t } = useTranslation();
+
   const [open, setOpen] = useState(false);
   const [page, setPage] = useState<"root" | "speed" | "quality">("root");
   const changeOpen = (value: boolean) => {
@@ -33,16 +36,19 @@ export function VideoSettings({
     onOpenChange(value);
     if (value) setPage("root");
   };
-  const auto = resolution > 0 ? `自动 (${resolution}p)` : "自动";
+  const auto =
+    resolution > 0
+      ? t("自动 ({{value1}}p)", { value1: resolution })
+      : t("自动");
   return (
     <Popover.Root open={open} onOpenChange={changeOpen}>
       <ActionTooltip
-        label="视频设置"
+        label={t("视频设置")}
         placement={{ side: "top" }}
         container={container}
       >
         <Popover.Trigger
-          aria-label="视频设置"
+          aria-label={t("视频设置")}
           data-video-action="settings"
           className={styles.control}
         >
@@ -59,7 +65,7 @@ export function VideoSettings({
         >
           <Popover.Popup
             className={styles.settings}
-            aria-label="视频设置"
+            aria-label={t("视频设置")}
             data-video-settings=""
             data-settings-page={page}
             onClick={(event) => event.stopPropagation()}
@@ -76,7 +82,7 @@ export function VideoSettings({
                 >
                   <VideoControlIcon name="speed" />
                   <span>
-                    <strong>播放速度</strong>
+                    <strong>{t("播放速度")}</strong>
                     <span className={styles.settingValue}> · {rate}x</span>
                   </span>
                 </button>
@@ -88,10 +94,10 @@ export function VideoSettings({
                 >
                   <VideoControlIcon name="quality" />
                   <span>
-                    <strong>视频质量</strong>
+                    <strong>{t("视频质量")}</strong>
                     <span className={styles.settingValue}>
                       {" "}
-                      · {quality === "original" ? "原画质" : auto}
+                      · {quality === "original" ? t("原画质") : auto}
                     </span>
                   </span>
                 </button>
@@ -105,11 +111,13 @@ export function VideoSettings({
                   onClick={() => setPage("root")}
                 >
                   <VideoControlIcon name="back" />
-                  <strong>{page === "speed" ? "播放速度" : "视频质量"}</strong>
+                  <strong>
+                    {page === "speed" ? t("播放速度") : t("视频质量")}
+                  </strong>
                 </button>
                 <RadioGroup
                   className={styles.options}
-                  aria-label={page === "speed" ? "播放速度" : "视频质量"}
+                  aria-label={page === "speed" ? t("播放速度") : t("视频质量")}
                   value={page === "speed" ? String(rate) : quality}
                   onValueChange={(value) => {
                     if (page === "speed") onRateChange(Number(value));
@@ -120,12 +128,12 @@ export function VideoSettings({
                   {(page === "speed"
                     ? [0.25, 0.5, 0.75, 1, 1.25, 1.5, 1.75, 2].map((v) => ({
                         value: String(v),
-                        label: `${v}x`,
+                        label: t("{{value1}}x", { value1: v }),
                       }))
                     : [
                         { value: "preview", label: auto },
                         ...(hasOriginal
-                          ? [{ value: "original", label: "原画质" }]
+                          ? [{ value: "original", label: t("原画质") }]
                           : []),
                       ]
                   ).map((option) => (

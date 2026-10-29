@@ -1,5 +1,7 @@
 "use client";
 
+import { useTranslation } from "react-i18next";
+
 import { useCallback, useEffect, useState } from "react";
 import type { Editor } from "@tiptap/react";
 import { useCurrentEditor } from "@tiptap/react";
@@ -242,6 +244,8 @@ export function scrollCurrentResultIntoView(
  * ```
  */
 export function useSearchAndReplace(config?: UseSearchAndReplaceConfig) {
+  const { t } = useTranslation();
+
   const {
     editor: providedEditor,
     hideWhenUnavailable = false,
@@ -521,7 +525,7 @@ export function useSearchAndReplace(config?: UseSearchAndReplaceConfig) {
     applySearch,
     suspendSearch,
     clearSearch,
-    label: "Search and replace",
+    label: t("Search and replace"),
     shortcutKeys: SEARCH_AND_REPLACE_SHORTCUT_KEY,
     Icon: SearchIcon,
   };

@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import { ActionTooltip } from "../../components/TimelineInteractions";
 import { motion } from "motion/react";
 import { Icon } from "../../components/icons";
@@ -14,6 +15,8 @@ export function PlaceContent({
   onSelect?: (place: MapPlace) => void;
   disabled?: boolean;
 }) {
+  const { t } = useTranslation();
+
   const text = (
     <>
       <strong>{place.name}</strong>
@@ -27,7 +30,7 @@ export function PlaceContent({
           type="button"
           disabled={disabled}
           className={`${styles.placeText} ${styles.placeTarget}`}
-          aria-label={`前往${place.name}`}
+          aria-label={t("前往{{value1}}", { value1: place.name })}
           onTap={(event) => {
             if (event.isTrusted) onSelect(place);
           }}
@@ -43,12 +46,14 @@ export function PlaceContent({
       ) : (
         <div className={styles.placeText}>{text}</div>
       )}
-      <ActionTooltip label="在 Google Maps 打开">
+      <ActionTooltip label={t("在 Google Maps 打开")}>
         <a
           href={googleMapUrl(place)}
           target="_blank"
           rel="noopener noreferrer"
-          aria-label={`在 Google Maps 打开${place.name}`}
+          aria-label={t("在 Google Maps 打开{{value1}}", {
+            value1: place.name,
+          })}
           onMouseDown={(event) => event.stopPropagation()}
           onTouchStart={(event) => event.stopPropagation()}
           onPointerDown={(event) => event.stopPropagation()}

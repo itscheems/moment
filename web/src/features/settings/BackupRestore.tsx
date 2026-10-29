@@ -1,3 +1,6 @@
+import { getLocale } from "../../i18n";
+import { t } from "../../i18n";
+import { useTranslation } from "react-i18next";
 import { ensureCredentialConfirmation } from "../../api/credentialConfirmation";
 import { MapCard } from "../maps/MapCard";
 import {
@@ -93,7 +96,7 @@ function formatBytes(bytes: number): string {
     value /= 1024;
     unit = units[index];
   }
-  return `${new Intl.NumberFormat("zh-CN", { maximumFractionDigits: 1 }).format(value)} ${unit}`;
+  return `${new Intl.NumberFormat(getLocale(), { maximumFractionDigits: 1 }).format(value)} ${unit}`;
 }
 
 function mergeKindLabel(kind: MergeEntityKind): string {
@@ -101,22 +104,24 @@ function mergeKindLabel(kind: MergeEntityKind): string {
     case "entry":
       return "Moment";
     case "comment":
-      return "评论";
+      return t("评论");
     case "media":
-      return "媒体";
+      return t("媒体");
     case "user":
-      return "账户";
+      return t("账户");
     case "identity":
-      return "登录方式";
+      return t("登录方式");
   }
 }
 
 function mergeBlockedMessage(reason: string | null): string {
   switch (reason) {
     case "USERNAME_TAKEN":
-      return "备份里有一个账户和当前站点的另一个账户用了同一个用户名，合并无法决定该给谁改名；仍可在核对实际内容后完全替换。";
+      return t(
+        "备份里有一个账户和当前站点的另一个账户用了同一个用户名，合并无法决定该给谁改名；仍可在核对实际内容后完全替换。",
+      );
     default:
-      return "这份备份不能安全合并；仍可在核对实际内容后完全替换。";
+      return t("这份备份不能安全合并；仍可在核对实际内容后完全替换。");
   }
 }
 
@@ -128,28 +133,30 @@ function mergeBlockedMessage(reason: string | null): string {
  * account is a person, and the choices that make sense for content do not make
  * sense for one.
  */
-const ACCOUNT_DECISION_NOTE =
-  "账户和登录方式只能看，不能选。备份里的一个账户就是一个人：" +
-  "“两者都保留”会把同一个人拆成两个，“使用备份版本”则等于让一份旧备份" +
-  "在正在运行的站点上给人改名、或重新放行一个已经停用的账户。" +
-  "它们按固定规则处理——同一个账户以当前站点为准，备份里独有的账户会被加进来——" +
-  "列在这里是为了让你在决定之前，看见一次恢复会顺带带来什么。";
+const ACCOUNT_DECISION_NOTE = () =>
+  t("账户和登录方式只能看，不能选。备份里的一个账户就是一个人：") +
+  t("“两者都保留”会把同一个人拆成两个，“使用备份版本”则等于让一份旧备份") +
+  t("在正在运行的站点上给人改名、或重新放行一个已经停用的账户。") +
+  t(
+    "它们按固定规则处理——同一个账户以当前站点为准，备份里独有的账户会被加进来——",
+  ) +
+  t("列在这里是为了让你在决定之前，看见一次恢复会顺带带来什么。");
 
 function accountStatusLabel(status: string | undefined): string {
   switch (status) {
     case "pending":
-      return "待批准";
+      return t("待批准");
     case "active":
-      return "已启用";
+      return t("已启用");
     case "suspended":
-      return "已停用";
+      return t("已停用");
     default:
-      return status ?? "未知状态";
+      return status ?? t("未知状态");
   }
 }
 
 function accountRoleLabel(role: string | undefined): string {
-  return role === "admin" ? "管理员" : "成员";
+  return role === "admin" ? t("管理员") : t("成员");
 }
 
 /**
@@ -162,56 +169,59 @@ function accountOutcomeLabel(
   item: MergeReviewItem,
   importMode: "merge" | "restore",
 ): string {
-  if (item.classification === "incoming_only") return "备份独有 · 会被加入";
+  if (item.classification === "incoming_only") return t("备份独有 · 会被加入");
   if (item.classification === "local_only") {
-    return importMode === "restore" ? "当前独有 · 将移除" : "当前独有 · 会保留";
+    return importMode === "restore"
+      ? t("当前独有 · 将移除")
+      : t("当前独有 · 会保留");
   }
-  return "两侧都有 · 以当前站点为准";
+  return t("两侧都有 · 以当前站点为准");
 }
 
 function mergeValue(value: unknown): string {
-  if (value === null) return "未设置";
-  if (typeof value === "string") return value || "空值";
-  if (typeof value === "boolean") return value ? "开启" : "关闭";
+  if (value === null) return t("未设置");
+  if (typeof value === "string") return value || t("空值");
+  if (typeof value === "boolean") return value ? t("开启") : t("关闭");
   return JSON.stringify(value);
 }
 
 function mergeSiteFieldLabel(field: string): string {
   const labels: Record<string, string> = {
-    username: "用户名",
-    display_name: "显示名称",
-    title: "站点标题",
-    bio: "简介",
-    timezone: "时区",
-    avatar_media_id: "头像",
-    cover_media_id: "主页封面",
-    pinned_post_id: "置顶 Moment",
-    comments_enabled: "评论开关",
+    username: t("用户名"),
+    display_name: t("显示名称"),
+    title: t("站点标题"),
+    bio: t("简介"),
+    timezone: t("时区"),
+    avatar_media_id: t("头像"),
+    cover_media_id: t("主页封面"),
+    pinned_post_id: t("置顶 Moment"),
+    comments_enabled: t("评论开关"),
   };
   return labels[field] ?? field;
 }
 
 function mergeChangedFieldLabel(field: string): string {
   const labels: Record<string, string> = {
-    kind: "类型",
-    content_md: "正文",
-    created_at: "创建时间",
-    updated_at: "更新时间",
-    published_at: "发布时间",
-    quoted_entry_id: "引用的 Moment",
-    quoted_comment_id: "引用的评论",
-    media: "媒体与图片描述",
-    location: "位置",
-    entry_id: "所属 Moment",
-    parent_id: "上级评论",
+    ui_locale: t("显示语言"),
+    kind: t("类型"),
+    content_md: t("正文"),
+    created_at: t("创建时间"),
+    updated_at: t("更新时间"),
+    published_at: t("发布时间"),
+    quoted_entry_id: t("引用的 Moment"),
+    quoted_comment_id: t("引用的评论"),
+    media: t("媒体与图片描述"),
+    location: t("位置"),
+    entry_id: t("所属 Moment"),
+    parent_id: t("上级评论"),
 
-    author_name: "作者名称",
-    sha256: "文件内容",
-    original_name: "原文件名",
-    mime_type: "文件类型",
-    byte_size: "文件大小",
-    width: "宽度",
-    height: "高度",
+    author_name: t("作者名称"),
+    sha256: t("文件内容"),
+    original_name: t("原文件名"),
+    mime_type: t("文件类型"),
+    byte_size: t("文件大小"),
+    width: t("宽度"),
+    height: t("高度"),
   };
   return labels[field] ?? field;
 }
@@ -223,6 +233,8 @@ function ReviewMediaPreview({
   inspection: MergeInspection;
   media: MergeReviewMedia;
 }) {
+  const { t } = useTranslation();
+
   const { api, session } = useSession();
   const [url, setURL] = useState<string | null>(null);
   useEffect(() => {
@@ -265,7 +277,7 @@ function ReviewMediaPreview({
       width={media.width}
     />
   ) : (
-    <div className={styles.reviewMediaPlaceholder}>正在载入图片…</div>
+    <div className={styles.reviewMediaPlaceholder}>{t("正在载入图片…")}</div>
   );
 }
 
@@ -280,12 +292,14 @@ function ReviewEntityCard({
   label: string;
   tone?: "danger" | "incoming";
 }) {
+  const { t } = useTranslation();
+
   return (
     <article className={styles.reviewEntity} data-tone={tone}>
       <header>
         <span>{label}</span>
         <time dateTime={entity.published_at ?? entity.created_at}>
-          {new Intl.DateTimeFormat("zh-CN", {
+          {new Intl.DateTimeFormat(getLocale(), {
             dateStyle: "medium",
             timeStyle: "short",
           }).format(new Date(entity.published_at ?? entity.created_at))}
@@ -296,31 +310,41 @@ function ReviewEntityCard({
         // person, so rendering it would print "（无文字内容）" over one.
         <dl className={styles.reviewAccount}>
           <div>
-            <dt>用户名</dt>
+            <dt>{t("用户名")}</dt>
             <dd>@{entity.username}</dd>
           </div>
           <div>
-            <dt>显示名称</dt>
-            <dd>{entity.display_name || "未命名"}</dd>
+            <dt>{t("显示名称")}</dt>
+            <dd>{entity.display_name || t("未命名")}</dd>
           </div>
           <div>
-            <dt>身份</dt>
+            <dt>{t("身份")}</dt>
             <dd>{accountRoleLabel(entity.role)}</dd>
           </div>
           <div>
-            <dt>状态</dt>
+            <dt>{t("状态")}</dt>
             <dd>{accountStatusLabel(entity.status)}</dd>
+          </div>
+          <div>
+            <dt>{t("显示语言")}</dt>
+            <dd>
+              {entity.ui_locale === "en"
+                ? "English"
+                : entity.ui_locale === "zh-CN"
+                  ? "简体中文"
+                  : t("未设置")}
+            </dd>
           </div>
         </dl>
       ) : entity.provider !== undefined ? (
         <dl className={styles.reviewAccount}>
           <div>
-            <dt>登录方式</dt>
+            <dt>{t("登录方式")}</dt>
             <dd>{providerLabel(entity.provider)}</dd>
           </div>
           <div>
-            <dt>邮箱</dt>
-            <dd>{entity.email || "该账号没有公开邮箱"}</dd>
+            <dt>{t("邮箱")}</dt>
+            <dd>{entity.email || t("该账号没有公开邮箱")}</dd>
           </div>
         </dl>
       ) : (
@@ -329,7 +353,7 @@ function ReviewEntityCard({
             <p className={styles.reviewAuthor}>{entity.author_name}</p>
           ) : null}
           <p className={styles.reviewContent}>
-            {entity.content_md || "（无文字内容）"}
+            {entity.content_md || t("（无文字内容）")}
           </p>
         </>
       )}
@@ -367,18 +391,20 @@ function ReviewItem({
   item: MergeReviewItem;
   restoreMode: boolean;
 }) {
+  const { t } = useTranslation();
+
   if (item.classification === "conflict") {
     return (
       <div className={styles.reviewComparison}>
         <ReviewEntityCard
           entity={item.local!}
           inspection={inspection}
-          label="当前站点"
+          label={t("当前站点")}
         />
         <ReviewEntityCard
           entity={item.incoming!}
           inspection={inspection}
-          label="备份文件"
+          label={t("备份文件")}
           tone="incoming"
         />
       </div>
@@ -394,9 +420,9 @@ function ReviewItem({
       label={
         localOnly
           ? restoreMode
-            ? "当前独有 · 将移除"
-            : "当前独有 · 会保留"
-          : "备份新增"
+            ? t("当前独有 · 将移除")
+            : t("当前独有 · 会保留")
+          : t("备份新增")
       }
       tone={
         localOnly && restoreMode
@@ -443,35 +469,37 @@ function DecisionChoice({
 function importError(error: unknown, operation: "plan" | "restore"): string {
   if (!(error instanceof PublicApiError)) {
     return operation === "plan"
-      ? "预检没有完成。当前站点没有改变，请重新选择或重试。"
-      : "服务器明确拒绝了恢复，当前站点没有被确认替换。请重新预检。";
+      ? t("预检没有完成。当前站点没有改变，请重新选择或重试。")
+      : t("服务器明确拒绝了恢复，当前站点没有被确认替换。请重新预检。");
   }
   switch (error.code) {
     case "REAUTHENTICATION_REQUIRED":
-      return "身份验证未完成，操作未执行。";
+      return t("身份验证未完成，操作未执行。");
     case "EXPORT_INVALID":
     case "EXPORT_CHECKSUM_MISMATCH":
     case "EXPORT_VERSION_UNSUPPORTED":
     case "IMPORT_STAGING_INVALID":
-      return "这个文件不是可恢复的 Moment 备份，或其校验已经失效。请换一个原始导出文件。";
+      return t(
+        "这个文件不是可恢复的 Moment 备份，或其校验已经失效。请换一个原始导出文件。",
+      );
     case "IMPORT_DISK_SPACE_INSUFFICIENT":
-      return "可用磁盘空间不足。释放空间后重新预检，恢复尚未开始。";
+      return t("可用磁盘空间不足。释放空间后重新预检，恢复尚未开始。");
     case "IMPORT_IN_PROGRESS":
     case "MAINTENANCE_MODE":
-      return "另一个恢复或维护操作正在进行。请先查询当前状态，稍后再预检。";
+      return t("另一个恢复或维护操作正在进行。请先查询当前状态，稍后再预检。");
     case "REQUEST_BODY_TOO_LARGE":
-      return "备份文件超过此实例允许的上传大小。请检查实例限制或使用 CLI。";
+      return t("备份文件超过此实例允许的上传大小。请检查实例限制或使用 CLI。");
     case "UNAUTHORIZED":
     case "CSRF_INVALID":
-      return "登录会话已经失效。备份文件仍只留在浏览器内，请重新登录。";
+      return t("登录会话已经失效。备份文件仍只留在浏览器内，请重新登录。");
     case "CANCELLED":
-      return "预检上传已取消，当前站点没有改变。";
+      return t("预检上传已取消，当前站点没有改变。");
     case "API_RESPONSE_INVALID":
-      return "服务器响应无法确认。不要再次恢复，请检查恢复状态。";
+      return t("服务器响应无法确认。不要再次恢复，请检查恢复状态。");
     default:
       return operation === "plan"
-        ? "预检没有完成。当前站点没有改变，可以安全重试。"
-        : "服务器明确返回恢复失败。请重新预检后再决定。";
+        ? t("预检没有完成。当前站点没有改变，可以安全重试。")
+        : t("服务器明确返回恢复失败。请重新预检后再决定。");
   }
 }
 
@@ -487,75 +515,78 @@ function statusCopy(
   switch (status.phase) {
     case "claimed":
       return {
-        eyebrow: "准备恢复",
-        title: "服务器已接管恢复",
-        detail: "正在重新校验预检绑定，当前站点尚未切换。",
+        eyebrow: t("准备恢复"),
+        title: t("服务器已接管恢复"),
+        detail: t("正在重新校验预检绑定，当前站点尚未切换。"),
         tone: "working",
       };
     case "backing_up":
       return {
-        eyebrow: "自动备份",
-        title: "正在备份当前站点",
-        detail: "只有自动备份验证完成，恢复才会继续。",
+        eyebrow: t("自动备份"),
+        title: t("正在备份当前站点"),
+        detail: t("只有自动备份验证完成，恢复才会继续。"),
         tone: "working",
       };
     case "finalizing":
       return {
-        eyebrow: "准备数据",
-        title: "正在准备恢复数据",
-        detail: "预检内容已经重新验证，当前站点仍在使用。",
+        eyebrow: t("准备数据"),
+        title: t("正在准备恢复数据"),
+        detail: t("预检内容已经重新验证，当前站点仍在使用。"),
         tone: "working",
       };
     case "switching":
       return {
-        eyebrow: "切换数据",
-        title: "正在切换活动数据",
-        detail: "短暂维护期间不要提交其他写操作，本页会查询服务器状态。",
+        eyebrow: t("切换数据"),
+        title: t("正在切换活动数据"),
+        detail: t("短暂维护期间不要提交其他写操作，本页会查询服务器状态。"),
         tone: "working",
       };
     case "verifying":
       return {
-        eyebrow: "验证数据",
-        title: "正在验证恢复后的站点",
-        detail: "只有新数据通过就绪检查，本页才会报告成功。",
+        eyebrow: t("验证数据"),
+        title: t("正在验证恢复后的站点"),
+        detail: t("只有新数据通过就绪检查，本页才会报告成功。"),
         tone: "working",
       };
     case "rolling_back":
       return {
-        eyebrow: "自动回退",
-        title: "正在尝试恢复原站点",
-        detail: "新数据没有通过验证，服务器正在核对并恢复先前数据。",
+        eyebrow: t("自动回退"),
+        title: t("正在尝试恢复原站点"),
+        detail: t("新数据没有通过验证，服务器正在核对并恢复先前数据。"),
         tone: "warning",
       };
     case "succeeded":
       return {
-        eyebrow: merge ? "合并完成" : "恢复完成",
-        title: merge ? "备份已合并并通过就绪检查" : "备份已恢复并通过就绪检查",
+        eyebrow: merge ? t("合并完成") : t("恢复完成"),
+        title: merge
+          ? t("备份已合并并通过就绪检查")
+          : t("备份已恢复并通过就绪检查"),
         detail: merge
-          ? "合并前自动备份已验证。重新加载页面即可查看合并后的内容。"
-          : "恢复前自动备份已验证。重新加载页面即可查看恢复后的内容。",
+          ? t("合并前自动备份已验证。重新加载页面即可查看合并后的内容。")
+          : t("恢复前自动备份已验证。重新加载页面即可查看恢复后的内容。"),
         tone: "success",
       };
     case "failed":
       return {
-        eyebrow: "恢复停止",
-        title: "恢复在切换前停止",
-        detail: "旧数据仍是活动数据。修复错误后，从预检重新开始。",
+        eyebrow: t("恢复停止"),
+        title: t("恢复在切换前停止"),
+        detail: t("旧数据仍是活动数据。修复错误后，从预检重新开始。"),
         tone: "warning",
       };
     case "rolled_back":
       return {
-        eyebrow: "已恢复原数据",
-        title: "已自动恢复原站点",
-        detail: "新数据未通过就绪检查，原数据已经重新启用并验证。",
+        eyebrow: t("已恢复原数据"),
+        title: t("已自动恢复原站点"),
+        detail: t("新数据未通过就绪检查，原数据已经重新启用并验证。"),
         tone: "warning",
       };
     case "needs_attention":
       return {
-        eyebrow: "需要人工处理",
-        title: "恢复状态需要人工处理",
-        detail:
+        eyebrow: t("需要人工处理"),
+        title: t("恢复状态需要人工处理"),
+        detail: t(
           "服务器无法证明旧数据或新数据处于安全终态。停止写入并运行 moment doctor --deep --json。",
+        ),
         tone: "danger",
       };
   }
@@ -570,6 +601,8 @@ export function BackupRestore({
   instanceId: string | null;
   onRestoreBusyChange: (busy: boolean) => void;
 }) {
+  const { t } = useTranslation();
+
   const { api, account, session, expireIfInvalidSession } = useSession();
   const scope = accountCacheScope(instanceId, account?.userId ?? null);
   const stagingKey = scope ? `moment.backups.merge-staging.v2:${scope}` : null;
@@ -688,11 +721,15 @@ export function BackupRestore({
             if (next.phase === "needs_attention") {
               setManualStatusRequired(true);
               setRestoreError(
-                "服务器记录已经切换到另一项需要人工处理的恢复。本页不会把它归为本次提交；请核对两个操作记录。",
+                t(
+                  "服务器记录已经切换到另一项需要人工处理的恢复。本页不会把它归为本次提交；请核对两个操作记录。",
+                ),
               );
             } else {
               setRestoreError(
-                "服务器记录已经切换到另一项恢复。本页不会把它归为本次提交；正在跟随当前恢复。",
+                t(
+                  "服务器记录已经切换到另一项恢复。本页不会把它归为本次提交；正在跟随当前恢复。",
+                ),
               );
             }
             if (activePhases.has(next.phase)) {
@@ -706,7 +743,9 @@ export function BackupRestore({
             setRestoreState("failed");
             setManualStatusRequired(true);
             setRestoreError(
-              "恢复操作记录已变化，无法证明本次提交的终态。不会重传文件；请人工核对两个操作记录。",
+              t(
+                "恢复操作记录已变化，无法证明本次提交的终态。不会重传文件；请人工核对两个操作记录。",
+              ),
             );
           }
           return;
@@ -722,7 +761,9 @@ export function BackupRestore({
             setRestoreState("failed");
             setManualStatusRequired(true);
             setRestoreError(
-              "尚未观察到与本次提交关联的新恢复操作。不会重传文件；请人工核对服务器状态后再决定下一步。",
+              t(
+                "尚未观察到与本次提交关联的新恢复操作。不会重传文件；请人工核对服务器状态后再决定下一步。",
+              ),
             );
             return;
           }
@@ -739,7 +780,7 @@ export function BackupRestore({
             setStatus(next);
             setRestoreState("idle");
             setRestoreError(
-              "正在跟随服务器上的另一项恢复；它不会被归为本次提交。",
+              t("正在跟随服务器上的另一项恢复；它不会被归为本次提交。"),
             );
             pollTimerRef.current = window.setTimeout(
               () => void queryStatus(revision, next.operationId),
@@ -750,7 +791,9 @@ export function BackupRestore({
             setRestoreState("failed");
             setManualStatusRequired(true);
             setRestoreError(
-              "另一项恢复已经到达终态，但无法证明本次提交的结果。不会重传文件；请人工核对操作记录。",
+              t(
+                "另一项恢复已经到达终态，但无法证明本次提交的结果。不会重传文件；请人工核对操作记录。",
+              ),
             );
           }
           return;
@@ -797,7 +840,9 @@ export function BackupRestore({
               setRestoreState("failed");
               setManualStatusRequired(true);
               setRestoreError(
-                "服务器尚未记录与本次提交关联的恢复操作。不会重传文件；请人工核对状态。",
+                t(
+                  "服务器尚未记录与本次提交关联的恢复操作。不会重传文件；请人工核对状态。",
+                ),
               );
             } else {
               pollTimerRef.current = window.setTimeout(
@@ -870,11 +915,11 @@ export function BackupRestore({
       exportGuardTimerRef.current = null;
     }, 1_000);
     setExportState("running");
-    setExportNotice("正在把同源备份请求交给浏览器…");
+    setExportNotice(t("正在把同源备份请求交给浏览器…"));
     try {
       if (!(await ensureCredentialConfirmation())) {
         setExportState("failed");
-        setExportNotice("身份验证未完成，操作未执行。");
+        setExportNotice(t("身份验证未完成，操作未执行。"));
         return;
       }
       const anchor = document.createElement("a");
@@ -886,11 +931,11 @@ export function BackupRestore({
       anchor.remove();
       setExportState("complete");
       setExportNotice(
-        "已请求下载。请在浏览器下载列表确认进度、完成状态与保存位置。",
+        t("已请求下载。请在浏览器下载列表确认进度、完成状态与保存位置。"),
       );
     } catch {
       setExportState("failed");
-      setExportNotice("浏览器没有接受下载请求。页面状态未改变，请重试。");
+      setExportNotice(t("浏览器没有接受下载请求。页面状态未改变，请重试。"));
     }
   };
 
@@ -898,7 +943,7 @@ export function BackupRestore({
     const token = mergeTokenRef.current;
     if (!token) return true;
     if (!session) {
-      setMergeError("登录会话已失效，暂时无法放弃上一次合并检查。");
+      setMergeError(t("登录会话已失效，暂时无法放弃上一次合并检查。"));
       return false;
     }
     try {
@@ -911,7 +956,9 @@ export function BackupRestore({
       )) {
         expireIfInvalidSession(error);
         setMergeError(
-          "暂时无法放弃上一次合并检查。请重试，或等待计划过期后再选择新文件。",
+          t(
+            "暂时无法放弃上一次合并检查。请重试，或等待计划过期后再选择新文件。",
+          ),
         );
         return false;
       }
@@ -945,7 +992,7 @@ export function BackupRestore({
     setManualStatusRequired(false);
     if (next.size === 0) {
       setMergeState("failed");
-      setMergeError("空文件不能作为备份。请选择 Moment 导出的 ZIP 文件。");
+      setMergeError(t("空文件不能作为备份。请选择 Moment 导出的 ZIP 文件。"));
       window.requestAnimationFrame(() => pickerRef.current?.focus());
       return;
     }
@@ -1010,7 +1057,7 @@ export function BackupRestore({
       setMergeState("failed");
       if (error instanceof PublicApiError) {
         if (error.code === "IMPORT_MERGE_PLAN_STALE") {
-          setMergeError("当前站点已发生变化，请重新检查合并冲突。");
+          setMergeError(t("当前站点已发生变化，请重新检查合并冲突。"));
         } else {
           setMergeError(importError(error, "plan"));
         }
@@ -1126,7 +1173,7 @@ export function BackupRestore({
         setRestoreState(
           baseline.phase === "needs_attention" ? "failed" : "idle",
         );
-        setRestoreError("服务器已有另一项导入正在进行，本次合并尚未提交。");
+        setRestoreError(t("服务器已有另一项导入正在进行，本次合并尚未提交。"));
         if (activePhases.has(baseline.phase)) {
           void queryStatus(revision, baseline.operationId);
         }
@@ -1173,16 +1220,20 @@ export function BackupRestore({
           setMergeInspection(null);
           setMergeSelection(null);
           setMergeState("failed");
-          setMergeError("合并计划已过期或当前站点已变化，请重新检查合并冲突。");
+          setMergeError(
+            t("合并计划已过期或当前站点已变化，请重新检查合并冲突。"),
+          );
         } else if (error.code === "REAUTHENTICATION_REQUIRED") {
-          setMergeError("身份验证未完成，操作未执行。当前审阅和选择已保留。");
+          setMergeError(
+            t("身份验证未完成，操作未执行。当前审阅和选择已保留。"),
+          );
         } else if (error.code === "IMPORT_IN_PROGRESS") {
           setMergeError(
-            "另一项导入刚刚开始，本次合并没有提交。请稍后重新检查。",
+            t("另一项导入刚刚开始，本次合并没有提交。请稍后重新检查。"),
           );
         } else {
           setMergeError(
-            "服务器拒绝了当前冲突选择。合并没有开始，请重新检查后再提交。",
+            t("服务器拒绝了当前冲突选择。合并没有开始，请重新检查后再提交。"),
           );
         }
         return;
@@ -1191,14 +1242,14 @@ export function BackupRestore({
         restoreAttemptedRef.current = false;
         expireIfInvalidSession(error);
         setRestoreState("failed");
-        setRestoreError("提交前无法确认服务器状态，合并尚未开始。");
+        setRestoreError(t("提交前无法确认服务器状态，合并尚未开始。"));
         setStatusDisconnected(true);
         return;
       }
       expireIfInvalidSession(error);
       setRestoreState("running");
       setRestoreError(
-        "合并结果尚未确认。不会重复提交；正在查询服务器保存的导入状态。",
+        t("合并结果尚未确认。不会重复提交；正在查询服务器保存的导入状态。"),
       );
       void queryStatus(revision, null, restoreBaselineRef.current);
     }
@@ -1264,8 +1315,12 @@ export function BackupRestore({
         );
         setRestoreError(
           baseline.phase === "needs_attention"
-            ? "服务器仍有需要人工处理的恢复状态，本文件尚未上传。先完成主机侧恢复处置。"
-            : "检测到另一项恢复正在进行，本文件尚未上传。正在跟随当前恢复状态。",
+            ? t(
+                "服务器仍有需要人工处理的恢复状态，本文件尚未上传。先完成主机侧恢复处置。",
+              )
+            : t(
+                "检测到另一项恢复正在进行，本文件尚未上传。正在跟随当前恢复状态。",
+              ),
         );
         if (activePhases.has(baseline.phase)) {
           void queryStatus(revision, baseline.operationId);
@@ -1314,13 +1369,17 @@ export function BackupRestore({
           setMergeSelection(null);
           setMergeState("failed");
           setMergeError(
-            "审阅后当前站点已经发生变化。为保护新内容，恢复已拒绝；请重新检查备份。",
+            t(
+              "审阅后当前站点已经发生变化。为保护新内容，恢复已拒绝；请重新检查备份。",
+            ),
           );
         } else if (error.code === "REAUTHENTICATION_REQUIRED") {
-          setRestoreError("身份验证未完成，操作未执行。当前审阅和选择已保留。");
+          setRestoreError(
+            t("身份验证未完成，操作未执行。当前审阅和选择已保留。"),
+          );
         } else {
           setRestoreError(
-            "服务器拒绝了这次恢复，当前站点没有被替换。请重新检查后再试。",
+            t("服务器拒绝了这次恢复，当前站点没有被替换。请重新检查后再试。"),
           );
         }
         return;
@@ -1330,7 +1389,9 @@ export function BackupRestore({
         expireIfInvalidSession(error);
         setRestoreState("failed");
         setRestoreError(
-          "提交前无法确认服务器当前恢复状态，备份尚未上传。连接恢复后可再次确认。",
+          t(
+            "提交前无法确认服务器当前恢复状态，备份尚未上传。连接恢复后可再次确认。",
+          ),
         );
         setStatusDisconnected(true);
         return;
@@ -1338,7 +1399,7 @@ export function BackupRestore({
       expireIfInvalidSession(error);
       setRestoreState("running");
       setRestoreError(
-        "恢复结果尚未确认。不会重新提交文件；正在查询服务器保存的恢复状态。",
+        t("恢复结果尚未确认。不会重新提交文件；正在查询服务器保存的恢复状态。"),
       );
       void queryStatus(revision, null, restoreBaselineRef.current);
     }
@@ -1347,11 +1408,13 @@ export function BackupRestore({
   const stopWaiting = () => {
     restoreControllerRef.current?.abort();
     if (!restoreSentRef.current) {
-      setRestoreError("已停止提交前状态检查，备份尚未上传。");
+      setRestoreError(t("已停止提交前状态检查，备份尚未上传。"));
       return;
     }
     setRestoreError(
-      "已停止等待原请求。恢复可能仍在服务器执行；不会重传文件，正在查询状态。",
+      t(
+        "已停止等待原请求。恢复可能仍在服务器执行；不会重传文件，正在查询状态。",
+      ),
     );
     const observedNewOperation =
       status?.operationId && status.operationId !== restoreBaselineRef.current
@@ -1415,21 +1478,23 @@ export function BackupRestore({
       ref={statusRef}
       tabIndex={-1}
     >
-      <p>{currentStatus?.eyebrow ?? "恢复状态"}</p>
-      <h3>{currentStatus?.title ?? "正在确认服务器状态"}</h3>
+      <p>{currentStatus?.eyebrow ?? t("恢复状态")}</p>
+      <h3>{currentStatus?.title ?? t("正在确认服务器状态")}</h3>
       <span>
         {currentStatus?.detail ??
-          "恢复请求可能仍在运行。本页不会重新提交备份，只会查询服务器记录。"}
+          t("恢复请求可能仍在运行。本页不会重新提交备份，只会查询服务器记录。")}
       </span>
       {restoreError ? <p className={styles.dataError}>{restoreError}</p> : null}
       {statusDisconnected ? (
         <p className={styles.dataError}>
-          暂时无法连接服务器。页面会继续重试状态查询，不会重传备份。
+          {t("暂时无法连接服务器。页面会继续重试状态查询，不会重传备份。")}
         </p>
       ) : null}
       {manualStatusRequired ? (
         <p className={styles.dataError}>
-          自动关联已经停止。先在实例主机核对恢复状态；本页不会自行再次提交备份。
+          {t(
+            "自动关联已经停止。先在实例主机核对恢复状态；本页不会自行再次提交备份。",
+          )}
         </p>
       ) : null}
       {status?.phase === "needs_attention" ? (
@@ -1440,18 +1505,18 @@ export function BackupRestore({
           }}
           open
         >
-          <summary>需要核对的技术信息</summary>
+          <summary>{t("需要核对的技术信息")}</summary>
           <dl className={styles.operatorFacts}>
             <div>
-              <dt>操作</dt>
+              <dt>{t("操作")}</dt>
               <dd>{status.operationId}</dd>
             </div>
             <div>
-              <dt>错误码</dt>
+              <dt>{t("错误码")}</dt>
               <dd>{status.errorCode}</dd>
             </div>
             <div>
-              <dt>当前数据版本</dt>
+              <dt>{t("当前数据版本")}</dt>
               <dd>{status.activeGeneration}</dd>
             </div>
           </dl>
@@ -1465,7 +1530,7 @@ export function BackupRestore({
             onClick={stopWaiting}
             type="button"
           >
-            停止等待并查询状态
+            {t("停止等待并查询状态")}
           </button>
         ) : null}
         {statusDisconnected || manualStatusRequired ? (
@@ -1488,7 +1553,7 @@ export function BackupRestore({
             }}
             type="button"
           >
-            立即重试状态
+            {t("立即重试状态")}
           </button>
         ) : null}
         {status?.phase === "succeeded" ? (
@@ -1497,33 +1562,37 @@ export function BackupRestore({
             onClick={() => window.location.reload()}
             type="button"
           >
-            重新载入已恢复站点
+            {t("重新载入已恢复站点")}
           </button>
         ) : null}
       </div>
     </div>
   ) : (
     <div aria-live="polite" className={styles.backupOverview}>
-      <p>最近状态</p>
-      <h3>{statusChecking ? "正在确认恢复状态" : "当前没有进行中的恢复"}</h3>
+      <p>{t("最近状态")}</p>
+      <h3>
+        {statusChecking ? t("正在确认恢复状态") : t("当前没有进行中的恢复")}
+      </h3>
       <span>
         {statusChecking
-          ? "确认完成前，站点设置与恢复入口会保持只读。"
-          : "可以下载当前站点的完整备份，或选择备份文件进行安全预检。"}
+          ? t("确认完成前，站点设置与恢复入口会保持只读。")
+          : t("可以下载当前站点的完整备份，或选择备份文件进行安全预检。")}
       </span>
     </div>
   );
 
   return (
-    <section aria-label="备份与恢复" className={styles.portableFlow}>
+    <section aria-label={t("备份与恢复")} className={styles.portableFlow}>
       <header className={styles.sectionHeader}>
-        <h2>备份与恢复</h2>
+        <h2>{t("备份与恢复")}</h2>
       </header>
       {restoreStatusPanel}
       <div className={styles.portableStep}>
         <div>
-          <h3>导出完整站点</h3>
-          <p>包含资料、Moment、回复和图片，不包含登录密钥与浏览器草稿。</p>
+          <h3>{t("导出完整站点")}</h3>
+          <p>
+            {t("包含资料、Moment、回复和图片，不包含登录密钥与浏览器草稿。")}
+          </p>
           <button
             aria-busy={exportState === "running"}
             className={styles.secondaryButton}
@@ -1531,7 +1600,7 @@ export function BackupRestore({
             onClick={download}
             type="button"
           >
-            {exportState === "running" ? "正在请求下载…" : "下载整站备份"}
+            {exportState === "running" ? t("正在请求下载…") : t("下载整站备份")}
           </button>
           {exportNotice ? (
             <p
@@ -1548,8 +1617,8 @@ export function BackupRestore({
 
       <div className={styles.portableStep}>
         <div>
-          <h3>检查备份</h3>
-          <p>选择文件会先检查内容，不会立即替换当前网站。</p>
+          <h3>{t("检查备份")}</h3>
+          <p>{t("选择文件会先检查内容，不会立即替换当前网站。")}</p>
           <div className={styles.inlineActions}>
             <button
               className={styles.secondaryButton}
@@ -1563,7 +1632,7 @@ export function BackupRestore({
               ref={pickerRef}
               type="button"
             >
-              {file ? "更换备份文件" : "选择备份文件"}
+              {file ? t("更换备份文件") : t("选择备份文件")}
             </button>
             {file ? (
               <button
@@ -1574,7 +1643,7 @@ export function BackupRestore({
                 onClick={() => void inspectMerge()}
                 type="button"
               >
-                {mergeInspection ? "重新检查" : "检查备份"}
+                {mergeInspection ? t("重新检查") : t("检查备份")}
               </button>
             ) : null}
             {file ? (
@@ -1584,13 +1653,13 @@ export function BackupRestore({
                 onClick={() => void cancelPlan()}
                 type="button"
               >
-                {mergeState === "running" ? "取消检查" : "清除文件"}
+                {mergeState === "running" ? t("取消检查") : t("清除文件")}
               </button>
             ) : null}
           </div>
           <input
             accept=".zip,application/zip"
-            aria-label="选择 Moment 备份 ZIP"
+            aria-label={t("选择 Moment 备份 ZIP")}
             disabled={!session || !statusInitialized || restoreBusy}
             onChange={chooseFile}
             ref={fileInputRef}
@@ -1605,16 +1674,18 @@ export function BackupRestore({
           {mergeState === "running" ? (
             <>
               <progress
-                aria-label="合并检查上传进度"
+                aria-label={t("合并检查上传进度")}
                 max="100"
                 value={mergeProgress ?? undefined}
               />
               <p aria-live="polite" className={styles.dataNotice}>
                 {mergeProgress === null
-                  ? "正在上传并比较当前站点…"
+                  ? t("正在上传并比较当前站点…")
                   : mergeProgress < 100
-                    ? `正在上传并比较当前站点… ${mergeProgress}%`
-                    : "上传完成，正在分类新增内容与冲突…"}
+                    ? t("正在上传并比较当前站点… {{value1}}%", {
+                        value1: mergeProgress,
+                      })
+                    : t("上传完成，正在分类新增内容与冲突…")}
               </p>
             </>
           ) : null}
@@ -1630,24 +1701,28 @@ export function BackupRestore({
         <div className={styles.mergePanel}>
           <header>
             <div>
-              <p>备份检查完成</p>
+              <p>{t("备份检查完成")}</p>
               <div className={styles.mergeHeadingLine}>
                 <h3>
-                  {importMode === "merge" ? "审阅并合并" : "审阅覆盖恢复"}
+                  {importMode === "merge" ? t("审阅并合并") : t("审阅覆盖恢复")}
                 </h3>
                 <ActionTooltip
                   label={
                     importMode === "merge"
-                      ? "备份新增内容会加入站点，当前独有内容会保留。冲突内容在下方并排展示，由你逐项决定。"
-                      : "覆盖恢复会让站点与备份完全一致。下方标为“将移除”的内容只存在于当前站点，请在确认前逐条核对。"
+                      ? t(
+                          "备份新增内容会加入站点，当前独有内容会保留。冲突内容在下方并排展示，由你逐项决定。",
+                        )
+                      : t(
+                          "覆盖恢复会让站点与备份完全一致。下方标为“将移除”的内容只存在于当前站点，请在确认前逐条核对。",
+                        )
                   }
                   wide
                 >
                   <button
                     aria-label={
                       importMode === "merge"
-                        ? "了解审阅并合并"
-                        : "了解审阅覆盖恢复"
+                        ? t("了解审阅并合并")
+                        : t("了解审阅覆盖恢复")
                     }
                     className={styles.mergeInformationButton}
                     type="button"
@@ -1658,28 +1733,28 @@ export function BackupRestore({
               </div>
             </div>
             <span>
-              {new Intl.DateTimeFormat("zh-CN", {
+              {new Intl.DateTimeFormat(getLocale(), {
                 hour: "2-digit",
                 minute: "2-digit",
               }).format(new Date(mergeInspection.expiresAt))}
-              前提交
+              {t("前提交")}
             </span>
           </header>
-          <div aria-label="导入方式" className={styles.importModeSwitch}>
+          <div aria-label={t("导入方式")} className={styles.importModeSwitch}>
             <button
               aria-pressed={importMode === "merge"}
               disabled={!mergeInspection.mergeAllowed}
               onClick={() => setImportMode("merge")}
               type="button"
             >
-              安全合并
+              {t("安全合并")}
             </button>
             <button
               aria-pressed={importMode === "restore"}
               onClick={() => setImportMode("restore")}
               type="button"
             >
-              完全替换
+              {t("完全替换")}
             </button>
           </div>
           {!mergeInspection.mergeAllowed ? (
@@ -1687,18 +1762,18 @@ export function BackupRestore({
               {mergeBlockedMessage(mergeInspection.mergeBlockedReason)}
             </p>
           ) : null}
-          <div aria-label="合并分类摘要" className={styles.mergeSummary}>
+          <div aria-label={t("合并分类摘要")} className={styles.mergeSummary}>
             <span>
               <strong>{mergeInspection.plan.summary.incoming_only}</strong>
-              新增
+              {t("新增")}
             </span>
             <span>
               <strong>{mergeInspection.plan.summary.local_only}</strong>
-              {importMode === "merge" ? "仅当前，保留" : "仅当前，将移除"}
+              {importMode === "merge" ? t("仅当前，保留") : t("仅当前，将移除")}
             </span>
             <span>
               <strong>{mergeInspection.plan.summary.unchanged}</strong>
-              相同
+              {t("相同")}
             </span>
             <span
               data-tone={
@@ -1706,7 +1781,7 @@ export function BackupRestore({
               }
             >
               <strong>{mergeInspection.plan.summary.conflict}</strong>
-              冲突
+              {t("冲突")}
             </span>
           </div>
 
@@ -1715,10 +1790,12 @@ export function BackupRestore({
               <div className={styles.reviewSectionHeading}>
                 <h4>
                   {importMode === "merge"
-                    ? "当前独有 · 会保留"
-                    : "当前独有 · 将移除"}
+                    ? t("当前独有 · 会保留")
+                    : t("当前独有 · 将移除")}
                 </h4>
-                <span>{mergeLocalOnly.length} 项</span>
+                <span>
+                  {mergeLocalOnly.length} {t("项")}
+                </span>
               </div>
               <div className={styles.reviewList}>
                 {mergeLocalOnly.map((item) => (
@@ -1732,7 +1809,7 @@ export function BackupRestore({
               </div>
               {mergeInspection.review.local_only.truncated ? (
                 <p className={styles.dataNotice}>
-                  这里只显示最近 200 项；完整选择可用 CLI 审阅。
+                  {t("这里只显示最近 200 项；完整选择可用 CLI 审阅。")}
                 </p>
               ) : null}
             </section>
@@ -1741,8 +1818,10 @@ export function BackupRestore({
           {mergeIncomingOnly.length ? (
             <section className={styles.reviewSection}>
               <div className={styles.reviewSectionHeading}>
-                <h4>备份新增</h4>
-                <span>{mergeIncomingOnly.length} 项</span>
+                <h4>{t("备份新增")}</h4>
+                <span>
+                  {mergeIncomingOnly.length} {t("项")}
+                </span>
               </div>
               <div className={styles.reviewList}>
                 {mergeIncomingOnly.map((item) => (
@@ -1756,7 +1835,7 @@ export function BackupRestore({
               </div>
               {mergeInspection.review.incoming_only.truncated ? (
                 <p className={styles.dataNotice}>
-                  这里只显示最近 200 项；完整选择可用 CLI 审阅。
+                  {t("这里只显示最近 200 项；完整选择可用 CLI 审阅。")}
                 </p>
               ) : null}
             </section>
@@ -1768,10 +1847,12 @@ export function BackupRestore({
               className={styles.reviewSection}
             >
               <div className={styles.reviewSectionHeading}>
-                <h4 id="account-rows">账户与登录方式</h4>
-                <span>{mergeAccountRows.length} 项</span>
+                <h4 id="account-rows">{t("账户与登录方式")}</h4>
+                <span>
+                  {mergeAccountRows.length} {t("项")}
+                </span>
               </div>
-              <p className={styles.dataNotice}>{ACCOUNT_DECISION_NOTE}</p>
+              <p className={styles.dataNotice}>{ACCOUNT_DECISION_NOTE()}</p>
               <div className={styles.reviewList}>
                 {mergeAccountRows.map((item) => (
                   <div
@@ -1798,7 +1879,7 @@ export function BackupRestore({
               aria-labelledby="content-conflicts"
               className={styles.mergeConflictSection}
             >
-              <h4 id="content-conflicts">内容冲突</h4>
+              <h4 id="content-conflicts">{t("内容冲突")}</h4>
               <div className={styles.mergeConflictList}>
                 {mergeItemConflicts.slice(0, 200).map((item) => {
                   const decision = mergeSelection.items.find(
@@ -1813,15 +1894,18 @@ export function BackupRestore({
                       <div className={styles.reviewConflictHeading}>
                         <strong>{mergeKindLabel(item.kind)}</strong>
                         <small>
-                          变更：
+                          {t("变更：")}
                           {item.changed_fields
                             .map(mergeChangedFieldLabel)
-                            .join("、") || "内容"}
+                            .join("、") || t("内容")}
                         </small>
                       </div>
                       {importMode === "merge" ? (
                         <div
-                          aria-label={`${mergeKindLabel(item.kind)} ${item.id} 的冲突处理`}
+                          aria-label={t("{{value1}} {{value2}} 的冲突处理", {
+                            value1: mergeKindLabel(item.kind),
+                            value2: item.id,
+                          })}
                           className={styles.mergeDecisionGrid}
                           role="radiogroup"
                         >
@@ -1830,7 +1914,7 @@ export function BackupRestore({
                               (decision?.action ?? "keep_local") ===
                               "keep_local"
                             }
-                            label="保留当前版本"
+                            label={t("保留当前版本")}
                             onChoose={() =>
                               chooseMergeItem(item.kind, item.id, "keep_local")
                             }
@@ -1838,12 +1922,12 @@ export function BackupRestore({
                             <ReviewEntityCard
                               entity={item.local!}
                               inspection={mergeInspection}
-                              label="当前站点"
+                              label={t("当前站点")}
                             />
                           </DecisionChoice>
                           <DecisionChoice
                             checked={decision?.action === "use_incoming"}
-                            label="使用备份版本"
+                            label={t("使用备份版本")}
                             onChoose={() =>
                               chooseMergeItem(
                                 item.kind,
@@ -1855,20 +1939,22 @@ export function BackupRestore({
                             <ReviewEntityCard
                               entity={item.incoming!}
                               inspection={mergeInspection}
-                              label="备份文件"
+                              label={t("备份文件")}
                               tone="incoming"
                             />
                           </DecisionChoice>
                           <DecisionChoice
                             checked={decision?.action === "keep_both"}
-                            label="两者都保留"
+                            label={t("两者都保留")}
                             onChoose={() =>
                               chooseMergeItem(item.kind, item.id, "keep_both")
                             }
                           >
                             <span className={styles.mergeKeepBoth}>
-                              <strong>两者都保留</strong>
-                              <small>备份版本会作为另一条内容加入站点</small>
+                              <strong>{t("两者都保留")}</strong>
+                              <small>
+                                {t("备份版本会作为另一条内容加入站点")}
+                              </small>
                             </span>
                           </DecisionChoice>
                         </div>
@@ -1885,9 +1971,9 @@ export function BackupRestore({
               </div>
               {mergeItemConflicts.length > 200 ? (
                 <p className={styles.dataNotice}>
-                  当前显示前 200
-                  项；其余冲突保持“保留当前版本”。如需逐项调整全部冲突，请使用
-                  CLI 导出的选择文件。
+                  {t(
+                    "当前显示前 200 项；其余冲突保持“保留当前版本”。如需逐项调整全部冲突，请使用 CLI 导出的选择文件。",
+                  )}
                 </p>
               ) : null}
             </section>
@@ -1898,7 +1984,7 @@ export function BackupRestore({
               aria-labelledby="profile-conflicts"
               className={styles.mergeConflictSection}
             >
-              <h4 id="profile-conflicts">资料、头像与封面差异</h4>
+              <h4 id="profile-conflicts">{t("资料、头像与封面差异")}</h4>
               <div className={styles.mergeConflictList}>
                 {mergeSiteConflicts.map((field) => {
                   const decision = mergeSelection.site_fields.find(
@@ -1910,7 +1996,9 @@ export function BackupRestore({
                         <strong>{mergeSiteFieldLabel(field.field)}</strong>
                       </div>
                       <div
-                        aria-label={`${mergeSiteFieldLabel(field.field)}的冲突处理`}
+                        aria-label={t("{{value1}}的冲突处理", {
+                          value1: mergeSiteFieldLabel(field.field),
+                        })}
                         className={styles.mergeDecisionGrid}
                         role="radiogroup"
                       >
@@ -1918,13 +2006,13 @@ export function BackupRestore({
                           checked={
                             (decision?.action ?? "keep_local") === "keep_local"
                           }
-                          label="保留当前值"
+                          label={t("保留当前值")}
                           onChoose={() =>
                             chooseMergeSiteField(field.field, "keep_local")
                           }
                         >
                           <div className={styles.reviewProfileValue}>
-                            <span>当前站点</span>
+                            <span>{t("当前站点")}</span>
                             {field.local_media ? (
                               <ReviewMediaPreview
                                 inspection={mergeInspection}
@@ -1934,7 +2022,7 @@ export function BackupRestore({
                               <ReviewEntityCard
                                 entity={field.local_entry}
                                 inspection={mergeInspection}
-                                label="当前置顶"
+                                label={t("当前置顶")}
                               />
                             ) : (
                               <p>{mergeValue(field.local_value)}</p>
@@ -1943,13 +2031,13 @@ export function BackupRestore({
                         </DecisionChoice>
                         <DecisionChoice
                           checked={decision?.action === "use_incoming"}
-                          label="使用备份值"
+                          label={t("使用备份值")}
                           onChoose={() =>
                             chooseMergeSiteField(field.field, "use_incoming")
                           }
                         >
                           <div className={styles.reviewProfileValue}>
-                            <span>备份文件</span>
+                            <span>{t("备份文件")}</span>
                             {field.incoming_media ? (
                               <ReviewMediaPreview
                                 inspection={mergeInspection}
@@ -1959,7 +2047,7 @@ export function BackupRestore({
                               <ReviewEntityCard
                                 entity={field.incoming_entry}
                                 inspection={mergeInspection}
-                                label="备份置顶"
+                                label={t("备份置顶")}
                                 tone="incoming"
                               />
                             ) : (
@@ -1977,12 +2065,12 @@ export function BackupRestore({
 
           {!mergeItemConflicts.length && !mergeSiteConflicts.length ? (
             <p className={styles.mergeClear}>
-              没有需要手动处理的冲突，可以直接合并。
+              {t("没有需要手动处理的冲突，可以直接合并。")}
             </p>
           ) : null}
           {mergeInspection.warnings.length ? (
             <div className={styles.importWarnings}>
-              <strong>合并提醒</strong>
+              <strong>{t("合并提醒")}</strong>
               <ul>
                 {mergeInspection.warnings.map((warning) => (
                   <li key={warning}>{warning}</li>
@@ -1992,7 +2080,7 @@ export function BackupRestore({
           ) : null}
           {settingsBlocked ? (
             <p className={styles.dataError} role="alert">
-              先保存或放弃当前设置与头像更改，才能提交合并。
+              {t("先保存或放弃当前设置与头像更改，才能提交合并。")}
             </p>
           ) : null}
           {importMode === "merge" ? (
@@ -2014,45 +2102,49 @@ export function BackupRestore({
                   <button className={styles.primaryButton} type="button" />
                 }
               >
-                提交合并
+                {t("提交合并")}
               </Dialog.Trigger>
               <Dialog.Portal>
                 <Dialog.Backdrop className={styles.dialogBackdrop} />
                 <Dialog.Viewport className={styles.dialogViewport}>
                   <Dialog.Popup className={styles.restoreDialog}>
-                    <Dialog.Title>按当前选择合并这份备份？</Dialog.Title>
+                    <Dialog.Title>{t("按当前选择合并这份备份？")}</Dialog.Title>
                     <Dialog.Description>
-                      将加入 {mergeInspection.incomingCounts.entries} 条备份
-                      Moment 中可合并的内容，并按你选择的方式处理{" "}
-                      {mergeInspection.plan.summary.conflict} 项冲突。
+                      {t("将加入")} {mergeInspection.incomingCounts.entries}{" "}
+                      {t("条备份 Moment 中可合并的内容，并按你选择的方式处理")}{" "}
+                      {mergeInspection.plan.summary.conflict} {t("项冲突。")}
                     </Dialog.Description>
                     <div className={styles.dialogImpact}>
                       <div>
-                        <span>新增</span>
+                        <span>{t("新增")}</span>
                         <strong>
-                          {mergeInspection.plan.summary.incoming_only} 项
+                          {mergeInspection.plan.summary.incoming_only} {t("项")}
                         </strong>
                       </div>
                       <div>
-                        <span>仅本地</span>
+                        <span>{t("仅本地")}</span>
                         <strong>
-                          {mergeInspection.plan.summary.local_only} 项，全部保留
+                          {mergeInspection.plan.summary.local_only}{" "}
+                          {t("项，全部保留")}
                         </strong>
                       </div>
                       <div>
-                        <span>冲突</span>
+                        <span>{t("冲突")}</span>
                         <strong>
-                          {mergeInspection.plan.summary.conflict} 项，按选择处理
+                          {mergeInspection.plan.summary.conflict}{" "}
+                          {t("项，按选择处理")}
                         </strong>
                       </div>
                     </div>
                     <p className={styles.dialogRisk}>
-                      <strong>合并前仍会自动备份当前站点。</strong>
-                      计划已绑定当前数据版本；若站点已变化，服务器会拒绝旧计划并要求重新检查。
+                      <strong>{t("合并前仍会自动备份当前站点。")}</strong>
+                      {t(
+                        "计划已绑定当前数据版本；若站点已变化，服务器会拒绝旧计划并要求重新检查。",
+                      )}
                     </p>
                     <div className={styles.dialogActions}>
                       <Dialog.Close className={styles.secondaryButton}>
-                        返回检查
+                        {t("返回检查")}
                       </Dialog.Close>
                       <button
                         aria-busy={restoreState === "running"}
@@ -2065,7 +2157,7 @@ export function BackupRestore({
                         }}
                         type="button"
                       >
-                        确认并合并
+                        {t("确认并合并")}
                       </button>
                     </div>
                   </Dialog.Popup>
@@ -2089,66 +2181,75 @@ export function BackupRestore({
                   <button className={styles.dangerButton} type="button" />
                 }
               >
-                确认完全替换
+                {t("确认完全替换")}
               </Dialog.Trigger>
               <Dialog.Portal>
                 <Dialog.Backdrop className={styles.dialogBackdrop} />
                 <Dialog.Viewport className={styles.dialogViewport}>
                   <Dialog.Popup className={styles.restoreDialog}>
                     <Dialog.Close
-                      aria-label="关闭覆盖恢复确认"
+                      aria-label={t("关闭覆盖恢复确认")}
                       className={styles.dialogClose}
                     >
                       ×
                     </Dialog.Close>
-                    <Dialog.Title>完全替换当前站点？</Dialog.Title>
+                    <Dialog.Title>{t("完全替换当前站点？")}</Dialog.Title>
                     <Dialog.Description>
-                      备份中的 {mergeInspection.incomingCounts.entries} 条
-                      Moment、
-                      {mergeInspection.incomingCounts.comments} 条评论和
+                      {t("备份中的")} {mergeInspection.incomingCounts.entries}{" "}
+                      {t("条 Moment、")}
+                      {mergeInspection.incomingCounts.comments} {t("条评论和")}
                       {mergeInspection.incomingCounts.media}{" "}
-                      个媒体记录会成为完整站点。站内账户也会整体换成备份里的{" "}
-                      {mergeInspection.incomingCounts.users} 个，现在的账户与
+                      {t(
+                        "个媒体记录会成为完整站点。站内账户也会整体换成备份里的",
+                      )}{" "}
+                      {mergeInspection.incomingCounts.users}{" "}
+                      {t("个，现在的账户与")}
                       {mergeInspection.replacement.counts.identities}{" "}
-                      个已关联登录方式随之消失。
+                      {t("个已关联登录方式随之消失。")}
                     </Dialog.Description>
                     <div className={styles.dialogImpact}>
                       <div>
-                        <span>备份内容</span>
+                        <span>{t("备份内容")}</span>
                         <strong>
-                          {mergeInspection.incomingCounts.entries} Moment ·{" "}
-                          {mergeInspection.incomingCounts.comments} 评论 ·{" "}
-                          {mergeInspection.incomingCounts.users} 账户
+                          {mergeInspection.incomingCounts.entries}{" "}
+                          {t("Moment ·")}{" "}
+                          {mergeInspection.incomingCounts.comments}{" "}
+                          {t("评论 ·")} {mergeInspection.incomingCounts.users}{" "}
+                          {t("账户")}
                         </strong>
                       </div>
                       <div>
-                        <span>现有账户</span>
+                        <span>{t("现有账户")}</span>
                         <strong>
-                          {mergeInspection.replacement.counts.users} 个将被替换
+                          {mergeInspection.replacement.counts.users}{" "}
+                          {t("个将被替换")}
                         </strong>
                       </div>
                       <div>
-                        <span>当前独有</span>
+                        <span>{t("当前独有")}</span>
                         <strong>
-                          {mergeInspection.review.local_only.total} 项将移除
+                          {mergeInspection.review.local_only.total}{" "}
+                          {t("项将移除")}
                         </strong>
                       </div>
                       <div>
-                        <span>容量</span>
+                        <span>{t("容量")}</span>
                         <strong>
                           {mergeInspection.disk.spaceOK
-                            ? "检查通过"
-                            : "空间不足"}
+                            ? t("检查通过")
+                            : t("空间不足")}
                         </strong>
                       </div>
                     </div>
                     <p className={styles.dialogRisk}>
-                      <strong>服务器会先自动备份当前站点。</strong>
-                      如果你在本次审阅后又发布或修改了内容，服务器会拒绝恢复并要求重新检查。
+                      <strong>{t("服务器会先自动备份当前站点。")}</strong>
+                      {t(
+                        "如果你在本次审阅后又发布或修改了内容，服务器会拒绝恢复并要求重新检查。",
+                      )}
                     </p>
                     <div className={styles.dialogActions}>
                       <Dialog.Close className={styles.secondaryButton}>
-                        返回检查
+                        {t("返回检查")}
                       </Dialog.Close>
                       <button
                         aria-busy={restoreState === "running"}
@@ -2161,7 +2262,7 @@ export function BackupRestore({
                         }}
                         type="button"
                       >
-                        确认完全替换
+                        {t("确认完全替换")}
                       </button>
                     </div>
                   </Dialog.Popup>

@@ -1,3 +1,4 @@
+import { t } from "../../../i18n";
 import { formatMomentDate } from "../../posts/dates";
 
 /**
@@ -62,16 +63,18 @@ export function saveStatusLabel(
 ): string {
   switch (state.kind) {
     case "idle":
-      return "草稿";
+      return t("草稿");
     case "dirty":
-      return "草稿 · 有改动未保存";
+      return t("草稿 · 有改动未保存");
     case "saving":
-      return "草稿 · 正在保存…";
+      return t("草稿 · 正在保存…");
     case "saved":
-      return `草稿 · ${formatMomentDate(state.at, timezone, now).relative}保存`;
+      return t("草稿 · {{value1}}保存", {
+        value1: formatMomentDate(state.at, timezone, now).relative,
+      });
     case "failed":
-      return `草稿 · ${state.message}`;
+      return t("草稿 · {{value1}}", { value1: state.message });
     case "conflict":
-      return "草稿 · 别处改过了";
+      return t("草稿 · 别处改过了");
   }
 }

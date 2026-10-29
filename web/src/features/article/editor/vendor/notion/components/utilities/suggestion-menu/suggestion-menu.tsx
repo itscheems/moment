@@ -1,5 +1,7 @@
 "use client";
 
+import { useTranslation } from "react-i18next";
+
 import { useCallback, useEffect, useRef, useState } from "react";
 import { flip, offset, shift, size } from "@floating-ui/react";
 import { PluginKey } from "@tiptap/pm/state";
@@ -41,6 +43,8 @@ export const SuggestionMenu = ({
   pluginKey = SuggestionPluginKey,
   ...internalSuggestionProps
 }: SuggestionMenuProps) => {
+  const { t } = useTranslation();
+
   const { editor } = useTiptapEditor(providedEditor);
 
   const [show, setShow] = useState<boolean>(false);
@@ -272,7 +276,7 @@ export const SuggestionMenu = ({
       data-selector={selector}
       className="tiptap-suggestion-menu"
       role="listbox"
-      aria-label="Suggestions"
+      aria-label={t("Suggestions")}
       onPointerDown={(e) => e.preventDefault()}
     >
       {children({

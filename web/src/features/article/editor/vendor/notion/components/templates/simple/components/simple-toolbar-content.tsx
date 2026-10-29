@@ -1,4 +1,7 @@
 "use client";
+
+import { t } from "../../../../../../../../../i18n";
+
 // --- UI Primitives ---
 import { Button } from "@notion/components/primitives/button";
 import { Spacer } from "@notion/components/primitives/spacer";
@@ -132,7 +135,7 @@ export const MobileToolbarContent = ({
 }) => (
   <>
     <ToolbarGroup>
-      <Button variant="ghost" aria-label="返回格式工具" onClick={onBack}>
+      <Button variant="ghost" aria-label={t("返回格式工具")} onClick={onBack}>
         <ArrowLeftIcon className="tiptap-button-icon" />
         {type === "highlighter" ? (
           <HighlighterIcon className="tiptap-button-icon" />

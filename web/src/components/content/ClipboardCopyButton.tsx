@@ -1,3 +1,5 @@
+import { t } from "../../i18n";
+import { useTranslation } from "react-i18next";
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import {
@@ -13,7 +15,7 @@ import { CODE_COPY_TIMEOUT, CODE_COPY_TOASTER } from "./CodeCopyFeedback";
 export function ClipboardCopyButton({
   source,
   label = "Copy",
-  errorLabel = "暂时无法复制所选文字",
+  errorLabel = t("暂时无法复制所选文字"),
   onCopied,
   className,
   ...props
@@ -23,6 +25,8 @@ export function ClipboardCopyButton({
   errorLabel?: string;
   onCopied?: () => void;
 }) {
+  const { t } = useTranslation();
+
   const [copied, setCopied] = useState(false);
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const mounted = useRef(true);
@@ -44,7 +48,7 @@ export function ClipboardCopyButton({
       });
       return;
     }
-    toast("已复制到剪贴板", {
+    toast(t("已复制到剪贴板"), {
       toasterId: CODE_COPY_TOASTER,
       duration: CODE_COPY_TIMEOUT,
     });
@@ -60,7 +64,7 @@ export function ClipboardCopyButton({
       type="button"
       variant="ghost"
       className={`clipboard-copy-feedback ${className ?? ""}`}
-      aria-label={copied ? "已复制" : label}
+      aria-label={copied ? t("已复制") : t(label)}
       data-copied={copied || undefined}
       disabled={typeof source === "string" && !source}
       onClick={() => void copy()}

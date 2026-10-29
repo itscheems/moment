@@ -1,3 +1,6 @@
+import { LanguageSettings } from "./LanguageSettings";
+import { t } from "../../i18n";
+import { useTranslation } from "react-i18next";
 import { useLoginNavigation } from "../auth/loginNavigation";
 import { CredentialConfirmation } from "./CredentialConfirmation";
 import { useEffect, useState, type FormEvent } from "react";
@@ -23,10 +26,18 @@ import forms from "../../components/Forms.module.css";
 import styles from "./Settings.module.css";
 
 const titles: Record<SettingsSection, string> = {
-  account: "账号",
-  site: "站点",
-  members: "成员",
-  backups: "备份",
+  get account() {
+    return t("账号");
+  },
+  get site() {
+    return t("站点");
+  },
+  get members() {
+    return t("成员");
+  },
+  get backups() {
+    return t("备份");
+  },
 };
 
 function SiteConfiguration({
@@ -38,6 +49,8 @@ function SiteConfiguration({
   onSaved: (site: SiteIdentity) => void;
   active: boolean;
 }) {
+  const { t } = useTranslation();
+
   const { session, expireIfInvalidSession } = useSession();
   const [title, setTitle] = useState(site.title);
   const [timezone, setTimezone] = useState(site.timezone);
@@ -58,7 +71,7 @@ function SiteConfiguration({
       })
       .catch((next: unknown) => {
         if (!controller.signal.aborted && !expireIfInvalidSession(next))
-          setError("展示账号列表暂时无法读取。");
+          setError(t("展示账号列表暂时无法读取。"));
       });
     return () => controller.abort();
   }, [active, expireIfInvalidSession]);
@@ -80,14 +93,14 @@ function SiteConfiguration({
         instanceId: site.instanceId,
         instanceInitializedAt: site.instanceInitializedAt,
       });
-      setNotice("站点设置已保存。");
+      setNotice(t("站点设置已保存。"));
     } catch (next) {
       if (!expireIfInvalidSession(next))
         setError(
           next instanceof PublicApiError &&
             next.code === "REAUTHENTICATION_REQUIRED"
-            ? "身份验证未完成，操作未执行。"
-            : "站点设置没有保存。请检查时区和网址后重试。",
+            ? t("身份验证未完成，操作未执行。")
+            : t("站点设置没有保存。请检查时区和网址后重试。"),
         );
     } finally {
       setPending(false);
@@ -105,30 +118,30 @@ function SiteConfiguration({
         instanceId: site.instanceId,
         instanceInitializedAt: site.instanceInitializedAt,
       });
-      setNotice("首页展示账号已更新，账号权限保持不变。");
+      setNotice(t("首页展示账号已更新，账号权限保持不变。"));
     } catch (next) {
       if (!expireIfInvalidSession(next))
         setError(
           next instanceof PublicApiError &&
             next.code === "REAUTHENTICATION_REQUIRED"
-            ? "身份验证未完成，操作未执行。"
-            : "展示账号没有更改，请选择已启用的账号后重试。",
+            ? t("身份验证未完成，操作未执行。")
+            : t("展示账号没有更改，请选择已启用的账号后重试。"),
         );
     } finally {
       setPending(false);
     }
   }
   return (
-    <section aria-label="站点设置">
+    <section aria-label={t("站点设置")}>
       <header className={styles.sectionHeader}>
-        <h2>站点设置</h2>
+        <h2>{t("站点设置")}</h2>
       </header>
       <form
         className={styles.settingsForm}
         onSubmit={(event) => void save(event)}
       >
         <label>
-          站点标题
+          {t("站点标题")}
           <input
             disabled={pending}
             maxLength={120}
@@ -138,21 +151,21 @@ function SiteConfiguration({
           />
         </label>
         <label>
-          时区
+          {t("时区")}
           <input
             disabled={pending}
             onChange={(event) => setTimezone(event.target.value)}
-            placeholder="Asia/Shanghai"
+            placeholder={t("Asia/Shanghai")}
             required
             value={timezone}
           />
         </label>
         <label>
-          公开网址
+          {t("公开网址")}
           <input
             disabled={pending}
             onChange={(event) => setUrl(event.target.value)}
-            placeholder="https://example.com"
+            placeholder={t("https://example.com")}
             type="url"
             value={url}
           />
@@ -164,23 +177,25 @@ function SiteConfiguration({
             onChange={(event) => setComments(event.target.checked)}
             type="checkbox"
           />
-          允许新评论
+          {t("允许新评论")}
         </label>
         <button
           className={forms.primaryButton}
           disabled={!session || pending}
           type="submit"
         >
-          {pending ? "正在保存…" : "保存站点设置"}
+          {pending ? t("正在保存…") : t("保存站点设置")}
         </button>
       </form>
       <div className={styles.siteProfile}>
-        <h3>首页展示账号</h3>
+        <h3>{t("首页展示账号")}</h3>
         <p>
-          选择首页使用的昵称、简介和图片。展示账号可以是普通成员，其管理权限不会因此变化。
+          {t(
+            "选择首页使用的昵称、简介和图片。展示账号可以是普通成员，其管理权限不会因此变化。",
+          )}
         </p>
         <label>
-          展示账号
+          {t("展示账号")}
           <select
             disabled={pending || roster.length === 0}
             onChange={(event) => setProfile(event.target.value)}
@@ -201,7 +216,7 @@ function SiteConfiguration({
           onClick={() => void selectProfile()}
           type="button"
         >
-          更新展示账号
+          {t("更新展示账号")}
         </button>
       </div>
       {error ? (
@@ -221,6 +236,8 @@ export function SettingsPage({
   site: SiteIdentity;
   onSaved: (site: SiteIdentity) => void;
 }) {
+  const { t } = useTranslation();
+
   const { requestLogin } = useLoginNavigation();
   const { account, applyAccount } = useSession();
   const [restoreBusy, setRestoreBusy] = useState(false);
@@ -245,7 +262,11 @@ export function SettingsPage({
   }
   return (
     <div className={styles.settingsPage}>
-      <nav aria-label="设置分类" className={styles.settingsNav} ref={navRef}>
+      <nav
+        aria-label={t("设置分类")}
+        className={styles.settingsNav}
+        ref={navRef}
+      >
         {sections.map((item) => (
           <a
             aria-current={section === item ? "location" : undefined}
@@ -265,24 +286,25 @@ export function SettingsPage({
       {account ? <CredentialConfirmation key={account.userId} /> : null}
       <div className={styles.settingsContent} ref={contentRef}>
         {section !== "account" && !admin ? (
-          <p role="alert">此设置需要管理员权限。</p>
+          <p role="alert">{t("此设置需要管理员权限。")}</p>
         ) : null}
         {account ? (
           <div className={styles.settingsGroup} id="settings-account">
-            <section aria-label="个人资料">
+            <section aria-label={t("个人资料")}>
               <header className={styles.sectionHeader}>
-                <h2>个人资料</h2>
+                <h2>{t("个人资料")}</h2>
               </header>
               <p>
                 {account.displayName} @{account.username}
               </p>
               <ProfileEditor account={account} onSaved={adopt} />
             </section>
+            <LanguageSettings />
             <PersonalData key={account.userId} />
             <AccountSecurity instanceId={site.instanceId} />
-            <section aria-label="登录方式与会话">
+            <section aria-label={t("登录方式与会话")}>
               <header className={styles.sectionHeader}>
-                <h2>登录方式与会话</h2>
+                <h2>{t("登录方式与会话")}</h2>
               </header>
               <AccountAccess
                 timezone={site.timezone}
@@ -316,7 +338,7 @@ export function SettingsPage({
           </div>
         ) : null}
         {restoreBusy && section === "backups" ? (
-          <p aria-live="polite">正在检查备份状态…</p>
+          <p aria-live="polite">{t("正在检查备份状态…")}</p>
         ) : null}
       </div>
     </div>

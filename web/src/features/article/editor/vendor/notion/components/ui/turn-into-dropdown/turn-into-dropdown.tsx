@@ -1,5 +1,9 @@
 "use client";
 
+import { t } from "../../../../../../../../i18n";
+
+import { useTranslation } from "react-i18next";
+
 import { forwardRef } from "react";
 
 // --- Tiptap UI ---
@@ -43,6 +47,8 @@ export interface TurnIntoDropdownContentProps {
 export const TurnIntoDropdownContent: React.FC<
   TurnIntoDropdownContentProps
 > = ({ blockTypes, useCardLayout = true }) => {
+  const { t } = useTranslation();
+
   const filteredOptions = getFilteredBlockTypeOptions(blockTypes);
 
   const renderButtons = () => (
@@ -62,7 +68,7 @@ export const TurnIntoDropdownContent: React.FC<
     <Card>
       <CardBody>
         <CardItemGroup>
-          <CardGroupLabel>Turn into</CardGroupLabel>
+          <CardGroupLabel>{t("Turn into")}</CardGroupLabel>
           {renderButtons()}
         </CardItemGroup>
       </CardBody>
@@ -205,14 +211,14 @@ export const TurnIntoDropdown = forwardRef<
             role="button"
             tabIndex={-1}
             aria-label={label}
-            tooltip="Turn into"
+            tooltip={t("Turn into")}
             {...buttonProps}
             ref={ref}
           >
             {children ?? (
               <>
                 <span className="tiptap-button-text">
-                  {activeBlockType?.label || "Text"}
+                  {activeBlockType?.label || t("Text")}
                 </span>
                 <Icon className="tiptap-button-dropdown-small" />
               </>

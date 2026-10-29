@@ -68,29 +68,29 @@ describe("crop preview work", () => {
     vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:saved");
     render(<Harness />);
     fireEvent.click(screen.getByRole("button", { name: "Add descriptions" }));
-    fireEvent.click(screen.getByRole("tab", { name: "Crop media" }));
+    fireEvent.click(screen.getByRole("tab", { name: "裁切媒体" }));
     fireEvent.click(screen.getByRole("button", { name: "Choose crop" }));
-    fireEvent.click(
-      screen.getByRole("tab", { name: "Edit image description" }),
-    );
-    const preview = screen.getByRole("img", { name: "Image 1 of 2" });
+    fireEvent.click(screen.getByRole("tab", { name: "编辑图片描述" }));
+    const preview = screen.getByRole("img", { name: "第 1 项图片，共 2 项" });
     expect(preview).toHaveAttribute("viewBox", "100 50 300 300");
     const source = preview.querySelector("image")!;
     expect(source).toHaveAttribute("href", "blob:first");
     expect(source).toHaveAttribute("width", "1200");
     expect(source).toHaveAttribute("height", "1000");
     for (let i = 0; i < 6; i++) {
-      fireEvent.click(screen.getByRole("tab", { name: "Crop media" }));
+      fireEvent.click(screen.getByRole("tab", { name: "裁切媒体" }));
       expect(preview).toBeInTheDocument();
-      fireEvent.click(
-        screen.getByRole("tab", { name: "Edit image description" }),
+      fireEvent.click(screen.getByRole("tab", { name: "编辑图片描述" }));
+      expect(screen.getByRole("img", { name: "第 1 项图片，共 2 项" })).toBe(
+        preview,
       );
-      expect(screen.getByRole("img", { name: "Image 1 of 2" })).toBe(preview);
     }
-    fireEvent.click(screen.getByRole("button", { name: "Next image" }));
-    fireEvent.click(screen.getByRole("button", { name: "Previous image" }));
+    fireEvent.click(screen.getByRole("button", { name: "下一张图片" }));
+    fireEvent.click(screen.getByRole("button", { name: "上一张图片" }));
     expect(
-      screen.getByRole("img", { name: "Image 1 of 2" }).querySelector("image"),
+      screen
+        .getByRole("img", { name: "第 1 项图片，共 2 项" })
+        .querySelector("image"),
     ).toHaveAttribute("href", "blob:first");
     expect(screen.queryByText("Preparing media…")).not.toBeInTheDocument();
     expect(create).not.toHaveBeenCalled();

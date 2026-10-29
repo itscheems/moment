@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import {
   createContext,
   useContext,
@@ -38,6 +39,8 @@ export function ProfileHeader({
   userId: string;
   title: string;
 }) {
+  const { t } = useTranslation();
+
   const setHeader = useContext(ProfileHeaderContext);
   const { account } = useSession();
   const [postCount, setPostCount] = useState<number | null>(null);
@@ -81,10 +84,10 @@ export function ProfileHeader({
   return (
     <HeaderActions>
       <InternalLink
-        aria-label="搜索 Moment"
+        aria-label={t("搜索 Moment")}
         className={styles.headerSearch}
         href="/search"
-        title="搜索 Moment"
+        title={t("搜索 Moment")}
       >
         <Icon name="search" variant="navigation" />
       </InternalLink>

@@ -1,5 +1,8 @@
 "use client";
 
+import { t } from "../../../../../../../../i18n";
+import { useTranslation } from "react-i18next";
+
 import { useEffect, useMemo, useState } from "react";
 import type { Editor } from "@tiptap/react";
 
@@ -50,17 +53,23 @@ export interface ListOption {
 
 export const listOptions: ListOption[] = [
   {
-    label: "Bullet List",
+    get label() {
+      return t("Bullet List");
+    },
     type: "bulletList",
     icon: ListIcon,
   },
   {
-    label: "Ordered List",
+    get label() {
+      return t("Ordered List");
+    },
     type: "orderedList",
     icon: ListOrderedIcon,
   },
   {
-    label: "Task List",
+    get label() {
+      return t("Task List");
+    },
     type: "taskList",
     icon: ListTodoIcon,
   },
@@ -165,6 +174,8 @@ export function getActiveListType(
  * ```
  */
 export function useListDropdownMenu(config?: UseListDropdownMenuConfig) {
+  const { t } = useTranslation();
+
   const {
     editor: providedEditor,
     types = ["bulletList", "orderedList", "taskList"],
@@ -214,7 +225,7 @@ export function useListDropdownMenu(config?: UseListDropdownMenuConfig) {
     canToggle: canToggleAny,
     types,
     filteredLists,
-    label: "List",
+    label: t("List"),
     Icon: activeList ? listIcons[activeList.type] : ListIcon,
   };
 }

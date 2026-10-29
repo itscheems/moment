@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import { Dialog } from "../../components/Dialog";
 import { useEffect, useRef, useState, type ComponentProps } from "react";
 
@@ -47,6 +48,8 @@ export function ShareCardDialog({
   finalFocus?: ComponentProps<typeof Dialog.Popup>["finalFocus"];
   onOpenChangeComplete?: (open: boolean) => void;
 }) {
+  const { t } = useTranslation();
+
   const [stage, setStage] = useState<Stage>({ kind: "drawing" });
   const [busy, setBusy] = useState(false);
   useDocumentScrollLock(open);
@@ -82,7 +85,7 @@ export function ShareCardDialog({
             message:
               error instanceof ShareCardTooLongError
                 ? error.message
-                : "没能生成图片。可以关掉重试。",
+                : t("没能生成图片。可以关掉重试。"),
           });
       });
     return () => {
@@ -104,7 +107,7 @@ export function ShareCardDialog({
     link.href = stage.url;
     link.download = fileName(resolvedInput.current);
     link.click();
-    notify("图片已保存");
+    notify(t("图片已保存"));
     onOpenChange(false);
   };
 
@@ -117,12 +120,12 @@ export function ShareCardDialog({
       await navigator.clipboard.write([
         new ClipboardItem({ "image/png": Promise.resolve(stage.blob) }),
       ]);
-      notify("图片已复制");
+      notify(t("图片已复制"));
       onOpenChange(false);
     } catch {
       // Firefox writes text and nothing else, and every browser refuses on an
       // insecure origin. Saying which is not useful; saying what still works is.
-      notify("这个浏览器不能复制图片，可以先保存再发送", { type: "error" });
+      notify(t("这个浏览器不能复制图片，可以先保存再发送"), { type: "error" });
     } finally {
       setBusy(false);
     }
@@ -139,24 +142,26 @@ export function ShareCardDialog({
         <Dialog.Viewport className={styles.viewport}>
           <Dialog.Popup className={styles.popup} finalFocus={finalFocus}>
             <div
-              aria-label="分享图片预览区域"
+              aria-label={t("分享图片预览区域")}
               className={styles.body}
               role="region"
               tabIndex={0}
             >
               <div className={styles.header}>
-                <Dialog.Title className={styles.title}>分享图片</Dialog.Title>
-                <Dialog.Close aria-label="关闭" className={styles.close}>
+                <Dialog.Title className={styles.title}>
+                  {t("分享图片")}
+                </Dialog.Title>
+                <Dialog.Close aria-label={t("关闭")} className={styles.close}>
                   <Icon name="close" />
                 </Dialog.Close>
               </div>
               <Dialog.Description className={styles.description}>
-                预览此帖子作为图片分享时的外观。
+                {t("预览此帖子作为图片分享时的外观。")}
               </Dialog.Description>
               <div className={styles.stage}>
                 {stage.kind === "ready" ? (
                   <img
-                    alt="分享图片预览"
+                    alt={t("分享图片预览")}
                     className={styles.preview}
                     src={stage.url}
                   />
@@ -166,7 +171,7 @@ export function ShareCardDialog({
                   </p>
                 ) : (
                   <p aria-busy="true" className={styles.state}>
-                    正在生成…
+                    {t("正在生成…")}
                   </p>
                 )}
               </div>
@@ -179,7 +184,7 @@ export function ShareCardDialog({
                   onClick={() => void copy()}
                   type="button"
                 >
-                  复制图片
+                  {t("复制图片")}
                 </button>
               ) : null}
               <button
@@ -188,7 +193,7 @@ export function ShareCardDialog({
                 onClick={save}
                 type="button"
               >
-                保存到本地
+                {t("保存到本地")}
               </button>
             </div>
           </Dialog.Popup>

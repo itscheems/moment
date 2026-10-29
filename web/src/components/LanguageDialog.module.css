@@ -1,0 +1,147 @@
+.backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  background: rgb(0 0 0 / 45%);
+}
+.viewport {
+  position: fixed;
+  inset: 0;
+  z-index: 91;
+  display: grid;
+  place-items: center;
+  padding: 1rem;
+}
+.dialog {
+  inline-size: min(600px, 100%);
+  max-block-size: calc(100dvh - 2rem);
+  overflow-y: auto;
+  border-radius: 16px;
+  color: var(--text-primary);
+  background: var(--surface-elevated);
+  outline: none;
+}
+.header {
+  padding: 0.5rem;
+}
+.close {
+  inline-size: 44px;
+  block-size: 44px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  color: inherit;
+  background: transparent;
+  cursor: pointer;
+}
+.close:hover {
+  background: var(--surface-hover);
+}
+.close svg {
+  inline-size: 20px;
+  block-size: 20px;
+}
+.content {
+  max-inline-size: 440px;
+  margin-inline: auto;
+  padding: 0 1rem 2rem;
+}
+.title {
+  margin: 0 0 0.75rem;
+  font-size: 31px;
+  line-height: 36px;
+  font-weight: 700;
+}
+.description {
+  margin: 0 0 1.5rem;
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+.options {
+  margin: 0 0 2rem;
+  padding: 0;
+  border: 0;
+}
+.legend {
+  position: absolute;
+  inline-size: 1px;
+  block-size: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+}
+.option {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  min-block-size: 76px;
+  padding: 0.75rem 0;
+  cursor: pointer;
+}
+.option span {
+  display: grid;
+  gap: 0.25rem;
+}
+.option strong {
+  font-size: 1rem;
+}
+.option small {
+  color: var(--text-secondary);
+}
+.option input {
+  inline-size: 22px;
+  block-size: 22px;
+  flex-shrink: 0;
+  accent-color: var(--accent);
+}
+.save,
+.cancel {
+  inline-size: 100%;
+  min-block-size: 52px;
+  border-radius: 999px;
+  padding: 0.75rem 1rem;
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+.save {
+  border: 0;
+  background: var(--text-primary);
+  color: var(--surface-elevated);
+}
+.save:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.cancel {
+  margin-block-start: 0.75rem;
+  border: 1px solid var(--border-subtle);
+  background: transparent;
+  color: var(--text-primary);
+}
+.error {
+  color: var(--danger);
+  line-height: 1.5;
+}
+.close:focus-visible,
+.save:focus-visible,
+.cancel:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+@media (max-width: 600px) {
+  .viewport {
+    padding: 0;
+  }
+  .dialog {
+    inline-size: 100%;
+    min-block-size: 100dvh;
+    max-block-size: 100dvh;
+    border-radius: 0;
+  }
+  .content {
+    padding-inline: 1.5rem;
+  }
+}

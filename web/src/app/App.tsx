@@ -1,3 +1,6 @@
+import { t } from "../i18n";
+import { useTranslation } from "react-i18next";
+import { LanguageProvider } from "../i18n/LanguageProvider";
 import { accountCacheScope } from "../features/auth/accountScope";
 import { Dialog } from "../components/Dialog";
 import {
@@ -71,7 +74,7 @@ const fallbackSite: SiteIdentity = {
   profileUserId: "",
   username: "",
   displayName: "Moment",
-  title: "Moment",
+  title: t("Moment"),
   bio: "",
   timezone: "UTC",
   publicBaseUrl: null,
@@ -127,6 +130,8 @@ function routeSearchKey(search: string): string {
 }
 
 function PublicApp() {
+  const { t } = useTranslation();
+
   const location = useNavigation();
   const entryRoute = resolveRoute(location.pathname);
   const authPage = entryRoute.id;
@@ -431,6 +436,7 @@ function PublicApp() {
     requestedRoute,
     route,
     site.title,
+    t,
   ]);
 
   useEffect(() => {
@@ -558,10 +564,12 @@ function PublicApp() {
         state={state}
       >
         {siteRecovering ? (
-          <ReadRecoveryToast>正在自动重新获取站点资料…</ReadRecoveryToast>
+          <ReadRecoveryToast>
+            {t("正在自动重新获取站点资料…")}
+          </ReadRecoveryToast>
         ) : siteError ? (
           <div className={styles.siteError} role="status">
-            <span>站点资料暂时无法获取。</span>
+            <span>{t("站点资料暂时无法获取。")}</span>
           </div>
         ) : null}
         {hasTimeline ? (
@@ -595,12 +603,12 @@ function PublicApp() {
           <div className={styles.siteError} role="status">
             <span>
               {auth.state === "unavailable"
-                ? "暂时无法确认登录身份。"
-                : "正在确认登录身份…"}
+                ? t("暂时无法确认登录身份。")
+                : t("正在确认登录身份…")}
             </span>
             {auth.state === "unavailable" ? (
               <button type="button" onClick={auth.retryStatus}>
-                重试
+                {t("重试")}
               </button>
             ) : null}
           </div>
@@ -702,7 +710,7 @@ function PublicApp() {
             <Suspense
               fallback={
                 <p className={styles.editorLoading} role="status">
-                  正在打开文章…
+                  {t("正在打开文章…")}
                 </p>
               }
             >
@@ -711,8 +719,8 @@ function PublicApp() {
           ) : (
             <p role="status">
               {auth.account
-                ? "账号获准发布后即可管理文章。"
-                : "请先登录以管理自己的文章。"}
+                ? t("账号获准发布后即可管理文章。")
+                : t("请先登录以管理自己的文章。")}
             </p>
           )
         ) : null}
@@ -805,7 +813,7 @@ function PublicApp() {
                         on the way back. */}
                     {draftsOpen ? (
                       <button
-                        aria-label="返回发布"
+                        aria-label={t("返回发布")}
                         className={styles.composeDialogIcon}
                         key="drafts-back"
                         onClick={closeDrafts}
@@ -816,7 +824,7 @@ function PublicApp() {
                       </button>
                     ) : (
                       <button
-                        aria-label="关闭发布"
+                        aria-label={t("关闭发布")}
                         className={styles.composeDialogIcon}
                         key="compose-close"
                         onClick={requestOverlayComposerClose}
@@ -830,7 +838,7 @@ function PublicApp() {
                     <Dialog.Title
                       className={draftsOpen ? undefined : styles.srOnly}
                     >
-                      {draftsOpen ? "草稿" : "发布 Moment"}
+                      {draftsOpen ? t("草稿") : t("发布 Moment")}
                     </Dialog.Title>
                     {draftsOpen ? (
                       keptDrafts > 0 ? (
@@ -840,7 +848,7 @@ function PublicApp() {
                           onClick={() => setDraftsEditing((on) => !on)}
                           type="button"
                         >
-                          {draftsEditing ? "完成" : "编辑"}
+                          {draftsEditing ? t("完成") : t("编辑")}
                         </button>
                       ) : null
                     ) : (
@@ -851,14 +859,14 @@ function PublicApp() {
                         ref={draftsTriggerRef}
                         type="button"
                       >
-                        草稿
+                        {t("草稿")}
                         {keptDrafts > 0 ? <small>{keptDrafts}</small> : null}
                       </button>
                     )}
                   </header>
                 ) : (
                   <Dialog.Title className={styles.srOnly}>
-                    发布 Moment
+                    {t("发布 Moment")}
                   </Dialog.Title>
                 )}
                 {!publishingAvailable ? (
@@ -918,13 +926,13 @@ function PublicApp() {
           <Dialog.Backdrop className={styles.exitBackdrop} />
           <Dialog.Viewport className={styles.exitViewport}>
             <Dialog.Popup className={styles.exitDialog}>
-              <Dialog.Title>退出发布？</Dialog.Title>
+              <Dialog.Title>{t("退出发布？")}</Dialog.Title>
               <Dialog.Description>
-                文字可以保留为这台浏览器里的草稿；已添加的图片不会保存。
+                {t("文字可以保留为这台浏览器里的草稿；已添加的图片不会保存。")}
               </Dialog.Description>
               <div className={styles.exitActions}>
                 <Dialog.Close className={styles.exitSecondary}>
-                  继续编辑
+                  {t("继续编辑")}
                 </Dialog.Close>
                 <button
                   className={styles.exitSecondary}
@@ -935,7 +943,7 @@ function PublicApp() {
                   }}
                   type="button"
                 >
-                  保留草稿并退出
+                  {t("保留草稿并退出")}
                 </button>
                 <button
                   className={styles.exitDanger}
@@ -946,7 +954,7 @@ function PublicApp() {
                   }}
                   type="button"
                 >
-                  丢弃并退出
+                  {t("丢弃并退出")}
                 </button>
               </div>
             </Dialog.Popup>
@@ -995,7 +1003,9 @@ export function App() {
         <FeedbackProvider>
           <NavigationProvider>
             <SessionProvider>
-              <PublicApp />
+              <LanguageProvider>
+                <PublicApp />
+              </LanguageProvider>
             </SessionProvider>
           </NavigationProvider>
         </FeedbackProvider>

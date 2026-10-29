@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import {
   useCallback,
   useEffect,
@@ -130,6 +131,8 @@ export function TimelinePage({
   canPublish?: boolean;
   archiveJump?: ArchiveJumpRequest | null;
 }) {
+  const { t } = useTranslation();
+
   const {
     pathname,
     replaceTimelineProgress,
@@ -760,7 +763,7 @@ export function TimelinePage({
   return (
     <>
       <section
-        aria-label="公开时间流"
+        aria-label={t("公开时间流")}
         className={styles.timelineList}
         ref={listRef}
       >
@@ -769,11 +772,11 @@ export function TimelinePage({
           <ReadRecoveryToast active={enabled} />
         ) : null}
         <p aria-live="polite" className={styles.srOnly}>
-          已加载 {posts.length} 条 Moment
+          {t("已加载")} {posts.length} {t("条 Moment")}
         </p>
         {newerError ? (
           <ReadRecoveryToast active={enabled} error={newerError}>
-            正在重新获取更新的内容…
+            {t("正在重新获取更新的内容…")}
           </ReadRecoveryToast>
         ) : null}
         {prevCursor && !newerError ? (
@@ -781,7 +784,7 @@ export function TimelinePage({
             className={styles.moreRow}
             cursor={prevCursor}
             enabled={settled}
-            label="加载更新的 Moment"
+            label={t("加载更新的 Moment")}
             loading={loadingNewer || loadingInitial}
             onLoad={(source) => void loadNewer(source)}
           />
@@ -802,7 +805,7 @@ export function TimelinePage({
         ))}
         {moreError ? (
           <ReadRecoveryToast active={enabled} error={moreError}>
-            正在重新获取后续内容…
+            {t("正在重新获取后续内容…")}
           </ReadRecoveryToast>
         ) : null}
         {nextCursor && !moreError ? (
@@ -810,12 +813,12 @@ export function TimelinePage({
             className={styles.moreRow}
             cursor={nextCursor}
             enabled={archiveJump === null || settled}
-            label="加载更早的 Moment"
+            label={t("加载更早的 Moment")}
             loading={loadingMore || loadingInitial}
             onLoad={(source) => void loadMore(source)}
           />
         ) : !nextCursor && !moreError ? (
-          <p className={styles.endMark}>已经走到这段时间流的起点</p>
+          <p className={styles.endMark}>{t("已经走到这段时间流的起点")}</p>
         ) : null}
       </section>
       {replyDialog}

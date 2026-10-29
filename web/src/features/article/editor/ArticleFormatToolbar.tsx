@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import { MapCardEditor } from "../../maps/MapCardEditor";
 import { mapCardPayload } from "../../maps/types";
 import { closeHistory } from "@tiptap/pm/history";
@@ -25,6 +26,8 @@ export function ArticleFormatToolbar({
   editor: Editor;
   loading?: boolean;
 }) {
+  const { t } = useTranslation();
+
   const isMobile = useIsBreakpoint("max", 481);
   const { height } = useWindowSize();
   const [mobileView, setMobileView] = useState<"main" | "highlighter" | "link">(
@@ -72,7 +75,7 @@ export function ArticleFormatToolbar({
   const toolbar = (
     <Toolbar
       ref={toolbarRef}
-      aria-label="文章格式"
+      aria-label={t("文章格式")}
       aria-disabled={loading}
       inert={loading}
       tabIndex={0}

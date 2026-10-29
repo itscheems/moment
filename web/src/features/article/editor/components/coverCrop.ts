@@ -1,3 +1,4 @@
+import { t } from "../../../../i18n";
 export const ARTICLE_COVER_ASPECT = 5 / 2;
 const MAX_COVER_WIDTH = 1600;
 
@@ -23,7 +24,7 @@ export function coverCropGeometry(
     imageWidth <= 0 ||
     imageHeight <= 0
   ) {
-    throw new Error("没有可用的裁切区域，请重新选择图片。");
+    throw new Error(t("没有可用的裁切区域，请重新选择图片。"));
   }
   const left = Math.max(0, area.x);
   const top = Math.max(0, area.y);
@@ -33,7 +34,7 @@ export function coverCropGeometry(
   const height = width / ARTICLE_COVER_ASPECT;
   // Multiples of 5 × 2 produce an exact ratio even for small or fractional crops.
   const unit = Math.floor(Math.min(width / 5, MAX_COVER_WIDTH / 5) + 1e-9);
-  if (unit < 1) throw new Error("图片太小，无法生成封面，请换一张图片。");
+  if (unit < 1) throw new Error(t("图片太小，无法生成封面，请换一张图片。"));
   return {
     source: {
       x: left + (right - left - width) / 2,
@@ -69,7 +70,7 @@ async function loadImage(url: string, signal?: AbortSignal) {
     };
     image.onerror = () => {
       clean();
-      reject(new Error("无法读取这张图片，请选择 JPEG、PNG 或 WebP 图片。"));
+      reject(new Error(t("无法读取这张图片，请选择 JPEG、PNG 或 WebP 图片。")));
     };
     if (signal?.aborted) {
       abort();
@@ -102,7 +103,7 @@ export async function createCoverCrop(
     canvas.width = geometry.width;
     canvas.height = geometry.height;
     const context = canvas.getContext("2d");
-    if (!context) throw new Error("无法处理这张图片，请重试。");
+    if (!context) throw new Error(t("无法处理这张图片，请重试。"));
     const source = geometry.source;
     context.drawImage(
       image,
@@ -137,7 +138,7 @@ export async function createCoverCrop(
         (result) =>
           result
             ? resolve(result)
-            : reject(new Error("封面生成没有成功，请重试。")),
+            : reject(new Error(t("封面生成没有成功，请重试。"))),
         mimeType,
         0.92,
       );

@@ -1,3 +1,5 @@
+import { t } from "../../i18n";
+import { useTranslation } from "react-i18next";
 import { AccountName } from "../../components/AccountName";
 import type { ReactNode } from "react";
 import type { PublicAccount } from "../../api/public";
@@ -99,7 +101,7 @@ export function PeopleCard({
   people,
   compact = false,
   error = false,
-  errorMessage = "暂时无法读取账号资料。",
+  errorMessage = t("暂时无法读取账号资料。"),
   onRetry,
 }: {
   title: string;
@@ -109,6 +111,8 @@ export function PeopleCard({
   errorMessage?: string;
   onRetry: () => void;
 }) {
+  const { t } = useTranslation();
+
   return (
     <section
       aria-label={title}
@@ -121,7 +125,7 @@ export function PeopleCard({
         <div className={styles.error} role="status">
           <span>{errorMessage}</span>
           <button type="button" onClick={onRetry}>
-            重试
+            {t("重试")}
           </button>
         </div>
       ) : (

@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import { ArticleCover } from "../../../../components/content/ArticleSheet";
 import styles from "../Editor.module.css";
 
@@ -43,6 +44,8 @@ export function CoverField({
   onPick: () => void;
   onRemove: () => void;
 }) {
+  const { t } = useTranslation();
+
   if (mediaId === null) {
     if (readOnly) return null;
     return (
@@ -50,7 +53,7 @@ export function CoverField({
         <div className={styles.coverStage}>
           <div className={styles.coverAddControl}>
             <button
-              aria-label={busy ? "正在上传封面…" : "添加封面图"}
+              aria-label={busy ? t("正在上传封面…") : t("添加封面图")}
               className={styles.coverAdd}
               disabled={busy}
               onClick={onPick}
@@ -60,7 +63,7 @@ export function CoverField({
             </button>
           </div>
           <p className={styles.coverHint}>
-            建议使用宽高比为 5:2 的图片，以获得最佳效果。
+            {t("建议使用宽高比为 5:2 的图片，以获得最佳效果。")}
           </p>
         </div>
       </figure>
@@ -73,7 +76,7 @@ export function CoverField({
         <div className={styles.coverActions}>
           <button
             className={styles.coverAction}
-            aria-label="更换封面图"
+            aria-label={t("更换封面图")}
             disabled={busy}
             onClick={onPick}
             type="button"
@@ -82,7 +85,7 @@ export function CoverField({
           </button>
           <button
             className={styles.coverAction}
-            aria-label="移除封面图"
+            aria-label={t("移除封面图")}
             disabled={busy}
             onClick={onRemove}
             type="button"

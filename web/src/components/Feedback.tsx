@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import { Toast, type ToastObject } from "@base-ui/react/toast";
 import {
   type CSSProperties,
@@ -102,6 +103,8 @@ function useLoginViewportStyle(active: boolean): CSSProperties | undefined {
 }
 
 function FeedbackViewport() {
+  const { t } = useTranslation();
+
   const { toasts } = Toast.useToastManager<FeedbackData>();
   const cornerToasts = toasts.filter(
     (toast) => toast.data?.placement === "corner",
@@ -138,7 +141,7 @@ function FeedbackViewport() {
               it reads as a link rather than competing with a filled button. */}
           <Toast.Action className={styles.action} />
           <button
-            aria-label="关闭通知"
+            aria-label={t("关闭通知")}
             className={styles.close}
             onClick={() => feedback.close(toast.id)}
             type="button"

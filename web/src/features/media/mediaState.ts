@@ -1,3 +1,4 @@
+import { t } from "../../i18n";
 import { type PostMediaInput } from "../../api/client";
 import { type UploadedMedia } from "../../api/media";
 
@@ -137,22 +138,24 @@ export function releaseDiscardedLocalPreviews(
 
 export function uploadMessage(error: unknown): string {
   if (!(error instanceof PublicApiError))
-    return "媒体没有上传完成。文字和已完成的媒体都已保留，可以重试。";
+    return t("媒体没有上传完成。文字和已完成的媒体都已保留，可以重试。");
   switch (error.code) {
     case "MEDIA_TYPE_UNSUPPORTED":
-      return "媒体格式不受支持，请选择 JPEG、PNG、WebP、GIF、HEIC、MP4 或 QuickTime MOV。";
+      return t(
+        "媒体格式不受支持，请选择 JPEG、PNG、WebP、GIF、HEIC、MP4 或 QuickTime MOV。",
+      );
     case "MEDIA_TOO_LARGE":
-      return "媒体超过大小限制，请移除或压缩后重试。";
+      return t("媒体超过大小限制，请移除或压缩后重试。");
     case "MEDIA_DIMENSIONS_EXCEEDED":
-      return "图片尺寸或 GIF 帧数超过安全限制。";
+      return t("图片尺寸或 GIF 帧数超过安全限制。");
     case "MEDIA_CORRUPT":
-      return "媒体内容无效或与文件类型不一致，请重新选择。";
+      return t("媒体内容无效或与文件类型不一致，请重新选择。");
     case "MEDIA_PROCESSOR_UNAVAILABLE":
-      return "服务器暂时无法处理 HEIC 或视频，请稍后重试。";
+      return t("服务器暂时无法处理 HEIC 或视频，请稍后重试。");
     case "RATE_LIMITED":
-      return "媒体上传得有点快，请稍后重试。";
+      return t("媒体上传得有点快，请稍后重试。");
     default:
-      return "媒体没有上传完成。文字和已完成的媒体都已保留，可以重试。";
+      return t("媒体没有上传完成。文字和已完成的媒体都已保留，可以重试。");
   }
 }
 
@@ -231,14 +234,20 @@ export function mediaValidation(
   items: ComposerMediaItem[],
   maximum = MAX_MEDIA_COUNT,
 ): string | null {
-  if (items.length > maximum) return `最多附加 ${maximum} 张图片。`;
+  if (items.length > maximum)
+    return t("最多附加 {{value1}} 张图片。", {
+      count: maximum,
+      value1: maximum,
+    });
   for (const item of items) {
     if (
       item.altMode === "provided" &&
       (!item.altText.trim() ||
         Array.from(item.altText).length > MAX_ALT_CODE_POINTS)
     ) {
-      return "已选择填写描述的图片，需要 1–1,000 个字符；也可明确改为未描述或装饰图。";
+      return t(
+        "已选择填写描述的图片，需要 1–1,000 个字符；也可明确改为未描述或装饰图。",
+      );
     }
   }
   return null;
@@ -250,21 +259,29 @@ export function fileValidation(
   maximumTotalBytes = MAX_TOTAL_BYTES,
 ): string | null {
   if (!MEDIA_TYPES.has(inferredMediaType(file))) {
-    return `${file.name || "所选文件"} 不是支持的 JPEG、PNG、WebP、GIF、HEIC、MP4 或 QuickTime MOV。`;
+    return t(
+      "{{value1}} 不是支持的 JPEG、PNG、WebP、GIF、HEIC、MP4 或 QuickTime MOV。",
+      { value1: file.name || t("所选文件") },
+    );
   }
   const mimeType = inferredMediaType(file);
   const maximumFileBytes = isVideoMimeType(mimeType)
     ? MAX_VIDEO_FILE_BYTES
     : MAX_IMAGE_FILE_BYTES;
   if (file.size <= 0 || file.size > maximumFileBytes) {
-    return `${file.name || "所选文件"} 超过单个${isVideoMimeType(mimeType) ? "视频 300" : "图片 30"} MiB 限制或为空。`;
+    return t("{{value1}} 超过单个{{value2}} MiB 限制或为空。", {
+      value1: file.name || t("所选文件"),
+      value2: isVideoMimeType(mimeType) ? t("视频 300") : t("图片 30"),
+    });
   }
   const currentBytes = current.reduce(
     (total, item) => total + (item.file?.size ?? 0),
     0,
   );
   if (currentBytes + file.size > maximumTotalBytes) {
-    return `本次选择的媒体总量超过 ${Math.round(maximumTotalBytes / 1024 / 1024)} MiB，请移除一些媒体后重试。`;
+    return t("本次选择的媒体总量超过 {{value1}} MiB，请移除一些媒体后重试。", {
+      value1: Math.round(maximumTotalBytes / 1024 / 1024),
+    });
   }
   return null;
 }
@@ -286,7 +303,10 @@ export function selectMediaFiles(
   let error: string | null = null;
   for (const file of files) {
     if (current.length + accepted.length >= maximum) {
-      error = `每条${subject}最多附加 ${maximum} 张图片；多出的文件没有加入。`;
+      error = t(
+        "每条{{value1}}最多附加 {{value2}} 张图片；多出的文件没有加入。",
+        { value1: subject, value2: maximum },
+      );
       break;
     }
     const invalid = fileValidation(

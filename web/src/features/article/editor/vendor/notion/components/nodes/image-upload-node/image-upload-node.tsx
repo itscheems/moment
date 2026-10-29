@@ -1,5 +1,8 @@
 "use client";
 
+import { t } from "../../../../../../../../i18n";
+import { useTranslation } from "react-i18next";
+
 import { useRef, useState } from "react";
 import type { NodeViewProps } from "@tiptap/react";
 import { NodeViewWrapper } from "@tiptap/react";
@@ -423,17 +426,23 @@ const DropZoneContent: React.FC<{ maxSize: number; limit: number }> = ({
 
     <div className="tiptap-image-upload-content">
       <span className="tiptap-image-upload-text">
-        <em>Click to upload</em> or drag and drop
+        <em>{t("Click to upload")}</em>
+        {t("or drag and drop")}
       </span>
       <span className="tiptap-image-upload-subtext">
-        Maximum {limit} file{limit === 1 ? "" : "s"}, {maxSize / 1024 / 1024}MB
-        each.
+        {t("Maximum")}
+        {limit}
+        {t("file")}
+        {limit === 1 ? "" : "s"}, {maxSize / 1024 / 1024}
+        {t("MB each.")}
       </span>
     </div>
   </>
 );
 
 export const ImageUploadNode: React.FC<NodeViewProps> = (props) => {
+  const { t } = useTranslation();
+
   const { accept, limit, maxSize } = props.node.attrs;
   const inputRef = useRef<HTMLInputElement>(null);
   const extension = props.extension;
@@ -517,7 +526,11 @@ export const ImageUploadNode: React.FC<NodeViewProps> = (props) => {
         <div className="tiptap-image-upload-previews">
           {fileItems.length > 1 && (
             <div className="tiptap-image-upload-header">
-              <span>Uploading {fileItems.length} files</span>
+              <span>
+                {t("Uploading")}
+                {fileItems.length}
+                {t("files")}
+              </span>
               <Button
                 type="button"
                 data-style="ghost"
@@ -526,7 +539,7 @@ export const ImageUploadNode: React.FC<NodeViewProps> = (props) => {
                   clearAllFiles();
                 }}
               >
-                Clear All
+                {t("Clear All")}
               </Button>
             </div>
           )}

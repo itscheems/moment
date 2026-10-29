@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import { useCallback, useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import type { PublicAccount, PublicApi } from "../../api/public";
@@ -39,6 +40,8 @@ export function SuggestedPeople({
   active?: boolean;
   usernames?: readonly string[];
 }) {
+  const { t } = useTranslation();
+
   const slot = useRailSlot();
   const wide = useMediaQuery(RAIL_VIEWPORT_QUERY);
   const auth = useSession();
@@ -100,7 +103,7 @@ export function SuggestedPeople({
   if (recovering)
     return (
       <ReadRecoveryToast onRetry={retry}>
-        正在重新获取推荐用户…
+        {t("正在重新获取推荐用户…")}
       </ReadRecoveryToast>
     );
   if (!enabled || (!error && people.length === 0)) return null;

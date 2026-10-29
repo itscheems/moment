@@ -282,6 +282,7 @@ func TestMergeReviewProjectsEveryComparedField(t *testing.T) {
 	shas := map[string]string{"01H00000000000000000000001": "aa", "01H00000000000000000000002": "bb"}
 	first, second := "01H00000000000000000000001", "01H00000000000000000000002"
 	early, late := int64(1), int64(2)
+	locale := "en"
 	emitted := map[MergeEntityKind][]string{
 		MergeEntry: entryChangedFields(
 			sqlitestore.ArchiveEntry{Kind: "moment", ContentMD: domain.MarkdownBody("a"), Visibility: domain.VisibilityEveryone, CreatedAtMS: early, UpdatedAtMS: early, PublishedAtMS: early, RepostedAtMS: &early, EditedAtMS: &early, QuotedEntryID: &first, Media: []sqlitestore.ArchiveUsage{{MediaID: first}}},
@@ -293,7 +294,7 @@ func TestMergeReviewProjectsEveryComparedField(t *testing.T) {
 			sqlitestore.ArchiveComment{EntryID: second, AuthorName: "b", ContentMD: "b", CreatedAtMS: late, Media: []sqlitestore.ArchiveUsage{{MediaID: second}}, Location: &domainLocationForReview},
 			shas, shas),
 		MergeUser: userChangedFields(
-			sqlitestore.ArchiveUser{Username: "a", DisplayName: "A", Bio: "a", AvatarMediaID: &first, CoverMediaID: &first, Role: "admin", Status: "active", UsernameSetAtMS: &early, CreatedAtMS: early, UpdatedAtMS: early},
+			sqlitestore.ArchiveUser{Username: "a", DisplayName: "A", Bio: "a", UILocale: &locale, AvatarMediaID: &first, CoverMediaID: &first, Role: "admin", Status: "active", UsernameSetAtMS: &early, CreatedAtMS: early, UpdatedAtMS: early},
 			sqlitestore.ArchiveUser{Username: "b", DisplayName: "B", Bio: "b", AvatarMediaID: &second, CoverMediaID: &second, Role: "member", Status: "pending", CreatedAtMS: late, UpdatedAtMS: late},
 			shas, shas,
 		),
@@ -312,7 +313,7 @@ func TestMergeReviewProjectsEveryComparedField(t *testing.T) {
 			Pinned: true, Location: &domainLocationForReview,
 		}, MergeReviewLocal, nil),
 		MergeUser: reviewUser(sqlitestore.ArchiveUser{
-			ID: first, Username: "a", DisplayName: "A", Bio: "a", Role: "admin", Status: "active",
+			ID: first, Username: "a", DisplayName: "A", Bio: "a", Role: "admin", Status: "active", UILocale: &locale,
 			AvatarMediaID: &first, CoverMediaID: &first, UsernameSetAtMS: &early,
 		}, MergeReviewLocal, nil),
 		MergeIdentity: reviewIdentity(sqlitestore.ArchiveIdentity{

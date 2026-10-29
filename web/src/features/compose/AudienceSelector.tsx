@@ -1,3 +1,5 @@
+import { t } from "../../i18n";
+import { useTranslation } from "react-i18next";
 import { Menu } from "@base-ui/react/menu";
 import { useState } from "react";
 
@@ -13,8 +15,20 @@ export const AUDIENCE_OPTIONS: readonly {
   label: string;
   icon: IconName;
 }[] = [
-  { value: "everyone", label: "所有人", icon: "audience-everyone" },
-  { value: "only_me", label: "仅自己", icon: "audience-only-me" },
+  {
+    value: "everyone",
+    get label() {
+      return t("所有人");
+    },
+    icon: "audience-everyone",
+  },
+  {
+    value: "only_me",
+    get label() {
+      return t("仅自己");
+    },
+    icon: "audience-only-me",
+  },
 ];
 
 export function audienceLabel(value: PostVisibility): string {
@@ -44,6 +58,8 @@ export function AudienceSelector({
   onOpenChangeComplete?: (open: boolean) => void;
   disabled?: boolean;
 }) {
+  const { t } = useTranslation();
+
   const [open, setOpen] = useState(false);
   const change = (next: boolean) => {
     setOpen(next);
@@ -67,7 +83,7 @@ export function AudienceSelector({
       open={open}
     >
       <Menu.Trigger
-        aria-label="选择受众"
+        aria-label={t("选择受众")}
         className={styles.trigger}
         data-audience={value}
         disabled={disabled}
@@ -86,7 +102,7 @@ export function AudienceSelector({
           <Menu.Popup className={styles.card}>
             <Menu.Group>
               <Menu.GroupLabel className={styles.cardTitle}>
-                选择受众
+                {t("选择受众")}
               </Menu.GroupLabel>
               <Menu.RadioGroup
                 onValueChange={(next) => {

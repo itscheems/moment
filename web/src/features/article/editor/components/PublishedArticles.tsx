@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { PublicApi, type PublicArticlePost } from "../../../../api/public";
 import { listArticles } from "../../articleApi";
@@ -11,6 +12,8 @@ export function PublishedArticles({
   onOpen: (id: string) => Promise<void>;
   timezone: string;
 }) {
+  const { t } = useTranslation();
+
   const api = useMemo(() => new PublicApi(), []);
   const [items, setItems] = useState<PublicArticlePost[]>([]);
   const [cursor, setCursor] = useState<string | null>(null);
@@ -69,19 +72,26 @@ export function PublishedArticles({
               <span className={styles.draftName}>{post.article.title}</span>
               <span className={styles.draftWhen}>
                 {opening === post.id
-                  ? "正在打开…"
-                  : `${formatMomentDate(post.publishedAt, timezone).relative}发布${post.visibility === "only_me" ? " · 仅自己" : ""}`}
+                  ? t("正在打开…")
+                  : t("{{value1}}发布{{value2}}", {
+                      value1: formatMomentDate(post.publishedAt, timezone)
+                        .relative,
+                      value2:
+                        post.visibility === "only_me" ? t(" · 仅自己") : "",
+                    })}
               </span>
             </button>
           </li>
         ))}
       </ol>
       {!loading && !error && items.length === 0 ? (
-        <p className={styles.railEmpty}>还没有发布过文章。</p>
+        <p className={styles.railEmpty}>{t("还没有发布过文章。")}</p>
       ) : null}
-      {loading ? <p className={styles.railEmpty}>正在读取文章…</p> : null}
+      {loading ? (
+        <p className={styles.railEmpty}>{t("正在读取文章…")}</p>
+      ) : null}
       {error ? (
-        <p className={styles.railError}>没能读取已发布的文章。</p>
+        <p className={styles.railError}>{t("没能读取已发布的文章。")}</p>
       ) : null}
       {(cursor || error) && !loading ? (
         <button
@@ -89,7 +99,7 @@ export function PublishedArticles({
           type="button"
           onClick={() => void load(cursor)}
         >
-          {error ? "重试" : "加载更多"}
+          {error ? t("重试") : t("加载更多")}
         </button>
       ) : null}
     </>

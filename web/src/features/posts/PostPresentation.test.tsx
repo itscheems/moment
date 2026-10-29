@@ -463,7 +463,7 @@ describe("shared post presentation", () => {
     );
 
     expect(screen.getByText("引用外层仍然存在")).toBeInTheDocument();
-    expect(screen.getByText("This post is unavailable.")).toHaveAttribute(
+    expect(screen.getByText("此内容已不可用。")).toHaveAttribute(
       "role",
       "status",
     );

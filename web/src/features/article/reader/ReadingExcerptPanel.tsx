@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import {
   useCallback,
   useEffect,
@@ -45,6 +46,8 @@ export function ReadingExcerptPanel({
   suspended: boolean;
   onShare?: (range: ReadingRange) => void;
 }) {
+  const { t } = useTranslation();
+
   const mobile = useMediaQuery("(max-width: 719px)");
   const { navigateToReadingBlocks, clearReadingEmphasis } = useToc();
   const { viewportRef, scrollRef, scrollEdges, updateScrollEdges, contentRef } =
@@ -98,8 +101,8 @@ export function ReadingExcerptPanel({
           <Button
             type="button"
             variant="ghost"
-            tooltip="本次摘录"
-            aria-label="本次摘录"
+            tooltip={t("本次摘录")}
+            aria-label={t("本次摘录")}
             disabled={!ranges.length}
           >
             <HighlighterIcon className="tiptap-button-icon" />
@@ -113,7 +116,7 @@ export function ReadingExcerptPanel({
         side="bottom"
         fade
         collisionPadding={16}
-        aria-label="本次摘录面板"
+        aria-label={t("本次摘录面板")}
         onOpenAutoFocus={(event) => {
           if (shareFocus.current) event.preventDefault();
         }}
@@ -126,13 +129,14 @@ export function ReadingExcerptPanel({
         <Card className={styles.excerptCard}>
           <CardHeader className={styles.excerptHeader}>
             <strong>
-              本次摘录 <span>{ranges.length}</span>
+              {t("本次摘录")}
+              <span>{ranges.length}</span>
             </strong>
             <Button
               type="button"
               variant="ghost"
-              aria-label="关闭本次摘录"
-              tooltip="关闭"
+              aria-label={t("关闭本次摘录")}
+              tooltip={t("关闭")}
               onClick={() => onOpenChange(false)}
             >
               <Icon name="close" className="tiptap-button-icon" />
@@ -169,7 +173,9 @@ export function ReadingExcerptPanel({
                           variant="ghost"
                           className={styles.excerptText}
                           data-excerpt-nav={range.from}
-                          aria-label={`跳转到摘录 ${index + 1}`}
+                          aria-label={t("跳转到摘录 {{value1}}", {
+                            value1: index + 1,
+                          })}
                           aria-description={text}
                           onClick={() => {
                             navigateToReadingBlocks(
@@ -183,19 +189,25 @@ export function ReadingExcerptPanel({
                         <div
                           className={styles.excerptActions}
                           role="group"
-                          aria-label={`摘录 ${index + 1} 操作`}
+                          aria-label={t("摘录 {{value1}} 操作", {
+                            value1: index + 1,
+                          })}
                         >
                           <ClipboardCopyButton
-                            label={`复制摘录 ${index + 1}`}
-                            tooltip="复制"
+                            label={t("复制摘录 {{value1}}", {
+                              value1: index + 1,
+                            })}
+                            tooltip={t("复制")}
                             source={() => readingSelectionText(editor, range)}
                           />
                           {onShare && (
                             <Button
                               type="button"
                               variant="ghost"
-                              tooltip="分享"
-                              aria-label={`分享摘录 ${index + 1}`}
+                              tooltip={t("分享")}
+                              aria-label={t("分享摘录 {{value1}}", {
+                                value1: index + 1,
+                              })}
                               data-excerpt-share={key}
                               onClick={() => {
                                 shareFocus.current = key;
@@ -213,8 +225,10 @@ export function ReadingExcerptPanel({
                           <Button
                             type="button"
                             variant="ghost"
-                            tooltip="清除临时标记"
-                            aria-label={`清除摘录 ${index + 1}`}
+                            tooltip={t("清除临时标记")}
+                            aria-label={t("清除摘录 {{value1}}", {
+                              value1: index + 1,
+                            })}
                             onClick={() => {
                               const next =
                                 ranges[index + 1] ?? ranges[index - 1];

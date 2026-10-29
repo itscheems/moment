@@ -27,3 +27,12 @@ Content stores its author's account ID. That relationship controls editing and p
 Web features and API clients are organized by function: authentication, accounts, publishing, posts, comments, media, site settings and backups. Browser state that may contain private content is scoped to the instance and account. Media originals deduplicate globally, with per-account reuse grants.
 
 The database uses one canonical baseline. Portable backups use format v2 with real account references and no passwords, API tokens or browser sessions. Development data from the preceding identity model is converted offline into a separate directory before use; the original data remains available for recovery.
+
+
+## Interface language
+
+The web application uses one i18next instance with bundled Simplified Chinese and English resources. React views subscribe through `useTranslation`; pure display helpers read the same instance. Source phrases are translation keys, with interpolation and plural forms kept in resources. Display configurations resolve labels when read rather than caching translated text at module initialization. Date partition keys and stored document data do not depend on the interface language.
+
+The session owns the account preference. A language provider combines it with a separate visitor choice, saves account changes through the account service, and applies a change only after successful persistence. It ignores responses for an ended or replaced session. Neither the app nor its editors are keyed by language.
+
+The vendored Tiptap UI for the pinned 3.31.3 editor retains its upstream actions, focus management, keyboard navigation, plugins and node views. Local changes resolve labels, tooltips, placeholders, search text and accessibility descriptions through the shared language resources. Recent color data retains semantic color names; presentation translates those names when shown.

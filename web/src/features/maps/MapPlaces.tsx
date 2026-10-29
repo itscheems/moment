@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import { lazy, Suspense } from "react";
 import { PlaceContent } from "./MapPlaceContent";
 import { mapPlaceIdentity } from "./geometry";
@@ -19,8 +20,10 @@ export function MapPlaces({
   onSelect?: (place: MapPlace) => void;
   visiblePlaces?: readonly MapPlace[];
 }) {
+  const { t } = useTranslation();
+
   const list = (
-    <ol className={styles.places} aria-label="地图地点">
+    <ol className={styles.places} aria-label={t("地图地点")}>
       {(visiblePlaces ?? card.places).map((place, index) => (
         <li key={`${mapPlaceIdentity(place)}:${index}`}>
           <div className={styles.placeRow}>

@@ -1,3 +1,6 @@
+import { LanguageDialog } from "./LanguageDialog";
+import { t } from "../i18n";
+import { useTranslation } from "react-i18next";
 import { AccountName } from "./AccountName";
 import { Dialog } from "./Dialog";
 import { Menu } from "@base-ui/react/menu";
@@ -21,19 +24,69 @@ const backgrounds: Array<{
   value: ThemePreference;
   label: string;
 }> = [
-  { value: "light", label: "浅色" },
-  { value: "dim", label: "柔和深色" },
-  { value: "lights-out", label: "纯黑" },
+  {
+    value: "light",
+    get label() {
+      return t("浅色");
+    },
+  },
+  {
+    value: "dim",
+    get label() {
+      return t("柔和深色");
+    },
+  },
+  {
+    value: "lights-out",
+    get label() {
+      return t("纯黑");
+    },
+  },
 ];
 
 const accents: Array<{ value: AccentPreference; label: string }> = [
-  { value: "blue", label: "蓝色" },
-  { value: "yellow", label: "黄色" },
-  { value: "pink", label: "粉色" },
-  { value: "purple", label: "紫色" },
-  { value: "orange", label: "橙色" },
-  { value: "green", label: "绿色" },
-  { value: "black", label: "纯黑色" },
+  {
+    value: "blue",
+    get label() {
+      return t("蓝色");
+    },
+  },
+  {
+    value: "yellow",
+    get label() {
+      return t("黄色");
+    },
+  },
+  {
+    value: "pink",
+    get label() {
+      return t("粉色");
+    },
+  },
+  {
+    value: "purple",
+    get label() {
+      return t("紫色");
+    },
+  },
+  {
+    value: "orange",
+    get label() {
+      return t("橙色");
+    },
+  },
+  {
+    value: "green",
+    get label() {
+      return t("绿色");
+    },
+  },
+  {
+    value: "black",
+    get label() {
+      return t("纯黑色");
+    },
+  },
 ];
 
 export function ThemeMenu({
@@ -45,27 +98,30 @@ export function ThemeMenu({
   navigation?: boolean;
   site: SiteIdentity;
 }) {
+  const { t } = useTranslation();
+
   const { accent, preference, setAccent, setPreference } = useTheme();
   const [appearanceOpen, setAppearanceOpen] = useState(false);
+  const [languageOpen, setLanguageOpen] = useState(false);
   const identity = account ?? site;
   const previewHandle = siteHandle(identity);
 
   const triggerContent = (
     <>
       <Icon name="more" variant={navigation ? "navigation" : "default"} />
-      <span className={styles.triggerLabel}>更多</span>
+      <span className={styles.triggerLabel}>{t("更多")}</span>
     </>
   );
 
   return (
     <>
       <Menu.Root>
-        <SidebarTooltip label="更多">
+        <SidebarTooltip label={t("更多")}>
           <Menu.Trigger
-            aria-label="更多"
+            aria-label={t("更多")}
             className={styles.trigger}
             data-navigation={navigation || undefined}
-            data-compact-label="更多"
+            data-compact-label={t("更多")}
           >
             {navigation ? (
               <span className={styles.triggerPill}>{triggerContent}</span>
@@ -82,7 +138,7 @@ export function ThemeMenu({
             sideOffset={8}
           >
             <Menu.Popup
-              aria-label="更多选项"
+              aria-label={t("更多选项")}
               className={styles.popup}
               data-navigation={navigation || undefined}
             >
@@ -92,8 +148,17 @@ export function ThemeMenu({
               >
                 <Icon name="theme" />
                 <span>
-                  <strong>显示</strong>
-                  {!navigation ? <small>背景与颜色</small> : null}
+                  <strong>{t("显示")}</strong>
+                  {!navigation ? <small>{t("背景与颜色")}</small> : null}
+                </span>
+              </Menu.Item>
+              <Menu.Item
+                className={styles.menuItem}
+                onClick={() => setLanguageOpen(true)}
+              >
+                <Icon name="globe" />
+                <span>
+                  <strong>{t("语言")}</strong>
                 </span>
               </Menu.Item>
             </Menu.Popup>
@@ -101,23 +166,26 @@ export function ThemeMenu({
         </Menu.Portal>
       </Menu.Root>
 
+      {languageOpen ? (
+        <LanguageDialog onClose={() => setLanguageOpen(false)} />
+      ) : null}
       <Dialog.Root onOpenChange={setAppearanceOpen} open={appearanceOpen}>
         <Dialog.Portal>
           <Dialog.Backdrop className={styles.backdrop} />
           <Dialog.Viewport className={styles.viewport}>
             <Dialog.Popup className={styles.appearanceDialog}>
               <div className={styles.dialogHeader}>
-                <Dialog.Close aria-label="关闭显示设置">×</Dialog.Close>
-                <Dialog.Title>自定义显示</Dialog.Title>
+                <Dialog.Close aria-label={t("关闭显示设置")}>×</Dialog.Close>
+                <Dialog.Title>{t("自定义显示")}</Dialog.Title>
                 <span />
               </div>
               <Dialog.Description className={styles.description}>
-                这些设置只保存在当前浏览器，会立即应用到所有页面。
+                {t("这些设置只保存在当前浏览器，会立即应用到所有页面。")}
               </Dialog.Description>
 
               <MentionProvider identities={[identity]}>
                 <div
-                  aria-label="显示效果预览"
+                  aria-label={t("显示效果预览")}
                   className={`${styles.previewCard} ${postStyles.timelineDensity}`}
                 >
                   <SiteAvatar site={identity} size={40} />
@@ -131,19 +199,22 @@ export function ThemeMenu({
                           {previewHandle}
                         </span>
                         <span>·</span>
-                        <span>刚刚</span>
+                        <span>{t("刚刚")}</span>
                       </div>
                     </div>
                     <MarkdownBody
                       className={postStyles.markdown}
-                      html={`<p>Moment 会用当前显示设置呈现文字、链接和提及，比如 ${previewHandle}。</p>`}
+                      html={t(
+                        "<p>Moment 会用当前显示设置呈现文字、链接和提及，比如 {{value1}}。</p>",
+                        { value1: previewHandle },
+                      )}
                     />
                   </div>
                 </div>
               </MentionProvider>
 
               <section aria-labelledby="appearance-color-title">
-                <h3 id="appearance-color-title">颜色</h3>
+                <h3 id="appearance-color-title">{t("颜色")}</h3>
                 <div className={styles.accentGrid}>
                   {accents.map((option) => (
                     <button
@@ -163,7 +234,7 @@ export function ThemeMenu({
               </section>
 
               <section aria-labelledby="appearance-background-title">
-                <h3 id="appearance-background-title">背景</h3>
+                <h3 id="appearance-background-title">{t("背景")}</h3>
                 <div className={styles.backgroundGrid}>
                   {backgrounds.map((option) => (
                     <button
@@ -184,7 +255,9 @@ export function ThemeMenu({
                 </div>
               </section>
 
-              <Dialog.Close className={styles.doneButton}>完成</Dialog.Close>
+              <Dialog.Close className={styles.doneButton}>
+                {t("完成")}
+              </Dialog.Close>
             </Dialog.Popup>
           </Dialog.Viewport>
         </Dialog.Portal>

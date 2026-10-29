@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import {
   type MouseEventHandler,
   type ReactNode,
@@ -110,6 +111,8 @@ export function ArchivePage({
   search: string;
   site: SiteIdentity;
 }) {
+  const { t } = useTranslation();
+
   const archiveApi = useMemo(() => api.forArchive(), [api]);
   const state = useMemo(() => parseArchiveLocation(search), [search]);
   const { pathname, navigate } = useNavigation();
@@ -324,26 +327,26 @@ export function ArchivePage({
       calendar = (
         <section
           aria-busy="true"
-          aria-label="正在加载归档"
+          aria-label={t("正在加载归档")}
           className={`${styles.calendarLoading} ${
             inRail ? styles.calendarRail : styles.calendarWide
           }`}
         >
-          <span>正在加载归档…</span>
+          <span>{t("正在加载归档…")}</span>
         </section>
       );
     } else if (monthsError && months === null && monthsRecovering) {
       calendar = (
         <ReadRecoveryToast active={pathname === "/archive"}>
-          正在重新获取归档…
+          {t("正在重新获取归档…")}
         </ReadRecoveryToast>
       );
     } else if (monthsError && months === null) {
       calendar = (
         <ArchiveMessage
           alert
-          detail="请确认登录状态和访问链接。"
-          title="暂时无法查看归档"
+          detail={t("请确认登录状态和访问链接。")}
+          title={t("暂时无法查看归档")}
         />
       );
     } else if (months && range && visibleMonth) {
@@ -376,17 +379,17 @@ export function ArchivePage({
       ) : null}
       {state.error ? (
         <ArchiveMessage
-          action={<InternalLink href="/archive">回到归档</InternalLink>}
+          action={<InternalLink href="/archive">{t("回到归档")}</InternalLink>}
           alert
-          detail="请从归档重新选择日期。"
-          title="归档链接无效"
+          detail={t("请从归档重新选择日期。")}
+          title={t("归档链接无效")}
         />
       ) : null}
       {monthsEmpty ? (
         <ArchiveMessage
-          action={<InternalLink href="/">回到时间流</InternalLink>}
-          detail="发布第一条 Moment 后，可以在这里按日期回看。"
-          title="还没有 Moment"
+          action={<InternalLink href="/">{t("回到时间流")}</InternalLink>}
+          detail={t("发布第一条 Moment 后，可以在这里按日期回看。")}
+          title={t("还没有 Moment")}
         />
       ) : null}
       {!state.error && !monthsEmpty ? (

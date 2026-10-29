@@ -7,14 +7,11 @@ import {
 } from "./client";
 import { decodeResponse } from "./public";
 
-export type UILocale = "zh-CN" | "en";
+import { isUILocale, type UILocale } from "../i18n/locale";
+export type { UILocale } from "../i18n/locale";
 
 export interface AccountPreferences {
   uiLocale: UILocale | null;
-}
-
-export function isUILocale(value: unknown): value is UILocale {
-  return value === "zh-CN" || value === "en";
 }
 
 export function parsePreferences(value: unknown): AccountPreferences {

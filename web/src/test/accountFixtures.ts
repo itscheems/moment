@@ -1,3 +1,4 @@
+import { t } from "../i18n";
 /**
  * Account payload shapes the server actually sends.
  *
@@ -54,7 +55,7 @@ export function makeSiteIdentity(): import("../api/public").SiteIdentity {
     profileUserId: "1".repeat(32),
     username: "writer",
     displayName: "Writer",
-    title: "Moment",
+    title: t("Moment"),
     bio: "",
     timezone: "UTC",
     publicBaseUrl: null,

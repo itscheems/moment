@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import { Menu } from "@base-ui/react/menu";
 import { Tabs } from "@base-ui/react/tabs";
 import { motion, useReducedMotion, type HTMLMotionProps } from "motion/react";
@@ -19,6 +20,8 @@ export function ProfileTabs({
   loading?: boolean;
   children: (filter: ProfileFilter) => ReactNode;
 }) {
+  const { t } = useTranslation();
+
   const [tabState, setTabState] = useState<{
     filter: ProfileFilter;
     leftFilter: "all" | "moment";
@@ -43,7 +46,7 @@ export function ProfileTabs({
   const { leftFilter, direction, slide } = tabState;
   const leftTabSlot = useRef<HTMLDivElement>(null);
   const reducedMotion = useReducedMotion();
-  const label = leftFilter === "all" ? "全部" : "帖子";
+  const label = leftFilter === "all" ? t("全部") : t("帖子");
   const labelAnimation = (selected: boolean) => ({
     width: selected ? "auto" : 0,
     opacity: selected ? 1 : 0,
@@ -70,7 +73,7 @@ export function ProfileTabs({
       className={styles.contentTabs}
     >
       <Tabs.List
-        aria-label="帖子类型"
+        aria-label={t("帖子类型")}
         className={styles.tabList}
         activateOnFocus={false}
       >
@@ -121,7 +124,7 @@ export function ProfileTabs({
             >
               <Menu.Root>
                 <Menu.Trigger
-                  aria-label="选择帖子类型"
+                  aria-label={t("选择帖子类型")}
                   className={styles.filterTrigger}
                   disabled={filter === "article"}
                 >
@@ -137,7 +140,7 @@ export function ProfileTabs({
                     className={interactionStyles.sharePositioner}
                   >
                     <Menu.Popup
-                      aria-label="帖子类型筛选"
+                      aria-label={t("帖子类型筛选")}
                       className={interactionStyles.sharePopup}
                     >
                       {(["all", "moment"] as const).map((kind) => (
@@ -148,7 +151,7 @@ export function ProfileTabs({
                             selectFilter(kind);
                           }}
                         >
-                          <span>{kind === "all" ? "全部" : "帖子"}</span>
+                          <span>{kind === "all" ? t("全部") : t("帖子")}</span>
                           {leftFilter === kind ? <Icon name="check" /> : null}
                         </Menu.Item>
                       ))}
@@ -162,7 +165,7 @@ export function ProfileTabs({
         <div className={styles.tabSlot}>
           <Tabs.Tab
             value="article"
-            aria-label="文章"
+            aria-label={t("文章")}
             className={styles.typeTab}
             onClick={() => {
               if (filter === "article") selectFilter("article");
@@ -192,7 +195,7 @@ export function ProfileTabs({
                 animate={labelContentAnimation(filter === "article")}
                 transition={tabTransition}
               >
-                文章
+                {t("文章")}
               </motion.span>
             </motion.span>
           </Tabs.Tab>

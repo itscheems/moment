@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import { Slider } from "@base-ui/react/slider";
 import { useCallback, useEffect, useRef, useState } from "react";
 import Cropper, { type MediaSize } from "react-easy-crop";
@@ -20,6 +21,8 @@ export function MediaCropPanel({
   active?: boolean;
   onChange: (selection: MediaCropSelection) => void;
 }) {
+  const { t } = useTranslation();
+
   const [stage, setStage] = useState<HTMLDivElement | null>(null);
   const [size, setSize] = useState({ width: 0, height: 0 });
   const [media, setMedia] = useState<MediaSize | null>(null);
@@ -134,7 +137,7 @@ export function MediaCropPanel({
             roundCropAreaPixels={false}
             disableAutomaticStylesInjection
             classes={{ cropAreaClassName: styles.cropArea }}
-            cropperProps={{ "aria-label": "Image crop area" }}
+            cropperProps={{ "aria-label": t("Image crop area") }}
             mediaProps={{ onError: () => setError(true) }}
             setMediaSize={acceptMediaSize}
             onCropChange={(next) => {
@@ -177,7 +180,7 @@ export function MediaCropPanel({
         ) : null}
         {error ? (
           <p className={styles.cropError} role="alert">
-            Unable to read this image. Return and choose another image.
+            {t("Unable to read this image. Return and choose another image.")}
           </p>
         ) : null}
       </div>
@@ -218,7 +221,7 @@ export function MediaCropPanel({
                 <Slider.Indicator className={styles.zoomIndicator} />
                 <Slider.Thumb
                   className={styles.zoomThumb}
-                  aria-label="Zoom in or out on your image."
+                  aria-label={t("Zoom in or out on your image.")}
                 />
               </Slider.Track>
             </Slider.Control>

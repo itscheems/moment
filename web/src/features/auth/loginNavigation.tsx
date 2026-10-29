@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import { useCallback, type ComponentProps } from "react";
 import { InternalLink, useNavigation } from "../../app/navigation";
 import { loginHref } from "./returnPath";
@@ -29,17 +30,21 @@ export function LoginLink({
 
 /** Account readiness/approval never renders a second sign-in form. */
 export function AccountAccessNotice() {
+  const { t } = useTranslation();
+
   const { state, account, retryStatus } = useSession();
   if (state === "unavailable")
     return (
       <div role="alert">
-        <p>暂时无法确认登录状态，请稍后重试。</p>
+        <p>{t("暂时无法确认登录状态，请稍后重试。")}</p>
         <button type="button" onClick={retryStatus}>
-          重试检查
+          {t("重试检查")}
         </button>
       </div>
     );
   if (state === "signed-in" && account?.status === "pending")
-    return <p role="status">账号正在等待管理员批准，批准后就能发布和回复。</p>;
-  return <p role="status">正在确认登录状态…</p>;
+    return (
+      <p role="status">{t("账号正在等待管理员批准，批准后就能发布和回复。")}</p>
+    );
+  return <p role="status">{t("正在确认登录状态…")}</p>;
 }

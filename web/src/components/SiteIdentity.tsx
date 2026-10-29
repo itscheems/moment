@@ -1,3 +1,4 @@
+import { t } from "../i18n";
 import { mediaPreviewUrl } from "../api/mediaUrls";
 import { initialAvatarUrl } from "./initialAvatar";
 
@@ -84,7 +85,7 @@ export function postAuthorSite(
     ...site,
     profileUserId: author?.userId ?? "",
     username: author?.username ?? "",
-    displayName: author?.displayName ?? "未知作者",
+    displayName: author?.displayName ?? t("未知作者"),
     avatarMediaId: author?.avatarMediaId ?? null,
     bio: "",
     coverMediaId: null,

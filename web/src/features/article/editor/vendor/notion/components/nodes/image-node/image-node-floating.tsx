@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import type { Editor } from "@tiptap/react";
 
 // --- Hooks ---
@@ -22,6 +23,8 @@ export function ImageNodeFloating({
 }: {
   editor?: Editor | null;
 }) {
+  const { t } = useTranslation();
+
   const { editor } = useTiptapEditor(providedEditor);
   const visible = isNodeTypeSelected(editor, ["image"]);
 
@@ -38,7 +41,7 @@ export function ImageNodeFloating({
       <ImageCaptionButton />
       <Separator />
       <ImageDownloadButton />
-      <ImageUploadButton icon={RefreshCcwIcon} tooltip="Replace" />
+      <ImageUploadButton icon={RefreshCcwIcon} tooltip={t("Replace")} />
       <Separator />
       <DeleteNodeButton />
     </>

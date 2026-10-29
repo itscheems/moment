@@ -1,3 +1,5 @@
+import { t } from "../../i18n";
+import { useTranslation } from "react-i18next";
 import { type LocationInput } from "../../api/client";
 import { Dialog } from "../../components/Dialog";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -18,12 +20,14 @@ export function SelectedLocationChip({
   location: LocationInput;
   onRemove: () => void;
 }) {
+  const { t } = useTranslation();
+
   return (
     <div className={styles.selectedLocation}>
       <Icon name="location" />
       <span>{location.name}</span>
       <button
-        aria-label={`移除位置：${location.name}`}
+        aria-label={t("移除位置：{{value1}}", { value1: location.name })}
         disabled={disabled}
         onClick={onRemove}
         type="button"
@@ -41,10 +45,10 @@ function locationError(error: unknown): string {
     "code" in error &&
     error.code === 1
   ) {
-    return "浏览器没有位置权限。你仍可搜索或手动添加地点。";
+    return t("浏览器没有位置权限。你仍可搜索或手动添加地点。");
   }
   if (error instanceof DOMException && error.name === "NotAllowedError") {
-    return "浏览器没有位置权限。你仍可搜索或手动添加地点。";
+    return t("浏览器没有位置权限。你仍可搜索或手动添加地点。");
   }
   if (
     typeof error === "object" &&
@@ -52,17 +56,17 @@ function locationError(error: unknown): string {
     "code" in error &&
     error.code === 3
   ) {
-    return "获取当前位置超时。你仍可搜索或手动添加地点。";
+    return t("获取当前位置超时。你仍可搜索或手动添加地点。");
   }
   if (error instanceof PublicApiError) {
     if (error.code === "LOCATION_PROVIDER_UNAVAILABLE") {
-      return "地点服务暂时不可用，稍后重试或手动添加地点。";
+      return t("地点服务暂时不可用，稍后重试或手动添加地点。");
     }
     if (error.code === "UNAUTHORIZED") {
-      return "登录会话已失效，请刷新身份后重试。";
+      return t("登录会话已失效，请刷新身份后重试。");
     }
   }
-  return "暂时无法取得地点，请检查连接后重试。";
+  return t("暂时无法取得地点，请检查连接后重试。");
 }
 
 function currentPosition(): Promise<GeolocationPosition> {
@@ -145,6 +149,8 @@ export function LocationPicker({
   onOpenChangeComplete?: (open: boolean) => void;
   value: LocationInput | null;
 }) {
+  const { t } = useTranslation();
+
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<LocationInput[]>([]);
@@ -256,9 +262,15 @@ export function LocationPicker({
       }}
       open={open}
     >
-      <ActionTooltip label={pickerTooltip ?? (value ? "更改位置" : "添加位置")}>
+      <ActionTooltip
+        label={pickerTooltip ?? (value ? t("更改位置") : t("添加位置"))}
+      >
         <Dialog.Trigger
-          aria-label={value ? `更改位置：${value.name}` : "添加位置"}
+          aria-label={
+            value
+              ? t("更改位置：{{value1}}", { value1: value.name })
+              : t("添加位置")
+          }
           className={styles.locationTrigger}
           disabled={disabled}
         >
@@ -274,12 +286,12 @@ export function LocationPicker({
           >
             <header className={styles.locationHeader}>
               <Dialog.Close
-                aria-label="关闭位置选择"
+                aria-label={t("关闭位置选择")}
                 className={styles.locationClose}
               >
                 <Icon name="close" />
               </Dialog.Close>
-              <Dialog.Title>添加位置</Dialog.Title>
+              <Dialog.Title>{t("添加位置")}</Dialog.Title>
               {value ? (
                 <button
                   className={styles.locationRemove}
@@ -289,25 +301,25 @@ export function LocationPicker({
                   }}
                   type="button"
                 >
-                  移除
+                  {t("移除")}
                 </button>
               ) : (
                 <span />
               )}
             </header>
             <Dialog.Description className={styles.srOnly}>
-              搜索地点、使用浏览器当前位置，或手动添加地点标签。
+              {t("搜索地点、使用浏览器当前位置，或手动添加地点标签。")}
             </Dialog.Description>
             {!manual ? (
               <>
                 <label className={styles.locationSearch}>
                   <Icon name="search" />
-                  <span className={styles.srOnly}>搜索地点</span>
+                  <span className={styles.srOnly}>{t("搜索地点")}</span>
                   <input
                     autoComplete="off"
                     ref={searchInput}
                     onChange={(event) => setQuery(event.target.value)}
-                    placeholder="搜索地点"
+                    placeholder={t("搜索地点")}
                     value={query}
                   />
                 </label>
@@ -321,24 +333,28 @@ export function LocationPicker({
                     <Icon name="location" />
                   </span>
                   <span>
-                    <strong>使用当前位置</strong>
-                    <small>仅在你点击后向浏览器请求权限</small>
+                    <strong>{t("使用当前位置")}</strong>
+                    <small>{t("仅在你点击后向浏览器请求权限")}</small>
                   </span>
                 </button>
                 <div aria-busy={loading} className={styles.locationResults}>
                   {loading ? (
-                    <p className={styles.locationState}>正在查找地点…</p>
+                    <p className={styles.locationState}>{t("正在查找地点…")}</p>
                   ) : null}
                   {!loading &&
                   query.trim().length > 0 &&
                   query.trim().length < 2 ? (
-                    <p className={styles.locationState}>再输入一个字开始搜索</p>
+                    <p className={styles.locationState}>
+                      {t("再输入一个字开始搜索")}
+                    </p>
                   ) : null}
                   {!loading &&
                   !error &&
                   results.length === 0 &&
                   query.trim().length >= 2 ? (
-                    <p className={styles.locationState}>没有找到匹配地点</p>
+                    <p className={styles.locationState}>
+                      {t("没有找到匹配地点")}
+                    </p>
                   ) : null}
                   {results.map((location) => (
                     <button
@@ -364,7 +380,7 @@ export function LocationPicker({
                 ) : null}
                 <footer className={styles.locationFooter}>
                   <button onClick={() => setManual(true)} type="button">
-                    手动添加地点
+                    {t("手动添加地点")}
                   </button>
                   {usesGeoapify ? (
                     <a
@@ -372,10 +388,10 @@ export function LocationPicker({
                       rel="noreferrer"
                       target="_blank"
                     >
-                      Powered by Geoapify
+                      {t("Powered by Geoapify")}
                     </a>
                   ) : results.some((item) => item.provider === "amap") ? (
-                    <span>地点数据由高德提供</span>
+                    <span>{t("地点数据由高德提供")}</span>
                   ) : null}
                 </footer>
               </>
@@ -393,25 +409,25 @@ export function LocationPicker({
                   onClick={() => setManual(false)}
                   type="button"
                 >
-                  <Icon name="back" /> 返回搜索
+                  <Icon name="back" /> {t("返回搜索")}
                 </button>
                 <label>
-                  <span>地点名称</span>
+                  <span>{t("地点名称")}</span>
                   <input
                     autoFocus
                     maxLength={160}
                     onChange={(event) => setManualName(event.target.value)}
-                    placeholder="例如：书房、珠江边"
+                    placeholder={t("例如：书房、珠江边")}
                     value={manualName}
                   />
                 </label>
-                <p>手动地点只保存你填写的名称，不会添加坐标。</p>
+                <p>{t("手动地点只保存你填写的名称，不会添加坐标。")}</p>
                 <button
                   className={styles.primaryButton}
                   disabled={!manualName.trim()}
                   type="submit"
                 >
-                  添加
+                  {t("添加")}
                 </button>
               </form>
             )}

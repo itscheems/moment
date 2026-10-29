@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import { useEffect, useId, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import {
@@ -69,6 +70,8 @@ function SortablePlace({
   register: (id: string, element: HTMLElement | null) => void;
   onSelect?: (place: MapPlace) => void;
 }) {
+  const { t } = useTranslation();
+
   const {
     attributes,
     listeners,
@@ -113,7 +116,7 @@ function SortablePlace({
       <motion.button
         className={styles.swipeDelete}
         type="button"
-        aria-label={`删除${row.place.name}`}
+        aria-label={t("删除{{value1}}", { value1: row.place.name })}
         disabled={disabled || !revealed}
         tabIndex={revealed ? 0 : -1}
         aria-hidden={!revealed}
@@ -141,7 +144,9 @@ function SortablePlace({
               {...attributes}
               {...listeners}
               role="group"
-              aria-label={`${row.place.name}，按住拖动排序`}
+              aria-label={t("{{value1}}，按住拖动排序", {
+                value1: row.place.name,
+              })}
               data-map-place=""
               data-dragging={isDragging || undefined}
               ref={(element) => register(row.id, element)}
@@ -207,7 +212,7 @@ function SortablePlace({
                 disabled={disabled}
                 onClick={() => onRemove(row)}
               >
-                <Icon name="delete" /> 删除地点
+                <Icon name="delete" /> {t("删除地点")}
               </ContextMenu.Item>
             </ContextMenu.Popup>
           </ContextMenu.Positioner>
@@ -228,6 +233,8 @@ export default function EditableMapPlaces({
   disabled?: boolean;
   onSelect?: (place: MapPlace) => void;
 }) {
+  const { t } = useTranslation();
+
   const listId = useId();
   const rows = placeRows(card.places);
   const listRef = useRef<HTMLOListElement>(null);
@@ -279,7 +286,7 @@ export default function EditableMapPlaces({
       className={styles.places}
       ref={listRef}
       tabIndex={-1}
-      aria-label="地图地点"
+      aria-label={t("地图地点")}
     >
       <AnimatePresence initial={false}>
         {rows.map((row) => (
@@ -310,18 +317,25 @@ export default function EditableMapPlaces({
         modifiers={[restrictToVerticalAxis]}
         accessibility={{
           screenReaderInstructions: {
-            draggable:
+            draggable: t(
               "按空格开始排序，上下方向键移动，再按空格确认，Escape 取消。",
+            ),
           },
           announcements: {
             onDragStart: ({ active }) =>
-              `正在移动${rows.find((row) => row.id === active.id)?.place.name ?? "地点"}。`,
+              t("正在移动{{value1}}。", {
+                value1:
+                  rows.find((row) => row.id === active.id)?.place.name ??
+                  t("地点"),
+              }),
             onDragOver: ({ over }) =>
               over
-                ? `移动到第${rows.findIndex((row) => row.id === over.id) + 1}个位置。`
+                ? t("移动到第{{value1}}个位置。", {
+                    value1: rows.findIndex((row) => row.id === over.id) + 1,
+                  })
                 : undefined,
-            onDragEnd: () => "地点顺序已更新。",
-            onDragCancel: () => "已取消排序。",
+            onDragEnd: () => t("地点顺序已更新。"),
+            onDragCancel: () => t("已取消排序。"),
           },
         }}
         onDragStart={({ active }) => {
@@ -367,10 +381,14 @@ export default function EditableMapPlaces({
             setRevealedId(null);
           }
         }}
-        title="删除地点？"
-        description={remove ? `从地图中删除「${remove.place.name}」？` : ""}
-        confirmLabel="删除"
-        cancelLabel="取消"
+        title={t("删除地点？")}
+        description={
+          remove
+            ? t("从地图中删除「{{value1}}」？", { value1: remove.place.name })
+            : ""
+        }
+        confirmLabel={t("删除")}
+        cancelLabel={t("取消")}
         danger
         pending={disabled}
         finalFocus={() =>

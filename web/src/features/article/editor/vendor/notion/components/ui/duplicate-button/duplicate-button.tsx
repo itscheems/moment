@@ -1,5 +1,7 @@
 "use client";
 
+import { t } from "../../../../../../../../i18n";
+
 import { forwardRef, useCallback } from "react";
 
 // --- Lib ---
@@ -91,7 +93,7 @@ export const DuplicateButton = forwardRef<
         role="button"
         tabIndex={-1}
         aria-label={label}
-        tooltip="Duplicate"
+        tooltip={t("Duplicate")}
         onClick={handleClick}
         {...buttonProps}
         ref={ref}

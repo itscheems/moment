@@ -1,5 +1,7 @@
 "use client";
 
+import { useTranslation } from "react-i18next";
+
 // --- Lib ---
 import type { Orientation } from "@notion/components/nodes/table-node/lib/table-utils";
 
@@ -42,6 +44,8 @@ export const TableAlignMenu = ({
   index?: number;
   orientation?: Orientation;
 }) => {
+  const { t } = useTranslation();
+
   const textAlign = {
     left: useTableAlignCell({
       alignmentType: "text",
@@ -98,7 +102,7 @@ export const TableAlignMenu = ({
               render={
                 <Button data-style="ghost">
                   <AlignmentIcon className="tiptap-button-icon" />
-                  <span className="tiptap-button-text">Alignment</span>
+                  <span className="tiptap-button-text">{t("Alignment")}</span>
                   <MenuButtonArrow render={<ChevronRightIcon />} />
                 </Button>
               }

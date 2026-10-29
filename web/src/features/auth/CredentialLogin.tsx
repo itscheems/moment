@@ -1,3 +1,5 @@
+import { t } from "../../i18n";
+import { useTranslation } from "react-i18next";
 import {
   authApi,
   type OAuthLoginProvider,
@@ -21,21 +23,38 @@ const PROVIDER_ORDER = ["github", "google"];
 const LOGIN_OPTIONS_RETRY_MS = 3000;
 
 const AUTH_ERROR_MESSAGES: Record<string, string> = {
-  OAUTH_PROVIDER_UNAVAILABLE:
-    "这个登录方式暂时不可用，请稍后再试或改用密码登录。",
-  OAUTH_STATE_INVALID: "登录请求已过期，请重新点击登录。",
-  OAUTH_IDENTITY_UNUSABLE: "没能从该账号读到可用的身份信息。",
-  ACCOUNT_SUSPENDED: "这个账号已被停用。",
-  REGISTRATION_CLOSED: "本站当前不接受新注册。",
-  OAUTH_EXCHANGE_FAILED: "与登录服务通信失败，请重试。",
+  get OAUTH_PROVIDER_UNAVAILABLE() {
+    return t("这个登录方式暂时不可用，请稍后再试或改用密码登录。");
+  },
+  get OAUTH_STATE_INVALID() {
+    return t("登录请求已过期，请重新点击登录。");
+  },
+  get OAUTH_IDENTITY_UNUSABLE() {
+    return t("没能从该账号读到可用的身份信息。");
+  },
+  get ACCOUNT_SUSPENDED() {
+    return t("这个账号已被停用。");
+  },
+  get REGISTRATION_CLOSED() {
+    return t("本站当前不接受新注册。");
+  },
+  get OAUTH_EXCHANGE_FAILED() {
+    return t("与登录服务通信失败，请重试。");
+  },
   // Binding, not signing in: this comes back when the provider account is
   // already attached to a different account on this instance.
-  IDENTITY_ALREADY_LINKED: "这个账号已经绑定到本站的另一个账户了。",
+  get IDENTITY_ALREADY_LINKED() {
+    return t("这个账号已经绑定到本站的另一个账户了。");
+  },
 };
 
 const METHOD_LABELS: Record<SignInMethod, string> = {
-  password: "密码",
-  token: "API 令牌",
+  get password() {
+    return t("密码");
+  },
+  get token() {
+    return t("API 令牌");
+  },
 };
 
 // The server names the credential kinds that would have worked, so this reads
@@ -53,9 +72,11 @@ function unavailableCredentialMessage(
     )
     .map((value) => METHOD_LABELS[value]);
   if (named.length === 0) {
-    return "这个账户只能用第三方账号登录，请在下方选择。";
+    return t("这个账户只能用第三方账号登录，请在下方选择。");
   }
-  return `这个账户不能这样登录，可以改用${named.join("或")}。`;
+  return t("这个账户不能这样登录，可以改用{{value1}}。", {
+    value1: named.join(t("或")),
+  });
 }
 
 function orderedProviders(
@@ -78,23 +99,23 @@ function credentialErrorMessage(
   method: "password" | "token",
 ): string {
   if (!(error instanceof PublicApiError)) {
-    return "登录没有完成，请重试。输入内容已保留。";
+    return t("登录没有完成，请重试。输入内容已保留。");
   }
-  if (error.code === "ACCOUNT_NOT_FOUND") return "本站没有这个用户名。";
+  if (error.code === "ACCOUNT_NOT_FOUND") return t("本站没有这个用户名。");
   if (error.code === "CREDENTIAL_UNAVAILABLE") {
     return unavailableCredentialMessage(error.details);
   }
   if (error.status === 401) {
     return method === "password"
-      ? "密码不正确，请重试。"
-      : "这个API 令牌无效，请检查后重试。";
+      ? t("密码不正确，请重试。")
+      : t("这个API 令牌无效，请检查后重试。");
   }
-  return "登录没有完成，请重试。输入内容已保留。";
+  return t("登录没有完成，请重试。输入内容已保留。");
 }
 
 function authErrorMessage(code: string | null): string | null {
   if (code === null) return null;
-  return AUTH_ERROR_MESSAGES[code] ?? "第三方登录没有完成，请重试。";
+  return AUTH_ERROR_MESSAGES[code] ?? t("第三方登录没有完成，请重试。");
 }
 
 function invalidCredentialField(
@@ -131,6 +152,8 @@ export function CredentialLogin({
    */
   heading?: boolean;
 }) {
+  const { t } = useTranslation();
+
   const { navigate, replace, search } = useNavigation();
   const returnPath = safeReturnPath(new URLSearchParams(search).get("return"));
   const { account, api, state, login, logout, retryStatus } = useSession();
@@ -365,7 +388,7 @@ export function CredentialLogin({
       await logout(site.instanceId);
       navigate("/");
     } catch {
-      showError("退出没有完成。当前会话仍保持登录，请检查连接后重试。");
+      showError(t("退出没有完成。当前会话仍保持登录，请检查连接后重试。"));
     } finally {
       pendingRef.current = false;
       setPending(false);
@@ -378,10 +401,12 @@ export function CredentialLogin({
   const title = heading ? (
     <>
       <p className={styles.eyebrow}>
-        {state === "expired" ? "会话已过期" : "登录"}
+        {state === "expired" ? t("会话已过期") : t("登录")}
       </p>
       <h2>
-        {state === "expired" ? "重新登录" : `登录 ${site.title || "Moment"}`}
+        {state === "expired"
+          ? t("重新登录")
+          : t("登录 {{value1}}", { value1: site.title || "Moment" })}
       </h2>
     </>
   ) : null;
@@ -400,7 +425,7 @@ export function CredentialLogin({
     return (
       <section
         aria-busy="true"
-        aria-label="正在准备登录"
+        aria-label={t("正在准备登录")}
         className={styles.loginGate}
       >
         {title}
@@ -409,12 +434,14 @@ export function CredentialLogin({
   if (state === "signed-in")
     return (
       <section className={styles.loginGate}>
-        <p className={styles.eyebrow}>{canPublish ? "账号会话" : "已登录"}</p>
-        <h2>{canPublish ? "可以继续记录" : "账号尚未获准发布"}</h2>
+        <p className={styles.eyebrow}>
+          {canPublish ? t("账号会话") : t("已登录")}
+        </p>
+        <h2>{canPublish ? t("可以继续记录") : t("账号尚未获准发布")}</h2>
         <p>
           {canPublish
-            ? "此浏览器已通过身份验证。退出会同时清除当前实例的本地草稿。"
-            : "账号正在等待管理员批准，批准后就能发布和回复。"}
+            ? t("此浏览器已通过身份验证。退出会同时清除当前实例的本地草稿。")
+            : t("账号正在等待管理员批准，批准后就能发布和回复。")}
         </p>
         <button
           className={styles.secondaryButton}
@@ -422,7 +449,11 @@ export function CredentialLogin({
           onClick={() => void endSession()}
           type="button"
         >
-          {pending ? "正在退出…" : canPublish ? "退出登录" : "退出登录"}
+          {pending
+            ? t("正在退出…")
+            : canPublish
+              ? t("退出登录")
+              : t("退出登录")}
         </button>
       </section>
     );
@@ -434,9 +465,9 @@ export function CredentialLogin({
       {title}
       {state === "unavailable" ? (
         <div className={styles.inlineNotice} role="alert">
-          <span>暂时无法确认现有会话，仍可尝试登录。</span>
+          <span>{t("暂时无法确认现有会话，仍可尝试登录。")}</span>
           <button onClick={retryStatus} type="button">
-            重试检查
+            {t("重试检查")}
           </button>
         </div>
       ) : null}
@@ -444,7 +475,7 @@ export function CredentialLogin({
         className={styles.loginForm}
         onSubmit={(event) => void submit(event)}
       >
-        <label htmlFor="login-username">用户名</label>
+        <label htmlFor="login-username">{t("用户名")}</label>
         <div className={styles.tokenField}>
           <input
             aria-describedby={invalidField === "username" ? errorId : undefined}
@@ -456,7 +487,7 @@ export function CredentialLogin({
               setUsername(event.target.value);
               clearError();
             }}
-            placeholder="你的用户名"
+            placeholder={t("你的用户名")}
             readOnly={pending}
             spellCheck={false}
             type="text"
@@ -489,7 +520,7 @@ export function CredentialLogin({
             onClick={() => setShowCredential((current) => !current)}
             type="button"
           >
-            {showCredential ? "隐藏" : "显示"}
+            {showCredential ? t("隐藏") : t("显示")}
           </button>
         </div>
         <p className={styles.srOnly} id={errorId}>
@@ -500,14 +531,14 @@ export function CredentialLogin({
           disabled={!credential || pending || optionsPending}
           type="submit"
         >
-          {pending ? "正在登录…" : "登录"}
+          {pending ? t("正在登录…") : t("登录")}
         </button>
       </form>
       {providers.length > 0 ? (
         <>
           <div className={styles.oauthSeparator}>
             <span aria-hidden="true" className={styles.oauthRule} />
-            <span>或</span>
+            <span>{t("或")}</span>
             <span aria-hidden="true" className={styles.oauthRule} />
           </div>
           <div className={styles.oauthOptions}>
@@ -525,8 +556,8 @@ export function CredentialLogin({
                   {icon ? <Icon name={icon} /> : null}
                   <span>
                     {starting
-                      ? `正在前往 ${provider.label}…`
-                      : `使用 ${provider.label} 登录`}
+                      ? t("正在前往 {{value1}}…", { value1: provider.label })
+                      : t("使用 {{value1}} 登录", { value1: provider.label })}
                   </span>
                 </button>
               );
@@ -551,7 +582,9 @@ export function CredentialLogin({
                 }}
                 type="button"
               >
-                使用{METHOD_LABELS[candidate]}登录
+                {t("使用")}
+                {METHOD_LABELS[candidate]}
+                {t("登录")}
               </button>
             ))
           ) : (
@@ -561,7 +594,7 @@ export function CredentialLogin({
               onClick={() => setShowOtherMethods(true)}
               type="button"
             >
-              选择其他登录方式
+              {t("选择其他登录方式")}
             </button>
           )}
         </div>

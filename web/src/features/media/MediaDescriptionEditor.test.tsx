@@ -42,20 +42,18 @@ const open = () =>
       name: /Add descriptions|image descriptions?/,
     }),
   );
-const input = () => screen.getByRole("textbox", { name: "Description" });
+const input = () => screen.getByRole("textbox", { name: "描述" });
 
 describe("media descriptions", () => {
   it("opens directly on the first image with an optional text field", () => {
     render(<Harness initial={[picture("a"), picture("b")]} />);
     open();
     expect(
-      screen.getByRole("heading", { name: "Edit image description" }),
+      screen.getByRole("heading", { name: "编辑图片描述" }),
     ).toBeInTheDocument();
     expect(input()).toHaveValue("");
     expect(screen.getByText("0 / 1,000")).toBeInTheDocument();
-    expect(
-      screen.getByRole("button", { name: "Previous image" }),
-    ).toBeDisabled();
+    expect(screen.getByRole("button", { name: "上一张图片" })).toBeDisabled();
     expect(screen.queryByRole("radio")).not.toBeInTheDocument();
     expect(
       screen.queryByText(/未描述|纯装饰|上移|下移/),
@@ -68,11 +66,11 @@ describe("media descriptions", () => {
     );
     open();
     fireEvent.change(input(), { target: { value: "第一张" } });
-    fireEvent.click(screen.getByRole("button", { name: "Next image" }));
+    fireEvent.click(screen.getByRole("button", { name: "下一张图片" }));
     expect(input()).toHaveValue("");
-    expect(screen.getByRole("button", { name: "Next image" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "下一张图片" })).toBeDisabled();
     fireEvent.change(input(), { target: { value: "第二张" } });
-    fireEvent.click(screen.getByRole("button", { name: "Previous image" }));
+    fireEvent.click(screen.getByRole("button", { name: "上一张图片" }));
     expect(input()).toHaveValue("第一张");
     expect(changed).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
@@ -105,7 +103,7 @@ describe("media descriptions", () => {
     );
     open();
     fireEvent.change(input(), { target: { value: "不要保存" } });
-    fireEvent.click(screen.getByRole("button", { name: "Back" }));
+    fireEvent.click(screen.getByRole("button", { name: "返回" }));
     await waitFor(() =>
       expect(screen.queryByRole("dialog")).not.toBeInTheDocument(),
     );
@@ -176,26 +174,24 @@ describe("media descriptions", () => {
     render(<Harness initial={[picture("a")]} />);
     open();
     expect(
-      screen.queryByRole("button", { name: "Next image" }),
+      screen.queryByRole("button", { name: "下一张图片" }),
     ).not.toBeInTheDocument();
   });
   it("opens help without focusing its action and returns to the description draft", async () => {
     render(<Harness initial={[picture("a")]} />);
     open();
     fireEvent.change(input(), { target: { value: "保留" } });
-    fireEvent.click(screen.getByRole("button", { name: "What is alt text?" }));
+    fireEvent.click(screen.getByRole("button", { name: "什么是图片描述？" }));
     expect(
-      await screen.findByRole("heading", { name: "Add descriptions" }),
+      await screen.findByRole("heading", { name: "添加描述" }),
     ).toBeInTheDocument();
     await waitFor(() =>
-      expect(
-        screen.getByRole("dialog", { name: "Add descriptions" }),
-      ).toHaveFocus(),
+      expect(screen.getByRole("dialog", { name: "添加描述" })).toHaveFocus(),
     );
-    fireEvent.click(screen.getByRole("button", { name: "Got it" }));
+    fireEvent.click(screen.getByRole("button", { name: "知道了" }));
     await waitFor(() =>
       expect(
-        screen.queryByRole("heading", { name: "Add descriptions" }),
+        screen.queryByRole("heading", { name: "添加描述" }),
       ).not.toBeInTheDocument(),
     );
     await waitFor(() => expect(input()).toHaveFocus());

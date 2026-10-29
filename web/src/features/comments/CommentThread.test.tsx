@@ -1846,7 +1846,7 @@ describe("public comment thread", () => {
       target: { files: [file] },
     });
     fireEvent.click(screen.getByRole("button", { name: "Add descriptions" }));
-    fireEvent.change(screen.getByRole("textbox", { name: "Description" }), {
+    fireEvent.change(screen.getByRole("textbox", { name: "描述" }), {
       target: { value: "night sky" },
     });
     fireEvent.click(screen.getByRole("button", { name: "Save" }));

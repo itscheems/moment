@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import {
   accountVerification,
   verificationArtwork,
@@ -14,6 +15,8 @@ export function AccountName({
   name?: string;
   prominent?: boolean;
 }) {
+  const { t } = useTranslation();
+
   const verification = accountVerification(identity);
   const size = prominent
     ? verificationArtwork.prominentSize
@@ -23,7 +26,7 @@ export function AccountName({
       <span className={styles.text}>{name}</span>
       {verification ? (
         <svg
-          aria-label="认证账号"
+          aria-label={t("认证账号")}
           className={styles.badge}
           data-verification={verification}
           fill={verificationArtwork.color}

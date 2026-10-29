@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import { InteractiveMapNode } from "../editor/MapNodeView";
 import { useEffect, useMemo } from "react";
 import { createPortal } from "react-dom";
@@ -98,6 +99,8 @@ export function ArticleReadingContent({
   showClearAllAnnotations?: boolean;
   excerptSource?: ReadingExcerptSource;
 }) {
+  const { t } = useTranslation();
+
   const { consider } = useMentionResolver();
   const { navigate } = useNavigation();
   const content = useMemo(() => {
@@ -226,9 +229,9 @@ export function ArticleReadingContent({
           {({ open, toggle, buttonRef }) => {
             const trigger = (
               <SearchAndReplaceButton
-                aria-label="Search"
+                aria-label={t("Search")}
                 data-article-header-action
-                tooltip="Search"
+                tooltip={t("Search")}
                 ref={buttonRef}
                 tabIndex={0}
                 aria-expanded={open}

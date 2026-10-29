@@ -1,16 +1,10 @@
-const relative = new Intl.RelativeTimeFormat("en-US", { numeric: "always" });
+import { getLocale } from "../../i18n";
+import { formatRelative } from "../../i18n/format";
 const dateFormats = new Map<string, Intl.DateTimeFormat>();
 const yearFormats = new Map<string, Intl.DateTimeFormat>();
 
 export function articleSavedAgo(value: string, now = Date.now()): string {
-  const seconds = Math.max(0, Math.floor((now - Date.parse(value)) / 1000));
-  if (seconds < 5) return "just now";
-  if (seconds < 60) return relative.format(-seconds, "second");
-  if (seconds < 3600)
-    return relative.format(-Math.floor(seconds / 60), "minute");
-  if (seconds < 86400)
-    return relative.format(-Math.floor(seconds / 3600), "hour");
-  return relative.format(-Math.floor(seconds / 86400), "day");
+  return formatRelative(value, now, "always");
 }
 
 export function articlePublishedTime(
@@ -19,9 +13,24 @@ export function articlePublishedTime(
   now = Date.now(),
 ): string {
   const seconds = Math.max(1, Math.floor((now - Date.parse(value)) / 1000));
-  if (seconds < 60) return `${seconds}s`;
-  if (seconds < 3600) return `${Math.floor(seconds / 60)}m`;
-  if (seconds < 86400) return `${Math.floor(seconds / 3600)}h`;
+  if (seconds < 60)
+    return new Intl.NumberFormat(getLocale(), {
+      style: "unit",
+      unit: "second",
+      unitDisplay: "narrow",
+    }).format(seconds);
+  if (seconds < 3600)
+    return new Intl.NumberFormat(getLocale(), {
+      style: "unit",
+      unit: "minute",
+      unitDisplay: "narrow",
+    }).format(Math.floor(seconds / 60));
+  if (seconds < 86400)
+    return new Intl.NumberFormat(getLocale(), {
+      style: "unit",
+      unit: "hour",
+      unitDisplay: "narrow",
+    }).format(Math.floor(seconds / 3600));
   let yearFormatter = yearFormats.get(timezone);
   if (!yearFormatter) {
     yearFormatter = new Intl.DateTimeFormat("en-US", {
@@ -32,10 +41,10 @@ export function articlePublishedTime(
   }
   const year = (instant: number) => yearFormatter.format(instant);
   const includeYear = year(Date.parse(value)) !== year(now);
-  const key = `${timezone}:${includeYear}`;
+  const key = `${getLocale()}:${timezone}:${includeYear}`;
   let formatter = dateFormats.get(key);
   if (!formatter) {
-    formatter = new Intl.DateTimeFormat("en-US", {
+    formatter = new Intl.DateTimeFormat(getLocale(), {
       timeZone: timezone,
       month: "short",
       day: "numeric",

@@ -1,3 +1,5 @@
+import { t } from "../../i18n";
+import { useTranslation } from "react-i18next";
 import { useRef } from "react";
 import { Menu } from "@base-ui/react/menu";
 import type { CommentSort } from "../../api/public";
@@ -5,8 +7,18 @@ import { Icon } from "../../components/icons";
 import styles from "./ReplySort.module.css";
 
 const options = [
-  { value: "oldest", label: "最早" },
-  { value: "newest", label: "最新" },
+  {
+    value: "oldest",
+    get label() {
+      return t("最早");
+    },
+  },
+  {
+    value: "newest",
+    get label() {
+      return t("最新");
+    },
+  },
 ] as const;
 
 export function ReplySort({
@@ -18,6 +30,8 @@ export function ReplySort({
   busy: boolean;
   onChange: (sort: CommentSort) => void;
 }) {
+  const { t } = useTranslation();
+
   const firstItem = useRef<HTMLDivElement>(null);
   return (
     <div className={styles.bar} aria-busy={busy} data-reply-sort>
@@ -28,7 +42,9 @@ export function ReplySort({
       >
         <Menu.Trigger
           className={styles.trigger}
-          aria-label={`回复排序：${options.find((option) => option.value === value)!.label}`}
+          aria-label={t("回复排序：{{value1}}", {
+            value1: options.find((option) => option.value === value)!.label,
+          })}
         >
           {options.find((option) => option.value === value)!.label}
           <Icon name="chevron-down" />
@@ -44,7 +60,7 @@ export function ReplySort({
             <Menu.Popup className={styles.popup}>
               <Menu.Group>
                 <Menu.GroupLabel className={styles.title}>
-                  回复排序
+                  {t("回复排序")}
                 </Menu.GroupLabel>
                 <Menu.RadioGroup
                   value={value}

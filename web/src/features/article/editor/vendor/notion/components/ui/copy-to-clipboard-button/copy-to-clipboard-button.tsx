@@ -1,5 +1,7 @@
 "use client";
 
+import { t } from "../../../../../../../../i18n";
+
 import { forwardRef, useCallback } from "react";
 
 // --- Lib ---
@@ -93,7 +95,7 @@ export const CopyToClipboardButton = forwardRef<
         role="button"
         tabIndex={-1}
         aria-label={label}
-        tooltip="Copy to clipboard"
+        tooltip={t("Copy to clipboard")}
         onClick={handleClick}
         {...buttonProps}
         ref={ref}

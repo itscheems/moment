@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import {
   type CSSProperties,
   type ChangeEvent,
@@ -149,6 +150,8 @@ export function MediaComposer({
   maximumTotalBytes?: number;
   subject?: string;
 }) {
+  const { t } = useTranslation();
+
   const inputId = useId();
   const reduceMotion = useReducedMotion();
   const [localSelectionError, setLocalSelectionError] = useState<string | null>(
@@ -199,8 +202,14 @@ export function MediaComposer({
           : item.altMode === "decorative"
             ? ""
             : isVideoMimeType(item.mimeType)
-              ? `未提供视频描述，第 ${index + 1} 项，共 ${items.length} 项`
-              : `未提供图片描述，第 ${index + 1} 张，共 ${items.length} 张`,
+              ? t("未提供视频描述，第 {{value1}} 项，共 {{value2}} 项", {
+                  value1: index + 1,
+                  value2: items.length,
+                })
+              : t("未提供图片描述，第 {{value1}} 张，共 {{value2}} 张", {
+                  value1: index + 1,
+                  value2: items.length,
+                }),
       // Only a description the author wrote; see ImageGrid.
       description: item.altMode === "provided" ? item.altText : "",
       kind: videoReady ? "video" : "image",
@@ -304,13 +313,13 @@ export function MediaComposer({
 
   return (
     <section
-      aria-label={containsVideo ? "媒体" : "图片"}
+      aria-label={containsVideo ? t("媒体") : t("图片")}
       className={`${styles.composerMedia} ${compact ? styles.compactComposer : ""} ${homeToolbar ? styles.homeToolbar : ""} ${dialogToolbar ? styles.dialogComposer : ""} ${divider ? styles.dividedComposer : ""} ${className ?? ""}`}
     >
       <input
         accept="image/jpeg,image/png,image/webp,image/gif,image/heic,image/heif,video/mp4,video/quicktime,.heic,.heif,.mp4,.m4v,.mov,.qt"
         aria-describedby={`${inputId}-guidance`}
-        aria-label="媒体文件"
+        aria-label={t("媒体文件")}
         disabled={disabled || items.length >= maximum}
         id={inputId}
         multiple
@@ -321,7 +330,9 @@ export function MediaComposer({
       />
       <ol
         aria-label={
-          containsVideo ? "待发布媒体，按发布顺序" : "待发布图片，按发布顺序"
+          containsVideo
+            ? t("待发布媒体，按发布顺序")
+            : t("待发布图片，按发布顺序")
         }
         className={styles.mediaEditorList}
         data-media-count={items.length}
@@ -355,10 +366,10 @@ export function MediaComposer({
             const uploadStatus = processing
               ? isVideo
                 ? item.processingPosterUrl
-                  ? "封面已就绪 · 正在处理视频"
-                  : "正在生成封面 · 视频处理中"
-                : "正在处理媒体"
-              : `上传 ${item.progress}%`;
+                  ? t("封面已就绪 · 正在处理视频")
+                  : t("正在生成封面 · 视频处理中")
+                : t("正在处理媒体")
+              : t("上传 {{value1}}%", { value1: item.progress });
             return (
               <MediaPresenceItem
                 itemKey={item.key}
@@ -371,8 +382,14 @@ export function MediaComposer({
                     <button
                       aria-label={
                         isVideo
-                          ? `预览第 ${index + 1} 项视频，共 ${items.length} 项`
-                          : `预览第 ${index + 1} 张图片，共 ${items.length} 张`
+                          ? t("预览第 {{value1}} 项视频，共 {{value2}} 项", {
+                              value1: index + 1,
+                              value2: items.length,
+                            })
+                          : t("预览第 {{value1}} 张图片，共 {{value2}} 张", {
+                              value1: index + 1,
+                              value2: items.length,
+                            })
                       }
                       className={styles.editorPreviewButton}
                       disabled={!editorPreviewAvailable || !present}
@@ -388,8 +405,8 @@ export function MediaComposer({
                           height={item.height ?? undefined}
                           pendingLabel={
                             item.progress >= 99
-                              ? "正在生成视频封面"
-                              : "视频封面将在上传后生成"
+                              ? t("正在生成视频封面")
+                              : t("视频封面将在上传后生成")
                           }
                           poster={videoPosterUrl ?? undefined}
                           width={item.width ?? undefined}
@@ -406,10 +423,12 @@ export function MediaComposer({
                         <span className={styles.editorPreviewPending}>
                           <span aria-hidden="true" />
                           {item.state === "uploading"
-                            ? `正在处理 ${item.progress}%`
+                            ? t("正在处理 {{value1}}%", {
+                                value1: item.progress,
+                              })
                             : item.state === "failed"
-                              ? "处理未完成"
-                              : "等待处理"}
+                              ? t("处理未完成")
+                              : t("等待处理")}
                         </span>
                       )}
                     </button>
@@ -428,14 +447,14 @@ export function MediaComposer({
                           }))
                         }
                       >
-                        Edit
+                        {t("Edit")}
                       </button>
                     ) : null}
                     <button
                       aria-label={
                         isVideo
-                          ? `移除第 ${index + 1} 项视频`
-                          : `移除第 ${index + 1} 张图片`
+                          ? t("移除第 {{value1}} 项视频", { value1: index + 1 })
+                          : t("移除第 {{value1}} 张图片", { value1: index + 1 })
                       }
                       className={`${styles.editorRemove} ${styles.mediaRemoveControl}`}
                       data-media-key={item.key}
@@ -489,8 +508,12 @@ export function MediaComposer({
                         <progress
                           aria-label={
                             isVideo
-                              ? `第 ${index + 1} 项上传进度`
-                              : `第 ${index + 1} 张上传进度`
+                              ? t("第 {{value1}} 项上传进度", {
+                                  value1: index + 1,
+                                })
+                              : t("第 {{value1}} 张上传进度", {
+                                  value1: index + 1,
+                                })
                           }
                           className={styles.srOnly}
                           max="100"
@@ -504,7 +527,9 @@ export function MediaComposer({
                         role="status"
                       >
                         <Icon name="check" />
-                        <span>{isVideo ? "视频已上传" : "媒体已上传"}</span>
+                        <span>
+                          {isVideo ? t("视频已上传") : t("媒体已上传")}
+                        </span>
                       </div>
                     ) : null}
                   </div>
@@ -520,7 +545,7 @@ export function MediaComposer({
             item.state === "failed" ? (
               <div key={item.key}>
                 <p role="alert">
-                  第 {index + 1} 项上传失败
+                  {t("第")} {index + 1} {t("项上传失败")}
                   {item.error ? `：${item.error}` : ""}
                 </p>
                 <button
@@ -528,8 +553,10 @@ export function MediaComposer({
                   onClick={() => onRetry(item.key)}
                   type="button"
                 >
-                  重试上传
-                  <span className={styles.srOnly}>第 {index + 1} 项媒体</span>
+                  {t("重试上传")}
+                  <span className={styles.srOnly}>
+                    {t("第")} {index + 1} {t("项媒体")}
+                  </span>
                 </button>
               </div>
             ) : null,
@@ -547,9 +574,9 @@ export function MediaComposer({
       {beforeToolbar}
       <div className={styles.mediaControls}>
         <div className={styles.mediaToolbar}>
-          <ActionTooltip label={pickerTooltip ?? "添加媒体"}>
+          <ActionTooltip label={pickerTooltip ?? t("添加媒体")}>
             <button
-              aria-label="选择媒体"
+              aria-label={t("选择媒体")}
               disabled={disabled || items.length >= maximum}
               onClick={() => fileInputRef.current?.click()}
               ref={pickerRef}
@@ -563,8 +590,10 @@ export function MediaComposer({
         {footerAction}
       </div>
       <p className={styles.srOnly} id={`${inputId}-guidance`}>
-        支持 JPEG、PNG、WebP、GIF、HEIC、MP4 或 QuickTime MOV；图片原件最大 30
-        MiB，视频原件最大 300 MiB，最多 {maximum} 项。媒体不会写入本地文字草稿。
+        {t(
+          "支持 JPEG、PNG、WebP、GIF、HEIC、MP4 或 QuickTime MOV；图片原件最大 30 MiB，视频原件最大 300 MiB，最多",
+        )}{" "}
+        {maximum} {t("项。媒体不会写入本地文字草稿。")}
       </p>
       {selectionError ? (
         <p className={styles.mediaError} role="alert">

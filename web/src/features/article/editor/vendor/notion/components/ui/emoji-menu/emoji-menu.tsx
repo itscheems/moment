@@ -1,5 +1,7 @@
 "use client";
 
+import { useTranslation } from "react-i18next";
+
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { EmojiItem } from "@tiptap/extension-emoji";
 
@@ -77,6 +79,8 @@ export interface EmojiMenuProps<T extends EmojiItem> {
 }
 
 export const EmojiMenu = <T extends EmojiItem>(props: EmojiMenuProps<T>) => {
+  const { t } = useTranslation();
+
   const {
     emojis,
     onSelect,
@@ -123,7 +127,7 @@ export const EmojiMenu = <T extends EmojiItem>(props: EmojiMenuProps<T>) => {
           <Input
             ref={searchRef}
             type="text"
-            placeholder="Add a emoji reaction..."
+            placeholder={t("Add a emoji reaction...")}
             value={searchQuery}
             autoFocus
             onChange={(e) => setSearchQuery(e.target.value)}

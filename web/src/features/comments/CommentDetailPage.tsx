@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import {
   useCallback,
   useEffect,
@@ -57,6 +58,8 @@ export function CommentDetailPage({
   onPostChanged?: (post: PublicPost) => void;
   onSiteChanged?: (site: SiteIdentity) => void;
 }) {
+  const { t } = useTranslation();
+
   const navigation = useNavigation();
   const auth = useSession();
   const [context, setContext] = useState<CommentContext | null>(null);
@@ -165,7 +168,7 @@ export function CommentDetailPage({
       ref={sectionRef}
       hidden={!active}
       inert={!active}
-      aria-label="评论详情"
+      aria-label={t("评论详情")}
     >
       {context && !missing ? (
         <RelevantPeople
@@ -177,7 +180,7 @@ export function CommentDetailPage({
       ) : null}
       {active ? (
         <div className={styles.discussionContext}>
-          <section aria-label="原帖引用">
+          <section aria-label={t("原帖引用")}>
             <PostPresentation
               post={post}
               site={site}
@@ -195,7 +198,7 @@ export function CommentDetailPage({
             />
           </section>
           {selected && !missing && replyTarget ? (
-            <section aria-label="被回复评论引用">
+            <section aria-label={t("被回复评论引用")}>
               <PostPresentation
                 post={commentAsPost(replyTarget, post)}
                 site={site}
@@ -224,18 +227,20 @@ export function CommentDetailPage({
           role="status"
           tabIndex={-1}
         >
-          <strong>这条评论已不存在或不可访问。</strong>
-          <InternalLink href={"/m/" + post.id}>返回原帖</InternalLink>
+          <strong>{t("这条评论已不存在或不可访问。")}</strong>
+          <InternalLink href={"/m/" + post.id}>{t("返回原帖")}</InternalLink>
         </div>
       ) : null}
       {!context && (loading || recovering) && !missing ? (
-        <ReadRecoveryToast active={active}>正在读取评论…</ReadRecoveryToast>
+        <ReadRecoveryToast active={active}>
+          {t("正在读取评论…")}
+        </ReadRecoveryToast>
       ) : null}
       {error && !recovering && !missing ? (
         <div className={styles.threadError} role="alert">
-          <span>这次没有取到评论。</span>
+          <span>{t("这次没有取到评论。")}</span>
           <button type="button" onClick={() => void load()}>
-            重试
+            {t("重试")}
           </button>
         </div>
       ) : null}

@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import { Autocomplete } from "@base-ui/react/autocomplete";
 import { useRef, useState } from "react";
 
@@ -24,6 +25,8 @@ function SearchGlyph({ recent = false }: { recent?: boolean }) {
 }
 
 export function RailSearch({ scope }: { scope: string | null }) {
+  const { t } = useTranslation();
+
   const { navigate } = useNavigation();
   const recent = useRecentSearches(scope);
   const [value, setValue] = useState("");
@@ -44,7 +47,7 @@ export function RailSearch({ scope }: { scope: string | null }) {
   return (
     <div className={styles.searchHeader}>
       <form
-        aria-label="搜索"
+        aria-label={t("搜索")}
         onSubmit={(event) => {
           event.preventDefault();
           search(value);
@@ -65,7 +68,7 @@ export function RailSearch({ scope }: { scope: string | null }) {
               <SearchGlyph />
             </span>
             <Autocomplete.Input
-              aria-label="搜索 Moment"
+              aria-label={t("搜索 Moment")}
               autoComplete="off"
               className={styles.input}
               data-focus-key="shell:search"
@@ -73,11 +76,11 @@ export function RailSearch({ scope }: { scope: string | null }) {
               maxLength={1_000}
               onFocus={() => setOpen(true)}
               ref={input}
-              placeholder="搜索"
+              placeholder={t("搜索")}
               spellCheck={false}
             />
             <Autocomplete.Clear
-              aria-label="清除搜索内容"
+              aria-label={t("清除搜索内容")}
               className={styles.clearInput}
             >
               <svg aria-hidden="true" viewBox="0 0 24 24">
@@ -97,20 +100,22 @@ export function RailSearch({ scope }: { scope: string | null }) {
               <Autocomplete.Popup className={styles.popup}>
                 {!query && recent.length > 0 ? (
                   <div className={styles.recentHeader}>
-                    <h2>最近搜索</h2>
+                    <h2>{t("最近搜索")}</h2>
                     <button
                       className={styles.clearAll}
                       onClick={() => setConfirmClear(true)}
                       type="button"
                     >
-                      全部清除
+                      {t("全部清除")}
                     </button>
                   </div>
                 ) : null}
                 {!query && recent.length === 0 ? (
-                  <p className={styles.empty}>尝试搜索关键词</p>
+                  <p className={styles.empty}>{t("尝试搜索关键词")}</p>
                 ) : null}
-                <Autocomplete.List aria-label={query ? "搜索建议" : "最近搜索"}>
+                <Autocomplete.List
+                  aria-label={query ? t("搜索建议") : t("最近搜索")}
+                >
                   {(item: string) => (
                     <Autocomplete.Item
                       aria-label={item}
@@ -125,7 +130,9 @@ export function RailSearch({ scope }: { scope: string | null }) {
                       <span className={styles.itemText}>{item}</span>
                       {!query ? (
                         <button
-                          aria-label={`删除搜索记录：${item}`}
+                          aria-label={t("删除搜索记录：{{value1}}", {
+                            value1: item,
+                          })}
                           className={styles.remove}
                           onClick={(event) => {
                             event.stopPropagation();
@@ -149,14 +156,16 @@ export function RailSearch({ scope }: { scope: string | null }) {
         </Autocomplete.Root>
       </form>
       <ConfirmDialog
-        cancelLabel="取消"
-        confirmLabel="清除"
-        description="此操作无法撤销，将清除这台设备上当前账号的所有最近搜索。"
+        cancelLabel={t("取消")}
+        confirmLabel={t("清除")}
+        description={t(
+          "此操作无法撤销，将清除这台设备上当前账号的所有最近搜索。",
+        )}
         finalFocus={input}
         onConfirm={() => clearRecentSearches(scope)}
         onOpenChange={setConfirmClear}
         open={confirmClear}
-        title="清除所有最近搜索？"
+        title={t("清除所有最近搜索？")}
       />
     </div>
   );

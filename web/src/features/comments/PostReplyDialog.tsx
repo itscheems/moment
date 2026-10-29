@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import { AccountName } from "../../components/AccountName";
 import { useSession } from "../auth/SessionProvider";
 import { useLoginNavigation } from "../auth/loginNavigation";
@@ -54,6 +55,8 @@ export function PostReplyDialog({
   keepMounted?: boolean;
   formIdPrefix?: string;
 }) {
+  const { t } = useTranslation();
+
   const auth = useSession();
   const { requestLogin } = useLoginNavigation();
   const canCompose = useCanComment();
@@ -92,17 +95,19 @@ export function PostReplyDialog({
           >
             <header className={styles.replyDialogHeader}>
               <Dialog.Close
-                aria-label="关闭回复窗口"
+                aria-label={t("关闭回复窗口")}
                 className={styles.replyDialogClose}
               >
                 <Icon name="close" />
               </Dialog.Close>
               <Dialog.Title className={styles.srOnly}>
-                回复这条 Moment
+                {t("回复这条 Moment")}
               </Dialog.Title>
             </header>
             <article
-              aria-label={`${author.displayName}发布的 Moment`}
+              aria-label={t("{{value1}}发布的 Moment", {
+                value1: author.displayName,
+              })}
               className={styles.replyContext}
             >
               <span aria-hidden="true" className={styles.replyContextAvatar}>
@@ -121,7 +126,7 @@ export function PostReplyDialog({
                 />
                 {!comment ? (
                   <p className={styles.replyContextTarget}>
-                    正在回复{" "}
+                    {t("正在回复")}{" "}
                     <span>
                       {author.username
                         ? "@" + author.username

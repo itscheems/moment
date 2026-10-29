@@ -1,5 +1,7 @@
 "use client";
 
+import { useTranslation } from "react-i18next";
+
 import { useCallback, useEffect, useState } from "react";
 import { type Editor } from "@tiptap/react";
 import { useHotkeys } from "react-hotkeys-hook";
@@ -233,6 +235,8 @@ export function shouldShowButton(props: {
 }
 
 export function useColorHighlight(config: UseColorHighlightConfig) {
+  const { t } = useTranslation();
+
   const {
     editor: providedEditor,
     label,
@@ -332,7 +336,7 @@ export function useColorHighlight(config: UseColorHighlightConfig) {
       ? adapter.applyColor("highlight", "var(--tt-bg-color)")
       : removeHighlight(editor, mode);
     if (success) {
-      onApplied?.({ color: "", label: "Remove highlight", mode });
+      onApplied?.({ color: "", label: t("Remove highlight"), mode });
     }
     return success;
   }, [editor, onApplied, mode, adapter]);
@@ -356,7 +360,7 @@ export function useColorHighlight(config: UseColorHighlightConfig) {
     handleColorHighlight,
     handleRemoveHighlight,
     canColorHighlight: canColorHighlightState,
-    label: label || `Highlight`,
+    label: label ? t(label) : t("Highlight"),
     shortcutKeys: COLOR_HIGHLIGHT_SHORTCUT_KEY,
     Icon: HighlighterIcon,
     mode,
