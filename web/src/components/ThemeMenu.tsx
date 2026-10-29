@@ -3,7 +3,8 @@ import { Dialog } from "./Dialog";
 import { Menu } from "@base-ui/react/menu";
 import { useState } from "react";
 
-import type { SiteIdentity } from "../api/public";
+import type { PublicAccount, SiteIdentity } from "../api/public";
+import { MentionProvider } from "../app/mentions";
 import {
   useTheme,
   type AccentPreference,
@@ -11,9 +12,10 @@ import {
 } from "../theme/ThemeProvider";
 import { Icon } from "./icons";
 import { SiteAvatar, siteHandle } from "./SiteIdentity";
-import { useDocumentScrollLock } from "./useDocumentScrollLock";
+import { MarkdownBody } from "./content/MarkdownBody";
 import { SidebarTooltip } from "./SidebarTooltip";
 import styles from "./ThemeMenu.module.css";
+import postStyles from "../features/posts/PostPresentation.module.css";
 
 const backgrounds: Array<{
   value: ThemePreference;
@@ -35,18 +37,18 @@ const accents: Array<{ value: AccentPreference; label: string }> = [
 ];
 
 export function ThemeMenu({
+  account = null,
   navigation = false,
   site,
 }: {
+  account?: PublicAccount | null;
   navigation?: boolean;
   site: SiteIdentity;
 }) {
   const { accent, preference, setAccent, setPreference } = useTheme();
   const [appearanceOpen, setAppearanceOpen] = useState(false);
-  const title = site.title.trim() || "Moment";
-  const previewHandle = siteHandle(site);
-
-  useDocumentScrollLock(appearanceOpen);
+  const identity = account ?? site;
+  const previewHandle = siteHandle(identity);
 
   const triggerContent = (
     <>
@@ -113,24 +115,32 @@ export function ThemeMenu({
                 这些设置只保存在当前浏览器，会立即应用到所有页面。
               </Dialog.Description>
 
-              <div aria-label="显示效果预览" className={styles.previewCard}>
-                <SiteAvatar site={site} />
-                <div className={styles.previewContent}>
-                  <p className={styles.previewMeta}>
-                    <strong>
-                      <AccountName identity={site} name={title} />
-                    </strong>
-                    <span>{previewHandle} · 刚刚</span>
-                  </p>
-                  <p>
-                    Moment 会用当前显示设置呈现文字、链接和提及，比如{" "}
-                    <span className={styles.previewMention}>
-                      {previewHandle}
-                    </span>
-                    。
-                  </p>
+              <MentionProvider identities={[identity]}>
+                <div
+                  aria-label="显示效果预览"
+                  className={`${styles.previewCard} ${postStyles.timelineDensity}`}
+                >
+                  <SiteAvatar site={identity} size={40} />
+                  <div className={postStyles.postMain}>
+                    <div className={postStyles.byline}>
+                      <div className={postStyles.bylineIdentity}>
+                        <strong className={postStyles.nameLink}>
+                          <AccountName identity={identity} />
+                        </strong>
+                        <span className={postStyles.usernameLink}>
+                          {previewHandle}
+                        </span>
+                        <span>·</span>
+                        <span>刚刚</span>
+                      </div>
+                    </div>
+                    <MarkdownBody
+                      className={postStyles.markdown}
+                      html={`<p>Moment 会用当前显示设置呈现文字、链接和提及，比如 ${previewHandle}。</p>`}
+                    />
+                  </div>
                 </div>
-              </div>
+              </MentionProvider>
 
               <section aria-labelledby="appearance-color-title">
                 <h3 id="appearance-color-title">颜色</h3>
