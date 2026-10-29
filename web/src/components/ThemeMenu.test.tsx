@@ -9,8 +9,9 @@ import {
 } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { NavigationProvider } from "../app/navigation";
 import { mediaPreviewUrl } from "../api/mediaUrls";
-import type { SiteIdentity } from "../api/public";
+import type { PublicAccount, SiteIdentity } from "../api/public";
 import { ThemeProvider } from "../theme/ThemeProvider";
 import { ThemeMenu } from "./ThemeMenu";
 
@@ -44,9 +45,11 @@ describe("ThemeMenu", () => {
 
   it("keeps the navigation More icon outlined while its menu is open", async () => {
     render(
-      <ThemeProvider>
-        <ThemeMenu navigation site={site} />
-      </ThemeProvider>,
+      <NavigationProvider>
+        <ThemeProvider>
+          <ThemeMenu navigation site={site} />
+        </ThemeProvider>
+      </NavigationProvider>,
     );
 
     const trigger = screen.getByRole("button", { name: "更多" });
@@ -66,12 +69,14 @@ describe("ThemeMenu", () => {
     );
   });
 
-  it("locks the page while display settings are open and restores their trigger", async () => {
+  it("focuses display settings and restores their trigger", async () => {
     vi.spyOn(window, "scrollY", "get").mockReturnValue(275);
     render(
-      <ThemeProvider>
-        <ThemeMenu site={site} />
-      </ThemeProvider>,
+      <NavigationProvider>
+        <ThemeProvider>
+          <ThemeMenu site={site} />
+        </ThemeProvider>
+      </NavigationProvider>,
     );
 
     const trigger = screen.getByRole("button", { name: "更多" });
@@ -80,7 +85,8 @@ describe("ThemeMenu", () => {
     fireEvent.click(await screen.findByRole("menuitem", { name: /显示/ }));
 
     const dialog = await screen.findByRole("dialog", { name: "自定义显示" });
-    expect(document.documentElement.style.overflow).toBe("hidden");
+    await waitFor(() => expect(dialog).toHaveFocus());
+    expect(document.documentElement.style.overflow).toBe("");
     expect(document.body.style.position).toBe("");
     expect(document.body.style.top).toBe("");
     fireEvent.click(within(dialog).getByRole("button", { name: "完成" }));
@@ -88,15 +94,17 @@ describe("ThemeMenu", () => {
     await waitFor(() => expect(dialog).not.toBeInTheDocument());
     expect(document.documentElement.style.overflow).toBe("");
     expect(document.body.style.position).toBe("");
-    expect(document.documentElement.style.overflow).toBe("");
+    expect(document.body.style.overflow).toBe("");
     await waitFor(() => expect(trigger).toHaveFocus());
   });
 
   it("previews the site identity and applies every accent and background choice", async () => {
     render(
-      <ThemeProvider>
-        <ThemeMenu site={site} />
-      </ThemeProvider>,
+      <NavigationProvider>
+        <ThemeProvider>
+          <ThemeMenu site={site} />
+        </ThemeProvider>
+      </NavigationProvider>,
     );
 
     fireEvent.click(screen.getByRole("button", { name: "更多" }));
@@ -104,9 +112,13 @@ describe("ThemeMenu", () => {
 
     const dialog = await screen.findByRole("dialog", { name: "自定义显示" });
     const preview = within(dialog).getByLabelText("显示效果预览");
-    expect(within(preview).getByText("Cheems Notes")).toBeInTheDocument();
-    expect(within(preview).getByText("@owner · 刚刚")).toBeInTheDocument();
-    expect(within(preview).getByText("@owner")).toBeInTheDocument();
+    expect(within(preview).getByText(site.displayName)).toBeInTheDocument();
+    expect(
+      within(preview).getByText("@owner", { selector: "span" }),
+    ).toBeInTheDocument();
+    expect(
+      within(preview).getByRole("link", { name: "@owner" }),
+    ).toBeInTheDocument();
     expect(preview.querySelector("img")).toHaveAttribute(
       "src",
       mediaPreviewUrl("01K2ABCDEF0123456789ABCDEFG"),
@@ -150,9 +162,11 @@ describe("ThemeMenu", () => {
     window.localStorage.setItem("moment.theme.v1", "light");
 
     render(
-      <ThemeProvider>
-        <ThemeMenu site={site} />
-      </ThemeProvider>,
+      <NavigationProvider>
+        <ThemeProvider>
+          <ThemeMenu site={site} />
+        </ThemeProvider>
+      </NavigationProvider>,
     );
 
     fireEvent.click(screen.getByRole("button", { name: "更多" }));
@@ -171,5 +185,57 @@ describe("ThemeMenu", () => {
       }),
     ).toHaveLength(3);
     expect(document.documentElement).toHaveAttribute("data-theme", "light");
+  });
+
+  it("updates the preview when the current account changes", async () => {
+    const account: PublicAccount = {
+      userId: "00000000000000000000000000000001",
+      username: "current_writer",
+      displayName: "Current Writer",
+      bio: "",
+      avatarMediaId: "01K2ABCDEF0123456789ABCDEFH",
+      coverMediaId: null,
+      profileUrl: "/current_writer",
+    };
+    const show = (identity: PublicAccount | null) => (
+      <NavigationProvider>
+        <ThemeProvider>
+          <ThemeMenu account={identity} site={site} />
+        </ThemeProvider>
+      </NavigationProvider>
+    );
+    const { rerender } = render(show(account));
+    fireEvent.click(screen.getByRole("button", { name: "更多" }));
+    fireEvent.click(await screen.findByRole("menuitem", { name: /显示/ }));
+
+    const preview = within(
+      await screen.findByRole("dialog", { name: "自定义显示" }),
+    ).getByLabelText("显示效果预览");
+    expect(within(preview).getByText(account.displayName)).toBeInTheDocument();
+    expect(preview.querySelector("img")).toHaveAttribute(
+      "src",
+      mediaPreviewUrl(account.avatarMediaId!),
+    );
+    expect(
+      preview.querySelector('[data-content-renderer="tiptap"]'),
+    ).toHaveTextContent("@current_writer");
+
+    rerender(
+      show({
+        ...account,
+        username: "other_writer",
+        profileUrl: "/other_writer",
+        displayName: "Other Writer",
+      }),
+    );
+    expect(within(preview).getByText("Other Writer")).toBeInTheDocument();
+    expect(within(preview).queryByText("Current Writer")).toBeNull();
+    expect(
+      within(preview).getByRole("link", { name: "@other_writer" }),
+    ).toBeInTheDocument();
+
+    rerender(show(null));
+    expect(within(preview).getByText(site.displayName)).toBeInTheDocument();
+    expect(within(preview).queryByText(site.title)).toBeNull();
   });
 });

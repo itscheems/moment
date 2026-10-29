@@ -221,26 +221,51 @@ describe("App shell and public routes", () => {
     expect(
       mobileNavigation?.querySelector('a[aria-label="发布"]'),
     ).toHaveAttribute("href", "/compose");
-    expect(screen.getByRole("link", { name: "发布" })).toHaveAttribute(
+    expect(screen.getByRole("link", { name: "发帖" })).toHaveAttribute(
       "href",
       "/compose",
     );
     expect(
       screen
-        .getByRole("link", { name: "发布" })
+        .getByRole("link", { name: "发帖" })
         .querySelector('svg[data-icon="sidebar-publish"]'),
     ).toBeInTheDocument();
     const desktopNavigation = screen.getByRole("navigation", {
       name: "主要导航",
     });
     const more = screen.getAllByRole("button", { name: "更多" })[0]!;
-    const publish = screen.getByRole("link", { name: "发布" });
+    const publish = screen.getByRole("link", { name: "发帖" });
     expect(desktopNavigation).toContainElement(more);
     expect(
       Array.from(desktopNavigation.querySelectorAll("a"), (link) =>
         link.getAttribute("aria-label"),
       ),
-    ).toEqual(["首页", "搜索", "归档", "个人资料", "文章"]);
+    ).toEqual(["首页", "搜索", "归档", "个人资料", "文章", "设置"]);
+    expect(
+      Array.from(desktopNavigation.children, (item) =>
+        item.getAttribute("aria-label"),
+      ),
+    ).toEqual([
+      "首页",
+      "搜索",
+      "通知",
+      "归档",
+      "个人资料",
+      "文章",
+      "设置",
+      "更多",
+    ]);
+    expect(
+      within(desktopNavigation).getByRole("link", { name: "设置" }),
+    ).toHaveAttribute("href", "/settings/account");
+    const notifications = within(desktopNavigation).getByRole("button", {
+      name: "通知",
+    });
+    const pushState = vi.spyOn(window.history, "pushState");
+    fireEvent.click(notifications);
+    expect(window.location.pathname).toBe("/");
+    expect(pushState).not.toHaveBeenCalled();
+    expect(notifications).not.toHaveAttribute("aria-current");
     expect(
       more.compareDocumentPosition(publish) & Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
@@ -259,7 +284,7 @@ describe("App shell and public routes", () => {
       const pushState = vi.spyOn(window.history, "pushState");
       const publish = within(
         screen.getByRole("complementary", { name: "站点导航" }),
-      ).getByRole("link", { name: "发布" });
+      ).getByRole("link", { name: "发帖" });
       expect(fireEvent.click(publish, modifier)).toBe(true);
       expect(pushState).not.toHaveBeenCalled();
       expect(window.location.pathname).toBe("/");
@@ -566,7 +591,7 @@ describe("App shell and public routes", () => {
       dispatchEvent: vi.fn(),
     }));
     render(<App />);
-    const publish = screen.getByRole("link", { name: "发布" });
+    const publish = screen.getByRole("link", { name: "发帖" });
     vi.spyOn(window, "scrollX", "get").mockReturnValue(12);
     vi.spyOn(window, "scrollY", "get").mockReturnValue(640);
 
@@ -600,7 +625,7 @@ describe("App shell and public routes", () => {
   // Posting needs a session, and the place to get one is the sign-in page --
   // not a login form folded into the compose dialog.
   it.each([
-    ["发布", "/compose"],
+    ["发帖", "/compose"],
     ["文章", "/compose/articles"],
   ])(
     "sends a visitor from %s to sign-in rather than a dialog",
@@ -720,12 +745,13 @@ describe("App shell and public routes", () => {
       trigger.focus();
       fireEvent.keyDown(trigger, { key: "ArrowDown" });
       await screen.findByRole("menu", { hidden: true });
-      for (const name of ["设置", "退出 @cheemschen"]) {
+      for (const name of ["文章", "退出 @cheemschen"]) {
         expect(screen.getByRole("menuitem", { name })).toBeInTheDocument();
       }
       // Not the profile: the rail carries that row already, and a menu that
       // repeats the row above it is a longer way to the same page.
       expect(screen.queryByRole("menuitem", { name: "个人资料" })).toBeNull();
+      expect(screen.queryByRole("menuitem", { name: "设置" })).toBeNull();
       expect(screen.getByRole("link", { name: "个人资料" })).toHaveAttribute(
         "href",
         "/cheemschen",

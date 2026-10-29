@@ -217,47 +217,12 @@
   max-inline-size: 29rem;
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);
-  gap: var(--space-3);
+  gap: var(--space-2);
   border: 1px solid var(--border-subtle);
   border-radius: 1rem;
   margin: 0 auto var(--space-5);
   padding: var(--space-4);
   background: var(--surface);
-}
-
-.previewContent,
-.previewContent p {
-  min-inline-size: 0;
-  margin: 0;
-}
-
-.previewContent {
-  display: grid;
-  gap: var(--space-1);
-  line-height: 1.45;
-}
-
-.previewMeta {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-1);
-  align-items: baseline;
-}
-
-.previewMeta strong {
-  color: var(--text-primary);
-}
-
-.previewMeta span {
-  overflow: hidden;
-  color: var(--text-secondary);
-  font-size: var(--text-sm);
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.previewMention {
-  color: var(--accent);
 }
 
 .appearanceDialog section + section {

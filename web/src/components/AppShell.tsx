@@ -231,13 +231,6 @@ function AccountRail({
               <Icon name="article" />
               <span>文章</span>
             </Menu.Item>
-            <Menu.Item
-              className={styles.mobileAccountItem}
-              onClick={() => navigate("/settings/account")}
-            >
-              <Icon name="settings" />
-              <span>设置</span>
-            </Menu.Item>
             <Menu.Item className={styles.mobileAccountItem} onClick={onSignOut}>
               <Icon name="close" />
               <span>退出 @{account.username}</span>
@@ -366,22 +359,48 @@ function LeftRail({
   onSignOut: () => void;
 }) {
   const { navigateOverlay } = useNavigation();
+  const items = primaryNavFor(profileHref);
   return (
     <Tooltip.Provider delay={400}>
       <aside aria-label="站点导航" className={styles.leftRail}>
         <div className={styles.leftRailInner}>
           <Brand site={site} />
           <nav aria-label="主要导航" className={styles.desktopNav}>
-            {primaryNavFor(profileHref).map((item) => (
+            {items.slice(0, 2).map((item) => (
               <NavLink item={item} key={item.href} route={route} />
             ))}
-            <ThemeMenu navigation site={site} />
+            <SidebarTooltip label="通知">
+              <button
+                aria-label="通知"
+                className={styles.navLink}
+                data-compact-label="通知"
+                type="button"
+              >
+                <span className={styles.navPill}>
+                  <Icon name="notification" variant="navigation" />
+                  <span className={styles.navLabel}>通知</span>
+                </span>
+              </button>
+            </SidebarTooltip>
+            {items.slice(2).map((item) => (
+              <NavLink item={item} key={item.href} route={route} />
+            ))}
+            <NavLink
+              item={{
+                label: "设置",
+                href: "/settings/account",
+                icon: "settings",
+                active: ["settings"],
+              }}
+              route={route}
+            />
+            <ThemeMenu account={account} navigation site={site} />
           </nav>
-          <SidebarTooltip label="发布">
+          <SidebarTooltip label="发帖">
             <InternalLink
-              aria-label="发布"
+              aria-label="发帖"
               className={styles.publishAction}
-              data-compact-label="发布"
+              data-compact-label="发帖"
               data-focus-key="shell:compose"
               href="/compose"
               onClick={(event) => {
@@ -399,7 +418,7 @@ function LeftRail({
               }}
             >
               <Icon name="sidebar-publish" />
-              <span>发布</span>
+              <span>发帖</span>
             </InternalLink>
           </SidebarTooltip>
           <div className={styles.railBottom}>
@@ -686,7 +705,7 @@ export function AppShell({
                   route.id !== "edit" &&
                   !focusReading ? (
                     <span className={styles.headerTheme}>
-                      <ThemeMenu site={site} />
+                      <ThemeMenu account={account} site={site} />
                     </span>
                   ) : null}
                 </header>
