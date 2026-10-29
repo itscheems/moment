@@ -26,6 +26,28 @@ export function makeAccountLimits(
   };
 }
 
+/** Data returned by ginhttp.accountSessionView for an active member. */
+export function makeAccountSession() {
+  const identity = makeSiteIdentity();
+  return {
+    csrf_token: "csrf-from-cookie",
+    expires_at: "2999-08-11T01:00:00.000Z",
+    account: {
+      user_id: identity.profileUserId,
+      username: identity.username,
+      display_name: identity.displayName,
+      bio: identity.bio,
+      avatar_media_id: identity.avatarMediaId,
+      cover_media_id: identity.coverMediaId,
+      role: "member",
+      status: "active",
+      username_chosen: true,
+      profile_url: `/${identity.username}`,
+    },
+    limits: makeAccountLimits(),
+  };
+}
+
 export function makeSiteIdentity(): import("../api/public").SiteIdentity {
   return {
     profileUserId: "1".repeat(32),
