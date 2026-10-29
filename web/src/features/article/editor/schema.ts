@@ -1,3 +1,4 @@
+import { t } from "../../../i18n";
 import { InteractiveMapNode } from "./MapNodeView";
 import type { Extensions } from "@tiptap/core";
 import { DraftHistory } from "./draftHistory";
@@ -121,7 +122,7 @@ export function articleEditorExtensions(
       textCounter: (text) => Array.from(text.replace(/\s/gu, "")).length,
     }),
     Placeholder.configure({
-      placeholder: options.placeholder ?? "输入文字，或按 / 插入内容…",
+      placeholder: () => options.placeholder ?? t("输入文字，或按 / 插入内容…"),
       showOnlyWhenEditable: true,
       emptyNodeClass: "is-empty with-slash",
     }),

@@ -26,7 +26,7 @@
   overflow-wrap: anywhere;
   margin: var(--space-1) 0 0;
   color: var(--text-primary);
-  font-family: var(--font-utility);
+  font-family: var(--font-sans);
   font-size: var(--text-xs);
 }
 
@@ -125,10 +125,10 @@
 
 .sectionHeader h2 {
   margin: 0;
-  font-family: var(--font-display);
+  font-family: var(--font-sans);
   font-size: var(--text-xl);
-  font-weight: 600;
-  letter-spacing: -0.03em;
+  font-weight: 700;
+  letter-spacing: normal;
 }
 
 .sectionHeader > span {
@@ -136,7 +136,7 @@
   border-radius: 999px;
   padding: 0.2rem 0.55rem;
   color: var(--text-tertiary);
-  font-family: var(--font-utility);
+  font-family: var(--font-sans);
   font-size: 0.68rem;
   white-space: nowrap;
 }
@@ -169,7 +169,7 @@
   gap: var(--space-2);
   color: var(--text-secondary);
   font-size: var(--text-sm);
-  font-weight: 650;
+  font-weight: 700;
 }
 
 .passwordCard input {
@@ -197,10 +197,10 @@
 .backupOverview > p {
   margin: 0 0 var(--space-1);
   color: var(--text-tertiary);
-  font-family: var(--font-utility);
+  font-family: var(--font-sans);
   font-size: var(--text-xs);
-  font-weight: 650;
-  letter-spacing: 0.08em;
+  font-weight: 700;
+  letter-spacing: normal;
   text-transform: uppercase;
 }
 
@@ -225,10 +225,10 @@
   align-self: start;
   padding-block-start: 0.2rem;
   color: var(--accent);
-  font-family: var(--font-utility);
+  font-family: var(--font-sans);
   font-size: var(--text-xs);
-  font-weight: 650;
-  letter-spacing: 0.08em;
+  font-weight: 700;
+  letter-spacing: normal;
 }
 
 .portableStep h3,
@@ -236,10 +236,10 @@
 .restoreStatus h3,
 .backupOverview h3 {
   margin: 0;
-  font-family: var(--font-display);
+  font-family: var(--font-sans);
   font-size: var(--text-lg);
-  font-weight: 600;
-  letter-spacing: -0.025em;
+  font-weight: 700;
+  letter-spacing: normal;
 }
 
 .portableStep > div > p,
@@ -280,7 +280,7 @@
   overflow-wrap: anywhere;
   margin: var(--space-3) 0 0;
   color: var(--text-tertiary);
-  font-family: var(--font-utility);
+  font-family: var(--font-sans);
   font-size: var(--text-xs);
 }
 
@@ -324,10 +324,10 @@
 .restoreStatus > p {
   margin: 0 0 var(--space-1);
   color: var(--accent);
-  font-family: var(--font-utility);
+  font-family: var(--font-sans);
   font-size: var(--text-xs);
-  font-weight: 650;
-  letter-spacing: 0.08em;
+  font-weight: 700;
+  letter-spacing: normal;
   text-transform: uppercase;
 }
 
@@ -338,7 +338,7 @@
   border-radius: 999px;
   padding: 0.2rem 0.55rem;
   color: var(--text-tertiary);
-  font-family: var(--font-utility);
+  font-family: var(--font-sans);
   font-size: 0.68rem;
 }
 
@@ -395,7 +395,7 @@
   color: var(--text-secondary);
   background: transparent;
   font: inherit;
-  font-weight: 650;
+  font-weight: 700;
   cursor: pointer;
 }
 
@@ -431,7 +431,7 @@
 
 .mergeSummary strong {
   color: var(--text-primary);
-  font-family: var(--font-utility);
+  font-family: var(--font-sans);
   font-size: var(--text-lg);
 }
 
@@ -733,7 +733,7 @@
 .mergeClear {
   margin: var(--space-5) 0;
   font-size: var(--text-sm);
-  font-weight: 650;
+  font-weight: 700;
 }
 
 .decisionSummary {
@@ -764,7 +764,7 @@
 .decisionSummary strong {
   overflow-wrap: anywhere;
   color: var(--text-primary);
-  font-family: var(--font-utility);
+  font-family: var(--font-sans);
   font-size: var(--text-sm);
 }
 
@@ -789,7 +789,7 @@
   min-block-size: var(--target-size);
   padding-block: var(--space-3);
   font-size: var(--text-sm);
-  font-weight: 650;
+  font-weight: 700;
   cursor: pointer;
 }
 
@@ -865,7 +865,7 @@
   overflow-wrap: anywhere;
   margin: 0;
   color: var(--text-primary);
-  font-family: var(--font-utility);
+  font-family: var(--font-sans);
   font-size: var(--text-xs);
   text-align: end;
 }
@@ -911,7 +911,7 @@
   min-block-size: var(--target-size);
   border-radius: var(--radius-action);
   padding-inline: var(--space-4);
-  font-weight: 650;
+  font-weight: 700;
   cursor: pointer;
 }
 
@@ -980,17 +980,17 @@
   display: block;
   margin-block-end: var(--space-2);
   color: var(--danger);
-  font-family: var(--font-utility);
+  font-family: var(--font-sans);
   font-size: var(--text-xs);
   font-weight: 700;
-  letter-spacing: 0.08em;
+  letter-spacing: normal;
 }
 
 .leaveDialog h2 {
   margin: 0;
-  font-family: var(--font-display);
+  font-family: var(--font-sans);
   font-size: var(--text-xl);
-  letter-spacing: -0.03em;
+  letter-spacing: normal;
 }
 
 .leaveDialog > p {
@@ -1034,10 +1034,10 @@
 
 .restoreDialog h2 {
   margin: 0;
-  font-family: var(--font-display);
+  font-family: var(--font-sans);
   font-size: var(--text-xl);
-  font-weight: 600;
-  letter-spacing: -0.03em;
+  font-weight: 700;
+  letter-spacing: normal;
 }
 
 .restoreDialog > p {
@@ -1052,7 +1052,7 @@
   border-block: 1px solid var(--border-subtle);
   margin-block: var(--space-5);
   padding-block: var(--space-3);
-  font-family: var(--font-utility);
+  font-family: var(--font-sans);
   font-size: var(--text-xs);
 }
 
@@ -1135,7 +1135,7 @@
 .fieldGrid label > span {
   color: var(--text-secondary);
   font-size: var(--text-sm);
-  font-weight: 650;
+  font-weight: 700;
 }
 
 .fieldGrid input,
@@ -1243,7 +1243,7 @@
   min-block-size: var(--target-size);
   border-radius: var(--radius-action);
   padding-inline: var(--space-4);
-  font-weight: 650;
+  font-weight: 700;
   cursor: pointer;
 }
 
@@ -1324,7 +1324,7 @@
 .technicalDetails p {
   margin: 0 0 var(--space-3);
   color: var(--text-tertiary);
-  font-family: var(--font-utility);
+  font-family: var(--font-sans);
   font-size: var(--text-xs);
 }
 
@@ -1362,18 +1362,18 @@
 .rotationRecovery > p:first-child {
   margin: 0;
   color: var(--danger);
-  font-family: var(--font-utility);
+  font-family: var(--font-sans);
   font-size: var(--text-xs);
-  font-weight: 650;
-  letter-spacing: 0.08em;
+  font-weight: 700;
+  letter-spacing: normal;
   text-transform: uppercase;
 }
 
 .rotationRecovery h3 {
   margin: var(--space-2) 0 0;
-  font-family: var(--font-display);
+  font-family: var(--font-sans);
   font-size: var(--text-xl);
-  font-weight: 600;
+  font-weight: 700;
 }
 
 .rotationRecovery > p:not(:first-child) {
@@ -1390,15 +1390,15 @@
   margin-block: var(--space-4);
   padding-block: var(--space-3);
   color: var(--text-primary);
-  font-family: var(--font-utility);
+  font-family: var(--font-sans);
   font-size: var(--text-sm);
 }
 
 .oneTimeCredential h3 {
   margin: var(--space-2) 0 0;
-  font-family: var(--font-display);
+  font-family: var(--font-sans);
   font-size: var(--text-xl);
-  font-weight: 600;
+  font-weight: 700;
 }
 
 .oneTimeCredential code {
@@ -1408,7 +1408,7 @@
   margin-block: var(--space-4);
   padding-block: var(--space-3);
   color: var(--text-primary);
-  font-family: var(--font-utility);
+  font-family: var(--font-sans);
   font-size: var(--text-sm);
   user-select: all;
 }
@@ -1551,7 +1551,7 @@
 
 .accountBlockHeader strong {
   display: block;
-  font-weight: 650;
+  font-weight: 700;
 }
 
 .accountBlockHeader p {
@@ -1598,7 +1598,7 @@
   display: flex;
   align-items: center;
   gap: 0.4rem;
-  font-weight: 650;
+  font-weight: 700;
 }
 
 .accountRowMain svg {
@@ -1619,7 +1619,7 @@
   padding: 0.15rem var(--space-3);
   color: var(--text-secondary);
   font-size: var(--text-xs);
-  font-weight: 650;
+  font-weight: 700;
 }
 
 .accountBadge[data-tone="pending"] {
@@ -1806,7 +1806,7 @@
   min-block-size: 0;
   margin-block-start: var(--space-3);
   padding: var(--space-3);
-  font-family: var(--font-utility);
+  font-family: var(--font-sans);
   font-size: var(--text-sm);
   line-height: 1.6;
   resize: none;
@@ -1822,7 +1822,7 @@
   margin-block: var(--space-6) var(--space-2);
   padding-block-start: var(--space-5);
   font-size: var(--text-lg);
-  font-weight: 600;
+  font-weight: 700;
 }
 
 .tokenForm {
@@ -1836,7 +1836,7 @@
   display: grid;
   gap: var(--space-1);
   font-size: var(--text-sm);
-  font-weight: 600;
+  font-weight: 700;
 }
 
 .credentialInfo small,
@@ -1859,7 +1859,7 @@
   color: var(--danger);
   background: transparent;
   font-size: var(--text-sm);
-  font-weight: 600;
+  font-weight: 700;
   cursor: pointer;
 }
 

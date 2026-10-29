@@ -84,7 +84,7 @@
   max-inline-size: calc(100vw - 1rem);
   border: 1px solid transparent;
   border-radius: 0.75rem;
-  font-family: var(--font-sidebar);
+  font-family: var(--font-sans);
   font-feature-settings: normal;
   font-synthesis: weight style small-caps;
   letter-spacing: normal;
@@ -371,7 +371,7 @@
   padding-inline: var(--space-5);
   color: var(--button-primary-contrast);
   background: var(--button-primary);
-  font-weight: 750;
+  font-weight: 800;
   cursor: pointer;
   transition: background var(--motion-fast) var(--ease-out);
 }

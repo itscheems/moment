@@ -1,5 +1,7 @@
 "use client";
 
+import { t } from "../../../../../../../../i18n";
+
 import { forwardRef, useCallback } from "react";
 
 // --- Hooks ---
@@ -102,7 +104,7 @@ export const CodeBlockButton = forwardRef<
         tabIndex={-1}
         aria-label={label}
         aria-pressed={isActive}
-        tooltip="Code Block"
+        tooltip={t("Code Block")}
         onClick={handleClick}
         {...buttonProps}
         ref={ref}

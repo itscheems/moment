@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import type { CommentSort } from "../../api/public";
 import { ReplySort } from "./ReplySort";
 import postStyles from "../posts/PostPresentation.module.css";
@@ -128,7 +129,7 @@ function followReplyCollapse(
 ) {
   const next = last.nextElementSibling;
   const navigation = document
-    .querySelector('nav[aria-label="移动导航"]')
+    .querySelector("nav[data-mobile-navigation]")
     ?.getBoundingClientRect();
   const viewportBottom = container
     ? container.getBoundingClientRect().bottom
@@ -249,6 +250,8 @@ export function CommentThread({
   instanceId?: string;
   scrollContainerRef?: RefObject<HTMLElement | null>;
 }) {
+  const { t } = useTranslation();
+
   const auth = useSession();
   const threadRef = useRef<HTMLElement>(null);
   const collapseFollow = useRef<ReturnType<typeof followReplyCollapse> | null>(
@@ -619,7 +622,7 @@ export function CommentThread({
     publishMutation({ kind: "created", comment });
     setReply(null);
     setReplyOpen(false);
-    setAnnouncement("回复已发表");
+    setAnnouncement(t("回复已发表"));
   };
 
   const deleted = (comment: PublicComment, repliesAffected: number) => {
@@ -636,8 +639,11 @@ export function CommentThread({
     publishMutation({ kind: "deleted", comment, repliesAffected });
     setAnnouncement(
       repliesAffected > 0
-        ? `回复和 ${repliesAffected} 条后续回复已删除`
-        : "回复已删除",
+        ? t("回复和 {{value1}} 条后续回复已删除", {
+            count: repliesAffected,
+            value1: repliesAffected,
+          })
+        : t("回复已删除"),
     );
     if (conversationId && comment.parentId === conversationId) load();
   };
@@ -755,7 +761,7 @@ export function CommentThread({
         ref={headingRef}
         tabIndex={-1}
       >
-        回复
+        {t("回复")}
       </h2>
 
       <p aria-live="polite" className={styles.srOnly} role="status">
@@ -833,22 +839,24 @@ export function CommentThread({
 
       {items === null && (!loadError || recoveringThread) ? (
         <ReadRecoveryToast active={active}>
-          {loadError ? "正在重新读取回复…" : "正在读取回复…"}
+          {loadError ? t("正在重新读取回复…") : t("正在读取回复…")}
         </ReadRecoveryToast>
       ) : null}
 
       {items !== null && loadError && recoveringThread ? (
-        <ReadRecoveryToast active={active}>正在重新读取回复…</ReadRecoveryToast>
+        <ReadRecoveryToast active={active}>
+          {t("正在重新读取回复…")}
+        </ReadRecoveryToast>
       ) : null}
       {loadError && !recoveringThread ? (
         <div className={styles.threadError} role="alert">
           <strong>
             {loadError instanceof PublicApiError &&
             loadError.code === "API_RESPONSE_INVALID"
-              ? "回复数据无法安全显示"
-              : "这次没有取到回复"}
+              ? t("回复数据无法安全显示")
+              : t("这次没有取到回复")}
           </strong>
-          <span>Moment 正文仍可阅读，请确认登录状态和访问链接。</span>
+          <span>{t("Moment 正文仍可阅读，请确认登录状态和访问链接。")}</span>
         </div>
       ) : null}
 
@@ -866,8 +874,8 @@ export function CommentThread({
           ) : null}
           {!site.commentsEnabled && !closedByServer ? (
             <div className={styles.closedNotice} role="status">
-              <strong>回复已关闭</strong>
-              <span>过往回复继续公开可读，现在不能发表新内容。</span>
+              <strong>{t("回复已关闭")}</strong>
+              <span>{t("过往回复继续公开可读，现在不能发表新内容。")}</span>
             </div>
           ) : canCompose ? (
             <CommentForm
@@ -933,7 +941,9 @@ export function CommentThread({
                         pinnedCommentId: nextPinnedCommentId,
                       });
                       setAnnouncement(
-                        nextPinnedCommentId ? "回复已置顶" : "已取消置顶回复",
+                        nextPinnedCommentId
+                          ? t("回复已置顶")
+                          : t("已取消置顶回复"),
                       );
                     }}
                     onReply={(_rootId, target) => {
@@ -1053,14 +1063,14 @@ export function CommentThread({
 
           {moreError ? (
             <ReadRecoveryToast active={active} error={moreError}>
-              正在重新获取更多回复…
+              {t("正在重新获取更多回复…")}
             </ReadRecoveryToast>
           ) : null}
 
           {nextCursor && !moreError ? (
             <LoadMoreSentinel
               cursor={nextCursor}
-              label="加载更多"
+              label={t("加载更多")}
               loading={loadingMore || threadLoading}
               onLoad={loadMoreRoots}
             />
@@ -1094,6 +1104,8 @@ function ReplyBranch({
   onLoad: (source: LoadSource) => void;
   paging?: ReplyPaging;
 }) {
+  const { t } = useTranslation();
+
   useReadRecovery({
     error: paging?.error,
     loading: Boolean(paging?.loading),
@@ -1111,10 +1123,13 @@ function ReplyBranch({
           type="button"
         >
           {paging?.loading
-            ? "正在加载…"
+            ? t("正在加载…")
             : expanded
-              ? "加载更多"
-              : `展开其余 ${hidden} 条回复`}
+              ? t("加载更多")
+              : t("展开其余 {{value1}} 条回复", {
+                  count: hidden,
+                  value1: hidden,
+                })}
         </button>
       ) : null}
       {expanded ? (
@@ -1123,12 +1138,12 @@ function ReplyBranch({
           type="button"
           onClick={onCollapse}
         >
-          收起
+          {t("收起")}
         </button>
       ) : null}
       {paging?.error ? (
         <ReadRecoveryToast active={active} error={paging.error}>
-          正在重新获取回复…
+          {t("正在重新获取回复…")}
         </ReadRecoveryToast>
       ) : null}
     </div>

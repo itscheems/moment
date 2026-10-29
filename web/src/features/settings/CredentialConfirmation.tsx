@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { Dialog } from "../../components/Dialog";
 import { notify } from "../../components/Feedback";
@@ -16,6 +17,8 @@ import styles from "./Settings.module.css";
 
 /** The server owns the one-hour, session-bound HttpOnly confirmation. */
 export function CredentialConfirmation() {
+  const { t } = useTranslation();
+
   const { account, session, api, expireIfInvalidSession } = useSession();
   const input = useRef<HTMLInputElement>(null);
   const finalFocus = useRef<HTMLElement | null>(null);
@@ -52,7 +55,7 @@ export function CredentialConfirmation() {
   }
   function verified() {
     if (!resolve.current) return;
-    notify("身份验证成功", {
+    notify(t("身份验证成功"), {
       id: "credential-confirmation",
       placement: "corner",
       timeout: 1800,
@@ -113,7 +116,7 @@ export function CredentialConfirmation() {
       })
       .catch((next: unknown) => {
         if (!controller.signal.aborted && !expireIfInvalidSession(next))
-          setError("确认方式暂时无法读取，请重试。");
+          setError(t("确认方式暂时无法读取，请重试。"));
       });
     return () => controller.abort();
   }, [open, attempt, api, expireIfInvalidSession]);
@@ -132,7 +135,7 @@ export function CredentialConfirmation() {
     } catch (next) {
       setSecret("");
       if (!expireIfInvalidSession(next))
-        setError("验证失败，请输入当前有效的凭据。");
+        setError(t("验证失败，请输入当前有效的凭据。"));
     } finally {
       setPending(false);
     }
@@ -145,7 +148,7 @@ export function CredentialConfirmation() {
       "popup,width=520,height=720",
     );
     if (!popup) {
-      setError("验证窗口未能打开，请允许弹出窗口后重试。");
+      setError(t("验证窗口未能打开，请允许弹出窗口后重试。"));
       return;
     }
     providerWindow.current = popup;
@@ -170,7 +173,7 @@ export function CredentialConfirmation() {
           closeProvider();
           setPending(false);
           if (!expireIfInvalidSession(next))
-            setError("验证状态暂时无法读取，请重试。");
+            setError(t("验证状态暂时无法读取，请重试。"));
         }
       }
     };
@@ -192,17 +195,19 @@ export function CredentialConfirmation() {
             finalFocus={finalFocus}
           >
             <Dialog.Close
-              aria-label="关闭身份确认"
+              aria-label={t("关闭身份确认")}
               className={styles.dialogClose}
               disabled={pending}
             >
               ×
             </Dialog.Close>
             <Dialog.Title className={forms.dialogTitle}>
-              验证身份以继续
+              {t("验证身份以继续")}
             </Dialog.Title>
             <Dialog.Description className={forms.dialogDescription}>
-              此操作需要验证身份。验证后，在当前登录会话内 1 小时无需重复输入。
+              {t(
+                "此操作需要验证身份。验证后，在当前登录会话内 1 小时无需重复输入。",
+              )}
             </Dialog.Description>
             <form
               className={styles.settingsForm}
@@ -210,10 +215,10 @@ export function CredentialConfirmation() {
             >
               <label>
                 {passwordEnabled === null
-                  ? "正在读取确认方式…"
+                  ? t("正在读取确认方式…")
                   : passwordEnabled
-                    ? "当前密码"
-                    : "当前 API 令牌"}
+                    ? t("当前密码")
+                    : t("当前 API 令牌")}
                 <input
                   ref={input}
                   autoComplete={passwordEnabled ? "current-password" : "off"}
@@ -231,7 +236,7 @@ export function CredentialConfirmation() {
                   !session || !secret || pending || passwordEnabled === null
                 }
               >
-                {pending ? "正在验证…" : "验证并继续"}
+                {pending ? t("正在验证…") : t("验证并继续")}
               </button>
             </form>
             {passwordEnabled === false
@@ -243,7 +248,7 @@ export function CredentialConfirmation() {
                     disabled={pending}
                     onClick={() => confirmProvider(provider)}
                   >
-                    使用 {providerLabel(provider)} 验证身份
+                    {t("使用")} {providerLabel(provider)} {t("验证身份")}
                   </button>
                 ))
               : null}
@@ -256,7 +261,7 @@ export function CredentialConfirmation() {
                   disabled={pending}
                   onClick={() => setAttempt((value) => value + 1)}
                 >
-                  重试
+                  {t("重试")}
                 </button>
               </p>
             ) : null}

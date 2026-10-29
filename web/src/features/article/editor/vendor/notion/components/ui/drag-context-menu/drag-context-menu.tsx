@@ -1,5 +1,7 @@
 "use client";
 
+import { useTranslation } from "react-i18next";
+
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { Node as TiptapNode } from "@tiptap/pm/model";
 import { offset } from "@floating-ui/react";
@@ -170,6 +172,8 @@ const SubMenuTrigger: React.FC<{
 );
 
 const TransformActionGroup: React.FC = () => {
+  const { t } = useTranslation();
+
   const actions = useNodeTransformActions();
   const { canReset, handleResetFormatting, label, Icon } =
     useResetAllFormatting({
@@ -184,7 +188,7 @@ const TransformActionGroup: React.FC = () => {
       {actions && (
         <SubMenuTrigger icon={Repeat2Icon} label="Turn Into">
           <MenuGroup>
-            <MenuGroupLabel>Turn into</MenuGroupLabel>
+            <MenuGroupLabel>{t("Turn into")}</MenuGroupLabel>
             {actions.map((action) => (
               <BaseMenuItem key={action.label} {...action} />
             ))}
@@ -342,6 +346,8 @@ export const DragContextMenu: React.FC<DragContextMenuProps> = ({
   mobileBreakpoint = 768,
   ...props
 }) => {
+  const { t } = useTranslation();
+
   const { editor } = useTiptapEditor(providedEditor);
   const { aiGenerationActive, isDragging } = useUiEditorState(editor);
   const isMobile = useIsBreakpoint("max", mobileBreakpoint);
@@ -452,8 +458,8 @@ export const DragContextMenu: React.FC<DragContextMenuProps> = ({
                     tabIndex={-1}
                     tooltip={
                       <>
-                        <div>Click for options</div>
-                        <div>Hold for drag</div>
+                        <div>{t("Click for options")}</div>
+                        <div>{t("Hold for drag")}</div>
                       </>
                     }
                     data-weight="small"

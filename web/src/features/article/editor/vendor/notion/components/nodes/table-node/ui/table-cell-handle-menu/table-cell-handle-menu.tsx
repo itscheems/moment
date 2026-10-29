@@ -1,5 +1,7 @@
 "use client";
 
+import { t } from "../../../../../../../../../../i18n";
+
 import { forwardRef, useCallback, useEffect, useState } from "react";
 import type { Editor } from "@tiptap/react";
 
@@ -203,7 +205,7 @@ export const TableCellHandleMenu = forwardRef<
             isMenuOpen && "menu-opened",
             className,
           )}
-          aria-label="Table cells option"
+          aria-label={t("Table cells option")}
           aria-haspopup="menu"
           aria-expanded={isMenuOpen}
           {...props}

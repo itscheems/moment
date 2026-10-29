@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import { useCallback, useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import type {
@@ -28,6 +29,8 @@ export function RelevantPeople({
   context?: CommentContext | null;
   active?: boolean;
 }) {
+  const { t } = useTranslation();
+
   const slot = useRailSlot();
   const wide = useMediaQuery(RAIL_VIEWPORT_QUERY);
   const enabled = active && wide && slot !== null;
@@ -65,16 +68,16 @@ export function RelevantPeople({
   if (recovering)
     return (
       <ReadRecoveryToast onRetry={retry}>
-        正在重新获取相关用户…
+        {t("正在重新获取相关用户…")}
       </ReadRecoveryToast>
     );
   if (!enabled || (!error && !people?.length)) return null;
   return createPortal(
     <PeopleCard
-      title="相关的人"
+      title={t("相关的人")}
       people={people ?? []}
       error={!!error}
-      errorMessage="暂时无法读取相关的人。"
+      errorMessage={t("暂时无法读取相关的人。")}
       onRetry={retry}
     />,
     slot,

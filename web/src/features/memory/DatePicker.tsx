@@ -1,3 +1,5 @@
+import { t } from "../../i18n";
+import { useTranslation } from "react-i18next";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 
 import { Icon } from "../../components/icons";
@@ -44,8 +46,12 @@ function todayParts(now: Date): { year: number; month: number; day: number } {
 function displayDate(value: string): string {
   const parts = dateParts(value);
   return parts
-    ? `${parts.year}年${parts.month + 1}月${parts.day}日`
-    : "选择日期";
+    ? t("{{value1}}年{{value2}}月{{value3}}日", {
+        value1: parts.year,
+        value2: parts.month + 1,
+        value3: parts.day,
+      })
+    : t("选择日期");
 }
 
 function monthDays(year: number, month: number): CalendarDay[] {
@@ -79,6 +85,8 @@ export function DatePicker({
   onChange: (value: string) => void;
   value: string;
 }) {
+  const { t } = useTranslation();
+
   const fallbackId = useId();
   const dialogId = `${id || fallbackId}-calendar`;
   const current = dateParts(value) ?? todayParts(now);
@@ -162,18 +170,21 @@ export function DatePicker({
         >
           <header>
             <strong>
-              {visibleMonth.year}年{visibleMonth.month + 1}月
+              {visibleMonth.year}
+              {t("年")}
+              {visibleMonth.month + 1}
+              {t("月")}
             </strong>
             <div>
               <button
-                aria-label="上个月"
+                aria-label={t("上个月")}
                 onClick={() => showMonth(-1)}
                 type="button"
               >
                 <Icon name="back" />
               </button>
               <button
-                aria-label="下个月"
+                aria-label={t("下个月")}
                 className={styles.nextMonth}
                 onClick={() => showMonth(1)}
                 type="button"
@@ -184,7 +195,7 @@ export function DatePicker({
           </header>
           <div aria-hidden="true" className={styles.weekdays}>
             {WEEKDAYS.map((weekday) => (
-              <span key={weekday}>{weekday}</span>
+              <span key={weekday}>{t(weekday)}</span>
             ))}
           </div>
           <div className={styles.days}>
@@ -204,10 +215,10 @@ export function DatePicker({
           </div>
           <footer>
             <button disabled={!value} onClick={() => choose("")} type="button">
-              清除
+              {t("清除")}
             </button>
             <button onClick={() => choose(todayValue)} type="button">
-              今天
+              {t("今天")}
             </button>
           </footer>
         </div>

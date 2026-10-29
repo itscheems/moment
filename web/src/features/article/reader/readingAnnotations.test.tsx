@@ -254,9 +254,7 @@ describe("temporary reading decorations", () => {
         </ColorActionAdapterContext.Provider>
       </EditorContext.Provider>,
     );
-    fireEvent.click(
-      screen.getByRole("button", { name: "Blue background highlight color" }),
-    );
+    fireEvent.click(screen.getByRole("button", { name: "蓝色背景高亮颜色" }));
     expect(applied).toHaveBeenCalledTimes(1);
     expect(added).toHaveBeenCalledTimes(1);
     expect(write).not.toHaveBeenCalled();
@@ -265,7 +263,7 @@ describe("temporary reading decorations", () => {
     );
     fireEvent.click(
       screen.getByRole("button", {
-        name: "Default background highlight color",
+        name: "默认背景高亮颜色",
       }),
     );
     expect(editor.storage.readingAnnotations.ranges).toHaveLength(0);
@@ -281,9 +279,7 @@ describe("temporary reading decorations", () => {
         <TextStyleColorPanel />
       </EditorContext.Provider>,
     );
-    fireEvent.click(
-      screen.getByRole("button", { name: "Blue background highlight color" }),
-    );
+    fireEvent.click(screen.getByRole("button", { name: "蓝色背景高亮颜色" }));
     await waitFor(() =>
       expect(
         editor.isActive("highlight", {
@@ -327,41 +323,41 @@ it("keeps the reading selection and toolbar after actions, with yellow default a
   const expectSelectionRetained = () => {
     expect(readingSelection(reader)).toEqual({ from: 1, to: 4 });
     expect(
-      screen.getByRole("toolbar", { name: "Reading annotations" }),
+      screen.getByRole("toolbar", { name: "阅读标记" }),
     ).toBeInTheDocument();
   };
   const select = async () => {
     await act(async () => reader.commands.setTextSelection({ from: 1, to: 4 }));
-    return screen.findByRole("button", { name: "Highlight" });
+    return screen.findByRole("button", { name: "高亮" });
   };
   expect(await select()).toHaveStyle({
     "--highlight-color": "var(--tt-color-highlight-yellow)",
   });
   await act(async () =>
-    fireEvent.click(screen.getByRole("button", { name: "Highlight" })),
+    fireEvent.click(screen.getByRole("button", { name: "高亮" })),
   );
   expect(activeReadingColor(reader, { from: 1, to: 4 }, "highlight")).toBe(
     "var(--tt-color-highlight-yellow)",
   );
   expectSelectionRetained();
-  fireEvent.click(screen.getByRole("button", { name: "Copy" }));
+  fireEvent.click(screen.getByRole("button", { name: "复制" }));
   await screen.findByRole("button", { name: "已复制" });
   expect(copy).toHaveBeenCalledWith("one");
   expectSelectionRetained();
   const choose = async (name: string) => {
-    fireEvent.click(screen.getByRole("button", { name: "Text color" }));
+    fireEvent.click(screen.getByRole("button", { name: "文字颜色" }));
     await act(async () =>
       fireEvent.click(await screen.findByRole("button", { name })),
     );
     expectSelectionRetained();
   };
-  await choose("Green background highlight color");
-  for (const color of ["Red", "Brown", "Purple"])
-    await choose(`${color} text text color`);
+  await choose("绿色背景高亮颜色");
+  for (const color of ["红色", "棕色", "紫色"])
+    await choose(`${color}文字文字颜色`);
   expect(await select()).toHaveStyle({
     "--highlight-color": "var(--tt-color-highlight-green)",
   });
-  await choose("Default background highlight color");
+  await choose("默认背景高亮颜色");
   const quickHighlight = await select();
   expect(quickHighlight).toHaveStyle({
     "--highlight-color": "var(--tt-color-highlight-green)",
@@ -372,15 +368,11 @@ it("keeps the reading selection and toolbar after actions, with yellow default a
   );
   expectSelectionRetained();
   await act(async () =>
-    fireEvent.click(
-      screen.getByRole("button", { name: "Clear selection marks" }),
-    ),
+    fireEvent.click(screen.getByRole("button", { name: "清除选区标记" })),
   );
   expect(reader.storage.readingAnnotations.ranges).toHaveLength(0);
   expectSelectionRetained();
-  expect(
-    screen.getByRole("button", { name: "Clear selection marks" }),
-  ).toBeDisabled();
+  expect(screen.getByRole("button", { name: "清除选区标记" })).toBeDisabled();
   expect(reader.getJSON()).toEqual(original);
   expect(write).not.toHaveBeenCalled();
 });
@@ -423,7 +415,7 @@ it("preserves the reading instance across equal-body rerenders and search, reset
     }),
   );
   act(() => original.commands.setTextSelection({ from: 5, to: 8 }));
-  const copy = await screen.findByRole("button", { name: /^Copy$/ });
+  const copy = await screen.findByRole("button", { name: /^复制$/ });
   await act(async () => fireEvent.click(copy));
   expect(writeText).toHaveBeenCalledExactlyOnceWith("riv");
   expect(original.getText()).toBe("the river flows");
@@ -508,11 +500,9 @@ it("freezes a shared excerpt across metadata rerenders and restores its memory-o
     applyReadingColor(reader, { from: 6, to: 12 }, "highlight", "yellow");
     reader.commands.setTextSelection({ from: 8, to: 10 });
   });
-  fireEvent.click(await screen.findByRole("button", { name: "Share excerpt" }));
+  fireEvent.click(await screen.findByRole("button", { name: "分享摘录" }));
   await screen.findByRole("img", { name: "分享图片预览" });
-  expect(
-    screen.queryByRole("toolbar", { name: "Reading annotations" }),
-  ).toBeNull();
+  expect(screen.queryByRole("toolbar", { name: "阅读标记" })).toBeNull();
   expect(draw).toHaveBeenCalledOnce();
   const snapshot = draw.mock.calls[0][0];
   expect(snapshot.articleTitle).toBe("原始标题");
@@ -527,7 +517,7 @@ it("freezes a shared excerpt across metadata rerenders and restores its memory-o
   expect(content.editor).toBe(reader);
   expect(draw).toHaveBeenCalledOnce();
   fireEvent.click(screen.getByRole("button", { name: "关闭" }));
-  await screen.findByRole("toolbar", { name: "Reading annotations" });
+  await screen.findByRole("toolbar", { name: "阅读标记" });
   expect(readingSelection(reader)).toEqual({ from: 8, to: 10 });
   expect(reader.storage.readingAnnotations.ranges).toHaveLength(1);
   expect(reader.getJSON()).toEqual(before);

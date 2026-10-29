@@ -44,6 +44,7 @@ func registerAccounts(application *Application, appVersion string) {
 	registerAccountImport(application, appVersion)
 	registerAccountAdministration(application)
 	registerProfile(application)
+	registerPreferences(application)
 	application.MustRegisterLeaf(LeafSpec{
 		Path: []string{"user", "list"}, Short: "List the accounts on this site",
 		Long:       "Report every account with its role and status, so applications waiting on approval can be seen without a browser.",

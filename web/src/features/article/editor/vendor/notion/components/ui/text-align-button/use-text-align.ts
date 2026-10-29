@@ -1,5 +1,7 @@
 "use client";
 
+import { useTranslation } from "react-i18next";
+
 import { useCallback, useEffect, useState } from "react";
 import type { ChainedCommands } from "@tiptap/react";
 import { type Editor } from "@tiptap/react";
@@ -174,6 +176,7 @@ export function shouldShowButton(props: {
  * ```
  */
 export function useTextAlign(config: UseTextAlignConfig) {
+  const { t } = useTranslation();
   const {
     editor: providedEditor,
     align,
@@ -217,7 +220,7 @@ export function useTextAlign(config: UseTextAlignConfig) {
     isActive,
     handleTextAlign,
     canAlign,
-    label: textAlignLabels[align],
+    label: t(textAlignLabels[align]),
     shortcutKeys: TEXT_ALIGN_SHORTCUT_KEYS[align],
     Icon: textAlignIcons[align],
   };

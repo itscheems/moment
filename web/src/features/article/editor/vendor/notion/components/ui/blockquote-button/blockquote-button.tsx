@@ -1,5 +1,7 @@
 "use client";
 
+import { t } from "../../../../../../../../i18n";
+
 import { forwardRef, useCallback } from "react";
 
 // --- Tiptap UI ---
@@ -102,7 +104,7 @@ export const BlockquoteButton = forwardRef<
         data-disabled={!canToggle}
         aria-label={label}
         aria-pressed={isActive}
-        tooltip="Blockquote"
+        tooltip={t("Blockquote")}
         onClick={handleClick}
         {...buttonProps}
         ref={ref}

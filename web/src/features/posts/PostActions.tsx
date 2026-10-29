@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import { postsApi } from "../../api/posts";
 import { Dialog } from "../../components/Dialog";
 import { Menu } from "@base-ui/react/menu";
@@ -31,6 +32,8 @@ export function PostActions({
   onSiteChanged?: (site: SiteIdentity) => void;
   showArticleEdit?: boolean;
 }) {
+  const { t } = useTranslation();
+
   const { navigate } = useNavigation();
   const { account, session, expireIfInvalidSession } = useSession();
   const [menuOpen, setMenuOpen] = useState(false);
@@ -95,12 +98,12 @@ export function PostActions({
       onDeleted?.(deleted);
       if (pinned) onSiteChanged?.({ ...site, pinnedPostId: null });
       setDeleteOpen(false);
-      notify("Moment 已删除");
+      notify(t("Moment 已删除"));
     } catch (nextError) {
       setError(
         expireIfInvalidSession(nextError)
-          ? "登录已过期，重新登录后再删除。"
-          : "没有删除这个 Moment，可以安全重试。",
+          ? t("登录已过期，重新登录后再删除。")
+          : t("没有删除这个 Moment，可以安全重试。"),
       );
     } finally {
       pendingRef.current = false;
@@ -123,12 +126,12 @@ export function PostActions({
         instanceInitializedAt: site.instanceInitializedAt,
       });
       setPinOpen(false);
-      notify(pinned ? "已取消置顶" : "已置顶到个人资料");
+      notify(pinned ? t("已取消置顶") : t("已置顶到个人资料"));
     } catch (nextError) {
       setError(
         expireIfInvalidSession(nextError)
-          ? "登录已过期，重新登录后再操作。"
-          : "置顶状态没有改变，可以安全重试。",
+          ? t("登录已过期，重新登录后再操作。")
+          : t("置顶状态没有改变，可以安全重试。"),
       );
       setPinOpen(false);
     } finally {
@@ -151,13 +154,13 @@ export function PostActions({
         >
           <Icon name="edit" className="tiptap-button-icon" />
           <span className="tiptap-button-text">
-            {pending ? "正在打开…" : "编辑文章"}
+            {pending ? t("正在打开…") : t("编辑文章")}
           </span>
         </Button>
       ) : null}
       <Menu.Root onOpenChange={setMenuOpen} open={menuOpen}>
         <Menu.Trigger
-          aria-label="更多操作"
+          aria-label={t("更多操作")}
           className={styles.actionsMenuTrigger}
           ref={triggerRef}
         >
@@ -171,7 +174,7 @@ export function PostActions({
             sideOffset={4}
           >
             <Menu.Popup
-              aria-label="Moment 操作"
+              aria-label={t("Moment 操作")}
               className={styles.actionsMenuPopup}
             >
               {isAuthor ? (
@@ -188,7 +191,9 @@ export function PostActions({
                   }}
                 >
                   <Icon name="edit" />
-                  <span>{post.kind === "article" ? "编辑文章" : "编辑"}</span>
+                  <span>
+                    {post.kind === "article" ? t("编辑文章") : t("编辑")}
+                  </span>
                 </Menu.Item>
               ) : null}
               {canModerate ? (
@@ -200,7 +205,7 @@ export function PostActions({
                   }}
                 >
                   <Icon name="pin" />
-                  <span>{pinned ? "取消置顶" : "置顶到个人资料"}</span>
+                  <span>{pinned ? t("取消置顶") : t("置顶到个人资料")}</span>
                 </Menu.Item>
               ) : null}
               <Menu.Item
@@ -212,7 +217,7 @@ export function PostActions({
                 }}
               >
                 <Icon name="delete" />
-                <span>删除</span>
+                <span>{t("删除")}</span>
               </Menu.Item>
             </Menu.Popup>
           </Menu.Positioner>
@@ -234,10 +239,10 @@ export function PostActions({
           <Dialog.Viewport className={styles.dialogViewport}>
             <Dialog.Popup className={styles.dialogPopup}>
               <Dialog.Title className={styles.dialogTitle}>
-                删除这段 Moment？
+                {t("删除这段 Moment？")}
               </Dialog.Title>
               <Dialog.Description className={styles.dialogDescription}>
-                这段 Moment 会从公开时间流中移除。此操作不能撤销。
+                {t("这段 Moment 会从公开时间流中移除。此操作不能撤销。")}
               </Dialog.Description>
               {error ? (
                 <p className={styles.dialogError} role="alert">
@@ -249,7 +254,7 @@ export function PostActions({
                   className={styles.secondaryButton}
                   disabled={pending}
                 >
-                  保留
+                  {t("保留")}
                 </Dialog.Close>
                 <button
                   className={styles.dangerButton}
@@ -257,7 +262,11 @@ export function PostActions({
                   onClick={() => void remove()}
                   type="button"
                 >
-                  {pending ? "正在处理…" : error ? "重试删除" : "删除 Moment"}
+                  {pending
+                    ? t("正在处理…")
+                    : error
+                      ? t("重试删除")
+                      : t("删除 Moment")}
                 </button>
               </div>
             </Dialog.Popup>
@@ -277,21 +286,21 @@ export function PostActions({
           <Dialog.Viewport className={styles.dialogViewport}>
             <Dialog.Popup className={styles.dialogPopup}>
               <Dialog.Title className={styles.dialogTitle}>
-                {pinned ? "取消置顶这段 Moment？" : "置顶这段 Moment？"}
+                {pinned ? t("取消置顶这段 Moment？") : t("置顶这段 Moment？")}
               </Dialog.Title>
               <Dialog.Description className={styles.dialogDescription}>
                 {pinned
-                  ? "它会回到个人资料中的原始时间位置。"
+                  ? t("它会回到个人资料中的原始时间位置。")
                   : site.pinnedPostId
-                    ? "它会显示在个人资料顶部，并替换当前置顶的 Moment。"
-                    : "它会显示在个人资料顶部，时间流顺序不会改变。"}
+                    ? t("它会显示在个人资料顶部，并替换当前置顶的 Moment。")
+                    : t("它会显示在个人资料顶部，时间流顺序不会改变。")}
               </Dialog.Description>
               <div className={styles.dialogActions}>
                 <Dialog.Close
                   className={styles.secondaryButton}
                   disabled={pending}
                 >
-                  取消
+                  {t("取消")}
                 </Dialog.Close>
                 <button
                   className={styles.primaryButton}
@@ -299,7 +308,11 @@ export function PostActions({
                   onClick={() => void changePin()}
                   type="button"
                 >
-                  {pending ? "正在处理…" : pinned ? "取消置顶" : "置顶"}
+                  {pending
+                    ? t("正在处理…")
+                    : pinned
+                      ? t("取消置顶")
+                      : t("置顶")}
                 </button>
               </div>
             </Dialog.Popup>

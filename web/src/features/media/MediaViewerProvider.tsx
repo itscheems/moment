@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import {
   useCallback,
   useEffect,
@@ -92,6 +93,8 @@ export function MediaViewerProvider({
   scope: string | null;
   onSiteChanged?: (site: SiteIdentity) => void;
 }) {
+  const { t } = useTranslation();
+
   const navigation = useNavigation();
   const wide = useMediaQuery("(min-width: 950px)");
   const [panelShown, setPanelShown] = useState(wide);
@@ -220,8 +223,8 @@ export function MediaViewerProvider({
   const mediaNoun = displayedGallery?.items.some(
     (item) => item.kind === "video",
   )
-    ? "媒体"
-    : "图片";
+    ? t("媒体")
+    : t("图片");
   return (
     <MediaViewerContext.Provider value={context}>
       {children}
@@ -250,12 +253,14 @@ export function MediaViewerProvider({
               active ? (
                 <>
                   <ActionTooltip
-                    label="回复"
+                    label={t("回复")}
                     placement={viewerTooltipPlacement}
                   >
                     <button
                       type="button"
-                      aria-label={`回复${mediaNoun}所属内容`}
+                      aria-label={t("回复{{value1}}所属内容", {
+                        value1: mediaNoun,
+                      })}
                       data-viewer-action="reply"
                       onClick={requestReply}
                     >
@@ -276,7 +281,7 @@ export function MediaViewerProvider({
                         align="start"
                         baseUrl={site.publicBaseUrl}
                         href={sourceHref(active.source)}
-                        title="Moment"
+                        title={t("Moment")}
                         card={
                           active.source.commentId
                             ? (signal) =>
@@ -292,7 +297,9 @@ export function MediaViewerProvider({
                         trigger={
                           <button
                             type="button"
-                            aria-label={`分享${mediaNoun}所属内容`}
+                            aria-label={t("分享{{value1}}所属内容", {
+                              value1: mediaNoun,
+                            })}
                           >
                             <Icon name="share" />
                           </button>
@@ -348,6 +355,8 @@ function MediaDiscussion({
   onData: (source: MediaSource, value: DiscussionData) => void;
   onSiteChanged?: (site: SiteIdentity) => void;
 }) {
+  const { t } = useTranslation();
+
   const auth = useSession();
   const navigation = useNavigation();
   const [post, setPost] = useState<PublicPost | null>(null);
@@ -479,7 +488,7 @@ function MediaDiscussion({
         if (event.post.id !== source.postId) return;
         if (event.kind === "deleted") {
           setError(
-            new PublicApiError("内容已不可用", {
+            new PublicApiError(t("内容已不可用"), {
               status: 404,
               code: "POST_NOT_FOUND",
             }),
@@ -510,7 +519,7 @@ function MediaDiscussion({
             kind={unavailable ? "missing" : "detail"}
           />
           <button type="button" onClick={retryRead}>
-            重新读取
+            {t("重新读取")}
           </button>
         </div>
       ) : null}
@@ -531,7 +540,7 @@ function MediaDiscussion({
             onDeleted={() => {
               setPost(null);
               setError(
-                new PublicApiError("内容已不可用", {
+                new PublicApiError(t("内容已不可用"), {
                   status: 404,
                   code: "POST_NOT_FOUND",
                 }),
@@ -576,7 +585,7 @@ function MediaDiscussion({
                     countChanged(-(1 + repliesAffected));
                     setPost(null);
                     setError(
-                      new PublicApiError("内容已不可用", {
+                      new PublicApiError(t("内容已不可用"), {
                         status: 404,
                         code: "COMMENT_NOT_FOUND",
                       }),
@@ -612,7 +621,7 @@ function MediaDiscussion({
         type="button"
         onClick={() => navigation.navigate(sourceHref(source))}
       >
-        查看所属内容详情
+        {t("查看所属内容详情")}
       </button>
     </div>
   );

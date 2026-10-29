@@ -1,3 +1,5 @@
+import { getLocale } from "../../i18n";
+import { useTranslation } from "react-i18next";
 import { AccountName } from "../../components/AccountName";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
@@ -63,6 +65,8 @@ export function ProfilePage({
   site: SiteIdentity;
   onSiteSaved: (site: SiteIdentity) => void;
 }) {
+  const { t } = useTranslation();
+
   const auth = useSession();
   const { account: viewerAccount, applyAccount } = auth;
   const canPublish =
@@ -106,7 +110,7 @@ export function ProfilePage({
     ? formatMomentDate(site.instanceInitializedAt, site.timezone)
     : null;
   const joined = site.instanceInitializedAt
-    ? new Intl.DateTimeFormat("zh-CN", {
+    ? new Intl.DateTimeFormat(getLocale(), {
         year: "numeric",
         month: "long",
         timeZone: site.timezone,
@@ -263,7 +267,7 @@ export function ProfilePage({
           <>
             {kind === filter && feed.refreshError ? (
               <ReadRecoveryToast error={feed.refreshError}>
-                正在重新获取更新的内容…
+                {t("正在重新获取更新的内容…")}
               </ReadRecoveryToast>
             ) : null}
             {pinned ? (
@@ -301,13 +305,13 @@ export function ProfilePage({
             ) : null}
             {kind === filter && feed.moreError ? (
               <ReadRecoveryToast error={feed.moreError}>
-                正在重新获取后续内容…
+                {t("正在重新获取后续内容…")}
               </ReadRecoveryToast>
             ) : feed.nextCursor && kind === filter ? (
               <LoadMoreSentinel
                 className={styles.moreRow}
                 cursor={feed.nextCursor}
-                label="加载更早的 Moment"
+                label={t("加载更早的 Moment")}
                 loading={feed.loadingMore || feed.loading}
                 onLoad={(source) => void more(kind, source)}
               />
@@ -319,7 +323,7 @@ export function ProfilePage({
   };
 
   return (
-    <section aria-label={`${title} 的个人资料`}>
+    <section aria-label={t("{{value1}} 的个人资料", { value1: title })}>
       <ProfileHeader api={api} userId={site.profileUserId} title={title} />
       <SuggestedPeople
         api={api}
@@ -338,11 +342,11 @@ export function ProfilePage({
             <ShareMenu
               baseUrl={site.publicBaseUrl}
               href={siteProfileHref(site)}
-              title={`${title} 的个人资料`}
+              title={t("{{value1}} 的个人资料", { value1: title })}
               trigger={
                 <button
-                  aria-label="分享个人资料"
-                  title="分享个人资料"
+                  aria-label={t("分享个人资料")}
+                  title={t("分享个人资料")}
                   type="button"
                 >
                   <Icon name="share" />
@@ -373,7 +377,8 @@ export function ProfilePage({
               exact={initialized.absolute}
               children={
                 <time dateTime={site.instanceInitializedAt}>
-                  <Icon name="calendar" /> {joined}加入
+                  <Icon name="calendar" /> {joined}
+                  {t("加入")}
                 </time>
               }
             />

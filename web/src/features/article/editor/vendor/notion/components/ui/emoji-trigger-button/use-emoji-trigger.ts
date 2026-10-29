@@ -1,5 +1,7 @@
 "use client";
 
+import { useTranslation } from "react-i18next";
+
 import { useCallback, useEffect, useState } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
 import { type Editor } from "@tiptap/react";
@@ -250,6 +252,8 @@ export function shouldShowButton(props: {
  * ```
  */
 export function useEmojiTrigger(config?: UseEmojiTriggerConfig) {
+  const { t } = useTranslation();
+
   const {
     editor: providedEditor,
     node,
@@ -307,7 +311,7 @@ export function useEmojiTrigger(config?: UseEmojiTriggerConfig) {
     isVisible,
     handleAddTrigger,
     canAddTrigger,
-    label: "Add emoji",
+    label: t("Add emoji"),
     shortcutKeys: EMOJI_TRIGGER_SHORTCUT_KEY,
     trigger,
     Icon: SmilePlusIcon,

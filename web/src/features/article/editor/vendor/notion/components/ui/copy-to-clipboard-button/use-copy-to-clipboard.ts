@@ -1,5 +1,7 @@
 "use client";
 
+import { useTranslation } from "react-i18next";
+
 import { useCallback, useEffect, useState } from "react";
 import type { Editor } from "@tiptap/react";
 import { useHotkeys } from "react-hotkeys-hook";
@@ -174,6 +176,8 @@ export function shouldShowButton(props: {
  * ```
  */
 export function useCopyToClipboard(config?: UseCopyToClipboardConfig) {
+  const { t } = useTranslation();
+
   const {
     editor: providedEditor,
     copyWithFormatting = true,
@@ -231,7 +235,7 @@ export function useCopyToClipboard(config?: UseCopyToClipboardConfig) {
     isVisible,
     handleCopyToClipboard,
     canCopyToClipboard: canCopyToClipboardState,
-    label: "Copy to clipboard",
+    label: t("Copy to clipboard"),
     shortcutKeys: COPY_TO_CLIPBOARD_SHORTCUT_KEY,
     Icon: ClipboardIcon,
   };

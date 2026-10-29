@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import { AccountName } from "../../components/AccountName";
 import { accountVerification } from "../../components/accountVerification";
 import { useOptionalSession } from "../auth/SessionProvider";
@@ -61,6 +62,8 @@ export function ArticlePage({
   onSiteChanged?: (site: SiteIdentity) => void;
   onReply?: MouseEventHandler<HTMLButtonElement>;
 }) {
+  const { t } = useTranslation();
+
   const session = useOptionalSession();
   canPublish = post.author?.userId
     ? session?.account?.userId === post.author.userId &&
@@ -75,7 +78,10 @@ export function ArticlePage({
 
   return (
     <article
-      aria-label={`${siteName}发布的文章：${title}`}
+      aria-label={t("{{value1}}发布的文章：{{value2}}", {
+        value1: siteName,
+        value2: title,
+      })}
       className={`${postStyles.post} ${postStyles.detail} ${styles.page} ${focusReading ? styles.focusReading : ""} ${layout === "detail" ? styles.detailLayout : ""}`}
       data-post-id={post.id}
       data-article-theme
@@ -84,7 +90,7 @@ export function ArticlePage({
       {post.timelineItemKind === "repost" ? (
         <div className={postStyles.repostedLabel}>
           <Icon name="repost" />
-          <span>已转发</span>
+          <span>{t("已转发")}</span>
         </div>
       ) : null}
       <ArticleSheet
@@ -105,7 +111,9 @@ export function ArticlePage({
               site={site}
               children={
                 <InternalLink
-                  aria-label={`查看 ${siteName} 的个人资料`}
+                  aria-label={t("查看 {{value1}} 的个人资料", {
+                    value1: siteName,
+                  })}
                   className={postStyles.identityLink}
                   href={siteProfileHref(site)}
                 >
@@ -144,9 +152,9 @@ export function ArticlePage({
                   }
                 />
                 {hidden ? (
-                  <ActionTooltip label="仅自己可见">
+                  <ActionTooltip label={t("仅自己可见")}>
                     <span
-                      aria-label="仅自己可见"
+                      aria-label={t("仅自己可见")}
                       className={postStyles.hiddenMark}
                       role="img"
                     >
@@ -188,16 +196,20 @@ export function ArticlePage({
             avatarUrl: site.avatarMediaId
               ? mediaPreviewUrl(site.avatarMediaId)
               : null,
-            publishedLabel: `文章摘录 · ${published.absolute}`,
+            publishedLabel: t("文章摘录 · {{value1}}", {
+              value1: published.absolute,
+            }),
           }}
         />
         {focusReading ? (
-          <footer aria-label="文章作者" className={styles.readingFooter}>
+          <footer aria-label={t("文章作者")} className={styles.readingFooter}>
             <SiteIdentityPreview
               site={site}
               children={
                 <InternalLink
-                  aria-label={`查看 ${siteName} 的个人资料`}
+                  aria-label={t("查看 {{value1}} 的个人资料", {
+                    value1: siteName,
+                  })}
                   className={styles.readingAuthor}
                   href={siteProfileHref(site)}
                 >
@@ -222,14 +234,17 @@ export function ArticlePage({
           href="#comments"
         >
           <strong>{post.commentCount}</strong>
-          <span>条回复</span>
+          <span>{t("条回复")}</span>
         </a>
       ) : null}
       {showDiscussionActions ? (
         <div className={`${postStyles.postActions} ${styles.column}`}>
-          <ActionTooltip label="回复">
+          <ActionTooltip label={t("回复")}>
             <button
-              aria-label={`回复这篇文章${post.commentCount > 0 ? `，${post.commentCount} 条回复` : ""}`}
+              aria-label={t("回复这篇文章{{value1}}", {
+                value1:
+                  post.commentCount > 0 ? `，${post.commentCount} 条回复` : "",
+              })}
               className={`${postStyles.postAction} ${postStyles.replyAction}`}
               onClick={onReply}
               type="button"
@@ -269,7 +284,7 @@ export function ArticlePage({
             title={title}
             trigger={
               <button
-                aria-label="分享这篇文章"
+                aria-label={t("分享这篇文章")}
                 className={`${postStyles.postAction} ${postStyles.shareAction}`}
                 type="button"
               >

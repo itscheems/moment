@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import { useEffect, useState } from "react";
 import { type Editor } from "@tiptap/react";
 
@@ -146,6 +147,8 @@ export function MoreOptions({
   hideWhenUnavailable = false,
   ...props
 }: MoreOptionsProps) {
+  const { t } = useTranslation();
+
   const { editor } = useTiptapEditor(providedEditor);
   const [show, setShow] = useState(false);
 
@@ -185,7 +188,7 @@ export function MoreOptions({
               data-style="ghost"
               role="button"
               tabIndex={-1}
-              tooltip="More options"
+              tooltip={t("More options")}
               {...props}
             >
               <MoreVerticalIcon className="tiptap-button-icon" />

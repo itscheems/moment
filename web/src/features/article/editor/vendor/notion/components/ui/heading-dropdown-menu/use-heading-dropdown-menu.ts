@@ -1,5 +1,7 @@
 "use client";
 
+import { useTranslation } from "react-i18next";
+
 import { useEffect, useState } from "react";
 import type { Editor } from "@tiptap/react";
 
@@ -89,6 +91,8 @@ export function getActiveHeadingLevel(
  * ```
  */
 export function useHeadingDropdownMenu(config?: UseHeadingDropdownMenuConfig) {
+  const { t } = useTranslation();
+
   const {
     editor: providedEditor,
     levels = [1, 2, 3, 4, 5, 6],
@@ -126,7 +130,7 @@ export function useHeadingDropdownMenu(config?: UseHeadingDropdownMenuConfig) {
     isActive,
     canToggle: canToggleState,
     levels,
-    label: "Heading",
+    label: t("Heading"),
     Icon: activeLevel ? headingIcons[activeLevel] : HeadingIcon,
   };
 }

@@ -1,5 +1,7 @@
 "use client";
 
+import { useTranslation } from "react-i18next";
+
 import { forwardRef, useMemo, useCallback } from "react";
 
 // --- UI Primitives ---
@@ -112,6 +114,8 @@ const SizeIndicator = ({
 }: {
   hoveredCell: CellCoordinates | null;
 }) => {
+  const { t } = useTranslation();
+
   const columns = hoveredCell ? hoveredCell.col + 1 : 1;
   const rows = hoveredCell ? hoveredCell.row + 1 : 1;
 
@@ -121,7 +125,7 @@ const SizeIndicator = ({
         <TableColumnIcon className="tiptap-table-column-icon" />
         <span className="tiptap-table-size-indicator-text">{columns}</span>
       </div>
-      <span className="tiptap-table-size-indicator-delimiter">x</span>
+      <span className="tiptap-table-size-indicator-delimiter">{t("x")}</span>
       <div className="tiptap-table-size-indicator-item">
         <TableRowIcon className="tiptap-table-row-icon" />
         <span className="tiptap-table-size-indicator-text">{rows}</span>

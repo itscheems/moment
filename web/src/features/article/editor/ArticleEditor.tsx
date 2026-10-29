@@ -1,3 +1,5 @@
+import { t as translate } from "../../../i18n";
+import { useTranslation } from "react-i18next";
 import { AccountName } from "../../../components/AccountName";
 import { accountVerification } from "../../../components/accountVerification";
 import { mediaApi } from "../../../api/media";
@@ -102,6 +104,8 @@ export function ArticleEditor({
   onBack?: () => void;
   onToggleFocus?: () => void;
 }) {
+  const { t } = useTranslation();
+
   const auth = useSession();
   const location = useNavigation();
   const api = useMemo(() => new ArticleDraftApi(), []);
@@ -180,7 +184,7 @@ export function ArticleEditor({
         upload: async (file, onProgress, signal) => {
           const current = uploadSession.current;
           const token = current.session?.csrfToken;
-          if (!token) throw new Error("登录状态已经失效。");
+          if (!token) throw new Error(translate("登录状态已经失效。"));
           const id = createIdempotencyKey();
           setUploads((tasks) => [...tasks, { id, failed: null }]);
           try {
@@ -216,7 +220,7 @@ export function ArticleEditor({
     immediatelyRender: false,
     editorProps: {
       attributes: {
-        "aria-label": "文章正文",
+        "aria-label": t("文章正文"),
         class: "tiptap ProseMirror notion-like-editor",
         role: "textbox",
         "aria-multiline": "true",
@@ -404,11 +408,11 @@ export function ArticleEditor({
         return draftRef.current;
       const input = currentInput();
       if (input === null) {
-        setSaveState({ kind: "failed", message: "正文里有存不下的内容。" });
+        setSaveState({ kind: "failed", message: t("正文里有存不下的内容。") });
         return null;
       }
       if (csrfToken === "") {
-        setSaveState({ kind: "failed", message: "登录状态已经失效。" });
+        setSaveState({ kind: "failed", message: t("登录状态已经失效。") });
         return null;
       }
       const savedThrough = revision.current;
@@ -514,11 +518,11 @@ export function ArticleEditor({
       if (allowLeave.current) return true;
       if (discarding || publishing) return false;
       if (coverBusy || uploads.some((task) => task.failed === null)) {
-        notify("图片还在上传，请稍候再离开。", { type: "error" });
+        notify(t("图片还在上传，请稍候再离开。"), { type: "error" });
         return false;
       }
       if (conflicted.current) {
-        notify("请先选择要保留哪一份草稿。", { type: "error" });
+        notify(t("请先选择要保留哪一份草稿。"), { type: "error" });
         return false;
       }
       if (firstChangeAt.current === 0 && !saving.current) return true;
@@ -637,7 +641,7 @@ export function ArticleEditor({
   const uploadCover = useCallback(
     async (file: File) => {
       if (!csrfToken) {
-        notify("登录状态已经失效。", { type: "error" });
+        notify(t("登录状态已经失效。"), { type: "error" });
         return;
       }
       const generation = uploadGeneration.current;
@@ -670,7 +674,7 @@ export function ArticleEditor({
         notify(
           error instanceof PublicApiError
             ? error.message
-            : "封面上传没有成功。",
+            : t("封面上传没有成功。"),
           { type: "error" },
         );
       } finally {
@@ -690,12 +694,12 @@ export function ArticleEditor({
     if (publishing || conflicted.current) return;
     const trimmed = title.trim();
     if (trimmed === "") {
-      notify("文章要有标题才能发布。", { type: "error" });
+      notify(t("文章要有标题才能发布。"), { type: "error" });
       return;
     }
     const input = currentInput();
     if (input === null || !hasArticleSubstance(input.body)) {
-      notify("正文还没有内容。", { type: "error" });
+      notify(t("正文还没有内容。"), { type: "error" });
       return;
     }
     setPublishing(true);
@@ -717,7 +721,7 @@ export function ArticleEditor({
         kind: stored.publishedEntryId ? "updated" : "created",
         post,
       });
-      notify("文章已发布。");
+      notify(t("文章已发布。"));
       allowLeave.current = true;
       if (onPublished) onPublished(post);
       else location.replace(`/m/${encodeURIComponent(post.id)}`);
@@ -762,7 +766,7 @@ export function ArticleEditor({
     setDiscarding(true);
     try {
       await api.discard(csrfToken, draft.id);
-      notify("草稿已删除。");
+      notify(t("草稿已删除。"));
       if (!embedded) void refreshDrafts();
       if (onBack) onBack();
       else location.replace(ARTICLE_COMPOSE_PATH);
@@ -851,13 +855,13 @@ export function ArticleEditor({
         data-article-theme
       >
         <div className={styles.pageError} role="alert">
-          <p>这份草稿已经不在了。</p>
+          <p>{t("这份草稿已经不在了。")}</p>
           <button
             className={styles.secondaryAction}
             onClick={() => location.replace(ARTICLE_COMPOSE_PATH)}
             type="button"
           >
-            写一篇新的
+            {t("写一篇新的")}
           </button>
         </div>
       </div>
@@ -913,7 +917,7 @@ export function ArticleEditor({
       >
         <header className={styles.topBar} ref={topBar}>
           <button
-            aria-label={embedded ? "返回文章列表" : "返回时间流"}
+            aria-label={embedded ? t("返回文章列表") : t("返回时间流")}
             className={styles.toolButton}
             onClick={() => (onBack ? onBack() : location.goBack("/"))}
             type="button"
@@ -929,7 +933,7 @@ export function ArticleEditor({
               onClick={() => setRailOpen((value) => !value)}
               type="button"
             >
-              文章
+              {t("文章")}
             </button>
           ) : null}
           <p
@@ -942,10 +946,10 @@ export function ArticleEditor({
           >
             {embedded ? (
               <>
-                <span className={styles.draftBadge}>Draft</span>
+                <span className={styles.draftBadge}>{t("Draft")}</span>
                 <span aria-hidden="true">·</span>
                 {loading ? (
-                  <span>正在读取草稿…</span>
+                  <span>{t("正在读取草稿…")}</span>
                 ) : saveState.kind === "saved" ? (
                   <ArticleTime
                     value={saveState.at}
@@ -955,19 +959,19 @@ export function ArticleEditor({
                 ) : (
                   <span>
                     {saveState.kind === "saving"
-                      ? "Saving…"
+                      ? t("Saving…")
                       : saveState.kind === "dirty"
-                        ? "Unsaved changes"
+                        ? t("Unsaved changes")
                         : saveState.kind === "failed"
-                          ? "Save failed"
+                          ? t("Save failed")
                           : saveState.kind === "conflict"
-                            ? "Changed elsewhere"
-                            : "Not saved yet"}
+                            ? t("Changed elsewhere")
+                            : t("Not saved yet")}
                   </span>
                 )}
               </>
             ) : loading ? (
-              "正在读取草稿…"
+              t("正在读取草稿…")
             ) : (
               statusLine
             )}
@@ -1002,7 +1006,7 @@ export function ArticleEditor({
               onClick={() => setPreviewing((current) => !current)}
               type="button"
             >
-              {previewing ? "继续编辑" : "预览"}
+              {previewing ? t("继续编辑") : t("预览")}
             </button>
             <button
               className={styles.primaryAction}
@@ -1021,7 +1025,7 @@ export function ArticleEditor({
               onClick={() => void publish()}
               type="button"
             >
-              {publishing ? "正在发布…" : "发布"}
+              {publishing ? t("正在发布…") : t("发布")}
             </button>
             {onToggleFocus ? (
               <Tooltip.Root>
@@ -1031,7 +1035,7 @@ export function ArticleEditor({
                   render={
                     <button
                       className={styles.focusModeButton}
-                      aria-label={focused ? "退出全屏编辑" : "全屏编辑"}
+                      aria-label={focused ? t("退出全屏编辑") : t("全屏编辑")}
                       aria-pressed={focused}
                       disabled={loading}
                       onClick={onToggleFocus}
@@ -1053,21 +1057,24 @@ export function ArticleEditor({
                       role="tooltip"
                     >
                       {focused
-                        ? "退出全屏模式，返回常规编辑器。"
-                        : "开启全屏模式，专注于文章写作。"}
+                        ? t("退出全屏模式，返回常规编辑器。")
+                        : t("开启全屏模式，专注于文章写作。")}
                     </Tooltip.Popup>
                   </Tooltip.Positioner>
                 </Tooltip.Portal>
               </Tooltip.Root>
             ) : null}
             <Menu.Root>
-              <Menu.Trigger aria-label="更多" className={styles.toolButton}>
+              <Menu.Trigger
+                aria-label={t("更多")}
+                className={styles.toolButton}
+              >
                 <Icon name="more" />
               </Menu.Trigger>
               <Menu.Portal>
                 <Menu.Positioner align="end" side="bottom" sideOffset={6}>
                   <Menu.Popup
-                    aria-label="更多选项"
+                    aria-label={t("更多选项")}
                     className={styles.menuPopup}
                   >
                     <Menu.Item
@@ -1082,17 +1089,19 @@ export function ArticleEditor({
                       }
                       onClick={() => void save("force")}
                     >
-                      立即保存
+                      {t("立即保存")}
                     </Menu.Item>
                     <ConfirmDialog
                       menuItem
-                      title="删除这份草稿？"
+                      title={t("删除这份草稿？")}
                       description={
                         draft?.sourceState === "withdrawn"
-                          ? "这篇文章已取消发布。删除将同时移除原文章和评论，无法找回。"
-                          : "删除后无法找回。已发布的文章不受影响。"
+                          ? t(
+                              "这篇文章已取消发布。删除将同时移除原文章和评论，无法找回。",
+                            )
+                          : t("删除后无法找回。已发布的文章不受影响。")
                       }
-                      confirmLabel="删除草稿"
+                      confirmLabel={t("删除草稿")}
                       danger
                       onConfirm={discardCurrent}
                       trigger={
@@ -1109,7 +1118,7 @@ export function ArticleEditor({
                           }
                           className={`${styles.menuItem} ${styles.menuItemDanger}`}
                         >
-                          删除这份草稿
+                          {t("删除这份草稿")}
                         </Menu.Item>
                       }
                     />
@@ -1137,7 +1146,7 @@ export function ArticleEditor({
           >
             <button
               className={styles.railClose}
-              aria-label="收起文章列表"
+              aria-label={t("收起文章列表")}
               onClick={() => setRailOpen(false)}
               type="button"
             >
@@ -1221,11 +1230,11 @@ export function ArticleEditor({
               title={
                 <>
                   {previewing ? (
-                    <h1>{title.trim() || "无标题"}</h1>
+                    <h1>{title.trim() || t("无标题")}</h1>
                   ) : (
                     <>
                       <label className={styles.srOnly} htmlFor="article-title">
-                        文章标题
+                        {t("文章标题")}
                       </label>
                       <textarea
                         id="article-title"
@@ -1246,7 +1255,7 @@ export function ArticleEditor({
                               ),
                             });
                         }}
-                        placeholder="标题"
+                        placeholder={t("标题")}
                         rows={1}
                         value={title}
                       />
@@ -1254,8 +1263,8 @@ export function ArticleEditor({
                   )}
                   {titleTooLong ? (
                     <p className={styles.titleOverflow} role="alert">
-                      标题最多 {MAX_ARTICLE_TITLE_CODE_POINTS} 个字符，现在是{" "}
-                      {titleLength} 个。
+                      {t("标题最多")} {MAX_ARTICLE_TITLE_CODE_POINTS}{" "}
+                      {t("个字符，现在是")} {titleLength} {t("个。")}
                     </p>
                   ) : null}
                 </>
@@ -1300,7 +1309,7 @@ export function ArticleEditor({
                       avatarUrl: site.avatarMediaId
                         ? mediaPreviewUrl(site.avatarMediaId)
                         : null,
-                      publishedLabel: "草稿摘录",
+                      publishedLabel: t("草稿摘录"),
                     }}
                   />
                 ) : null}

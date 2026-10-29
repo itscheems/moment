@@ -28,7 +28,7 @@
   border-radius: 16px;
   color: #0f1419;
   background: #fff;
-  font-family: var(--font-timeline);
+  font-family: var(--font-sans);
   transition:
     opacity var(--motion-dialog) var(--ease-out),
     transform var(--motion-dialog) var(--ease-out);

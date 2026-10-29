@@ -1,5 +1,7 @@
 "use client";
 
+import { useTranslation } from "react-i18next";
+
 import { useCallback, useEffect, useState } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
 import { type Editor } from "@tiptap/react";
@@ -214,6 +216,8 @@ export function shouldShowButton(props: {
  * ```
  */
 export function useSlashCommandTrigger(config?: UseSlashCommandTriggerConfig) {
+  const { t } = useTranslation();
+
   const {
     editor: providedEditor,
     node,
@@ -274,7 +278,7 @@ export function useSlashCommandTrigger(config?: UseSlashCommandTriggerConfig) {
     isVisible,
     handleSlashCommand,
     canInsert,
-    label: "Insert block",
+    label: t("Insert block"),
     shortcutKeys: SLASH_COMMAND_TRIGGER_SHORTCUT_KEY,
     trigger,
     Icon: PlusIcon,

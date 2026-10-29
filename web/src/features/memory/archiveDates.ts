@@ -1,3 +1,4 @@
+import { t } from "../../i18n";
 import type { ArchiveMonthCount } from "../../api/public";
 import type { ArchiveLocationState } from "./memoryState";
 
@@ -185,5 +186,5 @@ export function timezoneNote(
 ): string | null {
   const site = offsetMinutes(timezone, now);
   if (site === null || site === -now.getTimezoneOffset()) return null;
-  return `日期按站点时区 ${timezone}`;
+  return t("日期按站点时区 {{value1}}", { value1: timezone });
 }

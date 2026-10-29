@@ -1,5 +1,7 @@
 "use client";
 
+import { useTranslation } from "react-i18next";
+
 import { useCallback, useEffect, useState } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
 import { type Editor } from "@tiptap/react";
@@ -198,6 +200,8 @@ export function shouldShowButton(props: {
  * ```
  */
 export function useCopyAnchorLink(config?: UseCopyAnchorLinkConfig) {
+  const { t } = useTranslation();
+
   const {
     editor: providedEditor,
     hideWhenUnavailable = false,
@@ -258,7 +262,7 @@ export function useCopyAnchorLink(config?: UseCopyAnchorLinkConfig) {
     isVisible,
     handleCopyAnchorLink,
     canCopyAnchorLink: canCopyAnchor,
-    label: "Copy anchor link",
+    label: t("Copy anchor link"),
     shortcutKeys: COPY_ANCHOR_LINK_SHORTCUT_KEY,
     Icon: LinkIcon,
   };

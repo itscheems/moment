@@ -8,7 +8,7 @@
 .picker > label {
   color: var(--text-secondary);
   font-size: var(--text-sm);
-  font-weight: 650;
+  font-weight: 700;
 }
 
 .trigger {
@@ -185,7 +185,7 @@
   padding-inline: var(--space-3);
   color: var(--accent);
   font-size: var(--text-sm);
-  font-weight: 650;
+  font-weight: 700;
 }
 
 @media (hover: hover) {

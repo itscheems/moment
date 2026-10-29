@@ -1,5 +1,7 @@
 "use client";
 
+import { useTranslation } from "react-i18next";
+
 import { useCallback, useEffect, useState } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
 import { type Editor } from "@tiptap/react";
@@ -156,6 +158,8 @@ export function shouldShowButton(props: {
  * ```
  */
 export function useDuplicate(config?: UseDuplicateConfig) {
+  const { t } = useTranslation();
+
   const {
     editor: providedEditor,
     hideWhenUnavailable = false,
@@ -210,7 +214,7 @@ export function useDuplicate(config?: UseDuplicateConfig) {
     isVisible,
     handleDuplicate,
     canDuplicate,
-    label: "Duplicate node",
+    label: t("Duplicate node"),
     shortcutKeys: DUPLICATE_SHORTCUT_KEY,
     Icon: CopyIcon,
   };

@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import { useState } from "react";
 import { Collapsible } from "@base-ui/react/collapsible";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
@@ -17,6 +18,8 @@ export function MapPlaceDisclosure({
   card: MapCardData;
   onSelect: (place: MapPlace) => void;
 }) {
+  const { t } = useTranslation();
+
   const [open, setOpen] = useState(false);
   const [page, setPage] = useState(0);
   const reduceMotion = useReducedMotion();
@@ -29,11 +32,13 @@ export function MapPlaceDisclosure({
   return (
     <Collapsible.Root open={open} onOpenChange={setOpen}>
       <div className={styles.inlinePlacesHeader}>
-        <span>地点 · {card.places.length}</span>
-        <ActionTooltip label={open ? "收起地点列表" : "展开地点列表"}>
+        <span>
+          {t("地点 ·")} {card.places.length}
+        </span>
+        <ActionTooltip label={open ? t("收起地点列表") : t("展开地点列表")}>
           <Collapsible.Trigger
             className={styles.inlinePlacesToggle}
-            aria-label={open ? "收起地点列表" : "展开地点列表"}
+            aria-label={open ? t("收起地点列表") : t("展开地点列表")}
           >
             <span className={styles.inlinePlacesChevron}>
               <Icon name="chevron-down" />
@@ -58,7 +63,7 @@ export function MapPlaceDisclosure({
           </motion.div>
         </AnimatePresence>
         {pageCount > 1 && (
-          <nav aria-label="地图地点分页">
+          <nav aria-label={t("地图地点分页")}>
             <HeadlessMantineProvider>
               <Pagination.Root
                 total={pageCount}
@@ -68,11 +73,13 @@ export function MapPlaceDisclosure({
                   root: styles.placePagination,
                   control: styles.placePageControl,
                 }}
-                getItemProps={(value) => ({ "aria-label": `第${value}页地点` })}
+                getItemProps={(value) => ({
+                  "aria-label": t("第{{value1}}页地点", { value1: value }),
+                })}
               >
-                <Pagination.Previous aria-label="上一页地点" />
+                <Pagination.Previous aria-label={t("上一页地点")} />
                 <Pagination.Items />
-                <Pagination.Next aria-label="下一页地点" />
+                <Pagination.Next aria-label={t("下一页地点")} />
               </Pagination.Root>
             </HeadlessMantineProvider>
           </nav>

@@ -604,3 +604,13 @@ func fixtureContentContext(t *testing.T, accounts *app.AccountService) context.C
 func (store *memoryAccounts) MediaAvailableForAccount(ctx context.Context, _ string, id domain.ID) (bool, error) {
 	return store.MediaExists(ctx, id)
 }
+
+func (store *memoryAccounts) UpdatePreferences(_ context.Context, userID string, locale *string, atMS int64) error {
+	user, ok := store.users[userID]
+	if !ok {
+		return domain.NewError(domain.CodeAccountNotFound, "no such account", nil)
+	}
+	user.UILocale, user.UpdatedAtMS = locale, atMS
+	store.users[userID] = user
+	return nil
+}

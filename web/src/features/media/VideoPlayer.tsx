@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import {
   useEffect,
   useRef,
@@ -50,6 +51,8 @@ export function VideoPlayer({
   onPlayback?: (state: VideoPlaybackSnapshot) => void;
   onMetadata?: (video: HTMLVideoElement) => void;
 }) {
+  const { t } = useTranslation();
+
   const node = useRef<HTMLVideoElement>(null);
   const mergedRef = useMergedRef(node, videoRef);
   const root = useRef<HTMLDivElement>(null);
@@ -164,7 +167,7 @@ export function VideoPlayer({
     } else if (root.current?.requestFullscreen) {
       void root.current
         .requestFullscreen()
-        .catch(() => notify("暂时无法进入全屏", { type: "error" }));
+        .catch(() => notify(t("暂时无法进入全屏"), { type: "error" }));
     } else {
       const video = node.current as
         (HTMLVideoElement & { webkitEnterFullscreen?: () => void }) | null;
@@ -200,7 +203,7 @@ export function VideoPlayer({
       className={styles.player}
       style={style}
       role="group"
-      aria-label="视频播放器"
+      aria-label={t("视频播放器")}
       tabIndex={0}
       data-video-player=""
       data-compact={openOnSurface || undefined}
@@ -356,7 +359,7 @@ export function VideoPlayer({
             setWaiting(true);
             restorePending.current = true;
             setQuality("preview");
-            notify("原画质暂时无法播放，已切回自动", { type: "error" });
+            notify(t("原画质暂时无法播放，已切回自动"), { type: "error" });
           } else onError();
         }}
       />
@@ -373,7 +376,7 @@ export function VideoPlayer({
         <span
           className={styles.loading}
           role="status"
-          aria-label="视频正在加载"
+          aria-label={t("视频正在加载")}
         >
           <span />
         </span>
@@ -382,7 +385,7 @@ export function VideoPlayer({
         <button
           type="button"
           className={styles.centerPlay}
-          aria-label="播放视频"
+          aria-label={t("播放视频")}
           onClick={(event) => {
             event.stopPropagation();
             if (onOpen && openOnSurface && !fullscreen) onOpen(root.current!);
@@ -393,11 +396,11 @@ export function VideoPlayer({
         </button>
       ) : null}
       {onOpen && !openOnSurface && !fullscreen ? (
-        <ActionTooltip label="展开视频" placement={{ side: "bottom" }}>
+        <ActionTooltip label={t("展开视频")} placement={{ side: "bottom" }}>
           <button
             className={styles.expand}
             type="button"
-            aria-label="展开视频"
+            aria-label={t("展开视频")}
             onClick={(event) => {
               event.stopPropagation();
               onOpen(event.currentTarget);
@@ -424,7 +427,7 @@ export function VideoPlayer({
         >
           <input
             className={styles.seek}
-            aria-label="播放进度"
+            aria-label={t("播放进度")}
             type="range"
             min={0}
             max={duration}
@@ -443,7 +446,7 @@ export function VideoPlayer({
           />
           <div className={styles.row}>
             {control(
-              playing ? "暂停视频" : "继续播放",
+              playing ? t("暂停视频") : t("继续播放"),
               playing ? "pause" : "play",
               toggle,
             )}
@@ -452,7 +455,7 @@ export function VideoPlayer({
             </span>
             <div className={styles.volume}>
               {control(
-                muted || volume === 0 ? "取消静音" : "静音",
+                muted || volume === 0 ? t("取消静音") : t("静音"),
                 muted || volume === 0 ? "muted" : "volume",
                 mute,
               )}
@@ -465,7 +468,7 @@ export function VideoPlayer({
                 }
               >
                 <input
-                  aria-label="音量"
+                  aria-label={t("音量")}
                   type="range"
                   min={0}
                   max={1}
@@ -507,7 +510,7 @@ export function VideoPlayer({
               }}
             />
             {typeof document !== "undefined" && document.pictureInPictureEnabled
-              ? control("画中画", "pip", () => {
+              ? control(t("画中画"), "pip", () => {
                   const video = node.current;
                   if (!video) return;
                   void (
@@ -515,12 +518,12 @@ export function VideoPlayer({
                       ? document.exitPictureInPicture()
                       : video.requestPictureInPicture()
                   ).catch(() =>
-                    notify("暂时无法进入画中画", { type: "error" }),
+                    notify(t("暂时无法进入画中画"), { type: "error" }),
                   );
                 })
               : null}
             {control(
-              fullscreen ? "退出全屏" : "全屏",
+              fullscreen ? t("退出全屏") : t("全屏"),
               fullscreen ? "shrink" : "fullscreen",
               enterFullscreen,
             )}

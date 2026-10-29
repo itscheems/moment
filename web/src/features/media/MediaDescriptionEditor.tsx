@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import { Dialog } from "../../components/Dialog";
 import { Tabs } from "@base-ui/react/tabs";
 import { useCallback, useEffect, useId, useRef, useState } from "react";
@@ -40,11 +41,17 @@ function CropPreview({
   selection: MediaCropSelection;
   alt: string;
 }) {
+  const { t } = useTranslation();
+
   const clipId = useId();
   const [failedSource, setFailedSource] = useState<string | null>(null);
   const { area, percentages } = selection;
   if (failedSource === source.url)
-    return <span className={styles.pending}>Unable to preview this crop.</span>;
+    return (
+      <span className={styles.pending}>
+        {t("Unable to preview this crop.")}
+      </span>
+    );
   // Preview the existing decoded source. File encoding belongs to Save, not
   // to tab changes or paging through images.
   return (
@@ -83,6 +90,8 @@ export function MediaDescriptionEditor({
   onChange: (items: ComposerMediaItem[], message: string) => void;
   editRequest?: { key: string; version: number } | null;
 }) {
+  const { t } = useTranslation();
+
   const navigation = useOptionalNavigation();
   const itemsRef = useRef(items);
   itemsRef.current = items;
@@ -233,7 +242,7 @@ export function MediaDescriptionEditor({
           altMode: altText ? ("provided" as const) : ("missing" as const),
         };
       });
-      if (changed) onChange(next, "媒体编辑已保存。");
+      if (changed) onChange(next, t("媒体编辑已保存。"));
       close();
     } catch (e) {
       if (!controller.signal.aborted)
@@ -276,20 +285,24 @@ export function MediaDescriptionEditor({
             <header className={styles.header}>
               <Dialog.Close
                 className={styles.back}
-                aria-label="Back"
+                aria-label={t("Back")}
                 disabled={locked}
               >
                 <Icon name="arrow-left" />
               </Dialog.Close>
               <Dialog.Title>
                 {currentTab === "crop"
-                  ? "Crop media"
-                  : `Edit ${video ? "media" : "image"} description`}
+                  ? t("Crop media")
+                  : t(
+                      video
+                        ? "Edit media description"
+                        : "Edit image description",
+                    )}
               </Dialog.Title>
               {items.length > 1 ? (
                 <div className={styles.pager}>
                   <button
-                    aria-label="Previous image"
+                    aria-label={t("Previous image")}
                     disabled={locked || selectedIndex === 0}
                     onClick={() =>
                       setSelectedKey(items[selectedIndex - 1]?.key ?? null)
@@ -299,7 +312,7 @@ export function MediaDescriptionEditor({
                     <Icon name="arrow-left" />
                   </button>
                   <button
-                    aria-label="Next image"
+                    aria-label={t("Next image")}
                     disabled={locked || selectedIndex === items.length - 1}
                     onClick={() =>
                       setSelectedKey(items[selectedIndex + 1]?.key ?? null)
@@ -324,20 +337,20 @@ export function MediaDescriptionEditor({
               onValueChange={(value) => setTab(value as "crop" | "alt")}
               className={styles.tabsRoot}
             >
-              <Tabs.List className={styles.tabs} aria-label="Edit photo">
+              <Tabs.List className={styles.tabs} aria-label={t("Edit photo")}>
                 <Tabs.Tab
                   value="crop"
-                  aria-label="Crop media"
+                  aria-label={t("Crop media")}
                   disabled={locked || !cropAllowed}
                 >
                   <Icon name="crop" />
                 </Tabs.Tab>
                 <Tabs.Tab
                   value="alt"
-                  aria-label="Edit image description"
+                  aria-label={t("Edit image description")}
                   disabled={locked}
                 >
-                  ALT
+                  {t("ALT")}
                 </Tabs.Tab>
               </Tabs.List>
               <Tabs.Panel value="crop" className={styles.tabPanel} keepMounted>
@@ -363,25 +376,33 @@ export function MediaDescriptionEditor({
                     <CropPreview
                       source={sourceOf(item)}
                       selection={crops[item.key]}
-                      alt={`Image ${selectedIndex + 1} of ${items.length}`}
+                      alt={t("Image {{index}} of {{count}}", {
+                        index: selectedIndex + 1,
+                        count: items.length,
+                      })}
                     />
                   ) : preview ? (
                     <img
-                      alt={`Image ${selectedIndex + 1} of ${items.length}`}
+                      alt={t("Image {{index}} of {{count}}", {
+                        index: selectedIndex + 1,
+                        count: items.length,
+                      })}
                       src={preview}
                     />
                   ) : (
-                    <span className={styles.pending}>Preparing media…</span>
+                    <span className={styles.pending}>
+                      {t("Preparing media…")}
+                    </span>
                   )}
                 </div>
                 <div className={styles.description}>
                   <label className={styles.field}>
-                    <span className={styles.label}>Description</span>
+                    <span className={styles.label}>{t("Description")}</span>
                     <span className={styles.counter}>
                       {Array.from(text).length} / 1,000
                     </span>
                     <textarea
-                      aria-label="Description"
+                      aria-label={t("Description")}
                       disabled={locked}
                       ref={inputRef}
                       rows={2}
@@ -399,7 +420,7 @@ export function MediaDescriptionEditor({
                   </label>
                   <Dialog.Root>
                     <Dialog.Trigger className={styles.help} disabled={locked}>
-                      What is alt text?
+                      {t("What is alt text?")}
                     </Dialog.Trigger>
                     <Dialog.Portal>
                       <Dialog.Backdrop className={styles.backdrop} />
@@ -410,15 +431,14 @@ export function MediaDescriptionEditor({
                           finalFocus={inputRef}
                           ref={helpPopupRef}
                         >
-                          <Dialog.Title>Add descriptions</Dialog.Title>
+                          <Dialog.Title>{t("Add descriptions")}</Dialog.Title>
                           <Dialog.Description>
-                            Alt text describes what is in an image for people
-                            who cannot see it. Keep it concise and include the
-                            details needed to understand the picture. Adding a
-                            description is optional.
+                            {t(
+                              "Alt text describes what is in an image for people who cannot see it. Keep it concise and include the details needed to understand the picture. Adding a description is optional.",
+                            )}
                           </Dialog.Description>
                           <Dialog.Close className={styles.save}>
-                            Got it
+                            {t("Got it")}
                           </Dialog.Close>
                         </Dialog.Popup>
                       </Dialog.Viewport>

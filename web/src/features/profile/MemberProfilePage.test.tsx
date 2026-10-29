@@ -70,6 +70,7 @@ function signedIn(username: string | null) {
     }
     return json({
       data: {
+        preferences: { ui_locale: null },
         expires_at: "2999-08-11T01:00:00.000Z",
         csrf_token: "csrf-from-cookie",
         account: {

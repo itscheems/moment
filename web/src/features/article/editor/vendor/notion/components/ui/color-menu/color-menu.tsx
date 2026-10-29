@@ -1,5 +1,7 @@
 "use client";
 
+import { useTranslation } from "react-i18next";
+
 import type { Editor } from "@tiptap/react";
 
 // Primitive UI Components
@@ -140,6 +142,8 @@ export const ColorMenu: React.FC<ColorMenuProps> = ({
   label = "Color",
   placement = "right",
 }) => {
+  const { t } = useTranslation();
+
   const { editor } = useTiptapEditor(providedEditor);
   const { recentColors, isInitialized } = useRecentColors();
 
@@ -177,7 +181,7 @@ export const ColorMenu: React.FC<ColorMenuProps> = ({
           {/* Recent Colors */}
           {isInitialized && recentColors.length > 0 && (
             <MenuGroup>
-              <MenuGroupLabel>Recent colors</MenuGroupLabel>
+              <MenuGroupLabel>{t("Recent colors")}</MenuGroupLabel>
               {recentColors.map((colorObj) => (
                 <RecentColorMenuItem key={colorObj.value} colorObj={colorObj} />
               ))}
@@ -187,7 +191,7 @@ export const ColorMenu: React.FC<ColorMenuProps> = ({
 
           {/* Text Colors */}
           <MenuGroup>
-            <MenuGroupLabel>Text color</MenuGroupLabel>
+            <MenuGroupLabel>{t("Text color")}</MenuGroupLabel>
             {TEXT_COLORS.map((textColor) => (
               <TextColorMenuItem key={textColor.value} color={textColor} />
             ))}
@@ -197,7 +201,7 @@ export const ColorMenu: React.FC<ColorMenuProps> = ({
 
           {/* Background Colors */}
           <MenuGroup>
-            <MenuGroupLabel>Background color</MenuGroupLabel>
+            <MenuGroupLabel>{t("Background color")}</MenuGroupLabel>
             {HIGHLIGHT_COLORS.map((highlightColor) => (
               <HighlightColorMenuItem
                 key={highlightColor.value}

@@ -1,3 +1,5 @@
+import { t } from "../../i18n";
+import { useTranslation } from "react-i18next";
 import { useEffect, useRef, useState } from "react";
 import { Dialog } from "../../components/Dialog";
 import { Switch } from "@base-ui/react/switch";
@@ -19,8 +21,12 @@ function locationLabel(place: LocationInput): string {
 }
 
 const WORLD_POINT: MapPlace = {
-  name: "地图选点",
-  displayName: "点击地图选择位置",
+  get name() {
+    return t("地图选点");
+  },
+  get displayName() {
+    return t("点击地图选择位置");
+  },
   latitude: 0,
   longitude: 0,
   coordinateSystem: "wgs84",
@@ -41,6 +47,8 @@ export function MapCardEditor({
   onOpenChange?: (open: boolean) => void;
   onOpenChangeComplete?: (open: boolean) => void;
 }) {
+  const { t } = useTranslation();
+
   const [open, setOpen] = useState(false);
   const lookup = useRef<AbortController | null>(null);
   const [query, setQuery] = useState("");
@@ -71,7 +79,7 @@ export function MapCardEditor({
         })
         .catch(() => {
           if (!controller.signal.aborted)
-            setError("地点搜索暂时不可用，可以重试或在地图上选点。");
+            setError(t("地点搜索暂时不可用，可以重试或在地图上选点。"));
         })
         .finally(() => {
           if (!controller.signal.aborted) setLoading(false);
@@ -112,7 +120,7 @@ export function MapCardEditor({
         item.coordinateSystem === place.coordinateSystem,
     );
     if (duplicate) {
-      setError("这个地点已在地图中。");
+      setError(t("这个地点已在地图中。"));
       return;
     }
     onChange({
@@ -138,7 +146,7 @@ export function MapCardEditor({
   };
   const nearby = () => {
     if (!navigator.geolocation) {
-      setError("浏览器不支持定位，仍可搜索或地图选点。");
+      setError(t("浏览器不支持定位，仍可搜索或地图选点。"));
       return;
     }
     const controller = new AbortController();
@@ -150,8 +158,8 @@ export function MapCardEditor({
       (position) => {
         if (controller.signal.aborted) return;
         const point: MapPlace = {
-          name: "当前位置",
-          displayName: "当前位置",
+          name: t("当前位置"),
+          displayName: t("当前位置"),
           latitude: position.coords.latitude,
           longitude: position.coords.longitude,
           coordinateSystem: "wgs84",
@@ -162,7 +170,7 @@ export function MapCardEditor({
           .then((items) => {
             if (!controller.signal.aborted) setResults(items);
           })
-          .catch(() => setError("附近地点暂时不可用，仍可选择当前坐标。"))
+          .catch(() => setError(t("附近地点暂时不可用，仍可选择当前坐标。")))
           .finally(() => {
             if (!controller.signal.aborted) setLoading(false);
           });
@@ -170,7 +178,7 @@ export function MapCardEditor({
       () => {
         if (controller.signal.aborted) return;
         setLoading(false);
-        setError("未取得位置权限或定位超时，仍可搜索其他国家的地点。");
+        setError(t("未取得位置权限或定位超时，仍可搜索其他国家的地点。"));
       },
       { timeout: 8000, maximumAge: 300000 },
     );
@@ -178,10 +186,10 @@ export function MapCardEditor({
   return (
     <>
       {triggerOnly ? (
-        <ActionTooltip label="添加地图">
+        <ActionTooltip label={t("添加地图")}>
           <button
             type="button"
-            aria-label="添加地图"
+            aria-label={t("添加地图")}
             className={styles.toolbarButton}
             disabled={disabled || atLimit}
             onMouseDown={(event) => event.preventDefault()}
@@ -211,7 +219,7 @@ export function MapCardEditor({
                     disabled={disabled || atLimit}
                     onClick={show}
                   >
-                    <Icon name="plus" /> 添加地点
+                    <Icon name="plus" /> {t("添加地点")}
                   </button>
                   {value.places.length > 1 && (
                     <label className={styles.connectLabel}>
@@ -228,7 +236,7 @@ export function MapCardEditor({
                       >
                         <Switch.Thumb className={styles.connectThumb} />
                       </Switch.Root>
-                      连接地点
+                      {t("连接地点")}
                     </label>
                   )}
                 </div>
@@ -250,17 +258,17 @@ export function MapCardEditor({
             <header className={styles.dialogHeader}>
               <Dialog.Close
                 className={styles.pickerClose}
-                aria-label="关闭地点选择"
+                aria-label={t("关闭地点选择")}
               >
                 <Icon name="close" />
               </Dialog.Close>
-              <Dialog.Title>添加地图地点</Dialog.Title>
+              <Dialog.Title>{t("添加地图地点")}</Dialog.Title>
             </header>
             <div className={styles.pickerBody}>
               <div className={styles.search}>
                 <input
-                  aria-label="搜索全球地点"
-                  placeholder="搜索城市、餐馆、景点…"
+                  aria-label={t("搜索全球地点")}
+                  placeholder={t("搜索城市、餐馆、景点…")}
                   value={query}
                   onChange={(event) => {
                     setManual(false);
@@ -271,10 +279,10 @@ export function MapCardEditor({
                   }}
                 />
                 <button type="button" disabled={loading} onClick={nearby}>
-                  当前位置
+                  {t("当前位置")}
                 </button>
               </div>
-              {loading && <p role="status">正在查找地点…</p>}
+              {loading && <p role="status">{t("正在查找地点…")}</p>}
               {error && (
                 <p className={styles.error} role="alert">
                   {error}
@@ -283,8 +291,8 @@ export function MapCardEditor({
               <div className={styles.results}>
                 {!manual && picked && (
                   <button type="button" onClick={() => add(picked)}>
-                    <strong>使用当前坐标</strong>
-                    <span>将精确位置加入地图</span>
+                    <strong>{t("使用当前坐标")}</strong>
+                    <span>{t("将精确位置加入地图")}</span>
                   </button>
                 )}
                 {!manual &&
@@ -306,7 +314,9 @@ export function MapCardEditor({
                   query.trim().length > 1 &&
                   results.length === 0 && (
                     <p className={styles.hint}>
-                      没有找到地点。试着加上城市或国家名称，或在地图上选点。
+                      {t(
+                        "没有找到地点。试着加上城市或国家名称，或在地图上选点。",
+                      )}
                     </p>
                   )}
                 <button
@@ -316,7 +326,7 @@ export function MapCardEditor({
                     setError("");
                   }}
                 >
-                  在地图上选点
+                  {t("在地图上选点")}
                 </button>
               </div>
               {manual && (
@@ -331,8 +341,8 @@ export function MapCardEditor({
                     }
                   />
                   <input
-                    aria-label="地点名称"
-                    placeholder="给选中的地点起个名字"
+                    aria-label={t("地点名称")}
+                    placeholder={t("给选中的地点起个名字")}
                     value={manualName}
                     onChange={(event) => setManualName(event.target.value)}
                     maxLength={160}
@@ -350,7 +360,7 @@ export function MapCardEditor({
                       })
                     }
                   >
-                    添加选中地点
+                    {t("添加选中地点")}
                   </button>
                 </div>
               )}

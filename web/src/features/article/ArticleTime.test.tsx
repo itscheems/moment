@@ -1,3 +1,8 @@
+import i18n from "../../i18n";
+import { beforeEach } from "vitest";
+beforeEach(() => {
+  void i18n.changeLanguage("en");
+});
 import "@testing-library/jest-dom/vitest";
 import { act, cleanup, render, screen } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";

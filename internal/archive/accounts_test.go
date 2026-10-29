@@ -38,6 +38,7 @@ func insertAccountsFixture(t *testing.T, fixture exportFixture) {
 VALUES (?, 'meihua', '梅花', 'a member with a bio', NULL, NULL, 'member', 'active', 1700000000000, 1700000000000, 1700000001000)`, []any{memberAccountID}},
 		{`INSERT INTO users (id, username, display_name, bio, avatar_media_id, cover_media_id, role, status, username_set_at_ms, created_at_ms, updated_at_ms)
 VALUES (?, 'newcomer', 'Newcomer', '', NULL, NULL, 'member', 'pending', NULL, 1700000002000, 1700000002000)`, []any{pendingAccountID}},
+		{`UPDATE users SET ui_locale = 'en' WHERE id = ?`, []any{memberAccountID}},
 		{`INSERT INTO identities (provider, provider_user_id, user_id, email, email_verified, email_deliverable, display_name, avatar_url, created_at_ms, last_login_at_ms)
 VALUES ('github', '4210', ?, ?, 1, 1, '梅花', ?, 1700000000000, 1700000003000)`, []any{memberAccountID, email, avatarURL}},
 		{`INSERT INTO identities (provider, provider_user_id, user_id, email, email_verified, email_deliverable, display_name, avatar_url, created_at_ms, last_login_at_ms)
@@ -281,6 +282,7 @@ func TestMergeReviewProjectsEveryComparedField(t *testing.T) {
 	shas := map[string]string{"01H00000000000000000000001": "aa", "01H00000000000000000000002": "bb"}
 	first, second := "01H00000000000000000000001", "01H00000000000000000000002"
 	early, late := int64(1), int64(2)
+	locale := "en"
 	emitted := map[MergeEntityKind][]string{
 		MergeEntry: entryChangedFields(
 			sqlitestore.ArchiveEntry{Kind: "moment", ContentMD: domain.MarkdownBody("a"), Visibility: domain.VisibilityEveryone, CreatedAtMS: early, UpdatedAtMS: early, PublishedAtMS: early, RepostedAtMS: &early, EditedAtMS: &early, QuotedEntryID: &first, Media: []sqlitestore.ArchiveUsage{{MediaID: first}}},
@@ -292,7 +294,7 @@ func TestMergeReviewProjectsEveryComparedField(t *testing.T) {
 			sqlitestore.ArchiveComment{EntryID: second, AuthorName: "b", ContentMD: "b", CreatedAtMS: late, Media: []sqlitestore.ArchiveUsage{{MediaID: second}}, Location: &domainLocationForReview},
 			shas, shas),
 		MergeUser: userChangedFields(
-			sqlitestore.ArchiveUser{Username: "a", DisplayName: "A", Bio: "a", AvatarMediaID: &first, CoverMediaID: &first, Role: "admin", Status: "active", UsernameSetAtMS: &early, CreatedAtMS: early, UpdatedAtMS: early},
+			sqlitestore.ArchiveUser{Username: "a", DisplayName: "A", Bio: "a", UILocale: &locale, AvatarMediaID: &first, CoverMediaID: &first, Role: "admin", Status: "active", UsernameSetAtMS: &early, CreatedAtMS: early, UpdatedAtMS: early},
 			sqlitestore.ArchiveUser{Username: "b", DisplayName: "B", Bio: "b", AvatarMediaID: &second, CoverMediaID: &second, Role: "member", Status: "pending", CreatedAtMS: late, UpdatedAtMS: late},
 			shas, shas,
 		),
@@ -311,7 +313,7 @@ func TestMergeReviewProjectsEveryComparedField(t *testing.T) {
 			Pinned: true, Location: &domainLocationForReview,
 		}, MergeReviewLocal, nil),
 		MergeUser: reviewUser(sqlitestore.ArchiveUser{
-			ID: first, Username: "a", DisplayName: "A", Bio: "a", Role: "admin", Status: "active",
+			ID: first, Username: "a", DisplayName: "A", Bio: "a", Role: "admin", Status: "active", UILocale: &locale,
 			AvatarMediaID: &first, CoverMediaID: &first, UsernameSetAtMS: &early,
 		}, MergeReviewLocal, nil),
 		MergeIdentity: reviewIdentity(sqlitestore.ArchiveIdentity{

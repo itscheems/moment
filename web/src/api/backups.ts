@@ -182,6 +182,7 @@ export interface MergeReviewEntity {
   avatar_media_id?: string;
   cover_media_id?: string;
   username_set_at?: string;
+  ui_locale?: string;
   avatar?: MergeReviewMedia;
   cover?: MergeReviewMedia;
 
@@ -859,6 +860,7 @@ export const REVIEW_ENTITY_STRINGS = [
   "user_id",
   "email",
   "avatar_url",
+  "ui_locale",
 ];
 
 export const REVIEW_ENTITY_BOOLEANS = [

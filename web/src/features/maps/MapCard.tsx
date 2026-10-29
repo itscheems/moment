@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import {
   Component,
   lazy,
@@ -54,6 +55,8 @@ export function MapCard({
   footer?: ReactNode;
   onViewport?: (viewport: MapViewport) => void;
 }) {
+  const { t } = useTranslation();
+
   const container = useRef<HTMLElement>(null);
   const [visible, setVisible] = useState(false);
   const [expanded, setExpanded] = useState(false);
@@ -112,7 +115,7 @@ export function MapCard({
   const placeholder = (
     <div className={styles.placeholder} role="status">
       <Icon name="map-picker" />
-      <span>{failed ? "地图暂时无法加载" : "正在准备地图…"}</span>
+      <span>{failed ? t("地图暂时无法加载") : t("正在准备地图…")}</span>
       {failed && (
         <button
           type="button"
@@ -121,7 +124,7 @@ export function MapCard({
             setAttempt((n) => n + 1);
           }}
         >
-          重试
+          {t("重试")}
         </button>
       )}
     </div>
@@ -133,7 +136,7 @@ export function MapCard({
           key={attempt}
           fallback={
             <div className={styles.placeholder}>
-              地图无法显示，请使用下方地点链接。
+              {t("地图无法显示，请使用下方地点链接。")}
             </div>
           }
         >
@@ -174,29 +177,31 @@ export function MapCard({
       className={styles.card}
       data-map-card=""
       data-interactive="true"
-      aria-label={`地图：${card.places.map((p) => p.name).join("、")}`}
+      aria-label={t("地图：{{value1}}", {
+        value1: card.places.map((p) => p.name).join("、"),
+      })}
       onClick={(event) => event.stopPropagation()}
       onMouseDown={(event) => event.stopPropagation()}
     >
       <div className={styles.canvasFrame}>
         {expanded ? <div className={styles.canvas} /> : canvas(false)}
         <div className={styles.cardControls}>
-          <ActionTooltip label="展开地图">
+          <ActionTooltip label={t("展开地图")}>
             <button
               className={styles.expand}
               type="button"
-              aria-label="展开地图"
+              aria-label={t("展开地图")}
               onClick={() => setExpanded(true)}
             >
               <Icon name="expand" />
             </button>
           </ActionTooltip>
           {onChange && (
-            <ActionTooltip label="移除地图">
+            <ActionTooltip label={t("移除地图")}>
               <button
                 className={styles.expand}
                 type="button"
-                aria-label="移除地图"
+                aria-label={t("移除地图")}
                 disabled={disabled}
                 onClick={() => onChange(null)}
               >
@@ -251,22 +256,24 @@ export function MapCard({
                 event.preventBaseUIHandler();
             }}
           >
-            <Dialog.Title className={styles.hiddenTitle}>地图</Dialog.Title>
+            <Dialog.Title className={styles.hiddenTitle}>
+              {t("地图")}
+            </Dialog.Title>
             {expanded && canvas(true)}
             <div className={styles.fullscreenControls}>
-              <ActionTooltip label="关闭地图">
+              <ActionTooltip label={t("关闭地图")}>
                 <Dialog.Close
                   className={styles.floatingControl}
-                  aria-label="关闭地图"
+                  aria-label={t("关闭地图")}
                 >
                   <Icon name="close" />
                 </Dialog.Close>
               </ActionTooltip>
-              <ActionTooltip label={globe ? "切换平面" : "切换地球"}>
+              <ActionTooltip label={globe ? t("切换平面") : t("切换地球")}>
                 <button
                   className={styles.floatingControl}
                   type="button"
-                  aria-label={globe ? "切换平面" : "切换地球"}
+                  aria-label={globe ? t("切换平面") : t("切换地球")}
                   aria-pressed={globe}
                   onClick={() => {
                     setFocusTarget(null);
@@ -279,7 +286,7 @@ export function MapCard({
             </div>
             <motion.aside
               className={styles.placePanel}
-              aria-label="地图地点面板"
+              aria-label={t("地图地点面板")}
               initial={false}
               animate={{
                 width: listOpen ? 300 : 32,
@@ -301,7 +308,7 @@ export function MapCard({
                   animate={{ opacity: listOpen ? 1 : 0 }}
                   transition={{ duration: reduceMotion ? 0 : 0.12 }}
                 >
-                  地点 · {card.places.length}
+                  {t("地点 ·")} {card.places.length}
                 </motion.span>
                 <motion.button
                   className={styles.panelToggle}
@@ -309,7 +316,7 @@ export function MapCard({
                   animate={{ x: listOpen ? -17 : 0, y: listOpen ? 8 : 0 }}
                   transition={panelTransition}
                   type="button"
-                  aria-label={listOpen ? "收起地点列表" : "展开地点列表"}
+                  aria-label={listOpen ? t("收起地点列表") : t("展开地点列表")}
                   aria-expanded={listOpen}
                   aria-controls={panelId}
                   onClick={() => setListOpen((open) => !open)}

@@ -1,5 +1,7 @@
 "use client";
 
+import { useTranslation } from "react-i18next";
+
 import { forwardRef, useCallback, useState, type ForwardedRef } from "react";
 import { type Editor } from "@tiptap/react";
 
@@ -60,6 +62,8 @@ function ListDropdownMenuImpl(
   }: ListDropdownMenuProps,
   ref: ForwardedRef<HTMLButtonElement>,
 ) {
+  const { t } = useTranslation();
+
   const { editor } = useTiptapEditor(providedEditor);
   const [isOpen, setIsOpen] = useState(false);
 
@@ -93,8 +97,8 @@ function ListDropdownMenuImpl(
           tabIndex={-1}
           disabled={!canToggle}
           data-disabled={!canToggle}
-          aria-label="List options"
-          tooltip="List"
+          aria-label={t("List options")}
+          tooltip={t("List")}
           {...props}
           ref={ref}
         >

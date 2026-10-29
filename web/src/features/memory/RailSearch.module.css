@@ -7,7 +7,7 @@
   align-items: center;
   padding-block-start: 4px;
   background: var(--surface);
-  font-family: var(--font-timeline);
+  font-family: var(--font-sans);
   font-feature-settings: normal;
   font-synthesis: weight style small-caps;
   text-rendering: auto;
@@ -108,7 +108,7 @@
   background: var(--surface);
   color: var(--text-primary);
   box-shadow: var(--shadow-popover);
-  font-family: var(--font-timeline);
+  font-family: var(--font-sans);
   font-feature-settings: normal;
   font-synthesis: weight style small-caps;
   text-rendering: auto;
@@ -134,7 +134,7 @@
   min-block-size: 24px;
   padding-inline: 12px;
   color: var(--accent);
-  font: 700 14px/16px var(--font-timeline);
+  font: 700 14px/16px var(--font-sans);
 }
 .empty {
   margin: 0;

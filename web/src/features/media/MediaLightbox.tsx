@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import { Dialog } from "../../components/Dialog";
 import {
   useEffect,
@@ -88,6 +89,8 @@ export function MediaLightbox({
   unavailable?: boolean;
   playbackScope?: string;
 }) {
+  const { t } = useTranslation();
+
   const [failed, setFailed] = useState(false);
   const playback = useRef(new Map<string, VideoPlaybackSnapshot>());
   const preferences = useRef(
@@ -162,7 +165,8 @@ export function MediaLightbox({
         'input, textarea, select, [contenteditable="true"], [role="textbox"], video, [role="menu"], [role="slider"]',
       ),
     );
-  const originalLabel = shown?.kind === "video" ? "打开原画质视频" : "打开原图";
+  const originalLabel =
+    shown?.kind === "video" ? t("打开原画质视频") : t("打开原图");
   const originalLink =
     shown?.originalSrc && !unavailable
       ? { href: shown.originalSrc, rel: "noreferrer", target: "_blank" }
@@ -223,7 +227,7 @@ export function MediaLightbox({
             }}
           >
             <Dialog.Title className={styles.srOnly}>
-              {containsVideo ? "媒体" : "图片"} {shownIndex + 1} /{" "}
+              {containsVideo ? t("媒体") : t("图片")} {shownIndex + 1} /{" "}
               {items.length}
             </Dialog.Title>
             <div className={styles.lightboxMedia}>
@@ -349,15 +353,17 @@ export function MediaLightbox({
                 ) : shown ? (
                   <div className={styles.lightboxFallback} role="alert">
                     {unavailable
-                      ? "此内容已不可用。"
+                      ? t("此内容已不可用。")
                       : containsVideo
-                        ? "媒体暂时无法显示。"
-                        : "图片暂时无法显示。"}
+                        ? t("媒体暂时无法显示。")
+                        : t("图片暂时无法显示。")}
                   </div>
                 ) : null}
                 {shownIndex > 0 ? (
                   <button
-                    aria-label={containsVideo ? "上一项媒体" : "上一张图片"}
+                    aria-label={
+                      containsVideo ? t("上一项媒体") : t("上一张图片")
+                    }
                     className={
                       styles.lightboxNav + " " + styles.lightboxPrevious
                     }
@@ -369,7 +375,9 @@ export function MediaLightbox({
                 ) : null}
                 {shownIndex < items.length - 1 ? (
                   <button
-                    aria-label={containsVideo ? "下一项媒体" : "下一张图片"}
+                    aria-label={
+                      containsVideo ? t("下一项媒体") : t("下一张图片")
+                    }
                     className={styles.lightboxNav + " " + styles.lightboxNext}
                     onClick={() => select(shownIndex + 1)}
                     type="button"
@@ -379,7 +387,9 @@ export function MediaLightbox({
                 ) : null}
               </div>
               <Dialog.Close
-                aria-label={containsVideo ? "关闭媒体预览" : "关闭图片预览"}
+                aria-label={
+                  containsVideo ? t("关闭媒体预览") : t("关闭图片预览")
+                }
                 className={styles.lightboxClose}
               >
                 <Icon name="media-remove" />
@@ -388,7 +398,7 @@ export function MediaLightbox({
                 mobile ? (
                   <Menu.Root>
                     <Menu.Trigger
-                      aria-label={containsVideo ? "媒体选项" : "图片选项"}
+                      aria-label={containsVideo ? t("媒体选项") : t("图片选项")}
                       className={styles.lightboxToggle}
                     >
                       <ViewerIcon name="more" />
@@ -402,7 +412,7 @@ export function MediaLightbox({
                       >
                         <Menu.Popup className={styles.viewerMenu}>
                           <Menu.Item onClick={onViewPost}>
-                            查看所属内容与回复
+                            {t("查看所属内容与回复")}
                           </Menu.Item>
                           {originalLink ? (
                             <Menu.Item render={<a {...originalLink} />}>
@@ -415,7 +425,7 @@ export function MediaLightbox({
                   </Menu.Root>
                 ) : (
                   <button
-                    aria-label={panelShown ? "隐藏帖子" : "显示帖子"}
+                    aria-label={panelShown ? t("隐藏帖子") : t("显示帖子")}
                     aria-expanded={panelShown}
                     className={styles.lightboxToggle}
                     onClick={() => onPanelShownChange?.(!panelShown)}
@@ -452,7 +462,9 @@ export function MediaLightbox({
               <aside
                 className={styles.lightboxDiscussion}
                 aria-label={
-                  containsVideo ? "媒体所属内容与回复" : "图片所属内容与回复"
+                  containsVideo
+                    ? t("媒体所属内容与回复")
+                    : t("图片所属内容与回复")
                 }
                 hidden={!open || !panelShown || mobile}
                 inert={!open || !panelShown || mobile}

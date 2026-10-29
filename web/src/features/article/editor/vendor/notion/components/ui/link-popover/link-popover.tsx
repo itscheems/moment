@@ -1,5 +1,8 @@
 "use client";
 
+import { t } from "../../../../../../../../i18n";
+import { useTranslation } from "react-i18next";
+
 import { forwardRef, useCallback, useEffect, useState } from "react";
 import type { Editor } from "@tiptap/react";
 
@@ -88,8 +91,8 @@ export const LinkButton = forwardRef<HTMLButtonElement, ButtonProps>(
         variant="ghost"
         role="button"
         tabIndex={-1}
-        aria-label="Link"
-        tooltip="Link"
+        aria-label={t("Link")}
+        tooltip={t("Link")}
         ref={ref}
         {...props}
       >
@@ -112,6 +115,8 @@ const LinkMain: React.FC<LinkMainProps> = ({
   openLink,
   isActive,
 }) => {
+  const { t } = useTranslation();
+
   const isMobile = useIsBreakpoint();
 
   const handleKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
@@ -135,7 +140,7 @@ const LinkMain: React.FC<LinkMainProps> = ({
         <CardItemGroup orientation="horizontal">
           <Input
             type="url"
-            placeholder="Paste a link..."
+            placeholder={t("Paste a link...")}
             value={url}
             onChange={(e) => setUrl(e.target.value)}
             onKeyDown={handleKeyDown}
@@ -150,7 +155,7 @@ const LinkMain: React.FC<LinkMainProps> = ({
             <Button
               type="button"
               onClick={setLink}
-              title="Apply link"
+              title={t("Apply link")}
               disabled={!url && !isActive}
               variant="ghost"
             >
@@ -165,7 +170,7 @@ const LinkMain: React.FC<LinkMainProps> = ({
               <Button
                 type="button"
                 onClick={openLink}
-                title="Open in new window"
+                title={t("Open in new window")}
                 disabled={!url && !isActive}
                 variant="ghost"
               >
@@ -177,7 +182,7 @@ const LinkMain: React.FC<LinkMainProps> = ({
               <Button
                 type="button"
                 onClick={removeLink}
-                title="Remove link"
+                title={t("Remove link")}
                 disabled={!url && !isActive}
                 variant="ghost"
               >

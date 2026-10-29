@@ -1,3 +1,4 @@
+import i18n, { t } from "../../../i18n";
 import { articleDraftIdFromPath } from "../../../app/routes";
 import "@testing-library/jest-dom/vitest";
 import { ThemeProvider } from "../../../theme/ThemeProvider";
@@ -264,9 +265,7 @@ it("keeps preview annotations out of draft content, save status and persistence"
     applyReadingColor(reader, { from: 2, to: 4 }, "text", "red");
     reader.commands.setTextSelection({ from: 1, to: 5 });
   });
-  expect(
-    screen.getByRole("button", { name: "Share excerpt" }),
-  ).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "分享摘录" })).toBeInTheDocument();
   await advance(20_000);
   expect(reader.getJSON()).toEqual(before);
   expect(screen.getByRole("status")).toHaveTextContent(status!);
@@ -277,7 +276,7 @@ it("keeps preview annotations out of draft content, save status and persistence"
   );
   await advance(20_000);
   expect(document.querySelector("[data-reading-annotation]")).toBeNull();
-  expect(screen.queryByRole("button", { name: "Share excerpt" })).toBeNull();
+  expect(screen.queryByRole("button", { name: "分享摘录" })).toBeNull();
   expect(screen.getByRole("status")).toHaveTextContent(status!);
   expect(calls.filter((call) => call.method !== "GET")).toEqual([]);
 });
@@ -488,11 +487,11 @@ describe("opening a draft", () => {
         metaKey: true,
       }),
     ).toBe(false);
-    fireEvent.change(screen.getByRole("textbox", { name: "Search" }), {
+    fireEvent.change(screen.getByRole("textbox", { name: "查找" }), {
       target: { value: "章节" },
     });
-    expect(screen.queryByRole("textbox", { name: "Replace" })).toBeNull();
-    expect(screen.getByText("Match case")).toBeInTheDocument();
+    expect(screen.queryByRole("textbox", { name: "替换" })).toBeNull();
+    expect(screen.getByText("区分大小写")).toBeInTheDocument();
     await advance(300);
     expect(screen.getByText("1 / 1")).toBeInTheDocument();
     expect(document.querySelectorAll(".moment-article-search")).toHaveLength(1);
@@ -552,23 +551,19 @@ describe("saving while the owner writes", () => {
       }),
     ).toBe(false);
     fireEvent.keyUp(document.body, { key: "f", code: "KeyF", metaKey: true });
-    fireEvent.change(screen.getByRole("textbox", { name: "Search" }), {
+    fireEvent.change(screen.getByRole("textbox", { name: "查找" }), {
       target: { value: "水" },
     });
     await advance(300);
-    fireEvent.change(screen.getByRole("textbox", { name: "Replace" }), {
+    fireEvent.change(screen.getByRole("textbox", { name: "替换" }), {
       target: { value: "河" },
     });
     await advance(300);
-    expect(
-      screen.getByRole("dialog", { name: "Search and replace" }),
-    ).toBeVisible();
-    fireEvent.click(
-      screen.getByRole("button", { name: "Replace all results" }),
-    );
+    expect(screen.getByRole("dialog", { name: "查找和替换" })).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "替换全部结果" }));
     expect(screen.getByText("上游的河是清的")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("switch"));
-    expect(screen.getByText("Try search and replace")).toBeVisible();
+    expect(screen.getByText("试试查找和替换")).toBeVisible();
     await act(async () => {
       expect(pressSave()).toBe(false);
     });
@@ -810,23 +805,25 @@ describe("what the toolbar writes into the document", () => {
   async function pressAndSave(label: string) {
     renderEditor(DRAFT_ID);
     await advance();
-    expect(screen.getByRole("button", { name: "Bold" })).toBeEnabled();
-    expect(screen.getByRole("button", { name: "Blockquote" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "粗体" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "引用" })).toBeEnabled();
     if (label === "Ordered List") {
       await act(async () => {
         fireEvent.pointerDown(
-          screen.getByRole("button", { name: "List options" }),
+          screen.getByRole("button", { name: "列表选项" }),
           { button: 0, ctrlKey: false, pointerType: "mouse" },
         );
       });
       await act(async () => {
         fireEvent.click(
-          screen.getByRole("menuitem", { name: new RegExp(`^${label}$`, "i") }),
+          screen.getByRole("menuitem", {
+            name: new RegExp(`^${t(label)}$`, "i"),
+          }),
         );
       });
     } else {
       await act(async () => {
-        fireEvent.click(screen.getByRole("button", { name: label }));
+        fireEvent.click(screen.getByRole("button", { name: t(label) }));
       });
     }
     await advance(2_100);
@@ -1136,14 +1133,14 @@ describe("switching drafts without reinitializing the sheet", () => {
     const toolbar = screen.getByRole("toolbar", { name: "文章格式" });
     const content = screen.getByRole("textbox", { name: "文章正文" });
     const cover = screen.getByRole("button", { name: "添加封面图" });
-    const bold = screen.getByRole("button", { name: /^Bold$/ });
+    const bold = screen.getByRole("button", { name: /^粗体$/ });
     let finish!: (response: Response) => void;
     onRead = () => new Promise((resolve) => (finish = resolve));
     rendered.rerender(host(nextId));
     await advance();
 
     expect(screen.getByRole("toolbar", { name: "文章格式" })).toBe(toolbar);
-    expect(screen.getByRole("button", { name: /^Bold$/ })).toBe(bold);
+    expect(screen.getByRole("button", { name: /^粗体$/ })).toBe(bold);
     expect(toolbar).toHaveAttribute("inert");
     expect(cover).toBeInTheDocument();
     expect(cover.closest("[inert]")).not.toBeNull();
@@ -1168,7 +1165,7 @@ describe("switching drafts without reinitializing the sheet", () => {
       });
     });
     expect(
-      screen.queryByRole("dialog", { name: "Search and replace" }),
+      screen.queryByRole("dialog", { name: "查找和替换" }),
     ).not.toBeInTheDocument();
     await advance(20_000);
     expect(calls.filter((call) => call.method !== "GET")).toEqual([]);
@@ -1178,7 +1175,7 @@ describe("switching drafts without reinitializing the sheet", () => {
     );
     await advance();
     expect(screen.getByRole("toolbar", { name: "文章格式" })).toBe(toolbar);
-    expect(screen.getByRole("button", { name: /^Bold$/ })).toBe(bold);
+    expect(screen.getByRole("button", { name: /^粗体$/ })).toBe(bold);
     expect(screen.getByRole("textbox", { name: "文章正文" })).toBe(content);
     expect(toolbar).not.toHaveAttribute("inert");
     expect(content.closest("[inert]")).toBeNull();
@@ -1201,7 +1198,7 @@ describe("switching drafts without reinitializing the sheet", () => {
     await advance();
     const toolbar = screen.getByRole("toolbar", { name: "文章格式" });
     expect(toolbar.parentElement).toBe(document.body);
-    const format = screen.getByRole("button", { name: "Highlight text" });
+    const format = screen.getByRole("button", { name: "高亮文字" });
     fireEvent.click(format);
     expect(
       screen.getByRole("button", { name: "返回格式工具" }),
@@ -1297,7 +1294,46 @@ describe("switching drafts without reinitializing the sheet", () => {
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
     expect(titleField().value).toBe("恢复读取的草稿");
     expect(titleField()).toBeEnabled();
-    expect(screen.getByRole("button", { name: /^Bold$/ })).toBeEnabled();
+    expect(screen.getByRole("button", { name: /^粗体$/ })).toBeEnabled();
     expect(calls.filter((call) => call.method !== "GET")).toEqual([]);
   });
+});
+
+it("switches interface language without replacing the editor, losing selection, or clearing undo history", async () => {
+  renderEditor(DRAFT_ID);
+  await advance();
+  const surface = screen.getByRole("textbox", { name: "文章正文" });
+  const editor = document.querySelector<HTMLElement & { editor: Editor }>(
+    '.tiptap.ProseMirror[contenteditable="true"]',
+  )?.editor;
+  if (!editor) throw new Error("missing editor");
+  const before = editor.getJSON();
+  await act(async () => {
+    editor
+      .chain()
+      .focus()
+      .setTextSelection(2)
+      .insertContent("Keep this change")
+      .run();
+  });
+  const edited = editor.getJSON();
+  const selection = editor.state.selection.toJSON();
+  await act(async () => {
+    await i18n.changeLanguage("en");
+  });
+  expect(screen.getByRole("textbox", { name: "Article body" })).toBe(surface);
+  expect(editor.getJSON()).toEqual(edited);
+  expect(editor.state.selection.toJSON()).toEqual(selection);
+  await act(async () => {
+    editor.commands.undo();
+  });
+  expect(editor.getJSON()).toEqual(before);
+  await act(async () => {
+    editor.commands.redo();
+  });
+  expect(editor.getJSON()).toEqual(edited);
+  await act(async () => {
+    await i18n.changeLanguage("zh-CN");
+  });
+  expect(screen.getByRole("textbox", { name: "文章正文" })).toBe(surface);
 });

@@ -1,3 +1,4 @@
+import { t } from "../../../i18n";
 import type { AccountVerification } from "../../../components/accountVerification";
 import {
   getTextBetween,
@@ -187,7 +188,7 @@ export function readingExcerptCard(
       username: source.username,
       avatarUrl: source.avatarUrl,
       publishedLabel: source.publishedLabel,
-      articleTitle: source.title.trim() || "无标题",
+      articleTitle: source.title.trim() || t("无标题"),
       blocks: readingExcerptBlocks(editor, selection, resolveColour),
       media: [],
       location: null,

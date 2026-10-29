@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import { useEffect, useRef } from "react";
 
 export type LoadSource = "automatic" | "manual";
@@ -17,6 +18,8 @@ export function LoadMoreSentinel({
   loading: boolean;
   onLoad: (source: LoadSource) => void;
 }) {
+  const { t } = useTranslation();
+
   const sentinelRef = useRef<HTMLDivElement>(null);
   const onLoadRef = useRef(onLoad);
   const loadingRef = useRef(loading);
@@ -53,7 +56,7 @@ export function LoadMoreSentinel({
         onClick={() => onLoad("manual")}
         type="button"
       >
-        {loading ? "正在加载…" : label}
+        {loading ? t("正在加载…") : label}
       </button>
     </div>
   );

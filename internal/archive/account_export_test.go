@@ -36,7 +36,7 @@ func TestAccountExportSelectsOnlyOwnRecordsAndMedia(t *testing.T) {
 	insertAccountsFixture(t, fixture)
 	ctx := context.Background()
 	if err := fixture.database.WriteTx(ctx, func(q sqlitestore.Queries) error {
-		_, err := q.ExecContext(ctx, `UPDATE users SET avatar_media_id = ? WHERE id = ?`, mediaTwoID, memberAccountID)
+		_, err := q.ExecContext(ctx, `UPDATE users SET ui_locale = 'en', avatar_media_id = ? WHERE id = ?`, mediaTwoID, memberAccountID)
 		return err
 	}); err != nil {
 		t.Fatal(err)
@@ -50,6 +50,9 @@ func TestAccountExportSelectsOnlyOwnRecordsAndMedia(t *testing.T) {
 		t.Fatal("wrong byte count")
 	}
 	members, _ := readArchive(t, output.Bytes())
+	if !bytes.Contains(members["data/account.json"], []byte(`"ui_locale":"en"`)) {
+		t.Fatal("account preference missing from export")
+	}
 	if bytes.Contains(members["manifest.json"], []byte(`"format":"moment-export"`)) || !bytes.Contains(members["manifest.json"], []byte(`"format":"moment-account-export"`)) {
 		t.Fatal("wrong format")
 	}

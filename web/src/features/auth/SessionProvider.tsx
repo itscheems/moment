@@ -1,3 +1,5 @@
+import { useTranslation } from "react-i18next";
+import { type AccountPreferences } from "../../api/preferences";
 import { accountCacheScope } from "./accountScope";
 import { authApi, type AccountLimits, type AuthSession } from "../../api/auth";
 import {
@@ -74,6 +76,12 @@ interface SessionContextValue {
    * render controls for has the numbers those controls need.
    */
   limits: AccountLimits | null;
+  preferences: AccountPreferences | null;
+  applyPreferences: (
+    userId: string,
+    csrfToken: string,
+    next: AccountPreferences,
+  ) => boolean;
   login: (
     credential: string,
     method?: "password" | "token",
@@ -331,11 +339,18 @@ function isInvalidSessionError(error: unknown): boolean {
 }
 
 export function SessionProvider({ children }: { children: ReactNode }) {
+  const { t } = useTranslation();
+
   const api = authApi;
   const [session, setSession] = useState<BrowserSession | null>(readSession);
   const [state, setState] = useState<SessionState>("checking");
   const [account, setAccount] = useState<Account | null>(null);
   const [limits, setLimits] = useState<AccountLimits | null>(null);
+  const [preferences, setPreferences] = useState<AccountPreferences | null>(
+    null,
+  );
+  const accountRef = useRef(account);
+  accountRef.current = account;
   const [statusAttempt, setStatusAttempt] = useState(0);
   const [authOutcome] = useState(readAuthOutcome);
   const sessionRef = useRef(session);
@@ -367,6 +382,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       if (nextState === "guest") {
         setAccount(null);
         setLimits(null);
+        setPreferences(null);
       }
       return true;
     },
@@ -427,6 +443,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
         if (acceptSession(message.session)) {
           setAccount(null);
           setLimits(null);
+          setPreferences(null);
         }
       } else {
         clearSession("guest", message.marker);
@@ -465,6 +482,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
         if (controller.signal.aborted || overtaken()) return;
         setAccount(restored.account);
         setLimits(restored.limits);
+        setPreferences(restored.preferences);
         // Cookies are shared across tabs; sessionStorage is not. A callback
         // or another tab may have replaced the cookie while this tab retained
         // its old CSRF. Only keep its marker when both credentials match.
@@ -506,6 +524,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
         if (!controller.signal.aborted) {
           setAccount(restored.account);
           setLimits(restored.limits);
+          setPreferences(restored.preferences);
         }
       })
       .catch((error: unknown) => {
@@ -540,8 +559,10 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     queueMicrotask(() =>
       notify(
         authOutcome.provider
-          ? `已绑定 ${providerLabel(authOutcome.provider)}`
-          : "已绑定新的登录方式",
+          ? t("已绑定 {{value1}}", {
+              value1: providerLabel(authOutcome.provider),
+            })
+          : t("已绑定新的登录方式"),
       ),
     );
   }, [authOutcome]);
@@ -557,9 +578,11 @@ export function SessionProvider({ children }: { children: ReactNode }) {
         const restored = await authApi.accountSession();
         setAccount(restored.account);
         setLimits(restored.limits);
+        setPreferences(restored.preferences);
       } catch (error) {
         setAccount(null);
         setLimits(null);
+        setPreferences(null);
         setState("unavailable");
         throw error;
       }
@@ -583,11 +606,13 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       } catch {
         setAccount(null);
         setLimits(null);
+        setPreferences(null);
         setState("unavailable");
         throw new RegistrationSessionRestoreError(created.username);
       }
       setAccount(restored.account);
       setLimits(restored.limits);
+      setPreferences(restored.preferences);
       adoptSession({
         csrfToken: created.csrfToken,
         expiresAt: created.expiresAt,
@@ -595,6 +620,19 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       return restored.account;
     },
     [adoptSession, api],
+  );
+
+  const applyPreferences = useCallback(
+    (userId: string, csrfToken: string, next: AccountPreferences) => {
+      if (
+        accountRef.current?.userId !== userId ||
+        sessionRef.current?.csrfToken !== csrfToken
+      )
+        return false;
+      setPreferences(next);
+      return true;
+    },
+    [],
   );
 
   const applyAccount = useCallback((next: Account) => setAccount(next), []);
@@ -650,6 +688,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       session,
       account,
       limits,
+      preferences,
+      applyPreferences,
       login,
       register,
       logout,
@@ -665,6 +705,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       expireIfInvalidSession,
       forgetSession,
       limits,
+      preferences,
+      applyPreferences,
       login,
       register,
       logout,

@@ -6,7 +6,6 @@ import identityCss from "../components/SiteIdentity.module.css?inline";
 import stateCss from "../components/ShellState.module.css?inline";
 import themeMenuCss from "../components/ThemeMenu.module.css?inline";
 import interactionsCss from "../components/TimelineInteractions.module.css?inline";
-import interCss from "inter-ui/inter-variable-latin.css?inline";
 import commentsCss from "../features/comments/Comments.module.css?inline";
 import mediaCss from "../features/media/Media.module.css?inline";
 import datePickerCss from "../features/memory/DatePicker.module.css?inline";
@@ -158,42 +157,22 @@ describe("visual foundation contract", () => {
     expect(globalCss).toContain(':root[data-accent="blue"]');
   });
 
-  it("self-hosts an open variable Latin face with CJK-safe system fallback", () => {
-    expect(interCss).toContain("font-family: InterVariable");
-    expect(interCss).toContain("font-weight: 100 900");
-    expect(interCss).toContain("font-display: swap");
-    expect(globalCss.match(/InterVariable/g)).toHaveLength(3);
-    expect(globalCss).toContain('"PingFang SC"');
-    expect(globalCss).toContain('"PingFang TC"');
-    expect(globalCss).toContain('"PingFang HK"');
-    expect(globalCss).toContain('"Noto Sans CJK SC"');
+  it("uses one current Latin face across interface roles with native per-glyph fallback", () => {
     expect(globalCss).toMatch(
-      /--font-timeline:\s*"TwitterChirp", -apple-system, "system-ui", "Segoe UI", Roboto, Helvetica,/,
+      /--font-sans:\s*"TwitterChirp", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,\s*Helvetica,/,
     );
     expect(globalCss.match(/font-family: "TwitterChirp"/g)).toHaveLength(4);
-    expect(globalCss).toContain(
-      'url("/fonts/twitter-chirp-regular.woff") format("woff")',
-    );
-    expect(globalCss).toContain(
-      'url("/fonts/twitter-chirp-medium.woff") format("woff")',
-    );
-    expect(globalCss).toContain(
-      'url("/fonts/twitter-chirp-bold.woff") format("woff")',
-    );
-    expect(globalCss).toContain(
-      'url("/fonts/twitter-chirp-heavy.woff") format("woff")',
-    );
-    // Four Chirp weights plus the extended-heavy cut the sign-in display line
-    // uses. It is its own family rather than a fifth weight, so that asking for
-    // 800 anywhere else still gets the normal-width face.
-    expect(globalCss.match(/font-display: swap/g)).toHaveLength(7);
-    expect(globalCss).toContain('font-family: "MomentSidebar"');
+    for (const weight of ["regular", "medium", "bold", "heavy"]) {
+      expect(globalCss).toContain(
+        `url("/fonts/twitter-chirp-${weight}.woff2") format("woff2")`,
+      );
+    }
+    expect(globalCss.match(/font-display: swap/g)).toHaveLength(5);
     expect(globalCss).toContain('font-family: "TwitterChirpExtendedHeavy"');
-    expect(globalCss).toContain("font-optical-sizing: auto");
-    expect(globalCss).toContain('"calt" 1');
-    expect(globalCss).toContain("--tracking-display: -0.022em");
-    expect(globalCss).toContain("--tracking-body: -0.006em");
-    expect(globalCss).toContain("--tracking-utility: 0.006em");
+    expect(globalCss).not.toMatch(/InterVariable|MomentSidebar|--tracking-/);
+    expect(globalCss).toContain("font-feature-settings: normal");
+    expect(globalCss).toContain("letter-spacing: normal");
+    expect(globalCss).toContain("font-synthesis: weight style small-caps");
   });
 
   it("keeps the measured detail hierarchy separate from timeline density", () => {
@@ -204,7 +183,7 @@ describe("visual foundation contract", () => {
       /\._detailBody_[\w-]+ \._markdown_[\w-]+\s*\{[^}]*font-size:\s*1\.0625rem;[^}]*line-height:\s*1\.5rem;/s,
     );
     expect(shellCss).toMatch(
-      /\._detailHeader_[\w-]+,[\s\S]*?\._detailHeader_[\w-]+ h1\s*\{[^}]*font-family:\s*var\(--font-timeline\);[^}]*font-feature-settings:\s*normal;[^}]*letter-spacing:\s*normal;[^}]*text-rendering:\s*auto;/,
+      /\._detailHeader_[\w-]+,[\s\S]*?\._detailHeader_[\w-]+ h1\s*\{[^}]*font-family:\s*var\(--font-sans\);[^}]*font-feature-settings:\s*normal;[^}]*letter-spacing:\s*normal;[^}]*text-rendering:\s*auto;/,
     );
     expect(shellCss).toMatch(
       /\._detailHeader_[\w-]+ h1\s*\{[^}]*font-size:\s*1\.25rem;[^}]*line-height:\s*1\.5rem;/s,
@@ -213,12 +192,12 @@ describe("visual foundation contract", () => {
       /@media \(max-width: 719px\)[\s\S]*?\._detailHeader_[\w-]+ h1\s*\{[^}]*font-size:\s*1\.0625rem;[^}]*line-height:\s*1\.25rem;/,
     );
     expect(commentsCss).toMatch(
-      /\._commentForm_[\w-]+ textarea\s*\{[^}]*font-family:\s*var\(--font-timeline\);[^}]*font-feature-settings:\s*normal;[^}]*font-size:\s*1\.25rem;[^}]*letter-spacing:\s*normal;[^}]*line-height:\s*1\.5rem;[^}]*text-rendering:\s*auto;/s,
+      /\._commentForm_[\w-]+ textarea\s*\{[^}]*font-family:\s*var\(--font-sans\);[^}]*font-feature-settings:\s*normal;[^}]*font-size:\s*1\.25rem;[^}]*letter-spacing:\s*normal;[^}]*line-height:\s*1\.5rem;[^}]*text-rendering:\s*auto;/s,
     );
     // Comments use the shared post renderer; its font and density rules above
     // now own comment-body typography instead of the removed comment class.
     expect(postCss).toMatch(
-      /\._timelineDensity_[\w-]+ \._markdown_[\w-]+\s*\{[^}]*font-family:\s*var\(--font-timeline\);/s,
+      /\._timelineDensity_[\w-]+ \._markdown_[\w-]+\s*\{[^}]*font-family:\s*var\(--font-sans\);/s,
     );
   });
 

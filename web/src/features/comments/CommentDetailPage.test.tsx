@@ -320,6 +320,7 @@ describe("focused comment reading", () => {
         vi.fn(async (input, init) => {
           if (String(input) === "/api/v1/account/session")
             return response({
+              preferences: { ui_locale: null },
               expires_at: "2999-08-11T01:00:00Z",
               csrf_token: "test-csrf",
               account: {

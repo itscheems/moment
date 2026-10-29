@@ -76,6 +76,7 @@ function accountSessionResponse() {
   return new Response(
     JSON.stringify({
       data: {
+        preferences: { ui_locale: null },
         csrf_token: "csrf-pin",
         expires_at: "2999-08-11T01:00:00.000Z",
         account: {
@@ -270,7 +271,7 @@ describe("shared post presentation", () => {
       "timelineDensity",
     );
     expect(postCss).toMatch(
-      /\._timelineDensity_[\w-]+ \._byline_[\w-]+,\s*\._timelineDensity_[\w-]+ \._markdown_[\w-]+\s*\{[^}]*font-family:\s*var\(--font-timeline\);[^}]*font-feature-settings:\s*normal;[^}]*letter-spacing:\s*normal;[^}]*text-rendering:\s*auto;[^}]*-webkit-font-smoothing:\s*auto;/s,
+      /\._timelineDensity_[\w-]+ \._byline_[\w-]+,\s*\._timelineDensity_[\w-]+ \._markdown_[\w-]+\s*\{[^}]*font-family:\s*var\(--font-sans\);[^}]*font-feature-settings:\s*normal;[^}]*letter-spacing:\s*normal;[^}]*text-rendering:\s*auto;[^}]*-webkit-font-smoothing:\s*auto;/s,
     );
     expect(contentCss).toMatch(
       /\.tiptap\.ProseMirror\s*\{[^}]*white-space:\s*pre-wrap;/,
@@ -462,7 +463,7 @@ describe("shared post presentation", () => {
     );
 
     expect(screen.getByText("引用外层仍然存在")).toBeInTheDocument();
-    expect(screen.getByText("This post is unavailable.")).toHaveAttribute(
+    expect(screen.getByText("此内容已不可用。")).toHaveAttribute(
       "role",
       "status",
     );
@@ -621,7 +622,7 @@ describe("shared post presentation", () => {
 
   it("uses the local Chirp family throughout the detail post", () => {
     expect(postCss).toMatch(
-      /\._detail_[\w-]+\s*\{[^}]*font-family:\s*var\(--font-timeline\);[^}]*font-feature-settings:\s*normal;[^}]*letter-spacing:\s*normal;[^}]*text-rendering:\s*auto;[^}]*-webkit-font-smoothing:\s*auto;/s,
+      /\._detail_[\w-]+\s*\{[^}]*font-family:\s*var\(--font-sans\);[^}]*font-feature-settings:\s*normal;[^}]*letter-spacing:\s*normal;[^}]*text-rendering:\s*auto;[^}]*-webkit-font-smoothing:\s*auto;/s,
     );
   });
 
@@ -657,7 +658,7 @@ describe("shared post presentation", () => {
       /\._detail_[\w-]+ \._usernameLink_[\w-]+\s*\{[^}]*font-feature-settings:\s*"ss01";/,
     );
     expect(postCss).toMatch(
-      /\._detail_[\w-]+ \._publishedLine_[\w-]+,[\s\S]*?\._detail_[\w-]+ \._publishedLine_[\w-]+ :where\(span, time\)\s*\{[^}]*font-family:\s*var\(--font-timeline\);[^}]*font-feature-settings:\s*normal;[^}]*letter-spacing:\s*normal;[^}]*text-rendering:\s*auto;/,
+      /\._detail_[\w-]+ \._publishedLine_[\w-]+,[\s\S]*?\._detail_[\w-]+ \._publishedLine_[\w-]+ :where\(span, time\)\s*\{[^}]*font-family:\s*var\(--font-sans\);[^}]*font-feature-settings:\s*normal;[^}]*letter-spacing:\s*normal;[^}]*text-rendering:\s*auto;/,
     );
     expect(postCss).toMatch(
       /\._detail_[\w-]+ \._postActions_[\w-]+\s*\{[^}]*min-block-size:\s*3rem;[^}]*border-block-start:\s*1px solid var\(--border-subtle\);[^}]*margin-block-start:\s*var\(--space-4\);[^}]*padding-inline:\s*var\(--space-1\);/s,

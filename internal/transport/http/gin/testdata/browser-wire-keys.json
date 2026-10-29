@@ -8,7 +8,8 @@
     "account",
     "csrf_token",
     "expires_at",
-    "limits"
+    "limits",
+    "preferences"
   ],
   "accountView": [
     "avatar_media_id",
@@ -85,6 +86,7 @@
     "reposted_at",
     "role",
     "status",
+    "ui_locale",
     "updated_at",
     "user_id",
     "username",

@@ -1,5 +1,7 @@
 "use client";
 
+import { useTranslation } from "react-i18next";
+
 import { useCallback, useEffect, useState } from "react";
 import type { Editor } from "@tiptap/react";
 
@@ -164,6 +166,7 @@ export function getFormattedMarkName(type: Mark): string {
  * ```
  */
 export function useMark(config: UseMarkConfig) {
+  const { t } = useTranslation();
   const {
     editor: providedEditor,
     type,
@@ -207,7 +210,7 @@ export function useMark(config: UseMarkConfig) {
     isActive,
     handleMark,
     canToggle,
-    label: getFormattedMarkName(type),
+    label: t(getFormattedMarkName(type)),
     shortcutKeys: MARK_SHORTCUT_KEYS[type],
     Icon: markIcons[type],
   };

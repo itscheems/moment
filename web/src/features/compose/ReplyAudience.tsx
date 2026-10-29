@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import { Menu } from "@base-ui/react/menu";
 import { useId } from "react";
 
@@ -13,6 +14,8 @@ export function ReplyAudience({
   onOpenChange: (open: boolean) => void;
   onOpenChangeComplete: (open: boolean) => void;
 }) {
+  const { t } = useTranslation();
+
   const titleId = useId();
   return (
     <Menu.Root
@@ -21,7 +24,7 @@ export function ReplyAudience({
     >
       <Menu.Trigger className={styles.trigger} disabled={disabled}>
         <Icon name="reply-everyone" />
-        <span>Everyone can reply</span>
+        <span>{t("Everyone can reply")}</span>
       </Menu.Trigger>
       <Menu.Portal>
         <Menu.Positioner
@@ -33,7 +36,7 @@ export function ReplyAudience({
           <Menu.Popup aria-labelledby={titleId} className={styles.card}>
             <Menu.Group>
               <Menu.GroupLabel className={styles.title} id={titleId}>
-                Who can reply?
+                {t("Who can reply?")}
               </Menu.GroupLabel>
               <Menu.RadioGroup value="everyone">
                 <Menu.RadioItem
@@ -42,7 +45,7 @@ export function ReplyAudience({
                   value="everyone"
                 >
                   <Icon name="audience-everyone" />
-                  <span>Everyone</span>
+                  <span>{t("Everyone")}</span>
                   <Menu.RadioItemIndicator className={styles.check}>
                     <Icon name="audience-check" />
                   </Menu.RadioItemIndicator>

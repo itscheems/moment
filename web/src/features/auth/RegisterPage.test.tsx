@@ -37,6 +37,7 @@ function registrationOptions(mode: "open" | "approval" | "closed") {
 function accountSession(status: "active" | "pending") {
   return json({
     data: {
+      preferences: { ui_locale: null },
       csrf_token: "csrf-registered",
       expires_at: "2999-08-11T01:00:00.000Z",
       account: {

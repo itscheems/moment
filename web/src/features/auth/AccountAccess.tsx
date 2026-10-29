@@ -1,3 +1,5 @@
+import { t } from "../../i18n";
+import { useTranslation } from "react-i18next";
 import { ensureCredentialConfirmation } from "../../api/credentialConfirmation";
 import {
   accountsApi,
@@ -29,13 +31,19 @@ const RETURN_PATH = "/settings/account";
 // reads as a category name rather than as a device, which is what a person
 // scanning this list is actually trying to recognise.
 const SURFACE_LABELS: Record<string, string> = {
-  web: "浏览器",
-  api: "API 客户端",
-  cli: "命令行",
+  get web() {
+    return t("浏览器");
+  },
+  get api() {
+    return t("API 客户端");
+  },
+  get cli() {
+    return t("命令行");
+  },
 };
 
 function surfaceLabel(surface: string): string {
-  return SURFACE_LABELS[surface] ?? (surface || "未知来源");
+  return SURFACE_LABELS[surface] ?? (surface || t("未知来源"));
 }
 
 type PanelState = "loading" | "ready" | "failed";
@@ -98,12 +106,14 @@ function unlinkMessage(error: unknown, expired: boolean): string {
     error instanceof PublicApiError &&
     error.code === "REAUTHENTICATION_REQUIRED"
   )
-    return "身份验证未完成，操作未执行。";
-  if (expired) return "会话已过期。请重新登录后再解绑。";
+    return t("身份验证未完成，操作未执行。");
+  if (expired) return t("会话已过期。请重新登录后再解绑。");
   if (error instanceof PublicApiError && error.code === "LAST_CREDENTIAL") {
-    return "这是这个账户唯一的登录方式，解绑后就再也登录不进来了。请先绑定另一个登录方式，或设置密码。";
+    return t(
+      "这是这个账户唯一的登录方式，解绑后就再也登录不进来了。请先绑定另一个登录方式，或设置密码。",
+    );
   }
-  return "解绑没有完成。这个登录方式仍然可用，可以稍后重试。";
+  return t("解绑没有完成。这个登录方式仍然可用，可以稍后重试。");
 }
 
 /**
@@ -122,6 +132,8 @@ export function AccountAccess({
   instanceId: string | null;
   onSignedOut: () => void;
 }) {
+  const { t } = useTranslation();
+
   const { api, session, expireIfInvalidSession, forgetSession, logout } =
     useSession();
   const [identities, setIdentities] = useState<AccountIdentity[]>([]);
@@ -230,12 +242,12 @@ export function AccountAccess({
     // provider again on the way back, so nothing has to be remembered here.
     try {
       if (!(await ensureCredentialConfirmation())) {
-        setUnlinkError("身份验证未完成，操作未执行。");
+        setUnlinkError(t("身份验证未完成，操作未执行。"));
         return;
       }
       window.location.assign(oauthStartUrl(provider, RETURN_PATH));
     } catch {
-      setUnlinkError("暂时无法确认登录状态，请重试。");
+      setUnlinkError(t("暂时无法确认登录状态，请重试。"));
     }
   };
 
@@ -255,8 +267,8 @@ export function AccountAccess({
       setRevoking(false);
       setRevokeError(
         expireIfInvalidSession(error)
-          ? "会话已过期。请重新登录后再退出其他设备。"
-          : "没有退出成功。已登录的设备保持不变，可以重试。",
+          ? t("会话已过期。请重新登录后再退出其他设备。")
+          : t("没有退出成功。已登录的设备保持不变，可以重试。"),
       );
     }
   }, [
@@ -290,7 +302,7 @@ export function AccountAccess({
         onSignedOut();
         return;
       }
-      setRevokeError("没有退出成功。当前会话仍然有效，可以重试。");
+      setRevokeError(t("没有退出成功。当前会话仍然有效，可以重试。"));
     }
   }, [
     expireIfInvalidSession,
@@ -309,24 +321,26 @@ export function AccountAccess({
     <>
       <div className={styles.accountBlock}>
         <div className={styles.accountBlockHeader}>
-          <strong>已关联的登录方式</strong>
-          <p>用这些账号可以直接登录，不需要记住密码。</p>
+          <strong>{t("已关联的登录方式")}</strong>
+          <p>{t("用这些账号可以直接登录，不需要记住密码。")}</p>
         </div>
         {identitiesState === "failed" ? (
           <div className={styles.inlineError} role="alert">
-            <span>暂时无法读取已关联的登录方式。</span>
+            <span>{t("暂时无法读取已关联的登录方式。")}</span>
             <button
               className={styles.quietButton}
               onClick={() => setIdentityAttempt((value) => value + 1)}
               type="button"
             >
-              重试
+              {t("重试")}
             </button>
           </div>
         ) : identitiesState === "loading" ? (
-          <p aria-busy="true">正在读取已关联的登录方式…</p>
+          <p aria-busy="true">{t("正在读取已关联的登录方式…")}</p>
         ) : identities.length === 0 ? (
-          <p className={styles.accountEmpty}>还没有关联任何第三方账号。</p>
+          <p className={styles.accountEmpty}>
+            {t("还没有关联任何第三方账号。")}
+          </p>
         ) : (
           <ul className={styles.accountList}>
             {identities.map((identity) => {
@@ -335,13 +349,16 @@ export function AccountAccess({
               return (
                 <li className={styles.accountRow} key={identity.provider}>
                   <RowDetails
-                    label={`${label} 的关联详情`}
+                    label={t("{{value1}} 的关联详情", { value1: label })}
                     lines={[
-                      ["账号", identity.displayName || "该账号没有公开名称"],
-                      ["邮箱", identity.email || "该账号没有公开邮箱"],
-                      ["关联于", formatInstant(identity.linkedAt, timezone)],
                       [
-                        "最后登录",
+                        t("账号"),
+                        identity.displayName || t("该账号没有公开名称"),
+                      ],
+                      [t("邮箱"), identity.email || t("该账号没有公开邮箱")],
+                      [t("关联于"), formatInstant(identity.linkedAt, timezone)],
+                      [
+                        t("最后登录"),
                         formatInstant(identity.lastLoginAt, timezone),
                       ],
                     ]}
@@ -354,24 +371,27 @@ export function AccountAccess({
                       <small>
                         {identity.displayName ||
                           identity.email ||
-                          "该账号没有公开名称"}
+                          t("该账号没有公开名称")}
                       </small>
                     </span>
                   </RowDetails>
                   <ConfirmDialog
-                    confirmLabel="解绑"
+                    confirmLabel={t("解绑")}
                     danger
-                    description={`解绑后就不能再用这个 ${label} 账号登录本站。已发布的内容不受影响。`}
+                    description={t(
+                      "解绑后就不能再用这个 {{value1}} 账号登录本站。已发布的内容不受影响。",
+                      { value1: label },
+                    )}
                     onConfirm={() => unlink(identity.provider)}
                     pending={unlinking === identity.provider}
-                    title={`解绑 ${label}？`}
+                    title={t("解绑 {{value1}}？", { value1: label })}
                     trigger={
                       <button
                         className={styles.quietButton}
                         disabled={!session || unlinking !== null}
                         type="button"
                       >
-                        解绑
+                        {t("解绑")}
                       </button>
                     }
                   />
@@ -394,7 +414,7 @@ export function AccountAccess({
                 onClick={() => link(provider)}
                 type="button"
               >
-                绑定 {providerLabel(provider)}
+                {t("绑定")} {providerLabel(provider)}
               </button>
             ))}
           </div>
@@ -403,47 +423,49 @@ export function AccountAccess({
 
       <div className={styles.accountBlock}>
         <div className={styles.accountBlockHeader}>
-          <strong>活跃会话</strong>
+          <strong>{t("活跃会话")}</strong>
           <p>
-            每次登录都会留下一条记录，直到过期或被退出。用API 令牌直接调用 API
-            不会开启会话，因此不会出现在这里。
+            {t(
+              "每次登录都会留下一条记录，直到过期或被退出。用API 令牌直接调用 API 不会开启会话，因此不会出现在这里。",
+            )}
           </p>
         </div>
         {sessionsState === "failed" ? (
           <div className={styles.inlineError} role="alert">
-            <span>暂时无法读取活跃会话。</span>
+            <span>{t("暂时无法读取活跃会话。")}</span>
             <button
               className={styles.quietButton}
               onClick={() => setSessionAttempt((value) => value + 1)}
               type="button"
             >
-              重试
+              {t("重试")}
             </button>
           </div>
         ) : sessionsState === "loading" ? (
-          <p aria-busy="true">正在读取活跃会话…</p>
+          <p aria-busy="true">{t("正在读取活跃会话…")}</p>
         ) : (
           <ul className={styles.accountList}>
             {sessions.map((entry) => (
               <li className={styles.accountRow} key={entry.id}>
                 <RowDetails
-                  label="这次登录的详情"
+                  label={t("这次登录的详情")}
                   lines={[
-                    ["登录于", formatInstant(entry.issuedAt, timezone)],
-                    ["最近活动", formatInstant(entry.lastSeenAt, timezone)],
-                    ["到期", formatInstant(entry.expiresAt, timezone)],
+                    [t("登录于"), formatInstant(entry.issuedAt, timezone)],
+                    [t("最近活动"), formatInstant(entry.lastSeenAt, timezone)],
+                    [t("到期"), formatInstant(entry.expiresAt, timezone)],
                   ]}
                 >
                   <span className={styles.accountRowMain}>
                     <strong>{surfaceLabel(entry.surface)}</strong>
                     <small>
-                      最近活动 {formatInstant(entry.lastSeenAt, timezone)}
+                      {t("最近活动")}{" "}
+                      {formatInstant(entry.lastSeenAt, timezone)}
                     </small>
                   </span>
                 </RowDetails>
                 {entry.current ? (
                   <span className={styles.accountBadge} data-tone="current">
-                    当前设备
+                    {t("当前设备")}
                   </span>
                 ) : null}
               </li>
@@ -462,22 +484,24 @@ export function AccountAccess({
             onClick={() => void signOut()}
             type="button"
           >
-            {signingOut ? "正在退出…" : "退出登录"}
+            {signingOut ? t("正在退出…") : t("退出登录")}
           </button>
           <ConfirmDialog
-            confirmLabel="全部退出"
+            confirmLabel={t("全部退出")}
             danger
-            description="所有登录过的浏览器都会立即退出，包括正在使用的这一个。重新登录后一切照旧。"
+            description={t(
+              "所有登录过的浏览器都会立即退出，包括正在使用的这一个。重新登录后一切照旧。",
+            )}
             onConfirm={revokeEverything}
             pending={revoking}
-            title="退出所有设备？"
+            title={t("退出所有设备？")}
             trigger={
               <button
                 className={styles.dangerButton}
                 disabled={!session || revoking}
                 type="button"
               >
-                退出所有设备
+                {t("退出所有设备")}
               </button>
             }
           />

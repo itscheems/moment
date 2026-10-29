@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import { useSyncExternalStore } from "react";
 import { articlePublishedTime, articleSavedAgo } from "./articleDates";
 
@@ -43,6 +44,7 @@ export function ArticleTime({
   timezone: string;
   draft?: boolean;
 }) {
+  const { t } = useTranslation();
   const now = useSyncExternalStore(subscribe, snapshot, snapshot);
   const savedAgo = draft ? articleSavedAgo(value, now) : "";
   return (
@@ -53,7 +55,7 @@ export function ArticleTime({
     >
       {draft ? (
         <>
-          Last saved{" "}
+          {t("Last saved")}{" "}
           <span
             data-relative-time={
               savedAgo === "just now" ? "immediate" : "elapsed"

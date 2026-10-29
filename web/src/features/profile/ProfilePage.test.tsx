@@ -66,6 +66,7 @@ function post(id: string, text: string) {
 function accountSessionEnvelope() {
   return {
     data: {
+      preferences: { ui_locale: null },
       expires_at: "2999-08-11T01:00:00.000Z",
       csrf_token: "csrf-profile",
       account: {

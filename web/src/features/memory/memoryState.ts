@@ -1,12 +1,13 @@
+import { t } from "../../i18n";
 import { loadedThroughFromSearch } from "../timeline/cursorContinuity";
 
 const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 const MONTH_PATTERN = /^\d{4}-\d{2}$/;
 const YEAR_PATTERN = /^\d{4}$/;
-const SEARCH_LOCATION_ERROR =
-  "链接里的搜索词、日期或分页位置无效。请调整条件后重新搜索。";
-const ARCHIVE_LOCATION_ERROR =
-  "链接里的年份、月份、日期或分页位置无效。请从归档首页重新选择。";
+const SEARCH_LOCATION_ERROR = () =>
+  t("链接里的搜索词、日期或分页位置无效。请调整条件后重新搜索。");
+const ARCHIVE_LOCATION_ERROR = () =>
+  t("链接里的年份、月份、日期或分页位置无效。请从归档首页重新选择。");
 
 export interface SearchLocationState {
   query: string | null;
@@ -81,7 +82,7 @@ export function parseSearchLocation(search: string): SearchLocationState {
       from: null,
       to: null,
       loadedThrough: null,
-      error: SEARCH_LOCATION_ERROR,
+      error: SEARCH_LOCATION_ERROR(),
     };
   }
   const params = new URLSearchParams(search);
@@ -102,7 +103,7 @@ export function parseSearchLocation(search: string): SearchLocationState {
     from: from.value,
     to: to.value,
     loadedThrough: query === null ? null : loaded,
-    error: invalid ? SEARCH_LOCATION_ERROR : null,
+    error: invalid ? SEARCH_LOCATION_ERROR() : null,
   };
 }
 
@@ -119,7 +120,7 @@ const INVALID_ARCHIVE_LOCATION: ArchiveLocationState = {
   year: null,
   loadedThrough: null,
   loadedNewer: null,
-  error: ARCHIVE_LOCATION_ERROR,
+  error: ARCHIVE_LOCATION_ERROR(),
 };
 
 /**

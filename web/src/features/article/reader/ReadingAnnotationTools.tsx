@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useEditorState, type Editor } from "@tiptap/react";
@@ -62,6 +63,8 @@ export function ReadingAnnotationTools({
   enableExcerptPanel?: boolean;
   excerptSource?: ReadingExcerptSource;
 }) {
+  const { t } = useTranslation();
+
   const snapshot = useEditorState({
     editor,
     selector: ({ editor }) =>
@@ -122,14 +125,14 @@ export function ReadingAnnotationTools({
       <Popover open={menuOpen} onOpenChange={setMenuOpen}>
         <PopoverTrigger asChild>
           <Button
-            aria-label="Reading tools"
-            tooltip="Reading tools"
+            aria-label={t("Reading tools")}
+            tooltip={t("Reading tools")}
             variant="ghost"
           >
             <MoreVerticalIcon className="tiptap-button-icon" />
           </Button>
         </PopoverTrigger>
-        <PopoverContent align="end" aria-label="Reading tools">
+        <PopoverContent align="end" aria-label={t("Reading tools")}>
           <Card>
             <CardBody>
               <Button
@@ -140,7 +143,9 @@ export function ReadingAnnotationTools({
                 }}
               >
                 <BanIcon className="tiptap-button-icon" />
-                <span className="tiptap-button-text">Clear all marks</span>
+                <span className="tiptap-button-text">
+                  {t("Clear all marks")}
+                </span>
               </Button>
             </CardBody>
           </Card>
@@ -197,20 +202,20 @@ export function ReadingAnnotationTools({
           floatingOptions={READING_FLOATING_OPTIONS}
           autoUpdateOptions={READING_AUTO_UPDATE_OPTIONS}
         >
-          <Toolbar variant="floating" aria-label="Reading annotations">
+          <Toolbar variant="floating" aria-label={t("Reading annotations")}>
             <ToolbarGroup>
               <ClipboardCopyButton
                 source={() => {
                   const range = selectionRef.current;
                   return range ? readingSelectionText(editor, range) : "";
                 }}
-                tooltip="Copy"
+                tooltip={t("Copy")}
               />
               {excerptSource && (
                 <Button
                   variant="ghost"
-                  aria-label="Share excerpt"
-                  tooltip="Share excerpt"
+                  aria-label={t("Share excerpt")}
+                  tooltip={t("Share excerpt")}
                   onClick={() => {
                     if (!selectionRef.current) return;
                     shareRange(selectionRef.current);
@@ -221,8 +226,8 @@ export function ReadingAnnotationTools({
               )}
               <ColorHighlightButton
                 highlightColor={highlightColor}
-                aria-label="Highlight"
-                tooltip="Highlight"
+                aria-label={t("Highlight")}
+                tooltip={t("Highlight")}
                 onApplied={({ color, label }) => {
                   addRecentColor({
                     type: "highlight",
@@ -237,8 +242,8 @@ export function ReadingAnnotationTools({
             <ToolbarGroup>
               <Button
                 variant="ghost"
-                aria-label="Clear selection marks"
-                tooltip="Clear selection marks"
+                aria-label={t("Clear selection marks")}
+                tooltip={t("Clear selection marks")}
                 disabled={!hasSelectedMarks}
                 onClick={() => {
                   if (selectionRef.current)

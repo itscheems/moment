@@ -1,5 +1,7 @@
 "use client";
 
+import { useTranslation } from "react-i18next";
+
 import { useCallback, useEffect, useState } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
 import { type Editor } from "@tiptap/react";
@@ -198,6 +200,8 @@ export function shouldShowButton(props: {
  * ```
  */
 export function useResetAllFormatting(config?: UseResetAllFormattingConfig) {
+  const { t } = useTranslation();
+
   const {
     editor: providedEditor,
     preserveMarks,
@@ -255,7 +259,7 @@ export function useResetAllFormatting(config?: UseResetAllFormattingConfig) {
     isVisible,
     handleResetFormatting,
     canReset,
-    label: "Reset formatting",
+    label: t("Reset formatting"),
     shortcutKeys: RESET_ALL_FORMATTING_SHORTCUT_KEY,
     Icon: RotateCcwIcon,
   };

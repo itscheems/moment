@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import { useCallback, useRef, useState, type ReactNode } from "react";
 import type { Editor } from "@tiptap/core";
 import {
@@ -22,6 +23,8 @@ export function ArticleSearch({
     buttonRef: React.RefObject<HTMLButtonElement | null>;
   }) => ReactNode;
 }) {
+  const { t } = useTranslation();
+
   const [open, setOpen] = useState(false);
   const buttonRef = useRef<HTMLButtonElement>(null);
   const origin = useRef<HTMLElement | null>(null);
@@ -48,8 +51,8 @@ export function ArticleSearch({
         children({ open, toggle, buttonRef })
       ) : (
         <SearchAndReplaceButton
-          aria-label="Search"
-          tooltip="Search"
+          aria-label={t("Search")}
+          tooltip={t("Search")}
           ref={buttonRef}
           tabIndex={0}
           aria-expanded={open}

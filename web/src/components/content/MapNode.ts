@@ -1,3 +1,4 @@
+import { t } from "../../i18n";
 import { Node } from "@tiptap/core";
 import { mapCardPayload, parseMapCard } from "../../features/maps/types";
 
@@ -31,7 +32,7 @@ export const MapNode = Node.create({
   },
   renderHTML({ node }) {
     if (!node.attrs.map_card)
-      return ["figure", { "data-map-card": "" }, "地图"];
+      return ["figure", { "data-map-card": "" }, t("地图")];
     const card = parseMapCard(node.attrs.map_card);
     return [
       "figure",
@@ -39,7 +40,7 @@ export const MapNode = Node.create({
         "data-map-card": JSON.stringify(mapCardPayload(card)),
         ...(node.attrs.id ? { id: node.attrs.id } : {}),
       },
-      ["figcaption", {}, "地图"],
+      ["figcaption", {}, t("地图")],
       [
         "ol",
         {},

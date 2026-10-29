@@ -1,5 +1,7 @@
 "use client";
 
+import { useTranslation } from "react-i18next";
+
 import { forwardRef, useCallback, useMemo } from "react";
 
 // --- Lib ---
@@ -92,6 +94,7 @@ export const ColorHighlightButton = forwardRef<
     },
     ref,
   ) => {
+    const { t } = useTranslation();
     const { editor } = useTiptapEditor(providedEditor);
     const {
       isVisible,
@@ -103,7 +106,8 @@ export const ColorHighlightButton = forwardRef<
     } = useColorHighlight({
       editor,
       highlightColor,
-      label: text || `Toggle highlight (${highlightColor})`,
+      label:
+        text || t("Toggle highlight ({{color}})", { color: highlightColor }),
       hideWhenUnavailable,
       mode,
       onApplied,

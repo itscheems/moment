@@ -1,5 +1,7 @@
 "use client";
 
+import { t } from "../../../../../../../../i18n";
+
 import { forwardRef, useCallback } from "react";
 
 // --- Lib ---
@@ -96,7 +98,7 @@ export const TextButton = forwardRef<HTMLButtonElement, TextButtonProps>(
         data-disabled={!canToggle}
         aria-label={label}
         aria-pressed={isActive}
-        tooltip="Text"
+        tooltip={t("Text")}
         onClick={handleClick}
         {...buttonProps}
         ref={ref}

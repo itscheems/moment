@@ -1,3 +1,8 @@
+import i18n from "../../i18n";
+import { beforeEach } from "vitest";
+beforeEach(() => {
+  void i18n.changeLanguage("en");
+});
 import { describe, expect, it } from "vitest";
 import { articlePublishedTime, articleSavedAgo } from "./articleDates";
 

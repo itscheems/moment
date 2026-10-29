@@ -138,7 +138,7 @@ var (
 // cannot reach one query and miss another.
 const userColumns = `users.id, users.username, users.display_name, users.bio, users.avatar_media_id,
        users.cover_media_id, users.role, users.status, users.username_set_at_ms,
-       users.created_at_ms, users.updated_at_ms`
+       users.created_at_ms, users.updated_at_ms, users.ui_locale`
 
 func scanUser(scanner interface{ Scan(...any) error }) (domain.User, error) {
 	var (
@@ -150,7 +150,7 @@ func scanUser(scanner interface{ Scan(...any) error }) (domain.User, error) {
 		status     string
 	)
 	if err := scanner.Scan(&user.ID, &user.Username, &user.DisplayName, &user.Bio, &avatar, &cover,
-		&role, &status, &usernameAt, &user.CreatedAtMS, &user.UpdatedAtMS); err != nil {
+		&role, &status, &usernameAt, &user.CreatedAtMS, &user.UpdatedAtMS, &user.UILocale); err != nil {
 		return domain.User{}, err
 	}
 	if avatar.Valid {
@@ -332,11 +332,11 @@ func (store accountStore) CreateAccountWithPassword(ctx context.Context, user do
 func (store accountStore) insertUser(ctx context.Context, user domain.User) error {
 	_, err := store.queries.ExecContext(ctx, `
 INSERT INTO users (id, username, display_name, bio, avatar_media_id, cover_media_id,
-                   role, status, username_set_at_ms, created_at_ms, updated_at_ms)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                   role, status, username_set_at_ms, created_at_ms, updated_at_ms, ui_locale)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		user.ID, user.Username, user.DisplayName, user.Bio, optionalString(user.AvatarMediaID),
 		optionalString(user.CoverMediaID), string(user.Role), string(user.Status),
-		optionalInt64(user.UsernameSetAtMS), user.CreatedAtMS, user.UpdatedAtMS)
+		optionalInt64(user.UsernameSetAtMS), user.CreatedAtMS, user.UpdatedAtMS, optionalString(user.UILocale))
 	if err != nil {
 		if isUniqueViolation(err) {
 			return domain.NewError(domain.CodeUsernameTaken, "that username is taken", map[string]any{"field": "username"})

@@ -208,8 +208,8 @@ it("changes only reading presentation while preserving the editor, marks, select
     original.commands.setTextSelection({ from: 2, to: 6 });
     applyReadingColor(original, { from: 2, to: 6 }, "highlight", "yellow");
   });
-  fireEvent.click(screen.getByRole("button", { name: "Search" }));
-  fireEvent.change(screen.getByRole("textbox", { name: "Search" }), {
+  fireEvent.click(screen.getByRole("button", { name: "查找" }));
+  fireEvent.change(screen.getByRole("textbox", { name: "查找" }), {
     target: { value: "river" },
   });
   await waitFor(() =>

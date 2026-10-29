@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import { Dialog } from "../../../../components/Dialog";
 import { Slider } from "@base-ui/react/slider";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -33,6 +34,8 @@ export function CoverCropDialog({
   onCancel: () => void;
   onApply: (cropped: File) => void;
 }) {
+  const { t } = useTranslation();
+
   const [imageUrl, setImageUrl] = useState<string | null>(null);
   const [stage, setStage] = useState<HTMLDivElement | null>(null);
   const [stageSize, setStageSize] = useState({ width: 0, height: 0 });
@@ -115,7 +118,7 @@ export function CoverCropDialog({
         setError(
           nextError instanceof Error
             ? nextError.message
-            : "封面生成没有成功，请重试。",
+            : t("封面生成没有成功，请重试。"),
         );
       }
     } finally {
@@ -136,26 +139,29 @@ export function CoverCropDialog({
           <Dialog.Popup className={styles.popup}>
             <header className={styles.header}>
               <button
-                aria-label="返回"
+                aria-label={t("返回")}
                 className={styles.back}
                 onClick={cancel}
                 type="button"
               >
                 <Icon name="back" />
               </button>
-              <Dialog.Title className={styles.title}>编辑媒体</Dialog.Title>
+              <Dialog.Title className={styles.title}>
+                {t("编辑媒体")}
+              </Dialog.Title>
               <button
                 className={styles.apply}
                 disabled={!pixels || !mediaReady || locked}
                 onClick={() => void apply()}
                 type="button"
               >
-                {busy ? "正在上传…" : applying ? "正在处理…" : "应用"}
+                {busy ? t("正在上传…") : applying ? t("正在处理…") : t("应用")}
               </button>
             </header>
             <Dialog.Description className={styles.srOnly}>
-              拖动图片调整封面位置，使用缩放滑块放大或缩小。聚焦图片后可用方向键移动，按
-              Escape 返回。
+              {t(
+                "拖动图片调整封面位置，使用缩放滑块放大或缩小。聚焦图片后可用方向键移动，按 Escape 返回。",
+              )}
             </Dialog.Description>
             <div aria-busy={locked} className={styles.stage} ref={setStage}>
               <div className={styles.cropperHost} inert={locked}>
@@ -173,13 +179,15 @@ export function CoverCropDialog({
                     roundCropAreaPixels={false}
                     disableAutomaticStylesInjection
                     classes={{ cropAreaClassName: styles.cropArea }}
-                    cropperProps={{ "aria-label": "封面裁切区域" }}
+                    cropperProps={{ "aria-label": t("封面裁切区域") }}
                     mediaProps={{
                       onError: () => {
                         setMediaReady(false);
                         setPixels(null);
                         setError(
-                          "无法读取这张图片，请返回并选择 JPEG、PNG 或 WebP 图片。",
+                          t(
+                            "无法读取这张图片，请返回并选择 JPEG、PNG 或 WebP 图片。",
+                          ),
                         );
                       },
                     }}
@@ -226,7 +234,7 @@ export function CoverCropDialog({
                     <Slider.Indicator className={styles.sliderIndicator} />
                     <Slider.Thumb
                       className={styles.sliderThumb}
-                      aria-label="放大或缩小图片"
+                      aria-label={t("放大或缩小图片")}
                       getAriaValueText={(_, value) =>
                         `${Math.round(2 ** value * 100)}%`
                       }

@@ -291,6 +291,7 @@ function preauthenticate() {
 function accountSessionEnvelope(username = "owner") {
   return {
     data: {
+      preferences: { ui_locale: null },
       expires_at: "2999-08-11T01:00:00.000Z",
       csrf_token: "csrf-from-cookie",
       account: {
@@ -1428,6 +1429,7 @@ describe("public comment thread", () => {
       if (url === "/api/v1/account/session") {
         return json({
           data: {
+            preferences: { ui_locale: null },
             expires_at: "2999-08-11T01:00:00.000Z",
             csrf_token: "csrf-from-cookie",
             account: {
@@ -1844,7 +1846,7 @@ describe("public comment thread", () => {
       target: { files: [file] },
     });
     fireEvent.click(screen.getByRole("button", { name: "Add descriptions" }));
-    fireEvent.change(screen.getByRole("textbox", { name: "Description" }), {
+    fireEvent.change(screen.getByRole("textbox", { name: "描述" }), {
       target: { value: "night sky" },
     });
     fireEvent.click(screen.getByRole("button", { name: "Save" }));

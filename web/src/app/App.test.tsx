@@ -130,6 +130,7 @@ function preauthenticate() {
 function accountSessionEnvelope(username = "owner") {
   return {
     data: {
+      preferences: { ui_locale: null },
       expires_at: "2999-08-11T01:00:00.000Z",
       csrf_token: "csrf-from-cookie",
       account: {
@@ -1362,7 +1363,7 @@ describe("App shell and public routes", () => {
         "false",
       ),
     );
-    expect(screen.queryByRole("button", { name: "Search" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "查找" })).toBeNull();
     expect(
       fireEvent.keyDown(document.body, {
         key: "f",
@@ -1371,9 +1372,7 @@ describe("App shell and public routes", () => {
       }),
     ).toBe(false);
     fireEvent.keyUp(document.body, { key: "f", code: "KeyF", metaKey: true });
-    expect(
-      await screen.findByRole("textbox", { name: "Search" }),
-    ).toBeVisible();
+    expect(await screen.findByRole("textbox", { name: "查找" })).toBeVisible();
     fireEvent.keyDown(document.body, { key: "Escape" });
     const article = screen.getByRole("article");
     trigger.focus();
@@ -1389,7 +1388,7 @@ describe("App shell and public routes", () => {
     expect(
       screen.queryByRole("complementary", { name: "记忆导航" }),
     ).toBeNull();
-    expect(await screen.findByRole("button", { name: "Search" })).toBeVisible();
+    expect(await screen.findByRole("button", { name: "查找" })).toBeVisible();
     expect(
       fireEvent.keyDown(document.body, {
         key: "f",
@@ -1398,7 +1397,7 @@ describe("App shell and public routes", () => {
       }),
     ).toBe(false);
     fireEvent.keyUp(document.body, { key: "f", code: "KeyF", metaKey: true });
-    expect(screen.getByRole("dialog", { name: "Search" })).toBeVisible();
+    expect(screen.getByRole("dialog", { name: "查找" })).toBeVisible();
     fireEvent.click(await screen.findByRole("link", { name: "文章章节" }));
     expect(window.location.hash).toBe("#article-heading-1");
     expect(window.history.state).toMatchObject({ momentInternal: true });
@@ -1407,8 +1406,8 @@ describe("App shell and public routes", () => {
     expect(screen.getByRole("article")).toBe(article);
     expect(screen.getByRole("region", { name: "回复" })).toBeInTheDocument();
     expect(screen.queryByLabelText("文章作者")).toBeNull();
-    expect(screen.queryByRole("button", { name: "Search" })).toBeNull();
-    expect(screen.queryByRole("dialog", { name: "Search" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "查找" })).toBeNull();
+    expect(screen.queryByRole("dialog", { name: "查找" })).toBeNull();
     await waitFor(() =>
       expect(screen.getByRole("link", { name: "全屏阅读" })).toHaveFocus(),
     );
@@ -1424,9 +1423,7 @@ describe("App shell and public routes", () => {
       }),
     ).toBe(false);
     fireEvent.keyUp(document.body, { key: "f", code: "KeyF", metaKey: true });
-    expect(
-      await screen.findByRole("textbox", { name: "Search" }),
-    ).toBeVisible();
+    expect(await screen.findByRole("textbox", { name: "查找" })).toBeVisible();
     fireEvent.keyDown(document.body, { key: "Escape" });
     expect(
       fetcher.mock.calls.filter(
@@ -1445,7 +1442,7 @@ describe("App shell and public routes", () => {
         "false",
       );
       expect(screen.getByText("同一份文章正文")).toBeInTheDocument();
-      expect(screen.getByRole("button", { name: "Search" })).toBeVisible();
+      expect(screen.getByRole("button", { name: "查找" })).toBeVisible();
     });
     const back = screen.getByRole("link", { name: "退出全屏阅读" });
     expect(screen.queryByRole("region", { name: "回复" })).toBeNull();

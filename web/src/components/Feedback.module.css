@@ -72,7 +72,7 @@
 .title {
   margin: 0;
   font-size: var(--text-sm);
-  font-weight: 600;
+  font-weight: 700;
   line-height: 1.35;
 }
 
@@ -99,7 +99,7 @@
   padding-inline: var(--space-3);
   font: inherit;
   font-size: var(--text-sm);
-  font-weight: 600;
+  font-weight: 700;
   color: #7fc4f7;
   background: transparent;
   cursor: pointer;

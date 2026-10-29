@@ -1,7 +1,7 @@
 .trigger,
 .popup,
 .helpPopup {
-  font-family: var(--font-timeline);
+  font-family: var(--font-sans);
   font-feature-settings: normal;
   letter-spacing: normal;
 }
@@ -101,7 +101,7 @@
   overflow: hidden;
   margin: 0 12px 0 28px;
   padding-block: 2px;
-  font-family: var(--font-timeline);
+  font-family: var(--font-sans);
   font-size: 20px;
   font-weight: 700;
   line-height: 24px;
@@ -201,7 +201,7 @@
   padding: 0 16px;
   color: var(--text-secondary);
   background: transparent;
-  font: 700 15px/20px var(--font-timeline);
+  font: 700 15px/20px var(--font-sans);
   cursor: pointer;
   transition: background-color 200ms;
 }
@@ -433,7 +433,7 @@
   padding: 0;
   color: var(--text-primary);
   background: transparent;
-  font: 400 17px/20px var(--font-timeline);
+  font: 400 17px/20px var(--font-sans);
   box-shadow: none;
   outline: none;
 }
@@ -467,7 +467,7 @@
   background: var(--surface);
 }
 .helpPopup h2 {
-  font-family: var(--font-timeline);
+  font-family: var(--font-sans);
   margin: 0;
   font-size: 20px;
   line-height: 24px;

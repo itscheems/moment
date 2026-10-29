@@ -1,5 +1,7 @@
 "use client";
 
+import { t } from "../../../../../../../../i18n";
+
 import { forwardRef, useCallback, useState } from "react";
 
 // --- Icons ---
@@ -89,9 +91,9 @@ export const HeadingDropdownMenu = forwardRef<
             tabIndex={-1}
             disabled={!canToggle}
             data-disabled={!canToggle}
-            aria-label="Format text as heading"
+            aria-label={t("Format text as heading")}
             aria-pressed={isActive}
-            tooltip="Heading"
+            tooltip={t("Heading")}
             {...buttonProps}
             ref={ref}
           >

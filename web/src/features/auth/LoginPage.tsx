@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import type { SiteIdentity } from "../../api/public";
 import { InternalLink, useNavigation } from "../../app/navigation";
 import { CredentialLogin } from "./CredentialLogin";
@@ -6,14 +7,19 @@ import { authPageHref } from "./returnPath";
 import styles from "../../components/Forms.module.css";
 
 export function LoginPage({ site }: { site: SiteIdentity }) {
+  const { t } = useTranslation();
+
   const { search } = useNavigation();
   return (
-    <AuthPageFrame headline="Happening now" subtitle="登录后继续记录此刻。">
+    <AuthPageFrame
+      headline="Happening now"
+      subtitle={t("登录后继续记录此刻。")}
+    >
       <CredentialLogin heading={false} site={site} />
       <p className={styles.authSwitch}>
-        还没有账号？{" "}
+        {t("还没有账号？")}{" "}
         <InternalLink authSwitch href={authPageHref("/register", search)}>
-          立即注册
+          {t("立即注册")}
         </InternalLink>
       </p>
     </AuthPageFrame>

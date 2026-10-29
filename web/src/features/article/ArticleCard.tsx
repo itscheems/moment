@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import type { PublicArticle, PublicArticlePost } from "../../api/public";
 import type { ShareCardBlock } from "../share/shareCard";
 import { articleCoverUrl } from "./articleApi";
@@ -22,11 +23,13 @@ export function articleShareBlocks(article: PublicArticle): ShareCardBlock[] {
 }
 
 function ArticleBadge() {
+  const { t } = useTranslation();
+
   return (
     <span className={styles.badge}>
       <span aria-hidden="true" className={styles.badgeLogo} />
-      <span className={styles.srOnly}>Type: </span>
-      {" Article"}
+      <span className={styles.srOnly}>{t("Type:")}</span>
+      {t("Article")}
     </span>
   );
 }

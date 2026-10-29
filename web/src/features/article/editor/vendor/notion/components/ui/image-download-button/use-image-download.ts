@@ -1,5 +1,7 @@
 "use client";
 
+import { useTranslation } from "react-i18next";
+
 import { useCallback, useEffect, useState } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
 import { type Editor } from "@tiptap/react";
@@ -296,6 +298,8 @@ export function shouldShowDownloadButton(props: {
  * Custom hook that provides image download functionality for Tiptap editor
  */
 export function useImageDownload(config?: UseImageDownloadConfig) {
+  const { t } = useTranslation();
+
   const {
     editor: providedEditor,
     hideWhenUnavailable = false,
@@ -360,7 +364,7 @@ export function useImageDownload(config?: UseImageDownloadConfig) {
     isVisible,
     canDownload,
     handleDownload,
-    label: "Download image",
+    label: t("Download image"),
     shortcutKeys: IMAGE_DOWNLOAD_SHORTCUT_KEY,
     Icon: ArrowDownToLineIcon,
   };

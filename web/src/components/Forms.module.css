@@ -1,10 +1,10 @@
 .eyebrow {
   margin: 0;
   color: var(--accent);
-  font-family: var(--font-utility);
+  font-family: var(--font-sans);
   font-size: var(--text-xs);
-  font-weight: 650;
-  letter-spacing: 0.08em;
+  font-weight: 700;
+  letter-spacing: normal;
 }
 
 .primaryButton,
@@ -18,7 +18,7 @@
   border: 0;
   border-radius: 999px;
   padding-inline: var(--space-4);
-  font-weight: 650;
+  font-weight: 700;
   cursor: pointer;
 }
 
@@ -73,10 +73,10 @@
 
 .loginGate h2 {
   margin: var(--space-2) 0 0;
-  font-family: var(--font-display);
+  font-family: var(--font-sans);
   font-size: clamp(1.55rem, 5vw, 1.9rem);
-  font-weight: 750;
-  letter-spacing: -0.035em;
+  font-weight: 800;
+  letter-spacing: normal;
 }
 
 .loginGate > p:not(.eyebrow) {
@@ -159,7 +159,7 @@
 .loginForm label {
   color: var(--text-secondary);
   font-size: var(--text-sm);
-  font-weight: 650;
+  font-weight: 700;
 }
 
 .tokenField {
@@ -174,7 +174,7 @@
   padding-inline: var(--space-4) 4.5rem;
   color: var(--text-primary);
   background: var(--surface);
-  font-family: var(--font-utility);
+  font-family: var(--font-sans);
 }
 
 .tokenField input[aria-invalid="true"] {
@@ -267,7 +267,7 @@
   gap: 10px;
   border-block-start: 0;
   padding-block: var(--space-2);
-  font-family: var(--font-timeline);
+  font-family: var(--font-sans);
   font-feature-settings: normal;
   letter-spacing: normal;
   text-rendering: auto;
@@ -282,6 +282,7 @@
 }
 
 .homepageComposer {
+  --reply-audience-margin-start: -14px;
   padding-block-start: 9px;
 }
 
@@ -302,9 +303,9 @@
   min-block-size: 0;
   gap: 10px;
   padding-block: 16px 8px;
-  font-family: var(--font-timeline);
+  font-family: var(--font-sans);
   font-feature-settings: normal;
-  font-synthesis: weight;
+  font-synthesis: weight style small-caps;
   letter-spacing: normal;
   text-rendering: auto;
   --audience-label-size: 14px;
@@ -402,6 +403,11 @@
 
 .inlineComposer .composerEditor textarea {
   min-block-size: 52px;
+}
+
+.homepageComposer
+  :is(.composerHighlight, .composerMentionMeasure, .composerEditor textarea) {
+  line-height: 28px;
 }
 
 .replyAudienceRow {
@@ -742,7 +748,7 @@
   justify-self: end;
   margin: 0 0 var(--space-1);
   color: var(--text-tertiary);
-  font-family: var(--font-utility);
+  font-family: var(--font-sans);
   font-size: var(--text-xs);
 }
 
@@ -904,7 +910,7 @@
   padding-inline: var(--space-4);
   outline: 0;
   font-size: var(--text-sm);
-  font-weight: 650;
+  font-weight: 700;
   cursor: pointer;
 }
 
@@ -993,9 +999,9 @@
 
 .dialogTitle {
   margin: 0;
-  font-family: var(--font-display);
+  font-family: var(--font-sans);
   font-size: var(--text-xl);
-  font-weight: 600;
+  font-weight: 700;
 }
 
 .dialogDescription {
@@ -1094,7 +1100,7 @@
   color: var(--accent);
   background: var(--accent-soft);
   font-size: var(--text-sm);
-  font-weight: 650;
+  font-weight: 700;
 }
 
 .selectedLocation > svg,
@@ -1186,9 +1192,9 @@
 
 .locationHeader h2 {
   margin: 0;
-  font-family: var(--font-display);
+  font-family: var(--font-sans);
   font-size: 1.15rem;
-  font-weight: 750;
+  font-weight: 800;
   text-align: center;
 }
 
@@ -1229,7 +1235,7 @@
 .locationRemove {
   color: var(--danger);
   font-size: var(--text-sm);
-  font-weight: 650;
+  font-weight: 700;
 }
 
 .locationSearch {
@@ -1367,7 +1373,7 @@
   min-block-size: var(--target-size);
   padding: 0;
   color: var(--accent);
-  font-weight: 650;
+  font-weight: 700;
 }
 
 .locationFooter a {
@@ -1401,7 +1407,7 @@
   gap: var(--space-2);
   color: var(--text-secondary);
   font-size: var(--text-sm);
-  font-weight: 650;
+  font-weight: 700;
 }
 
 .locationManual input {
@@ -1574,7 +1580,7 @@
 .composerLinkTitle {
   color: var(--text-primary);
   font-size: 0.9375rem;
-  font-weight: 600;
+  font-weight: 700;
 }
 
 .composerLinkRemove {
@@ -1627,7 +1633,7 @@
 .usernameForm label {
   color: var(--text-secondary);
   font-size: var(--text-sm);
-  font-weight: 650;
+  font-weight: 700;
 }
 
 .usernameForm small {
@@ -1820,7 +1826,7 @@
 
 .authSwitch a {
   color: var(--accent);
-  font-weight: 650;
+  font-weight: 700;
   text-decoration: none;
 }
 
@@ -1843,7 +1849,7 @@
 
 .registerContinue {
   color: var(--accent);
-  font-weight: 650;
+  font-weight: 700;
 }
 
 /* The same 2.75rem arrow the shell's headers carry, pinned to the viewport.
@@ -2023,7 +2029,7 @@
   padding-inline: 0.25rem;
   color: var(--button-primary-contrast);
   background: var(--accent);
-  font-family: var(--font-utility);
+  font-family: var(--font-sans);
   font-size: var(--text-xs);
   font-variant-numeric: tabular-nums;
 }
@@ -2072,7 +2078,7 @@
   color: var(--text-secondary);
   background: transparent;
   font-size: var(--text-sm);
-  font-weight: 650;
+  font-weight: 700;
   cursor: pointer;
   transition: background-color 0.2s;
 }
@@ -2085,7 +2091,7 @@
 
 .draftsTabs button[aria-selected="true"] {
   color: var(--text-primary);
-  font-weight: 750;
+  font-weight: 800;
 }
 
 /* The whole tab is the target, but the bar is as wide as the label -- which
@@ -2181,7 +2187,7 @@
 
 .draftsText time {
   color: var(--text-tertiary);
-  font-family: var(--font-utility);
+  font-family: var(--font-sans);
   font-size: var(--text-xs);
 }
 

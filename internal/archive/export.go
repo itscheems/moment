@@ -600,6 +600,7 @@ type userRecord struct {
 	Status        string  `json:"status"`
 	// UsernameSetAt is absent while the handle is still the generated one, so
 	// null and missing mean the same thing here.
+	UILocale      *string `json:"ui_locale"`
 	UsernameSetAt *string `json:"username_set_at,omitempty"`
 	CreatedAt     string  `json:"created_at"`
 	UpdatedAt     string  `json:"updated_at"`
@@ -828,7 +829,7 @@ func portableUserRecord(value sqlitestore.ArchiveUser) userRecord {
 	return userRecord{
 		ID: value.ID, Username: value.Username, DisplayName: value.DisplayName, Bio: value.Bio,
 		AvatarMediaID: value.AvatarMediaID, CoverMediaID: value.CoverMediaID,
-		Role: value.Role, Status: value.Status,
+		Role: value.Role, Status: value.Status, UILocale: value.UILocale,
 		UsernameSetAt: portableOptionalTime(value.UsernameSetAtMS),
 		CreatedAt:     portableTime(value.CreatedAtMS), UpdatedAt: portableTime(value.UpdatedAtMS),
 	}
@@ -846,7 +847,7 @@ func archiveUserOf(value userRecord) (sqlitestore.ArchiveUser, error) {
 	result := sqlitestore.ArchiveUser{
 		ID: value.ID, Username: value.Username, DisplayName: value.DisplayName, Bio: value.Bio,
 		AvatarMediaID: value.AvatarMediaID, CoverMediaID: value.CoverMediaID,
-		Role: value.Role, Status: value.Status,
+		Role: value.Role, Status: value.Status, UILocale: value.UILocale,
 		CreatedAtMS: created.UnixMilli(), UpdatedAtMS: updated.UnixMilli(),
 	}
 	if value.UsernameSetAt != nil {
@@ -1605,6 +1606,9 @@ func validateArchiveSite(value sqlitestore.ArchiveSite, development bool) error 
 const maxPortableBioRunes = 500
 
 func validateArchiveUser(value sqlitestore.ArchiveUser) error {
+	if err := domain.ValidateUILocale(value.UILocale); err != nil {
+		return err
+	}
 	for _, field := range []string{value.ID, value.Username, value.DisplayName, value.Bio, value.Role, value.Status} {
 		if !utf8.ValidString(field) || strings.ContainsRune(field, 0) {
 			return errors.New("account text is not canonical UTF-8")

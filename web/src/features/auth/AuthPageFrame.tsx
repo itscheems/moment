@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import type { ReactNode } from "react";
 
 import { InternalLink, useNavigation } from "../../app/navigation";
@@ -13,12 +14,14 @@ export function AuthPageFrame({
   subtitle: string;
   children: ReactNode;
 }) {
+  const { t } = useTranslation();
+
   const { goBackAuth } = useNavigation();
   return (
     <div className={styles.loginScreen}>
       <div aria-hidden="true" className={styles.brandPanel} />
       <InternalLink
-        aria-label="返回时间流"
+        aria-label={t("返回时间流")}
         className={styles.loginBack}
         href="/"
         onClick={(event) => {

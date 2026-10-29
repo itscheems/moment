@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import { useState } from "react";
 import { Radio } from "@base-ui/react/radio";
 import { RadioGroup } from "@base-ui/react/radio-group";
@@ -66,6 +67,8 @@ function Choices<T extends string>({
 }
 
 export function ReadingLayoutSettings() {
+  const { t } = useTranslation();
+
   const { preference, setPreference, reset } = useReadingLayout();
   const [open, setOpen] = useState(false);
   const mobile = useMediaQuery(MOBILE_VIEWPORT_QUERY);
@@ -74,12 +77,12 @@ export function ReadingLayoutSettings() {
       <PopoverTrigger asChild>
         <Button
           variant="ghost"
-          aria-label="阅读排版"
+          aria-label={t("阅读排版")}
           data-article-header-action
-          tooltip="阅读排版"
+          tooltip={t("阅读排版")}
           data-active-state={open ? "on" : "off"}
         >
-          <span className="tiptap-button-text">Aa</span>
+          <span className="tiptap-button-text">{t("Aa")}</span>
         </Button>
       </PopoverTrigger>
       <PopoverContent
@@ -87,14 +90,14 @@ export function ReadingLayoutSettings() {
         align="end"
         fade
         className={styles.excerptPopup}
-        aria-label="阅读排版设置"
+        aria-label={t("阅读排版设置")}
       >
         <Card className={styles.layoutCard}>
           <CardHeader className={styles.layoutHeader}>
-            <strong>阅读排版</strong>
+            <strong>{t("阅读排版")}</strong>
             <Button
               variant="ghost"
-              aria-label="关闭阅读排版"
+              aria-label={t("关闭阅读排版")}
               onClick={() => setOpen(false)}
             >
               <Icon name="close" className="tiptap-button-icon" />
@@ -102,31 +105,31 @@ export function ReadingLayoutSettings() {
           </CardHeader>
           <CardBody className={styles.layoutBody}>
             <div className={styles.layoutField}>
-              <span>正文宽度</span>
+              <span>{t("正文宽度")}</span>
               <Choices<ReadingLayoutPreference["width"]>
-                label="正文宽度"
+                label={t("正文宽度")}
                 value={preference.width}
                 disabled={mobile}
                 onChange={(width) => setPreference({ width })}
                 options={[
-                  { value: "standard", label: "标准" },
-                  { value: "wide", label: "宽" },
-                  { value: "wider", label: "更宽" },
+                  { value: "standard", label: t("标准") },
+                  { value: "wide", label: t("宽") },
+                  { value: "wider", label: t("更宽") },
                 ]}
               />
-              {mobile && <small>自动适配屏幕</small>}
+              {mobile && <small>{t("自动适配屏幕")}</small>}
             </div>
             <div className={styles.layoutField}>
-              <span>字号</span>
+              <span>{t("字号")}</span>
               <ButtonGroup
                 orientation="horizontal"
                 className={styles.layoutChoices}
-                aria-label="字号"
+                aria-label={t("字号")}
               >
                 <Button
                   variant="ghost"
                   className={styles.layoutChoice}
-                  aria-label="减小字号"
+                  aria-label={t("减小字号")}
                   disabled={preference.fontSize === 14}
                   onClick={() =>
                     setPreference({ fontSize: preference.fontSize - 2 })
@@ -134,13 +137,17 @@ export function ReadingLayoutSettings() {
                 >
                   A−
                 </Button>
-                <output aria-label="当前字号" className={styles.layoutValue}>
-                  {preference.fontSize}px
+                <output
+                  aria-label={t("当前字号")}
+                  className={styles.layoutValue}
+                >
+                  {preference.fontSize}
+                  {t("px")}
                 </output>
                 <Button
                   variant="ghost"
                   className={styles.layoutChoice}
-                  aria-label="增大字号"
+                  aria-label={t("增大字号")}
                   disabled={preference.fontSize === 24}
                   onClick={() =>
                     setPreference({ fontSize: preference.fontSize + 2 })
@@ -151,15 +158,15 @@ export function ReadingLayoutSettings() {
               </ButtonGroup>
             </div>
             <div className={styles.layoutField}>
-              <span>行距</span>
+              <span>{t("行距")}</span>
               <Choices<ReadingLayoutPreference["lineHeight"]>
-                label="行距"
+                label={t("行距")}
                 value={preference.lineHeight}
                 onChange={(lineHeight) => setPreference({ lineHeight })}
                 options={[
-                  { value: "compact", label: "紧凑" },
-                  { value: "normal", label: "标准" },
-                  { value: "relaxed", label: "宽松" },
+                  { value: "compact", label: t("紧凑") },
+                  { value: "normal", label: t("标准") },
+                  { value: "relaxed", label: t("宽松") },
                 ]}
               />
             </div>
@@ -168,7 +175,7 @@ export function ReadingLayoutSettings() {
               onClick={reset}
               className={styles.layoutReset}
             >
-              <span className="tiptap-button-text">恢复默认</span>
+              <span className="tiptap-button-text">{t("恢复默认")}</span>
             </Button>
           </CardBody>
         </Card>

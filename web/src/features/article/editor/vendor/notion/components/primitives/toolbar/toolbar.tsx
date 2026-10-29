@@ -1,5 +1,7 @@
 "use client";
 
+import { t } from "../../../../../../../../i18n";
+
 import { forwardRef, useCallback, useEffect, useRef, useState } from "react";
 import { Separator } from "@notion/components/primitives/separator";
 import "@content-notion/components/primitives/toolbar/toolbar.scss";
@@ -172,7 +174,7 @@ export const Toolbar = forwardRef<HTMLDivElement, ToolbarProps>(
       <div
         ref={composedRef}
         role="toolbar"
-        aria-label="toolbar"
+        aria-label={t("toolbar")}
         data-variant={variant}
         className={cn("tiptap-toolbar", className)}
         {...props}

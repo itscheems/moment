@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import { type LinkCardInput } from "../../api/client";
 
 import { mediaPreviewUrl } from "../../api/mediaUrls";
@@ -13,9 +14,11 @@ export function ComposerLinkCard({
   disabled: boolean;
   onRemove: () => void;
 }) {
+  const { t } = useTranslation();
+
   const site = card.site_name.trim() || card.canonical_url;
   return (
-    <section aria-label="链接预览" className={styles.composerLinkCard}>
+    <section aria-label={t("链接预览")} className={styles.composerLinkCard}>
       {card.thumbnail_media_id ? (
         <img
           alt=""
@@ -32,7 +35,7 @@ export function ComposerLinkCard({
         ) : null}
       </div>
       <button
-        aria-label="移除链接卡片"
+        aria-label={t("移除链接卡片")}
         className={styles.composerLinkRemove}
         disabled={disabled}
         onClick={onRemove}

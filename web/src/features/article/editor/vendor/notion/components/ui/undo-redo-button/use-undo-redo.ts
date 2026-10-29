@@ -1,5 +1,7 @@
 "use client";
 
+import { useTranslation } from "react-i18next";
+
 import { useCallback, useEffect, useState } from "react";
 import { type Editor } from "@tiptap/react";
 
@@ -138,6 +140,7 @@ export function shouldShowButton(props: {
  * ```
  */
 export function useUndoRedo(config: UseUndoRedoConfig) {
+  const { t } = useTranslation();
   const {
     editor: providedEditor,
     action,
@@ -179,7 +182,7 @@ export function useUndoRedo(config: UseUndoRedoConfig) {
     isVisible,
     handleAction,
     canExecute,
-    label: historyActionLabels[action],
+    label: t(historyActionLabels[action]),
     shortcutKeys: UNDO_REDO_SHORTCUT_KEYS[action],
     Icon: historyIcons[action],
   };

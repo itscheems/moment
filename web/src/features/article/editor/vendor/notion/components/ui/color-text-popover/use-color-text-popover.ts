@@ -1,5 +1,7 @@
 "use client";
 
+import { useTranslation } from "react-i18next";
+
 import { useCallback, useEffect, useState } from "react";
 import type { Editor } from "@tiptap/react";
 
@@ -220,6 +222,8 @@ export function useRecentColors(maxColors: number = 3) {
  * ```
  */
 export function useColorTextPopover(config?: UseColorTextPopoverConfig) {
+  const { t } = useTranslation();
+
   const {
     editor: providedEditor,
     hideWhenUnavailable = false,
@@ -294,7 +298,7 @@ export function useColorTextPopover(config?: UseColorTextPopoverConfig) {
     activeTextStyle,
     activeHighlight,
     handleColorChanged,
-    label: "Text color",
+    label: t("Text color"),
     Icon: TextColorSmallIcon,
   };
 }

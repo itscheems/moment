@@ -39,6 +39,7 @@ const birch: PublicAccount = {
 };
 const usernames = ["amber", "birch"];
 const session: AccountSession = {
+  preferences: { uiLocale: null },
   csrfToken: "test-csrf",
   expiresAt: "2099-01-01T00:00:00Z",
   account: { ...amber, role: "member", status: "active", usernameChosen: true },

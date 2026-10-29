@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import { useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import Map, {
   Marker,
@@ -68,6 +69,8 @@ export default function MapCanvas({
   placeFocus: RefObject<MapPlaceFocus | null>;
   fullscreen?: boolean;
 }) {
+  const { t } = useTranslation();
+
   const ref = useRef<MapRef>(null);
   const [loaded, setLoaded] = useState(false);
   const [selected, setSelected] = useState<string | null>(null);
@@ -192,15 +195,15 @@ export default function MapCanvas({
       reuseMaps={false}
       attributionControl={{ compact: true }}
       locale={{
-        "Map.Title": "地图",
-        "NavigationControl.ZoomIn": "放大地图",
-        "NavigationControl.ZoomOut": "缩小地图",
-        "AttributionControl.ToggleAttribution": "地图来源",
-        "Popup.Close": "关闭地点信息",
+        "Map.Title": t("地图"),
+        "NavigationControl.ZoomIn": t("放大地图"),
+        "NavigationControl.ZoomOut": t("缩小地图"),
+        "AttributionControl.ToggleAttribution": t("地图来源"),
+        "Popup.Close": t("关闭地点信息"),
         "CooperativeGesturesHandler.WindowsHelpText":
-          "按住 Ctrl 并滚动以缩放地图",
-        "CooperativeGesturesHandler.MacHelpText": "按住 ⌘ 并滚动以缩放地图",
-        "CooperativeGesturesHandler.MobileHelpText": "使用双指移动地图",
+          t("按住 Ctrl 并滚动以缩放地图"),
+        "CooperativeGesturesHandler.MacHelpText": t("按住 ⌘ 并滚动以缩放地图"),
+        "CooperativeGesturesHandler.MobileHelpText": t("使用双指移动地图"),
       }}
       maxPitch={0}
       onStyleData={({ target }) => applyMapWaterColor(target)}
@@ -245,7 +248,10 @@ export default function MapCanvas({
             <button
               type="button"
               className={styles.marker}
-              aria-label={`地点 ${index + 1}：${place.name}`}
+              aria-label={t("地点 {{value1}}：{{value2}}", {
+                value1: index + 1,
+                value2: place.name,
+              })}
             ></button>
           </Marker>
         );

@@ -94,7 +94,7 @@ describe("article card", () => {
   it("leads with a cover, a marked type, a title and an excerpt", () => {
     render(<ArticleCard post={makeArticle()} />);
 
-    expect(screen.getByText("Article")).toBeInTheDocument();
+    expect(screen.getByText("文章")).toBeInTheDocument();
     expect(
       screen.getByRole("heading", { name: "一条河流的十年" }),
     ).toBeInTheDocument();
@@ -121,8 +121,8 @@ describe("article card", () => {
     );
 
     expect(container.querySelector("img")).toBeNull();
-    expect(screen.getByText("Article")).toBeInTheDocument();
-    const mark = screen.getByText("Article");
+    expect(screen.getByText("文章")).toBeInTheDocument();
+    const mark = screen.getByText("文章");
     const heading = screen.getByRole("heading", { name: "一条河流的十年" });
     expect(mark.parentElement).toBe(heading.parentElement);
     expect(container.querySelector("a")).toBeNull();
@@ -160,7 +160,7 @@ describe("an article in the timeline", () => {
     expect(
       screen.getByRole("heading", { name: "一条河流的十年" }),
     ).toBeInTheDocument();
-    expect(screen.getByText("Article")).toBeInTheDocument();
+    expect(screen.getByText("文章")).toBeInTheDocument();
     // The whole card is still one keyboard stop that opens the detail page,
     // and the reply and share actions are the ones a moment has.
     expect(

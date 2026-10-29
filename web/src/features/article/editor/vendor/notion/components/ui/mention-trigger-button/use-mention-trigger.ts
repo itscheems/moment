@@ -1,5 +1,7 @@
 "use client";
 
+import { useTranslation } from "react-i18next";
+
 import { useCallback, useEffect, useState } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
 import { type Editor } from "@tiptap/react";
@@ -272,6 +274,8 @@ export function shouldShowButton(props: {
  * ```
  */
 export function useMentionTrigger(config?: UseMentionTriggerConfig) {
+  const { t } = useTranslation();
+
   const {
     editor: providedEditor,
     node,
@@ -331,7 +335,7 @@ export function useMentionTrigger(config?: UseMentionTriggerConfig) {
     isVisible,
     handleMention,
     canInsert,
-    label: "Add mention",
+    label: t("Add mention"),
     shortcutKeys: MENTION_TRIGGER_SHORTCUT_KEY,
     trigger,
     Icon: AtSignIcon,

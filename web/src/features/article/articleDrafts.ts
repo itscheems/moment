@@ -1,3 +1,4 @@
+import { t } from "../../i18n";
 import {
   PublicApi,
   PublicApiError,
@@ -380,26 +381,29 @@ export function isDraftMissingError(error: unknown): boolean {
 export function articleDraftErrorMessage(error: unknown): string {
   switch (errorCode(error)) {
     case ARTICLE_DRAFT_STALE:
-      return "这份草稿在别处改过了。";
+      return t("这份草稿在别处改过了。");
     case ARTICLE_DRAFT_LIMIT:
-      return `草稿已经有 ${MAX_ARTICLE_DRAFTS} 份，删掉一些再新建。`;
+      return t("草稿已经有 {{value1}} 份，删掉一些再新建。", {
+        count: MAX_ARTICLE_DRAFTS,
+        value1: MAX_ARTICLE_DRAFTS,
+      });
     case ARTICLE_DRAFT_NOT_FOUND:
-      return "这份草稿已经不在了。";
+      return t("这份草稿已经不在了。");
     case "CONTENT_EMPTY":
-      return "文章要有标题，正文也要有内容。";
+      return t("文章要有标题，正文也要有内容。");
     case "CONTENT_TOO_LARGE":
-      return "这篇文章太长了，服务端存不下。";
+      return t("这篇文章太长了，服务端存不下。");
     case "INVALID_ARGUMENT":
-      return "正文里有服务端不接受的内容。";
+      return t("正文里有服务端不接受的内容。");
     case "EXTERNAL_IMAGE_NOT_ALLOWED":
-      return "正文里的图片必须先上传到这个站点。";
+      return t("正文里的图片必须先上传到这个站点。");
     case "UNAUTHORIZED":
     case "CSRF_INVALID":
-      return "登录状态已经失效，重新登录后再保存。";
+      return t("登录状态已经失效，重新登录后再保存。");
     case null:
-      return "没能连上服务器。";
+      return t("没能连上服务器。");
     default:
-      return "保存没有成功。";
+      return t("保存没有成功。");
   }
 }
 

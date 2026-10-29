@@ -1,3 +1,4 @@
+import i18n from "../i18n";
 import { beforeEach } from "vitest";
 
 class MemoryStorage implements Storage {
@@ -35,7 +36,11 @@ Object.defineProperty(window, "localStorage", {
   value: localStorage,
 });
 
-beforeEach(() => localStorage.clear());
+beforeEach(() => {
+  localStorage.clear();
+  void i18n.changeLanguage("zh-CN");
+  document.documentElement.lang = "zh-CN";
+});
 
 // jsdom has no media-query engine. Geometry remains a real-browser check.
 Object.defineProperty(window, "matchMedia", {
@@ -68,4 +73,10 @@ Object.defineProperty(globalThis, "ResizeObserver", {
     unobserve() {}
     disconnect() {}
   },
+});
+
+// UI suites start in Chinese; bilingual tests select their language explicitly.
+Object.defineProperty(navigator, "languages", {
+  configurable: true,
+  value: ["zh-CN"],
 });

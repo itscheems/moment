@@ -1,3 +1,4 @@
+import { t } from "../../i18n";
 import "@testing-library/jest-dom/vitest";
 import {
   act,
@@ -214,10 +215,10 @@ describe("article detail page", () => {
     const updated = vi.fn();
     detail.on("update", updated);
     expect(detail.isEditable).toBe(false);
-    expect(screen.queryByRole("button", { name: "Search" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "查找" })).toBeNull();
     await act(async () => detail.commands.setTextSelection({ from: 5, to: 7 }));
     const toolbar = await screen.findByRole("toolbar", {
-      name: "Reading annotations",
+      name: "阅读标记",
     });
     expect(toolbar.querySelectorAll("button")).toHaveLength(5);
     for (const name of [
@@ -227,10 +228,10 @@ describe("article detail page", () => {
       "Text color",
       "Clear selection marks",
     ])
-      expect(screen.getByRole("button", { name })).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Highlight" }));
+      expect(screen.getByRole("button", { name: t(name) })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "高亮" }));
     expect(detail.storage.readingAnnotations.ranges).toHaveLength(1);
-    expect(screen.queryByRole("button", { name: "Reading tools" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "阅读工具" })).toBeNull();
     expect(
       fireEvent.keyDown(document.body, {
         key: "f",
@@ -238,7 +239,7 @@ describe("article detail page", () => {
         metaKey: true,
       }),
     ).toBe(false);
-    const input = screen.getByRole("textbox", { name: "Search" });
+    const input = screen.getByRole("textbox", { name: "查找" });
     fireEvent.change(input, { target: { value: "河" } });
     await waitFor(() => expect(screen.getByText("1 / 1")).toBeInTheDocument());
     expect(document.querySelector('[data-field="replace-query"]')).toBeNull();
@@ -253,18 +254,18 @@ describe("article detail page", () => {
     await waitFor(() => expect(current()).not.toBe(detail));
     expect(detail.isDestroyed).toBe(true);
     const focus = current();
-    expect(screen.getByRole("button", { name: "Search" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "查找" })).toBeInTheDocument();
     expect(focus.storage.readingAnnotations.ranges).toHaveLength(0);
     expect(focus.storage.findAndReplace.searchTerm).toBe("");
     await act(async () => focus.commands.setTextSelection({ from: 5, to: 7 }));
-    fireEvent.click(await screen.findByRole("button", { name: "Highlight" }));
+    fireEvent.click(await screen.findByRole("button", { name: "高亮" }));
     expect(
-      screen.getByRole("button", { name: "Reading tools" }),
+      screen.getByRole("button", { name: "阅读工具" }),
     ).toBeInTheDocument();
     mounted.rerender(show());
     await waitFor(() => expect(current()).not.toBe(focus));
     expect(current().storage.readingAnnotations.ranges).toHaveLength(0);
-    expect(screen.queryByRole("button", { name: "Reading tools" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "阅读工具" })).toBeNull();
     mounted.unmount();
     expect(
       fireEvent.keyDown(document.body, {
@@ -520,10 +521,8 @@ describe("the post detail route", () => {
       expect(screen.getByText("今天下了一场雨。")).toBeInTheDocument(),
     );
     expect(screen.queryByText("文章")).toBeNull();
-    expect(screen.queryByRole("button", { name: "Search" })).toBeNull();
-    expect(
-      screen.queryByRole("toolbar", { name: "Reading annotations" }),
-    ).toBeNull();
+    expect(screen.queryByRole("button", { name: "查找" })).toBeNull();
+    expect(screen.queryByRole("toolbar", { name: "阅读标记" })).toBeNull();
     expect(
       fireEvent.keyDown(document.body, {
         key: "f",

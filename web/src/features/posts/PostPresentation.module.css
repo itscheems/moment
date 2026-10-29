@@ -156,7 +156,7 @@
 
 .conversation .byline,
 .conversation .markdown {
-  font-family: var(--font-timeline);
+  font-family: var(--font-sans);
   font-feature-settings: normal;
   letter-spacing: normal;
 }
@@ -378,7 +378,7 @@
 
 .timelineDensity .byline,
 .timelineDensity .markdown {
-  font-family: var(--font-timeline);
+  font-family: var(--font-sans);
   font-feature-settings: normal;
   letter-spacing: normal;
   text-rendering: auto;
@@ -516,7 +516,7 @@
   color: var(--accent);
   background: transparent;
   cursor: pointer;
-  font-family: var(--font-timeline);
+  font-family: var(--font-sans);
   font-size: 0.9375rem;
   font-weight: 400;
   line-height: 1.25rem;
@@ -589,7 +589,7 @@
   margin: 0;
   color: #07865d;
   font-size: 0.8125rem;
-  font-weight: 650;
+  font-weight: 700;
   line-height: 1.25;
 }
 
@@ -690,7 +690,7 @@
   justify-content: flex-start;
   border-radius: 0;
   padding: 0;
-  font-family: var(--font-timeline);
+  font-family: var(--font-sans);
   font-feature-settings: normal;
   font-size: 0.9375rem;
   font-weight: 400;
@@ -857,7 +857,7 @@
   display: block;
   padding-block: var(--space-4) 0;
   cursor: default;
-  font-family: var(--font-timeline);
+  font-family: var(--font-sans);
   font-feature-settings: normal;
   letter-spacing: normal;
   text-rendering: auto;
@@ -1012,7 +1012,7 @@
 
 .detail .publishedLine,
 .detail .publishedLine :where(span, time) {
-  font-family: var(--font-timeline);
+  font-family: var(--font-sans);
   font-feature-settings: normal;
   letter-spacing: normal;
   text-rendering: auto;

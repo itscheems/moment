@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import { Dialog } from "../../components/Dialog";
 import { Slider } from "@base-ui/react/slider";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
@@ -38,6 +39,8 @@ export function ProfileMediaCrop({
   onCancel: () => void;
   onApply: (cropped: File) => void;
 }) {
+  const { t } = useTranslation();
+
   const [source, setSource] = useState<MediaCropSource | null>(null);
   const [stage, setStage] = useState<HTMLDivElement | null>(null);
   const [stageSize, setStageSize] = useState({ width: 0, height: 0 });
@@ -105,7 +108,7 @@ export function ProfileMediaCrop({
       } catch (error) {
         if (!controller.signal.aborted) {
           onSessionError(error);
-          setError("图片没有读取成功，请返回重新选择。");
+          setError(t("图片没有读取成功，请返回重新选择。"));
         }
       }
     };
@@ -144,7 +147,7 @@ export function ProfileMediaCrop({
       if (!controller.signal.aborted) onApply(cropped);
     } catch {
       if (!controller.signal.aborted) {
-        setError("图片生成没有成功，请重试。");
+        setError(t("图片生成没有成功，请重试。"));
       }
     } finally {
       if (!controller.signal.aborted) setApplying(false);
@@ -166,27 +169,31 @@ export function ProfileMediaCrop({
           >
             <header className={styles.header}>
               <button
-                aria-label="返回"
+                aria-label={t("返回")}
                 className={styles.back}
                 onClick={cancel}
                 type="button"
               >
                 <Icon name="arrow-left" />
               </button>
-              <Dialog.Title className={styles.title}>编辑媒体</Dialog.Title>
+              <Dialog.Title className={styles.title}>
+                {t("编辑媒体")}
+              </Dialog.Title>
               <button
                 className={styles.apply}
                 disabled={!pixels || !mediaReady || locked}
                 onClick={() => void apply()}
                 type="button"
               >
-                {applying ? "正在处理…" : "应用"}
+                {applying ? t("正在处理…") : t("应用")}
               </button>
             </header>
             <Dialog.Description className={styles.srOnly}>
-              拖动图片调整{isCover ? "背景" : "头像"}
-              位置，使用滑块、鼠标滚轮或触控板放大或缩小。聚焦图片后可用方向键移动，按
-              Escape 返回。
+              {t("拖动图片调整")}
+              {isCover ? t("背景") : t("头像")}
+              {t(
+                "位置，使用滑块、鼠标滚轮或触控板放大或缩小。聚焦图片后可用方向键移动，按 Escape 返回。",
+              )}
             </Dialog.Description>
             <div aria-busy={locked} className={styles.stage} ref={setStage}>
               <div className={styles.cropperHost} inert={locked}>
@@ -207,14 +214,18 @@ export function ProfileMediaCrop({
                     disableAutomaticStylesInjection
                     classes={{ cropAreaClassName: styles.cropArea }}
                     cropperProps={{
-                      "aria-label": isCover ? "背景裁切区域" : "头像裁切区域",
+                      "aria-label": isCover
+                        ? t("背景裁切区域")
+                        : t("头像裁切区域"),
                     }}
                     mediaProps={{
                       onError: () => {
                         setMediaReady(false);
                         setPixels(null);
                         setError(
-                          "无法读取这张图片，请返回并选择 JPEG、PNG 或 WebP 图片。",
+                          t(
+                            "无法读取这张图片，请返回并选择 JPEG、PNG 或 WebP 图片。",
+                          ),
                         );
                       },
                     }}
@@ -239,7 +250,7 @@ export function ProfileMediaCrop({
               </div>
               {!source && !error ? (
                 <p className={styles.loading} role="status">
-                  正在读取图片…
+                  {t("正在读取图片…")}
                 </p>
               ) : null}
               {error ? (
@@ -266,7 +277,7 @@ export function ProfileMediaCrop({
                     <Slider.Indicator className={styles.sliderIndicator} />
                     <Slider.Thumb
                       className={styles.sliderThumb}
-                      aria-label="放大或缩小图片"
+                      aria-label={t("放大或缩小图片")}
                       getAriaValueText={(_, value) =>
                         `${Math.round(2 ** value * 100)}%`
                       }

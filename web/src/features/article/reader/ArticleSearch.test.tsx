@@ -71,7 +71,7 @@ describe("native article find", () => {
       expect(
         fireEvent.keyDown(origin, { key: "f", code: "KeyF", [modifier]: true }),
       ).toBe(false);
-      const input = screen.getByRole("textbox", { name: "Search" });
+      const input = screen.getByRole("textbox", { name: "查找" });
       expect(input).toHaveFocus();
       fireEvent.change(input, { target: { value: "river" } });
       expect(
@@ -81,7 +81,7 @@ describe("native article find", () => {
       expect((input as HTMLInputElement).selectionEnd).toBe(5);
       fireEvent.keyDown(input, { key: "Escape", code: "Escape" });
       expect(
-        screen.queryByRole("dialog", { name: "Search" }),
+        screen.queryByRole("dialog", { name: "查找" }),
       ).not.toBeInTheDocument();
       expect(origin).toHaveFocus();
     },
@@ -94,8 +94,8 @@ describe("native article find", () => {
       const before = editor!.getJSON();
       editor!.commands.setTextSelection(3);
       const selection = editor!.state.selection.toJSON();
-      fireEvent.click(screen.getByRole("button", { name: "Search" }));
-      const input = screen.getByRole("textbox", { name: "Search" });
+      fireEvent.click(screen.getByRole("button", { name: "查找" }));
+      const input = screen.getByRole("textbox", { name: "查找" });
       fireEvent.change(input, { target: { value: "river" } });
       await waitFor(() =>
         expect(screen.getByText("1 / 4")).toBeInTheDocument(),
@@ -103,21 +103,19 @@ describe("native article find", () => {
       expect(
         document.querySelectorAll(".find-and-replace-result"),
       ).toHaveLength(4);
-      fireEvent.click(screen.getByRole("button", { name: "Next result" }));
+      fireEvent.click(screen.getByRole("button", { name: "下一个结果" }));
       expect(screen.getByText("2 / 4")).toBeInTheDocument();
       expect(editor!.state.selection.toJSON()).toEqual(selection);
-      fireEvent.click(screen.getByText("Match case"));
+      fireEvent.click(screen.getByText("区分大小写"));
       expect(editor!.storage.findAndReplace.results).toHaveLength(3);
-      fireEvent.click(screen.getByText("Whole words"));
+      fireEvent.click(screen.getByText("全字匹配"));
       expect(editor!.storage.findAndReplace.results).toHaveLength(2);
       fireEvent.click(screen.getByRole("switch"));
       fireEvent.change(input, { target: { value: "[" } });
       await waitFor(() =>
         expect(screen.getByText("0 / 0")).toBeInTheDocument(),
       );
-      expect(
-        screen.getByRole("button", { name: "Next result" }),
-      ).toBeDisabled();
+      expect(screen.getByRole("button", { name: "下一个结果" })).toBeDisabled();
       expect(document.querySelector('[data-field="replace-query"]')).toBeNull();
       expect(
         document.querySelector('[data-search-replace-action="replace"]'),
@@ -126,13 +124,13 @@ describe("native article find", () => {
         screen.queryByText(/Try search and replace|Replace all/),
       ).not.toBeInTheDocument();
       fireEvent.change(input, { target: { value: "river" } });
-      fireEvent.click(screen.getByRole("button", { name: "Close" }));
+      fireEvent.click(screen.getByRole("button", { name: "关闭" }));
       await act(async () => {
         await new Promise((resolve) => setTimeout(resolve, 300));
       });
       expect(editor!.storage.findAndReplace.results).toHaveLength(0);
-      fireEvent.click(screen.getByRole("button", { name: "Search" }));
-      expect(screen.getByRole("textbox", { name: "Search" })).toHaveValue(
+      fireEvent.click(screen.getByRole("button", { name: "查找" }));
+      expect(screen.getByRole("textbox", { name: "查找" })).toHaveValue(
         "river",
       );
       await waitFor(() =>
@@ -225,7 +223,7 @@ describe("native article find", () => {
         metaKey: true,
       }),
     ).toBe(false);
-    fireEvent.change(screen.getByRole("textbox", { name: "Search" }), {
+    fireEvent.change(screen.getByRole("textbox", { name: "查找" }), {
       target: { value: "xiaoman" },
     });
     await waitFor(() => expect(screen.getByText("1 / 3")).toBeInTheDocument());

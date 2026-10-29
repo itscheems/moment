@@ -103,6 +103,7 @@ type MergeReviewEntity struct {
 	Bio         *string `json:"bio,omitempty"`
 	Role        *string `json:"role,omitempty"`
 	Status      *string `json:"status,omitempty"`
+	UILocale    *string `json:"ui_locale,omitempty"`
 	// AvatarMediaID and CoverMediaID are shown as identifiers as well as
 	// pictures. The picture resolves only when the referenced original is in
 	// the same authority, and a changed avatar that resolves on neither side
@@ -190,7 +191,8 @@ var mergeReviewFieldKeys = map[MergeEntityKind]map[string]string{
 		"created_at": "created_at", "media": "media", "location": "location", "pinned": "pinned",
 	},
 	MergeUser: {
-		"username": "username", "display_name": "display_name", "bio": "bio",
+		"ui_locale": "ui_locale",
+		"username":  "username", "display_name": "display_name", "bio": "bio",
 		"avatar_media_id": "avatar_media_id", "cover_media_id": "cover_media_id", "role": "role",
 		"status": "status", "username_set_at": "username_set_at",
 		"created_at": "created_at", "updated_at": "updated_at",
@@ -372,7 +374,7 @@ func reviewUser(value sqlitestore.ArchiveUser, source MergeReviewSource, mediaBy
 	updated := archiveTime(value.UpdatedAtMS)
 	entity := MergeReviewEntity{
 		ID: value.ID, Username: &username, DisplayName: &displayName, Bio: &bio,
-		Role: &role, Status: &status, CreatedAt: archiveTime(value.CreatedAtMS), UpdatedAt: &updated,
+		Role: &role, Status: &status, UILocale: cloneString(value.UILocale), CreatedAt: archiveTime(value.CreatedAtMS), UpdatedAt: &updated,
 		AvatarMediaID: cloneString(value.AvatarMediaID), CoverMediaID: cloneString(value.CoverMediaID),
 		Media:  []MergeReviewMedia{},
 		Avatar: reviewReferencedMedia(value.AvatarMediaID, source, mediaByID),

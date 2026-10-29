@@ -1,3 +1,4 @@
+import { t } from "../../i18n";
 import {
   verificationArtwork,
   type AccountVerification,
@@ -27,7 +28,7 @@ import type { MapViewport } from "../maps/MapCanvas";
 import { initialAvatarUrl } from "../../components/initialAvatar";
 
 const FACE =
-  '-apple-system, "system-ui", "Segoe UI", Roboto, Helvetica, Arial, sans-serif';
+  '"TwitterChirp", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif';
 const MONO = '"SFMono-Regular", Consolas, "Liberation Mono", monospace';
 
 /**
@@ -80,7 +81,7 @@ export interface ShareCardTextRun {
 
 export class ShareCardTooLongError extends Error {
   constructor() {
-    super("摘录超过分享卡片的 60 行上限，请关闭弹窗并缩短选区后重试。");
+    super(t("摘录超过分享卡片的 60 行上限，请关闭弹窗并缩短选区后重试。"));
     this.name = "ShareCardTooLongError";
   }
 }
@@ -584,7 +585,7 @@ function linkLayout(
         ),
       )
     : 0;
-  ruler.font = font(650, LINK_TITLE_SIZE);
+  ruler.font = font(700, LINK_TITLE_SIZE);
   const wrapped =
     link.title === "" ? [] : wrap(ruler, link.title, width - LINK_PAD * 2);
   const title = wrapped.slice(0, LINK_TITLE_LINES);
@@ -649,7 +650,7 @@ function drawLinkCard(
   }
   cursor += LINK_SITE_LINE + (laid.title.length > 0 ? 3 : 0);
   ctx.fillStyle = INK;
-  ctx.font = font(650, LINK_TITLE_SIZE);
+  ctx.font = font(700, LINK_TITLE_SIZE);
   laid.title.forEach((line, row) => {
     ctx.fillText(
       line,
@@ -1058,14 +1059,14 @@ function drawFooter(
   drawDecoration(ctx, "reply", PAD + 54, y + 49, ACCENT);
   ctx.font = font(700, 14);
   ctx.fillStyle = MUTED;
-  ctx.fillText("回复", PAD + 84, y + 51 + baseline(ctx, "回复", 16));
-  const linkX = PAD + 84 + ctx.measureText("回复").width + 22;
+  ctx.fillText(t("回复"), PAD + 84, y + 51 + baseline(ctx, t("回复"), 16));
+  const linkX = PAD + 84 + ctx.measureText(t("回复")).width + 22;
   drawDecoration(ctx, "link", linkX, y + 49, MUTED);
   ctx.fillStyle = MUTED;
   ctx.fillText(
-    "复制帖子链接",
+    t("复制帖子链接"),
     linkX + 30,
-    y + 51 + baseline(ctx, "复制帖子链接", 16),
+    y + 51 + baseline(ctx, t("复制帖子链接"), 16),
   );
 
   ctx.beginPath();
@@ -1077,8 +1078,8 @@ function drawFooter(
     replyCount === undefined
       ? "Read More on Moment"
       : replyCount > 0
-        ? "查看 " + replyCount + " 条回复"
-        : "在 Moment 查看";
+        ? t("查看 ") + replyCount + t(" 条回复")
+        : t("在 Moment 查看");
   ctx.fillText(action, WIDTH / 2, y + 87 + baseline(ctx, action, 16));
   ctx.textAlign = "left";
 }
@@ -1230,7 +1231,7 @@ function drawShareIdentity(
   }
   ctx.fillStyle = MUTED;
   ctx.font = font(700, HANDLE_SIZE);
-  const followWidth = ctx.measureText("关注").width;
+  const followWidth = ctx.measureText(t("关注")).width;
   ctx.font = font(400, HANDLE_SIZE);
   const dotWidth = ctx.measureText("·").width + 8;
   const handle = truncate(
@@ -1245,14 +1246,14 @@ function drawShareIdentity(
     ctx.fillText("·", dotX, handleY);
     ctx.fillStyle = LINK_INK;
     ctx.font = font(700, HANDLE_SIZE);
-    ctx.fillText("关注", dotX + dotWidth - 4, handleY);
+    ctx.fillText(t("关注"), dotX + dotWidth - 4, handleY);
   }
   if (context && input.replyTo) {
     ctx.fillStyle = MUTED;
     ctx.font = font(400, HANDLE_SIZE);
     const target = truncate(
       ctx,
-      "回复 " + input.replyTo,
+      t("回复 ") + input.replyTo,
       availableWidth - PAD - textLeft,
     );
     ctx.fillText(target, textLeft, y + 40 + baseline(ctx, target, 20));
@@ -1659,7 +1660,7 @@ export async function renderShareCard(
     } else {
       ctx.fillStyle = MUTED;
       ctx.font = font(400, 15);
-      ctx.fillText("引用内容暂不可用", PAD + 12, y + 34);
+      ctx.fillText(t("引用内容暂不可用"), PAD + 12, y + 34);
     }
     y += quoteHeight;
   }

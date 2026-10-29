@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import { LoginLink, useLoginNavigation } from "../auth/loginNavigation";
 import { AccountIdentityPreview } from "../../components/AccountIdentityPreview";
 import { commentsApi } from "../../api/comments";
@@ -49,6 +50,8 @@ function DeleteCommentDialog({
   triggerRef: RefObject<HTMLButtonElement | null>;
   onDeleted: (deleted: PublicComment, repliesAffected: number) => void;
 }) {
+  const { t } = useTranslation();
+
   const auth = useSession();
   const { session, expireIfInvalidSession } = auth;
   const [pending, setPending] = useState(false);
@@ -60,7 +63,7 @@ function DeleteCommentDialog({
   const displayReauth = authExpired || (auth.state === "expired" && !session);
   const displayedError =
     error ??
-    (displayReauth ? "登录会话已过期。重新登录后可在这里重新删除。" : null);
+    (displayReauth ? t("登录会话已过期。重新登录后可在这里重新删除。") : null);
 
   useDocumentScrollLock(open && session !== null);
 
@@ -88,17 +91,17 @@ function DeleteCommentDialog({
     } catch (nextError) {
       if (expireIfInvalidSession(nextError)) {
         setAuthExpired(true);
-        setError("登录会话已过期。重新登录后可在这里重新删除。");
+        setError(t("登录会话已过期。重新登录后可在这里重新删除。"));
       } else {
         setError(
           nextError instanceof PublicApiError &&
             nextError.code === "COMMENT_NOT_FOUND"
-            ? "这条回复已经不存在。关闭后重新加载列表。"
+            ? t("这条回复已经不存在。关闭后重新加载列表。")
             : nextError instanceof PublicApiError &&
                 nextError.code === "UNAUTHORIZED" &&
                 nextError.details.replies_by_others
-              ? "这段对话包含他人的回复，需要管理员删除。"
-              : "没有删除这条回复。列表保持不变，可以安全重试。",
+              ? t("这段对话包含他人的回复，需要管理员删除。")
+              : t("没有删除这条回复。列表保持不变，可以安全重试。"),
         );
       }
     } finally {
@@ -127,25 +130,28 @@ function DeleteCommentDialog({
             }
           >
             <Dialog.Title className={styles.dialogTitle}>
-              {root ? "删除这条回复？" : "删除这条回复？"}
+              {root ? t("删除这条回复？") : t("删除这条回复？")}
             </Dialog.Title>
             <Dialog.Description className={styles.dialogDescription}>
               {root && replyCount > 0 && cascadeAllowed
-                ? `这条回复和它下面的 ${replyCount} 条回复都会永久删除。`
-                : "这条回复会从公开对话中永久删除。"}
+                ? t("这条回复和它下面的 {{value1}} 条回复都会永久删除。", {
+                    count: replyCount,
+                    value1: replyCount,
+                  })
+                : t("这条回复会从公开对话中永久删除。")}
             </Dialog.Description>
             {displayedError ? (
               <p className={styles.dialogError} role="alert">
                 {displayedError}
               </p>
             ) : null}
-            {displayReauth ? <LoginLink>重新登录</LoginLink> : null}
+            {displayReauth ? <LoginLink>{t("重新登录")}</LoginLink> : null}
             <div className={styles.dialogActions}>
               <Dialog.Close
                 className={styles.secondaryAction}
                 disabled={pending}
               >
-                保留
+                {t("保留")}
               </Dialog.Close>
               <button
                 aria-busy={pending || undefined}
@@ -156,12 +162,12 @@ function DeleteCommentDialog({
                 type="button"
               >
                 {pending
-                  ? "正在删除…"
+                  ? t("正在删除…")
                   : root && replyCount > 0 && cascadeAllowed
-                    ? "删除回复及其对话"
+                    ? t("删除回复及其对话")
                     : root
-                      ? "删除回复"
-                      : "删除回复"}
+                      ? t("删除回复")
+                      : t("删除回复")}
               </button>
             </div>
           </Dialog.Popup>
@@ -188,6 +194,8 @@ export function CommentModerationMenu({
   onDeleted: (deleted: PublicComment, repliesAffected: number) => void;
   onPinChange: (pinnedCommentId: string | null) => void;
 }) {
+  const { t } = useTranslation();
+
   const auth = useSession();
   const { requestLogin } = useLoginNavigation();
   const [menuOpen, setMenuOpen] = useState(false);
@@ -232,13 +240,13 @@ export function CommentModerationMenu({
           );
       onPinChange(result.pinnedCommentId);
       setPinOpen(false);
-      notify(pinned ? "已取消置顶回复" : "已置顶回复");
+      notify(pinned ? t("已取消置顶回复") : t("已置顶回复"));
     } catch (nextError) {
       if (auth.expireIfInvalidSession(nextError)) {
         setAuthExpired(true);
-        setError("登录会话已过期。重新登录后可在这里重试。");
+        setError(t("登录会话已过期。重新登录后可在这里重试。"));
       } else {
-        setError("置顶状态没有改变，可以安全重试。");
+        setError(t("置顶状态没有改变，可以安全重试。"));
       }
     } finally {
       pendingRef.current = false;
@@ -250,7 +258,7 @@ export function CommentModerationMenu({
     <div className={styles.commentActionsMenu}>
       <Menu.Root onOpenChange={setMenuOpen} open={menuOpen}>
         <Menu.Trigger
-          aria-label="回复操作"
+          aria-label={t("回复操作")}
           className={formStyles.actionsMenuTrigger}
           ref={triggerRef}
         >
@@ -264,7 +272,7 @@ export function CommentModerationMenu({
             sideOffset={4}
           >
             <Menu.Popup
-              aria-label="回复操作"
+              aria-label={t("回复操作")}
               className={formStyles.actionsMenuPopup}
             >
               {root && canModerate ? (
@@ -281,7 +289,7 @@ export function CommentModerationMenu({
                   }}
                 >
                   <Icon name="pin" />
-                  <span>{pinned ? "取消置顶" : "置顶回复"}</span>
+                  <span>{pinned ? t("取消置顶") : t("置顶回复")}</span>
                 </Menu.Item>
               ) : null}
               <Menu.Item
@@ -296,7 +304,7 @@ export function CommentModerationMenu({
                 }}
               >
                 <Icon name="delete" />
-                <span>删除</span>
+                <span>{t("删除")}</span>
               </Menu.Item>
             </Menu.Popup>
           </Menu.Positioner>
@@ -334,25 +342,27 @@ export function CommentModerationMenu({
               finalFocus={() => triggerRef.current}
             >
               <Dialog.Title className={styles.dialogTitle}>
-                {pinned ? "取消置顶这条回复？" : "置顶这条回复？"}
+                {pinned ? t("取消置顶这条回复？") : t("置顶这条回复？")}
               </Dialog.Title>
               <Dialog.Description className={styles.dialogDescription}>
                 {pinned
-                  ? "它会回到这段对话中的原始时间位置。"
-                  : "它和下面的直接回复会显示在评论区最前；已有置顶会被替换。"}
+                  ? t("它会回到这段对话中的原始时间位置。")
+                  : t(
+                      "它和下面的直接回复会显示在评论区最前；已有置顶会被替换。",
+                    )}
               </Dialog.Description>
               {error ? (
                 <p className={styles.dialogError} role="alert">
                   {error}
                 </p>
               ) : null}
-              {displayReauth ? <LoginLink>重新登录</LoginLink> : null}
+              {displayReauth ? <LoginLink>{t("重新登录")}</LoginLink> : null}
               <div className={styles.dialogActions}>
                 <Dialog.Close
                   className={styles.secondaryAction}
                   disabled={pending}
                 >
-                  取消
+                  {t("取消")}
                 </Dialog.Close>
                 <button
                   aria-busy={pending || undefined}
@@ -361,7 +371,11 @@ export function CommentModerationMenu({
                   onClick={() => void changePin()}
                   type="button"
                 >
-                  {pending ? "正在处理…" : pinned ? "取消置顶" : "置顶"}
+                  {pending
+                    ? t("正在处理…")
+                    : pinned
+                      ? t("取消置顶")
+                      : t("置顶")}
                 </button>
               </div>
             </Dialog.Popup>
@@ -382,13 +396,18 @@ function ReplyAccessAction({
   reason: ReplyBlock;
   count: number;
 }) {
+  const { t } = useTranslation();
+
   const pending = reason === "pending";
   const { requestLogin } = useLoginNavigation();
   if (!pending)
     return (
       <button
         data-post-action="reply"
-        aria-label={`回复 ${authorName}${count > 0 ? `，${count} 条回复` : ""}`}
+        aria-label={t("回复 {{value1}}{{value2}}", {
+          value1: authorName,
+          value2: count > 0 ? `，${count} 条回复` : "",
+        })}
         className={`${postStyles.postAction} ${postStyles.replyAction}`}
         onClick={(event) => {
           event.stopPropagation();
@@ -406,7 +425,10 @@ function ReplyAccessAction({
     <Popover.Root>
       <Popover.Trigger
         data-post-action="reply"
-        aria-label={`回复 ${authorName}${count > 0 ? `，${count} 条回复` : ""}`}
+        aria-label={t("回复 {{value1}}{{value2}}", {
+          value1: authorName,
+          value2: count > 0 ? `，${count} 条回复` : "",
+        })}
         className={`${postStyles.postAction} ${postStyles.replyAction}`}
         onClick={(event) => event.stopPropagation()}
       >
@@ -429,12 +451,12 @@ function ReplyAccessAction({
             onClick={(event) => event.stopPropagation()}
           >
             <Popover.Title className={styles.signInPopupTitle}>
-              {pending ? "正在等待管理员批准" : "登录后回复"}
+              {pending ? t("正在等待管理员批准") : t("登录后回复")}
             </Popover.Title>
             <Popover.Description className={styles.signInPopupBody}>
               {pending
-                ? "你的账户正在等待管理员批准，批准后就能留言。"
-                : "发表回复需要登录。过往回复继续公开可读。"}
+                ? t("你的账户正在等待管理员批准，批准后就能留言。")
+                : t("发表回复需要登录。过往回复继续公开可读。")}
             </Popover.Description>
           </Popover.Popup>
         </Popover.Positioner>
@@ -508,6 +530,8 @@ export function CommentItem({
   onDeleted: (deleted: PublicComment, repliesAffected: number) => void;
   onPinChange: (pinnedCommentId: string | null) => void;
 }) {
+  const { t } = useTranslation();
+
   const root = comment.parentId === null;
   const author = comment.author;
   const authorName = author.displayName;
@@ -561,11 +585,11 @@ export function CommentItem({
         bylineContext={
           <>
             {isPostAuthor ? (
-              <span className={styles.authorBadge}>作者</span>
+              <span className={styles.authorBadge}>{t("作者")}</span>
             ) : null}
             {!root && comment.replyTo ? (
               <span className={styles.commentReplyTo}>
-                <span>回复</span>
+                <span>{t("回复")}</span>
                 <CommentIdentity author={comment.replyTo.author} />
               </span>
             ) : null}

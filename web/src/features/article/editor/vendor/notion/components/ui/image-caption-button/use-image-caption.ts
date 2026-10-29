@@ -1,5 +1,7 @@
 "use client";
 
+import { useTranslation } from "react-i18next";
+
 import { useCallback, useEffect, useState } from "react";
 import { type Editor } from "@tiptap/react";
 import { NodeSelection } from "@tiptap/pm/state";
@@ -165,6 +167,8 @@ export function shouldShowButton(props: {
  * ```
  */
 export function useImageCaption(config?: UseImageCaptionConfig) {
+  const { t } = useTranslation();
+
   const {
     editor: providedEditor,
     hideWhenUnavailable = false,
@@ -208,7 +212,7 @@ export function useImageCaption(config?: UseImageCaptionConfig) {
     isActive,
     canToggle,
     handleToggleCaption,
-    label: "Caption",
+    label: t("Caption"),
     Icon: ImageCaptionIcon,
   };
 }
