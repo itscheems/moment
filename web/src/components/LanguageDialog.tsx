@@ -83,7 +83,7 @@ export function LanguageDialog({ onClose }: { onClose: () => void }) {
                     {
                       value: "zh-CN",
                       name: "简体中文",
-                      secondary: t("Simplified Chinese"),
+                      secondary: "Simplified Chinese",
                     },
                     { value: "en", name: "English", secondary: "英语" },
                   ] as const
