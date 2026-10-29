@@ -11,6 +11,17 @@ import {
 } from "./memoryState";
 
 describe("memory-layer URL state", () => {
+  it("round-trips people searches and rejects an unknown search type", () => {
+    const href = searchHref({ query: "杉木", tab: "people" });
+    expect(parseSearchLocation(href.slice(href.indexOf("?")))).toMatchObject({
+      query: "杉木",
+      tab: "people",
+      error: null,
+    });
+    expect(parseSearchLocation("?q=cedar&f=live").tab).toBe("latest");
+    expect(parseSearchLocation("?q=cedar&f=unknown").error).not.toBeNull();
+  });
+
   it("round-trips Unicode search terms and exclusive date boundaries", () => {
     const href = searchHref({
       query: "旧城 雨 + 100%",
@@ -20,6 +31,7 @@ describe("memory-layer URL state", () => {
     });
     expect(href).toContain("q=%E6%97%A7%E5%9F%8E+%E9%9B%A8+%2B+100%25");
     expect(parseSearchLocation(href.slice(href.indexOf("?")))).toEqual({
+      tab: "latest",
       query: "旧城 雨 + 100%",
       from: "2024-02-29",
       to: "2025-01-01",
@@ -139,6 +151,7 @@ describe("memory-layer URL state", () => {
           `?q=雨&from=2026-01-01&to=2027-01-01&loaded_through=${progress}`,
         ),
       ).toEqual({
+        tab: "latest",
         query: "雨",
         from: "2026-01-01",
         to: "2027-01-01",

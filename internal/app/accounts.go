@@ -41,7 +41,7 @@ type AccountStore interface {
 	SetStatus(ctx context.Context, userID string, status domain.AccountStatus, atMS int64) error
 	DeleteAccount(ctx context.Context, userID string) error
 	ListAccounts(ctx context.Context) ([]domain.User, error)
-	SearchAccounts(ctx context.Context, query string, limit int) ([]domain.User, error)
+	SearchAccounts(ctx context.Context, query string, limit, offset int) ([]domain.User, error)
 
 	ProfileUserID(ctx context.Context) (string, error)
 	RegistrationMode(ctx context.Context) (domain.RegistrationMode, error)
@@ -1084,7 +1084,7 @@ func (service *AccountService) SuggestMentions(ctx context.Context, query string
 	}
 	var found []domain.User
 	err := service.transactions.ReadAccounts(ctx, func(accounts AccountStore, _ SessionStore) error {
-		value, err := accounts.SearchAccounts(ctx, query, limit)
+		value, err := accounts.SearchAccounts(ctx, query, limit, 0)
 		found = value
 		return err
 	})
@@ -1102,4 +1102,41 @@ func (service *AccountService) SuggestMentions(ctx context.Context, query string
 		})
 	}
 	return suggestions, nil
+}
+
+// UserSearchPage contains only identities already available on public profiles.
+type UserSearchPage struct {
+	Items      []MentionSuggestion `json:"items"`
+	NextOffset *int                `json:"next_offset"`
+}
+
+// SearchUsers finds active public profiles without exposing account permissions.
+func (service *AccountService) SearchUsers(ctx context.Context, query string, limit, offset int) (UserSearchPage, error) {
+	page := UserSearchPage{Items: make([]MentionSuggestion, 0)}
+	if limit < 1 || limit > 50 || offset < 0 || offset > 1_000_000 {
+		return page, domain.NewError(domain.CodeInvalidArgument, "limit must be between 1 and 50 and offset between 0 and 1000000", nil)
+	}
+	query = strings.ToLower(strings.TrimPrefix(strings.TrimSpace(query), "@"))
+	if len([]rune(query)) > 1000 {
+		return page, domain.NewError(domain.CodeInvalidArgument, "search query must not exceed 1000 characters", map[string]any{"field": "query"})
+	}
+	if query == "" {
+		return page, nil
+	}
+	err := service.transactions.ReadAccounts(ctx, func(accounts AccountStore, _ SessionStore) error {
+		found, err := accounts.SearchAccounts(ctx, query, limit+1, offset)
+		if err != nil {
+			return err
+		}
+		if len(found) > limit {
+			next := offset + limit
+			page.NextOffset = &next
+			found = found[:limit]
+		}
+		for _, user := range found {
+			page.Items = append(page.Items, MentionSuggestion{UserID: user.ID, Username: user.Username, DisplayName: user.DisplayName, AvatarMediaID: cloneString(user.AvatarMediaID), ProfileURL: domain.ProfileURL(user.Username)})
+		}
+		return nil
+	})
+	return page, err
 }

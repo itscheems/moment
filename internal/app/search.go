@@ -29,8 +29,19 @@ const (
 	SearchModeFTS
 )
 
+// SearchSort selects a deterministic ordering of the same matching set.
+type SearchSort string
+
+const (
+	// SearchSortRelevance orders matches by relevance, publication time and ID.
+	SearchSortRelevance SearchSort = "relevance"
+	// SearchSortLatest orders matches by descending publication time and ID.
+	SearchSortLatest SearchSort = "latest"
+)
+
 // SearchRepositoryQuery is the prepared repository contract.
 type SearchRepositoryQuery struct {
+	Sort       SearchSort
 	Mode       SearchMode
 	QueryValue string
 	FromMS     *int64
@@ -152,6 +163,7 @@ type SearchTransactions interface {
 
 // SearchInput is one public search request before site-timezone interpretation.
 type SearchInput struct {
+	Sort     SearchSort
 	Query    string
 	Cursor   string
 	Limit    int
@@ -249,11 +261,14 @@ func NewSearchService(transactions SearchTransactions) (*SearchService, error) {
 	return &SearchService{transactions: transactions}, nil
 }
 
-// Search returns one deterministic relevance page and year counts for the
+// Search returns one deterministic result page and year counts for the
 // complete matching set from the same read snapshot.
 func (service *SearchService) Search(ctx context.Context, input SearchInput) (SearchPage, error) {
 	if err := contextError(ctx); err != nil {
 		return SearchPage{}, err
+	}
+	if input.Sort != "" && input.Sort != SearchSortRelevance && input.Sort != SearchSortLatest {
+		return SearchPage{}, domain.NewError(domain.CodeInvalidArgument, "sort must be relevance or latest", map[string]any{"field": "sort"})
 	}
 	prepared, normalized, err := prepareSearchQuery(input.Query)
 	if err != nil {
@@ -300,11 +315,12 @@ func (service *SearchService) Search(ctx context.Context, input SearchInput) (Se
 		if storeErr != nil {
 			return storeErr
 		}
-		signature := searchSignature(normalized, timezone, fromMS, toMS)
+		signature := searchSignature(normalized, timezone, fromMS, toMS, input.Sort)
 		position, cursorErr := decodeSearchCursor(input.Cursor, signature, revision)
 		if cursorErr != nil {
 			return cursorErr
 		}
+		prepared.Sort = input.Sort
 		prepared.FromMS, prepared.ToMS, prepared.Position, prepared.Viewer = fromMS, toMS, position, input.Viewer
 		records, storeErr = store.SearchEntries(ctx, prepared, limit+1)
 		if storeErr != nil {
@@ -378,7 +394,7 @@ func (service *SearchService) Search(ctx context.Context, input SearchInput) (Se
 		last := records[len(records)-1]
 		page.NextCursor = encodeSearchCursor(SearchPosition{
 			Rank: last.Rank, PublishedAtMS: domain.TimeToMillis(last.Entry.PublishedAt), ID: last.Entry.ID,
-		}, searchSignature(normalized, timezone, fromMS, toMS), revision)
+		}, searchSignature(normalized, timezone, fromMS, toMS, input.Sort), revision)
 	}
 	return page, nil
 }

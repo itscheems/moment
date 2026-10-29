@@ -1,6 +1,7 @@
 package sqlite
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 
@@ -107,3 +108,46 @@ func TestMentionSuggestionsFindAdmittedAccountsAndNobodyElse(t *testing.T) {
 }
 
 func strptr(value string) *string { return &value }
+
+func TestPublicUserSearchRanksAndPaginates(t *testing.T) {
+	database, runtimeState := openTestDatabase(t, Options{})
+	repository, err := NewAccountRepository(database, runtimeState.Locks)
+	if err != nil {
+		t.Fatal(err)
+	}
+	accounts, err := app.NewAccountService(repository)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := testAccountContext()
+	for i, name := range []string{"Cedar Vale", "Cedar Grove", "Cedar Ridge"} {
+		outcome, err := accounts.SignIn(ctx, app.ExternalIdentity{Provider: "google", ProviderUserID: fmt.Sprint(i), DisplayName: name})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err = accounts.SetStatus(ctx, outcome.User.ID, domain.AccountActive); err != nil {
+			t.Fatal(err)
+		}
+	}
+	first, err := accounts.SearchUsers(ctx, "cedar", 2, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(first.Items) != 2 || first.NextOffset == nil || *first.NextOffset != 2 {
+		t.Fatalf("first = %#v", first)
+	}
+	second, err := accounts.SearchUsers(ctx, "cedar", 2, *first.NextOffset)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(second.Items) != 1 || second.NextOffset != nil || second.Items[0].UserID == first.Items[0].UserID || second.Items[0].UserID == first.Items[1].UserID {
+		t.Fatalf("second = %#v", second)
+	}
+	exact, err := accounts.SearchUsers(ctx, "@"+second.Items[0].Username, 8, 0)
+	if err != nil || len(exact.Items) != 1 || exact.Items[0].UserID != second.Items[0].UserID {
+		t.Fatalf("exact = %#v, %v", exact, err)
+	}
+	if _, err := accounts.SearchUsers(ctx, strings.Repeat("a", 31), 8, 0); err != nil {
+		t.Fatalf("content-length query: %v", err)
+	}
+}

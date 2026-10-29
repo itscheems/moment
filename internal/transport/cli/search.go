@@ -23,8 +23,8 @@ func registerSearch(application *Application) {
 		Path:      []string{"search", "query"},
 		ArgsUsage: "[text]",
 		Short:     "Search published Moment history",
-		Long:      "Search normalized published post text with stable relevance pagination and complete site-timezone year counts through the selected transport.",
-		Inputs:    "The search text, either as the single argument or as --query; optional inclusive --from, exclusive --to, opaque --cursor, and --limit. Dates use the persisted site IANA timezone.",
+		Long:      "Search normalized published post text with stable relevance or newest-first pagination and complete site-timezone year counts through the selected transport.",
+		Inputs:    "The search text, either as the single argument or as --query; optional inclusive --from, exclusive --to, opaque --cursor, --limit, and --sort relevance|latest. Dates use the persisted site IANA timezone.",
 		Output:    "Canonical post hits with plain safe snippets, complete year_counts, and a nullable next cursor in metadata.",
 		Errors:    "Empty, overlong, malformed, or cursor-mismatched input returns INVALID_ARGUMENT; unavailable derived state returns a stable integrity error.",
 		Example: "moment search query '旧城 雨' --data-dir ./moment-data --json\n" +
@@ -32,6 +32,7 @@ func registerSearch(application *Application) {
 		Args:       cobra.MaximumNArgs(1),
 		Capability: CapabilityBoth,
 		Flags: func(flags *pflag.FlagSet) {
+			flags.String("sort", "relevance", "result order: relevance or latest")
 			flags.String("query", "", "search text containing Chinese, English, numbers, or a phrase")
 			flags.String("cursor", "", "opaque continuation cursor from the previous page")
 			flags.Int("limit", 0, "page size from 1 to 100 (default 20)")
@@ -73,6 +74,11 @@ func runSearchQuery(ctx context.Context, invocation Invocation, input CommandInp
 		return Result{}, invalidArgument("search text is required", "pass it as the argument: moment search query '旧城 雨'")
 	}
 	searchInput := app.SearchInput{Query: query}
+	order, err := input.String("sort")
+	if err != nil {
+		return Result{}, err
+	}
+	searchInput.Sort = app.SearchSort(order)
 	if searchInput.Cursor, err = input.String("cursor"); err != nil {
 		return Result{}, err
 	}
@@ -116,6 +122,9 @@ func runSearchQuery(ctx context.Context, invocation Invocation, input CommandInp
 		meta = map[string]any{"next_cursor": searchdto.NextCursor(page)}
 	case ModeAPI:
 		values := url.Values{"q": []string{searchInput.Query}}
+		if searchInput.Sort != app.SearchSortRelevance {
+			values.Set("sort", string(searchInput.Sort))
+		}
 		if searchInput.Cursor != "" {
 			values.Set("cursor", searchInput.Cursor)
 		}

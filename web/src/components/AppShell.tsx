@@ -632,6 +632,9 @@ export function AppShell({
             <div className={styles.contentColumns}>
               <main className={styles.timeline} id="main-content">
                 <header
+                  style={
+                    route.id === "search" ? { display: "none" } : undefined
+                  }
                   className={`${styles.timelineHeader} ${
                     route.id === "home" ? styles.homeHeader : ""
                   } ${route.id === "detail" || route.id === "comment-detail" ? styles.detailHeader : ""} ${route.id === "profile" ? styles.profileHeader : ""} ${workspace ? styles.workspaceHiddenHeader : ""}`}

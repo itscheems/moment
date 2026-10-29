@@ -33,11 +33,17 @@ func TestSearchCLIDirectAPIParityAndRebuildSafety(t *testing.T) {
 		t.Fatalf("direct meta = %#v", envelope["meta"])
 	}
 
+	latestDirect := execute(application, "", "search", "query", "--data-dir", fixture.dataDir, "--as", "writer", "--query", "旧城雨", "--sort", "latest", "--json")
+	latestAPI := execute(application, "", "--url", fixture.server.URL, "search", "query", "--query", "旧城雨", "--sort", "latest", "--json")
+	if latestDirect.exit != ExitSuccess || latestAPI.exit != ExitSuccess || !reflect.DeepEqual(commandData(t, latestDirect), commandData(t, latestAPI)) {
+		t.Fatalf("latest direct=%#v API=%#v", latestDirect, latestAPI)
+	}
+
 	missing := execute(application, "", "search", "query", "--data-dir", fixture.dataDir, "--as", "writer", "--json")
 	if missing.exit != ExitInvalidInput || decodeOneDocument(t, missing.stdout)["error"].(map[string]any)["code"] != "INVALID_ARGUMENT" {
 		t.Fatalf("missing query = %#v", missing)
 	}
-	for _, invalidFlag := range []string{"--limit=0", "--from=", "--to=", "--cursor="} {
+	for _, invalidFlag := range []string{"--sort=unknown", "--limit=0", "--from=", "--to=", "--cursor="} {
 		for _, mode := range [][]string{{"--data-dir", fixture.dataDir, "--as", "writer"}, {"--url", fixture.server.URL}} {
 			args := append([]string{}, mode...)
 			args = append(args, "search", "query", "--query", "旧城雨", invalidFlag, "--json")

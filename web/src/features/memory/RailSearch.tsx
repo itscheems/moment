@@ -1,16 +1,22 @@
 import { useTranslation } from "react-i18next";
 import { Autocomplete } from "@base-ui/react/autocomplete";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
+import { PublicApi, type MentionSuggestion } from "../../api/public";
 import { useNavigation } from "../../app/navigation";
+import { AccountName } from "../../components/AccountName";
+import { SiteAvatar } from "../../components/SiteIdentity";
 import { ConfirmDialog } from "../../components/ConfirmDialog";
 import { Icon } from "../../components/icons";
-import { searchHref } from "./memoryState";
+import { searchHref, type SearchTab } from "./memoryState";
 import {
   clearRecentSearches,
   rememberSearch,
+  rememberUserSearch,
   removeRecentSearch,
+  recentSearchKey,
   useRecentSearches,
+  type RecentSearch,
 } from "./recentSearches";
 import styles from "./RailSearch.module.css";
 
@@ -24,28 +30,148 @@ function SearchGlyph({ recent = false }: { recent?: boolean }) {
   );
 }
 
-export function RailSearch({ scope }: { scope: string | null }) {
-  const { t } = useTranslation();
+export function SearchUserIdentity({ user }: { user: MentionSuggestion }) {
+  return (
+    <>
+      <SiteAvatar site={{ ...user, coverMediaId: null }} size={40} />
+      <span className={styles.userText}>
+        <strong>
+          <AccountName identity={user} />
+        </strong>
+        <span>@{user.username}</span>
+      </span>
+    </>
+  );
+}
 
+export function RailSearch({ scope }: { scope: string | null }) {
+  const [api] = useState(() => new PublicApi());
+  return <SearchBox api={api} scope={scope} />;
+}
+
+type SearchOption = { key: string; entry: RecentSearch; recent: boolean };
+
+export function SearchBox({
+  api,
+  scope,
+  initialValue = "",
+  tab = "latest",
+  main = false,
+  autoFocus = false,
+}: {
+  api: PublicApi;
+  scope: string | null;
+  initialValue?: string;
+  tab?: SearchTab;
+  main?: boolean;
+  autoFocus?: boolean;
+}) {
+  const { t } = useTranslation();
   const { navigate } = useNavigation();
   const recent = useRecentSearches(scope);
-  const [value, setValue] = useState("");
+  const [value, setValue] = useState(initialValue);
   const [open, setOpen] = useState(false);
   const [confirmClear, setConfirmClear] = useState(false);
+  const [response, setResponse] = useState<{
+    query: string;
+    users: MentionSuggestion[];
+    error: boolean;
+  } | null>(null);
+  const [retry, setRetry] = useState(0);
   const input = useRef<HTMLInputElement>(null);
   const query = value.trim();
-  const entries = query ? [query] : recent;
+
+  useEffect(() => {
+    if (!open || !query) return;
+    const controller = new AbortController();
+    const timer = window.setTimeout(() => {
+      void api
+        .searchUsers(query, controller.signal, 0, 8)
+        .then((page) => {
+          if (!controller.signal.aborted)
+            setResponse({ query, users: page.items, error: false });
+        })
+        .catch(() => {
+          if (!controller.signal.aborted)
+            setResponse({ query, users: [], error: true });
+        });
+    }, 150);
+    return () => {
+      window.clearTimeout(timer);
+      controller.abort();
+    };
+  }, [api, open, query, retry]);
+
+  const matches = recent.filter((entry) =>
+    typeof entry === "string"
+      ? entry.toLocaleLowerCase().includes(query.toLocaleLowerCase())
+      : `${entry.user.displayName} @${entry.user.username}`
+          .toLocaleLowerCase()
+          .includes(query.replace(/^@/, "").toLocaleLowerCase()),
+  );
+  const entries: SearchOption[] = (query ? matches : recent).map((entry) => ({
+    key: recentSearchKey(entry),
+    entry,
+    recent: true,
+  }));
+  if (
+    query &&
+    !entries.some(
+      (item) =>
+        typeof item.entry === "string" &&
+        item.entry.toLocaleLowerCase() === query.toLocaleLowerCase(),
+    )
+  )
+    entries.unshift({
+      key: `query:${query.toLocaleLowerCase()}`,
+      entry: query,
+      recent: false,
+    });
+  if (query && response?.query === query) {
+    for (const user of response.users) {
+      if (
+        !entries.some(
+          (item) =>
+            typeof item.entry !== "string" &&
+            item.entry.user.userId === user.userId,
+        )
+      )
+        entries.push({
+          key: `user:${user.userId}`,
+          entry: { kind: "user", user },
+          recent: false,
+        });
+    }
+  }
+  // Text suggestions precede identities while a query is being edited.
+  if (query)
+    entries.sort(
+      (a, b) =>
+        Number(typeof a.entry !== "string") -
+        Number(typeof b.entry !== "string"),
+    );
+
   const search = (text: string) => {
     const trimmed = text.trim();
     if (!trimmed) return;
     rememberSearch(scope, trimmed);
     setOpen(false);
     input.current?.blur();
-    navigate(searchHref({ query: trimmed }));
+    navigate(searchHref({ query: trimmed, tab }));
+  };
+  const select = (entry: RecentSearch) => {
+    if (typeof entry === "string") search(entry);
+    else {
+      rememberUserSearch(scope, entry.user);
+      setValue("");
+      setOpen(false);
+      input.current?.blur();
+      navigate(entry.user.profileUrl);
+    }
   };
 
   return (
-    <div className={styles.searchHeader}>
+    <div className={styles.searchHeader} data-main-search={main || undefined}>
       <form
         aria-label={t("搜索")}
         onSubmit={(event) => {
@@ -56,22 +182,31 @@ export function RailSearch({ scope }: { scope: string | null }) {
         <button hidden type="submit" />
         <Autocomplete.Root
           items={entries}
+          filter={null}
+          itemToStringValue={(item) =>
+            typeof item.entry === "string"
+              ? item.entry
+              : item.entry.user.displayName
+          }
           mode="none"
           onOpenChange={setOpen}
           onValueChange={setValue}
-          open={open && !confirmClear}
+          open={open && !confirmClear && entries.length > 0}
           openOnInputClick
           value={value}
         >
-          <Autocomplete.InputGroup className={styles.field}>
+          <Autocomplete.InputGroup className={styles.field} data-search-control>
             <span className={styles.searchIcon}>
               <SearchGlyph />
             </span>
             <Autocomplete.Input
-              aria-label={t("搜索 Moment")}
+              aria-label={t("搜索内容或用户")}
               autoComplete="off"
+              autoFocus={autoFocus}
               className={styles.input}
-              data-focus-key="shell:search"
+              data-focus-key={main ? "search:query" : "shell:search"}
+              id={main ? "moment-search-input" : undefined}
+              aria-keyshortcuts={main ? "/" : undefined}
               enterKeyHint="search"
               maxLength={1_000}
               onFocus={() => setOpen(true)}
@@ -110,46 +245,79 @@ export function RailSearch({ scope }: { scope: string | null }) {
                     </button>
                   </div>
                 ) : null}
-                {!query && recent.length === 0 ? (
-                  <p className={styles.empty}>{t("尝试搜索关键词")}</p>
-                ) : null}
                 <Autocomplete.List
+                  data-query={Boolean(query) || undefined}
                   aria-label={query ? t("搜索建议") : t("最近搜索")}
                 >
-                  {(item: string) => (
+                  {(item: SearchOption) => (
                     <Autocomplete.Item
-                      aria-label={item}
+                      aria-label={
+                        typeof item.entry === "string"
+                          ? item.entry
+                          : `${item.entry.user.displayName} @${item.entry.user.username}`
+                      }
                       className={styles.item}
-                      key={item}
-                      onClick={() => search(item)}
+                      key={item.key}
                       value={item}
+                      onClick={() => select(item.entry)}
+                      data-user={typeof item.entry !== "string" || undefined}
                     >
-                      <span className={styles.itemIcon}>
-                        <SearchGlyph recent />
-                      </span>
-                      <span className={styles.itemText}>{item}</span>
-                      {!query ? (
+                      {typeof item.entry === "string" ? (
+                        <>
+                          <span className={styles.itemIcon}>
+                            <SearchGlyph recent />
+                          </span>
+                          <span className={styles.itemText}>{item.entry}</span>
+                        </>
+                      ) : (
+                        <SearchUserIdentity user={item.entry.user} />
+                      )}
+                      {item.recent ? (
                         <button
                           aria-label={t("删除搜索记录：{{value1}}", {
-                            value1: item,
+                            value1:
+                              typeof item.entry === "string"
+                                ? item.entry
+                                : `@${item.entry.user.username}`,
                           })}
                           className={styles.remove}
                           onClick={(event) => {
                             event.stopPropagation();
-                            removeRecentSearch(scope, item);
+                            removeRecentSearch(scope, item.entry);
                             input.current?.focus();
                           }}
-                          onPointerDown={(event) => event.stopPropagation()}
+                          onPointerDown={(event) => {
+                            event.stopPropagation();
+                            event.preventDefault();
+                          }}
                           type="button"
                         >
-                          <svg aria-hidden="true" viewBox="0 0 24 24">
-                            <path d="M10.59 12L4.54 5.96l1.42-1.42L12 10.59l6.04-6.05 1.42 1.42L13.41 12l6.05 6.04-1.42 1.42L12 13.41l-6.04 6.05-1.42-1.42L10.59 12z" />
-                          </svg>
+                          <Icon name="close" />
                         </button>
                       ) : null}
                     </Autocomplete.Item>
                   )}
                 </Autocomplete.List>
+                {query && response?.query !== query ? (
+                  <p className={styles.empty} role="status">
+                    {t("正在搜索…")}
+                  </p>
+                ) : null}
+                {query && response?.query === query && response.error ? (
+                  <div className={styles.empty} role="status">
+                    {t("无法搜索用户")}{" "}
+                    <button
+                      className={styles.retry}
+                      onClick={() => {
+                        setResponse(null);
+                        setRetry((n) => n + 1);
+                      }}
+                      type="button"
+                    >
+                      {t("重试")}
+                    </button>
+                  </div>
+                ) : null}
               </Autocomplete.Popup>
             </Autocomplete.Positioner>
           </Autocomplete.Portal>

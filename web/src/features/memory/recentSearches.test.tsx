@@ -5,6 +5,7 @@ import {
   clearRecentSearches,
   recentSearchScope,
   rememberSearch,
+  rememberUserSearch,
   removeRecentSearch,
   useRecentSearches,
 } from "./recentSearches";
@@ -82,5 +83,49 @@ describe("recent searches", () => {
     rememberSearch(scope, "临时搜索");
     render(<History />);
     expect(screen.getByRole("status").textContent).toBe('["临时搜索"]');
+  });
+  it("keeps mixed history across reloads and refreshes a user by stable identity", () => {
+    const user = {
+      userId: "11111111111111111111111111111111",
+      username: "cedar",
+      displayName: "杉木",
+      avatarMediaId: null,
+      profileUrl: "/cedar",
+    };
+    rememberSearch(scope, "forest");
+    rememberUserSearch(scope, user);
+    rememberUserSearch(scope, {
+      ...user,
+      username: "cedar_new",
+      profileUrl: "/cedar_new",
+    });
+    render(<History />);
+    const entries = JSON.parse(screen.getByRole("status").textContent!);
+    expect(entries).toHaveLength(2);
+    expect(entries[0].user.username).toBe("cedar_new");
+    expect(entries[1]).toBe("forest");
+    act(() => removeRecentSearch(scope, entries[0]));
+    expect(screen.getByRole("status").textContent).toBe('["forest"]');
+  });
+
+  it("ignores malformed user identities and external profile URLs", () => {
+    window.localStorage.setItem(
+      scope,
+      JSON.stringify([
+        {
+          kind: "user",
+          user: {
+            userId: "11111111111111111111111111111111",
+            username: "cedar",
+            displayName: "杉木",
+            avatarMediaId: null,
+            profileUrl: "https://invalid.example/",
+          },
+        },
+        "forest",
+      ]),
+    );
+    render(<History />);
+    expect(screen.getByRole("status").textContent).toBe('["forest"]');
   });
 });
