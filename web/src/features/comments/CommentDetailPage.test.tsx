@@ -401,7 +401,7 @@ describe("focused comment reading", () => {
     expect(screen.getByText("第二批回复")).toBeVisible();
     expect(fetcher.mock.calls.length).toBe(loadedCalls);
   });
-  it("reuses the normal post share menu for the comment body", async () => {
+  it("shares the focused comment through its own permalink", async () => {
     const writeText = vi.fn().mockResolvedValue(undefined);
     vi.stubGlobal(
       "navigator",
@@ -415,18 +415,14 @@ describe("focused comment reading", () => {
     const shareTrigger = currentPost().getByRole("button", {
       name: "分享这条 Moment",
     });
-    await act(async () => {
-      shareTrigger.focus();
-      fireEvent.keyDown(shareTrigger, { key: "ArrowDown", code: "ArrowDown" });
-      fireEvent.keyUp(shareTrigger, { key: "ArrowDown", code: "ArrowDown" });
-    });
+    fireEvent.click(shareTrigger);
+    const menu = await screen.findByRole("menu", { name: "分享这条 Moment" });
     await waitFor(() =>
       expect(
-        screen.getByRole("menuitem", { name: "生成分享图片" }),
+        within(menu).getByRole("menuitem", { name: "生成分享图片" }),
       ).toBeVisible(),
     );
-    expect(screen.getByRole("menuitem", { name: "复制链接" })).toBeVisible();
-    fireEvent.click(screen.getByRole("menuitem", { name: "复制链接" }));
+    fireEvent.click(within(menu).getByRole("menuitem", { name: "复制链接" }));
     await waitFor(() =>
       expect(writeText).toHaveBeenCalledWith(
         window.location.origin + "/m/" + postId + "/comments/" + selectedId,
