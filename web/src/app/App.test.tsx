@@ -240,13 +240,13 @@ describe("App shell and public routes", () => {
       Array.from(desktopNavigation.querySelectorAll("a"), (link) =>
         link.getAttribute("aria-label"),
       ),
-    ).toEqual(["首页", "搜索", "归档", "个人资料", "文章", "设置"]);
+    ).toEqual(["主页", "搜索", "归档", "个人资料", "文章", "设置"]);
     expect(
       Array.from(desktopNavigation.children, (item) =>
         item.getAttribute("aria-label"),
       ),
     ).toEqual([
-      "首页",
+      "主页",
       "搜索",
       "通知",
       "归档",
@@ -688,7 +688,7 @@ describe("App shell and public routes", () => {
     window.history.replaceState({}, "", "/archive");
     render(<App />);
     const archiveLink = screen.getAllByRole("link", { name: "归档" })[0]!;
-    const homeLink = screen.getAllByRole("link", { name: "首页" })[0]!;
+    const homeLink = screen.getByRole("link", { name: "主页" });
     expect(archiveLink).toHaveAttribute("aria-current", "page");
     expect(
       archiveLink.querySelector('svg[data-icon="archive"] use'),

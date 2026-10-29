@@ -1256,7 +1256,7 @@ describe("owner composing flow", () => {
       }
     });
     render(<App />);
-    fireEvent.click(await screen.findByRole("link", { name: "发布" }));
+    fireEvent.click(await screen.findByRole("link", { name: "发帖" }));
     const dialog = await screen.findByRole("dialog", { name: "发布 Moment" });
     fireEvent.change(within(dialog).getByLabelText("此刻想到什么？"), {
       target: { value: "回到原来的发布弹窗" },
@@ -1722,7 +1722,7 @@ describe("owner composing flow", () => {
     await act(() => new Promise((settle) => window.setTimeout(settle, 5)));
     expect(composer).toHaveAttribute("data-expanded", "true");
 
-    act(() => screen.getByRole("link", { name: "首页" }).focus());
+    act(() => screen.getByRole("link", { name: "主页" }).focus());
     await waitFor(() =>
       expect(composer).toHaveAttribute("data-expanded", "false"),
     );
@@ -1906,7 +1906,7 @@ describe("owner composing flow", () => {
     installApi();
     render(<App />);
 
-    fireEvent.click(await screen.findByRole("link", { name: "发布" }));
+    fireEvent.click(await screen.findByRole("link", { name: "发帖" }));
     const composer = await screen.findByRole("dialog", {
       name: "发布 Moment",
     });
@@ -1951,7 +1951,7 @@ describe("owner composing flow", () => {
     installApi();
     render(<App />);
 
-    fireEvent.click(await screen.findByRole("link", { name: "发布" }));
+    fireEvent.click(await screen.findByRole("link", { name: "发帖" }));
     const dialog = await screen.findByRole("dialog", { name: "发布 Moment" });
     const drafts = within(dialog).getByRole("button", { name: /草稿/ });
     expect(drafts).toHaveTextContent("1");
@@ -2003,7 +2003,7 @@ describe("owner composing flow", () => {
     installApi();
     render(<App />);
 
-    fireEvent.click(await screen.findByRole("link", { name: "发布" }));
+    fireEvent.click(await screen.findByRole("link", { name: "发帖" }));
     const dialog = await screen.findByRole("dialog", { name: "发布 Moment" });
     fireEvent.click(within(dialog).getByRole("button", { name: /草稿/ }));
 
