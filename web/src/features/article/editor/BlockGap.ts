@@ -1,4 +1,5 @@
 import { Extension } from "@tiptap/core";
+import { isNodeRangeSelection } from "@tiptap/extension-node-range";
 import { closeHistory } from "@tiptap/pm/history";
 import { Plugin, TextSelection } from "@tiptap/pm/state";
 
@@ -23,8 +24,30 @@ export const BlockGap = Extension.create({
                 event.altKey
               )
                 return false;
+              if (!(event.target instanceof Element)) return false;
+              const paragraph = event.target.closest("p");
               if (
-                !(event.target instanceof Element) ||
+                paragraph &&
+                view.dom.contains(paragraph) &&
+                isNodeRangeSelection(view.state.selection)
+              ) {
+                const pos = view.posAtDOM(paragraph, 0);
+                const $pos = view.state.doc.resolve(pos);
+                if (
+                  $pos.parent.type.name === "paragraph" &&
+                  $pos.parent.content.size === 0
+                ) {
+                  // Seed a real caret before native mouse handling, including
+                  // repeated clicks. Leave the default action available for drag selection.
+                  view.dispatch(
+                    view.state.tr.setSelection(
+                      TextSelection.create(view.state.doc, pos),
+                    ),
+                  );
+                  view.focus();
+                }
+              }
+              if (
                 event.target.closest(
                   "button, input, textarea, a, [role=button], p, h1, h2, h3, pre, li, .tiptap-image-content, .tiptap-image-caption",
                 )

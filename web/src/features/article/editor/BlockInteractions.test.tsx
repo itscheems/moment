@@ -232,3 +232,58 @@ it.each([false, true])(
     }
   },
 );
+
+it.each([null, "shiftKey", "metaKey", "ctrlKey", "altKey"] as const)(
+  "collapses a clicked empty paragraph without overriding selection modifiers (%s)",
+  (modifier) => {
+    setup();
+    const emptyPos =
+      editor.state.doc.firstChild!.nodeSize +
+      editor.state.doc.child(1).nodeSize;
+    editor.commands.insertContentAt(emptyPos, { type: "paragraph" });
+    const original = toArticleDocument(editor.getJSON());
+    const range = NodeRangeSelection.create(
+      editor.state.doc,
+      0,
+      editor.state.doc.content.size,
+    );
+    editor.view.dispatch(editor.state.tr.setSelection(range));
+    const paragraph = editor.view.dom.querySelectorAll("p")[1];
+    const click = new MouseEvent("selection-target", {
+      bubbles: true,
+      cancelable: true,
+      ...(modifier ? { [modifier]: true } : {}),
+    });
+    paragraph.dispatchEvent(click);
+    editor.view.someProp("handleDOMEvents", (handlers) =>
+      handlers.mousedown?.(editor.view, click),
+    );
+    if (modifier) {
+      expect(editor.state.selection.eq(range)).toBe(true);
+      return;
+    }
+    expect(editor.state.selection.toJSON()).toEqual({
+      type: "text",
+      anchor: emptyPos + 1,
+      head: emptyPos + 1,
+    });
+    expect(toArticleDocument(editor.getJSON())).toEqual(original);
+    editor.view.dom.dispatchEvent(
+      new KeyboardEvent("keydown", {
+        key: "Enter",
+        bubbles: true,
+        cancelable: true,
+      }),
+    );
+    const saved = toArticleDocument(editor.getJSON());
+    expect(saved.content.map((node) => node.type)).toEqual([
+      "paragraph",
+      "image",
+      "paragraph",
+      "paragraph",
+      "paragraph",
+    ]);
+    expect(saved.content[1]).toEqual(original.content[1]);
+    expect(editor.state.selection.from).toBe(emptyPos + 3);
+  },
+);
