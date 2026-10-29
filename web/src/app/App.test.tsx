@@ -660,6 +660,7 @@ describe("App shell and public routes", () => {
     ).toBeInTheDocument();
 
     unmount();
+    preauthenticate();
     window.history.replaceState({}, "", "/archive?state=error");
     render(<App />);
     expect(await screen.findByRole("alert")).toHaveTextContent("归档链接无效");
@@ -685,6 +686,7 @@ describe("App shell and public routes", () => {
   });
 
   it("gives active navigation a semantic current-page state", () => {
+    preauthenticate();
     window.history.replaceState({}, "", "/archive");
     render(<App />);
     const archiveLink = screen.getAllByRole("link", { name: "归档" })[0]!;

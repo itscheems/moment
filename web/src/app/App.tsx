@@ -651,15 +651,18 @@ function PublicApp() {
           />
         ) : null}
         {route.id === "archive" ? (
-          // No key: the page follows its own search string, so a day picked on
-          // the calendar moves the list without throwing the calendar away.
-          <ArchivePage
-            key={auth.account?.userId ?? "guest"}
-            api={api}
-            canPublish={siteIdentityReady && canPublish}
-            search={displayLocation.search}
-            site={site}
-          />
+          signedIn && auth.account ? (
+            // Date navigation preserves the page; changing accounts replaces it.
+            <ArchivePage
+              key={auth.account.userId}
+              api={api}
+              canPublish={siteIdentityReady && canPublish}
+              search={displayLocation.search}
+              site={site}
+            />
+          ) : (
+            <AccountAccessNotice />
+          )
         ) : null}
         {siteIdentityReady &&
         route.id === "profile" &&

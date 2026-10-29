@@ -11,6 +11,7 @@ import {
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { App } from "../../app/App";
+import { makeAccountSession } from "../../test/accountFixtures";
 
 function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -71,16 +72,11 @@ function install(
   const fetcher = vi.fn(async (input: RequestInfo | URL) => {
     const url = String(input);
     if (url === "/api/v1/site") return json(site);
-    if (url === "/api/v1/status") {
+    if (url === "/api/v1/account/session") {
       if (signedIn) {
         return json({
-          data: {
-            initialized: true,
-            password_enabled: false,
-            session_epoch: 1,
-            initialized_at: "2026-08-01T00:00:00Z",
-          },
-          meta: { request_id: "req_owner" },
+          data: makeAccountSession(),
+          meta: { request_id: "req_account_session" },
         });
       }
       return json(
@@ -208,15 +204,6 @@ describe("search and archive memory layer", () => {
 
   it("opens the reply dialog from a search result without leaving search", async () => {
     window.history.replaceState({}, "", "/search?q=%E9%9B%A8");
-    // Replying needs an account, so the composer only appears for a signed-in
-    // browser; without this the dialog would offer sign-in instead.
-    window.sessionStorage.setItem(
-      "moment.auth.session.v2",
-      JSON.stringify({
-        csrf_token: "csrf-reply",
-        expires_at: "2999-08-11T01:00:00.000Z",
-      }),
-    );
     install(
       (url) => {
         if (!url.startsWith("/api/v1/search?")) return json({}, 404);
@@ -232,6 +219,7 @@ describe("search and archive memory layer", () => {
     );
     render(<App />);
 
+    await screen.findByLabelText("Writer 的账户菜单");
     await screen.findByText(paragraphText("旧城雨落在街口"));
     const trigger = screen.getByRole("button", { name: "回复这条 Moment" });
     const initialUrl = window.location.href;
@@ -743,9 +731,10 @@ describe("search and archive memory layer", () => {
   });
 
   it("fails closed without rewriting malformed URL bytes", async () => {
-    install(() => json({}, 404));
+    install(() => json({}, 404), { signedIn: true });
     window.history.replaceState({}, "", "/search?q=%E0%A4%A");
     const view = render(<App />);
+    await screen.findByLabelText("Writer 的账户菜单");
     expect(
       await screen.findByRole("heading", { name: "搜索链接无效" }),
     ).toBeInTheDocument();
@@ -753,7 +742,7 @@ describe("search and archive memory layer", () => {
 
     view.unmount();
     window.history.replaceState({}, "", "/archive?month=%ED%A0%80");
-    render(<App />);
+    await renderArchive();
     expect(
       await screen.findByRole("heading", { name: "归档链接无效" }),
     ).toBeInTheDocument();
@@ -824,7 +813,7 @@ describe("search and archive memory layer", () => {
   }
 
   function installArchive(headItems?: unknown[]) {
-    return install((url) => {
+    const handler = (url: string) => {
       if (url === "/api/v1/archive/months") return json(archiveMonths);
       if (url === "/api/v1/archive/month?month=2026-08") return json(august);
       if (url === "/api/v1/archive/month?month=2025-12") return json(december);
@@ -849,7 +838,9 @@ describe("search and archive memory layer", () => {
       }
       switch (query.get("anchor")) {
         case "2026-08-10":
-          return timelinePage([first, lastYear], { prev: "newer-after-0810" });
+          return timelinePage([first, lastYear], {
+            prev: "newer-after-0810",
+          });
         case "2025-12-31":
           return timelinePage([lastYear], { prev: "newer-after-1231" });
         case null:
@@ -859,7 +850,8 @@ describe("search and archive memory layer", () => {
         default:
           return json({}, 404);
       }
-    });
+    };
+    return install(handler, { signedIn: true });
   }
 
   function pinToday() {
@@ -873,32 +865,130 @@ describe("search and archive memory layer", () => {
       .filter((url) => url.startsWith("/api/v1/archive/posts?"));
   }
 
+  async function renderArchive() {
+    const view = render(<App />);
+    await screen.findByLabelText("Writer 的账户菜单");
+    return view;
+  }
+
+  async function findCalendarDay(
+    name: string,
+    waitOptions?: { timeout: number },
+  ) {
+    const calendar = await screen.findByLabelText("归档日历");
+    return within(calendar).findByRole("link", { name }, waitOptions);
+  }
+
+  it("redirects a guest archive visit to sign-in with its date preserved", async () => {
+    window.history.replaceState({}, "", "/archive?day=2026-08-10");
+    install(() => json({}, 404));
+    render(<App />);
+
+    await waitFor(() => expect(window.location.pathname).toBe("/login"));
+    expect(new URLSearchParams(window.location.search).get("return")).toBe(
+      "/archive?day=2026-08-10",
+    );
+    expect(screen.queryByLabelText("归档日历")).not.toBeInTheDocument();
+  });
+
+  it("opens the archive with a confirmed account session", async () => {
+    pinToday();
+    window.history.replaceState({}, "", "/archive");
+    const fetcher = installArchive();
+    render(<App />);
+
+    expect(
+      await screen.findByLabelText("Writer 的账户菜单"),
+    ).toBeInTheDocument();
+    expect(await screen.findByLabelText("归档日历")).toBeInTheDocument();
+    expect(fetcher.mock.calls.map(([url]) => String(url))).toContain(
+      "/api/v1/account/session",
+    );
+    expect(fetcher.mock.calls.map(([url]) => String(url))).not.toContain(
+      "/api/v1/status",
+    );
+  });
+
+  it("loads the account archive once after session restoration finishes", async () => {
+    pinToday();
+    window.history.replaceState({}, "", "/archive");
+    const fetcher = installArchive();
+    const fetch = fetcher.getMockImplementation()!;
+    let release: (() => void) | undefined;
+    const pendingSession = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    fetcher.mockImplementation(async (input) => {
+      if (String(input) === "/api/v1/account/session") await pendingSession;
+      return fetch(input);
+    });
+    render(<App />);
+
+    expect(
+      fetcher.mock.calls.some(([url]) =>
+        String(url).startsWith("/api/v1/archive/"),
+      ),
+    ).toBe(false);
+    await act(async () => release?.());
+    expect(await findCalendarDay("8月10日，2 条 Moment")).toBeInTheDocument();
+    expect(postRequests(fetcher)).toEqual(["/api/v1/archive/posts?limit=20"]);
+    expect(
+      fetcher.mock.calls.filter(
+        ([url]) => String(url) === "/api/v1/archive/months",
+      ),
+    ).toHaveLength(1);
+  });
+
+  it("waits for an unavailable account session to recover before loading archive data", async () => {
+    pinToday();
+    window.history.replaceState({}, "", "/archive");
+    const fetcher = installArchive();
+    const fetch = fetcher.getMockImplementation()!;
+    let sessionChecks = 0;
+    fetcher.mockImplementation(async (input) => {
+      if (String(input) === "/api/v1/account/session" && ++sessionChecks === 1)
+        return json({}, 503);
+      return fetch(input);
+    });
+    render(<App />);
+
+    const retry = await screen.findByRole("button", { name: "重试检查" });
+    expect(
+      fetcher.mock.calls.some(([url]) =>
+        String(url).startsWith("/api/v1/archive/"),
+      ),
+    ).toBe(false);
+    fireEvent.click(retry);
+    expect(await findCalendarDay("8月10日，2 条 Moment")).toBeInTheDocument();
+    expect(postRequests(fetcher)).toEqual(["/api/v1/archive/posts?limit=20"]);
+    expect(window.location.pathname).toBe("/archive");
+  });
+
   it("recovers archive month and day counts while preserving the visible list", async () => {
     pinToday();
     window.history.replaceState({}, "", "/archive");
     let months = 0;
     let days = 0;
-    install((url) => {
-      if (url === "/api/v1/archive/months") {
-        months += 1;
-        return months === 1 ? json({}, 503) : json(archiveMonths);
-      }
-      if (url === "/api/v1/archive/month?month=2026-08") {
-        days += 1;
-        return days === 1 ? json({}, 503) : json(august);
-      }
-      if (url.startsWith("/api/v1/archive/posts?"))
-        return timelinePage([first]);
-      return json({}, 404);
-    });
-    render(<App />);
+    install(
+      (url) => {
+        if (url === "/api/v1/archive/months") {
+          months += 1;
+          return months === 1 ? json({}, 503) : json(archiveMonths);
+        }
+        if (url === "/api/v1/archive/month?month=2026-08") {
+          days += 1;
+          return days === 1 ? json({}, 503) : json(august);
+        }
+        if (url.startsWith("/api/v1/archive/posts?"))
+          return timelinePage([first]);
+        return json({}, 404);
+      },
+      { signedIn: true },
+    );
+    await renderArchive();
     expect(await screen.findByText("旧城雨落在街口")).toBeInTheDocument();
     expect(
-      await screen.findByRole(
-        "link",
-        { name: "8月10日，2 条 Moment" },
-        { timeout: 2500 },
-      ),
+      await findCalendarDay("8月10日，2 条 Moment", { timeout: 2500 }),
     ).toHaveAttribute("href", "/archive?day=2026-08-10");
     expect(screen.getByText("旧城雨落在街口")).toBeInTheDocument();
     expect(months).toBe(2);
@@ -910,7 +1000,7 @@ describe("search and archive memory layer", () => {
     pinToday();
     window.history.replaceState({}, "", "/archive");
     const fetcher = installArchive();
-    render(<App />);
+    await renderArchive();
 
     // The rows carry their own dates, in the site's zone -- which lands only
     // once the site's zone is known, so it is what the test waits for.
@@ -935,9 +1025,10 @@ describe("search and archive memory layer", () => {
     expect(
       screen.getByRole("button", { name: "2026年8月，选择年月" }),
     ).toBeInTheDocument();
-    expect(
-      await screen.findByRole("link", { name: "8月10日，2 条 Moment" }),
-    ).toHaveAttribute("href", "/archive?day=2026-08-10");
+    expect(await findCalendarDay("8月10日，2 条 Moment")).toHaveAttribute(
+      "href",
+      "/archive?day=2026-08-10",
+    );
     expect(screen.getByLabelText("8月11日，没有 Moment").tagName).toBe("SPAN");
     expect(screen.getByText("本月 2 条")).toBeInTheDocument();
     expect(screen.queryByRole("link", { name: "回到最新" })).toBeNull();
@@ -953,11 +1044,9 @@ describe("search and archive memory layer", () => {
     pinToday();
     window.history.replaceState({}, "", "/archive");
     const fetcher = installArchive([repostedLater]);
-    render(<App />);
+    await renderArchive();
 
-    fireEvent.click(
-      await screen.findByRole("link", { name: "8月10日，2 条 Moment" }),
-    );
+    fireEvent.click(await findCalendarDay("8月10日，2 条 Moment"));
     expect(window.location.search).toBe("?day=2026-08-10");
     // The list opens at the end of the day and reads both ways from it: the
     // rows on and before it, then the first page after it.
@@ -1021,9 +1110,7 @@ describe("search and archive memory layer", () => {
       expect(window.location.search).toContain("day=2026-08-10"),
     );
     expect(
-      await screen.findByRole("link", {
-        name: "8月10日，2 条 Moment，已选择",
-      }),
+      await findCalendarDay("8月10日，2 条 Moment，已选择"),
     ).toBeInTheDocument();
     expect(await screen.findByText("旧城雨落在街口")).toBeInTheDocument();
   });
@@ -1032,11 +1119,9 @@ describe("search and archive memory layer", () => {
     pinToday();
     window.history.replaceState({}, "", "/archive?day=2026-08-10");
     const fetcher = installArchive();
-    render(<App />);
+    await renderArchive();
 
-    const selectedDay = await screen.findByRole("link", {
-      name: "8月10日，2 条 Moment，已选择",
-    });
+    const selectedDay = await findCalendarDay("8月10日，2 条 Moment，已选择");
     const landingRow = (await screen.findByText("旧城雨落在街口")).closest(
       "article",
     )!;
@@ -1061,10 +1146,8 @@ describe("search and archive memory layer", () => {
     pinToday();
     window.history.replaceState({}, "", "/archive");
     const fetcher = installArchive();
-    render(<App />);
-    const day = await screen.findByRole("link", {
-      name: "8月10日，2 条 Moment",
-    });
+    await renderArchive();
+    const day = await findCalendarDay("8月10日，2 条 Moment");
     const row = (await screen.findByText("旧城雨落在街口")).closest("article");
     const requests = postRequests(fetcher);
     fireEvent.click(day);
@@ -1079,10 +1162,8 @@ describe("search and archive memory layer", () => {
     pinToday();
     window.history.replaceState({}, "", "/archive");
     const fetcher = installArchive([repostedLater]);
-    render(<App />);
-    const day = await screen.findByRole("link", {
-      name: "8月10日，2 条 Moment",
-    });
+    await renderArchive();
+    const day = await findCalendarDay("8月10日，2 条 Moment");
     const row = screen.getByText("旧帖，后来转发").closest("article");
     let release: (() => void) | undefined;
     const gate = new Promise<void>((resolve) => {
@@ -1116,7 +1197,7 @@ describe("search and archive memory layer", () => {
     pinToday();
     window.history.replaceState({}, "", "/archive");
     const fetcher = installArchive();
-    render(<App />);
+    await renderArchive();
 
     fireEvent.click(
       await screen.findByRole("button", { name: "2026年8月，选择年月" }),
@@ -1160,17 +1241,15 @@ describe("search and archive memory layer", () => {
     await waitFor(() =>
       expect(screen.queryByRole("group", { name: "年份" })).toBeNull(),
     );
-    expect(
-      await screen.findByRole("link", { name: "12月31日，1 条 Moment" }),
-    ).toBeInTheDocument();
+    expect(await findCalendarDay("12月31日，1 条 Moment")).toBeInTheDocument();
   });
 
   it("pages the calendar within the archive's span without moving the list", async () => {
     pinToday();
     window.history.replaceState({}, "", "/archive");
     const fetcher = installArchive();
-    render(<App />);
-    await screen.findByRole("link", { name: "8月10日，2 条 Moment" });
+    await renderArchive();
+    await findCalendarDay("8月10日，2 条 Moment");
     const requestsBefore = fetcher.mock.calls.length;
 
     // Forward to the site's current month, September, and no further.
@@ -1188,9 +1267,7 @@ describe("search and archive memory layer", () => {
       screen.getByRole("button", { name: "2025年12月，选择年月" }),
     ).toBeInTheDocument();
     expect(previous).toBeDisabled();
-    expect(
-      await screen.findByRole("link", { name: "12月31日，1 条 Moment" }),
-    ).toBeInTheDocument();
+    expect(await findCalendarDay("12月31日，1 条 Moment")).toBeInTheDocument();
 
     // The list never moved, and empty months cost nothing.
     expect(window.location.search).toBe("");
@@ -1208,11 +1285,9 @@ describe("search and archive memory layer", () => {
       "/archive?year=2026&month=2026-08&from=2026-08-10&to=2026-08-11",
     );
     const fetcher = installArchive();
-    const { unmount } = render(<App />);
+    const { unmount } = await renderArchive();
     expect(
-      await screen.findByRole("link", {
-        name: "8月10日，2 条 Moment，已选择",
-      }),
+      await findCalendarDay("8月10日，2 条 Moment，已选择"),
     ).toBeInTheDocument();
     await waitFor(() =>
       expect(postRequests(fetcher)).toContain(
@@ -1222,7 +1297,7 @@ describe("search and archive memory layer", () => {
 
     unmount();
     window.history.replaceState({}, "", "/archive?day=2026-02-30");
-    render(<App />);
+    await renderArchive();
     expect(await screen.findByRole("alert")).toHaveTextContent("归档链接无效");
     expect(screen.getByRole("link", { name: "回到归档" })).toHaveAttribute(
       "href",
@@ -1243,7 +1318,7 @@ describe("search and archive memory layer", () => {
     );
     window.history.replaceState({}, "", "/archive");
     installArchive();
-    render(<App />);
+    await renderArchive();
 
     const rail = screen.getByRole("complementary", { name: "记忆导航" });
     expect(
