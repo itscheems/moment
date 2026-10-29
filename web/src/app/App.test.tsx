@@ -130,6 +130,7 @@ function preauthenticate() {
 function accountSessionEnvelope(username = "owner") {
   return {
     data: {
+      preferences: { ui_locale: null },
       expires_at: "2999-08-11T01:00:00.000Z",
       csrf_token: "csrf-from-cookie",
       account: {

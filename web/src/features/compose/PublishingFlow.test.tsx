@@ -279,6 +279,7 @@ function account(overrides: Record<string, unknown> = {}) {
 function accountSession(overrides: Record<string, unknown> = {}) {
   return json({
     data: {
+      preferences: { ui_locale: null },
       expires_at: "2999-08-11T01:00:00.000Z",
       csrf_token: "csrf-from-cookie",
       account: account(overrides),

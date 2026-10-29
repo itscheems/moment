@@ -746,6 +746,9 @@ func userChangedFields(local, incoming sqlitestore.ArchiveUser, localSHA, incomi
 	if local.Status != incoming.Status {
 		fields = append(fields, "status")
 	}
+	if !reflect.DeepEqual(local.UILocale, incoming.UILocale) {
+		fields = append(fields, "ui_locale")
+	}
 	if !reflect.DeepEqual(local.UsernameSetAtMS, incoming.UsernameSetAtMS) {
 		fields = append(fields, "username_set_at")
 	}
@@ -967,6 +970,7 @@ func cloneArchiveComment(value sqlitestore.ArchiveComment) sqlitestore.ArchiveCo
 func cloneArchiveUser(value sqlitestore.ArchiveUser) sqlitestore.ArchiveUser {
 	value.AvatarMediaID = cloneString(value.AvatarMediaID)
 	value.CoverMediaID = cloneString(value.CoverMediaID)
+	value.UILocale = cloneString(value.UILocale)
 	if value.UsernameSetAtMS != nil {
 		moment := *value.UsernameSetAtMS
 		value.UsernameSetAtMS = &moment

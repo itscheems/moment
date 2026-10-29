@@ -432,6 +432,7 @@ describe("owner login names who is signing in", () => {
           return signedIn
             ? json({
                 data: {
+                  preferences: { ui_locale: null },
                   csrf_token: "csrf-value",
                   expires_at: "2999-09-01T00:00:00Z",
                   account: {

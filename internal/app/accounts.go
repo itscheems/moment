@@ -36,6 +36,7 @@ type AccountStore interface {
 	UnlinkIdentity(ctx context.Context, identity domain.Identity) error
 	RefreshIdentity(ctx context.Context, identity domain.Identity) error
 
+	UpdatePreferences(ctx context.Context, userID string, locale *string, atMS int64) error
 	UpdateProfile(ctx context.Context, user domain.User) error
 	SetStatus(ctx context.Context, userID string, status domain.AccountStatus, atMS int64) error
 	DeleteAccount(ctx context.Context, userID string) error

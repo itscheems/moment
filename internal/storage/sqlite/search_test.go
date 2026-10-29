@@ -479,7 +479,11 @@ func TestSearchBootstrapForwardUpgradeFromV1RebuildsDerivedState(t *testing.T) {
 		_ = legacy.Close()
 		t.Fatal(err)
 	}
-	if err := newAccountStore(legacy).InitializeSiteAccount(ctx, domain.User{ID: testAccountID, Username: "writer", DisplayName: "Writer", Role: domain.UserRoleAdmin, Status: domain.AccountActive, CreatedAtMS: 1, UpdatedAtMS: 1}, "UTC"); err != nil {
+	// Build the version-one fixture with its own schema, before current migrations.
+	if _, err := legacy.ExecContext(ctx, `INSERT INTO users(id,username,display_name,bio,role,status,created_at_ms,updated_at_ms) VALUES(?, 'writer', 'Writer', '', 'admin', 'active', 1, 1)`, testAccountID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := legacy.ExecContext(ctx, `INSERT INTO site_settings(id,title,timezone,comments_enabled,profile_user_id,registration_mode) VALUES(1,'Moment','UTC',1,?,'approval')`, testAccountID); err != nil {
 		t.Fatal(err)
 	}
 	const (

@@ -38,6 +38,7 @@ func insertAccountsFixture(t *testing.T, fixture exportFixture) {
 VALUES (?, 'meihua', '梅花', 'a member with a bio', NULL, NULL, 'member', 'active', 1700000000000, 1700000000000, 1700000001000)`, []any{memberAccountID}},
 		{`INSERT INTO users (id, username, display_name, bio, avatar_media_id, cover_media_id, role, status, username_set_at_ms, created_at_ms, updated_at_ms)
 VALUES (?, 'newcomer', 'Newcomer', '', NULL, NULL, 'member', 'pending', NULL, 1700000002000, 1700000002000)`, []any{pendingAccountID}},
+		{`UPDATE users SET ui_locale = 'en' WHERE id = ?`, []any{memberAccountID}},
 		{`INSERT INTO identities (provider, provider_user_id, user_id, email, email_verified, email_deliverable, display_name, avatar_url, created_at_ms, last_login_at_ms)
 VALUES ('github', '4210', ?, ?, 1, 1, '梅花', ?, 1700000000000, 1700000003000)`, []any{memberAccountID, email, avatarURL}},
 		{`INSERT INTO identities (provider, provider_user_id, user_id, email, email_verified, email_deliverable, display_name, avatar_url, created_at_ms, last_login_at_ms)

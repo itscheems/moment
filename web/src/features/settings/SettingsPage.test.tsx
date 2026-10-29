@@ -80,6 +80,7 @@ function installApi(
       );
     if (url === "/api/v1/account/session")
       return json({
+        preferences: { ui_locale: null },
         account: { ...account, role },
         csrf_token: "csrf",
         expires_at: "2999-08-01T00:00:00Z",

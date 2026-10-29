@@ -31,6 +31,7 @@ export function makeAccountSession() {
   const identity = makeSiteIdentity();
   return {
     csrf_token: "csrf-from-cookie",
+    preferences: { ui_locale: null },
     expires_at: "2999-08-11T01:00:00.000Z",
     account: {
       user_id: identity.profileUserId,

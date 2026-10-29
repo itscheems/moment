@@ -22,10 +22,11 @@ func publicAccount(user domain.User) accountView         { return accountdto.Pub
 func privateAccount(user domain.User) privateAccountView { return accountdto.PrivateFromUser(user) }
 
 type accountSessionView struct {
-	ExpiresAt time.Time          `json:"expires_at"`
-	CSRFToken string             `json:"csrf_token"`
-	Account   privateAccountView `json:"account"`
-	Limits    accountLimitsView  `json:"limits"`
+	ExpiresAt   time.Time              `json:"expires_at"`
+	CSRFToken   string                 `json:"csrf_token"`
+	Account     privateAccountView     `json:"account"`
+	Limits      accountLimitsView      `json:"limits"`
+	Preferences accountdto.Preferences `json:"preferences"`
 }
 
 // accountLimitsView publishes the bounds a client would otherwise have to
@@ -87,6 +88,8 @@ func RegisterAccountRoutes(engine *gin.Engine, gate *Gate, pictures *media.Store
 	account := engine.Group("/api/v1/account")
 	account.Use(gate.RequireAccount())
 	account.GET("/session", currentAccountSession(gate))
+	account.GET("/preferences", ownPreferences(gate, false))
+	account.PATCH("/preferences", ownPreferences(gate, true))
 	account.PATCH("/profile", updateOwnProfile(gate))
 	account.GET("/identities", listOwnIdentities(gate))
 	account.POST("/identities/:provider", gate.RequireReauthentication(), linkOwnIdentity(gate, oauth))
@@ -152,7 +155,8 @@ func currentAccountSession(gate *Gate) gin.HandlerFunc {
 			return
 		}
 		view := accountSessionView{
-			Account: privateAccount(user),
+			Account:     privateAccount(user),
+			Preferences: accountdto.PreferencesFromUser(user),
 			Limits: accountLimitsView{
 				ProfilePictureBytes: maxAccountPictureBytes,
 				DisplayNameLength:   domain.MaxDisplayNameLength,

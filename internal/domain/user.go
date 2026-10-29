@@ -73,6 +73,7 @@ type User struct {
 	Bio           string
 	AvatarMediaID *string
 	CoverMediaID  *string
+	UILocale      *string
 	Role          UserRole
 	Status        AccountStatus
 	// UsernameSetAt is nil while the handle is still the one generated from a

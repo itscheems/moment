@@ -68,6 +68,7 @@ type ArchiveUser struct {
 	// UsernameSetAtMS is nil while the handle is still the one generated from a
 	// provider display name, which is what the one-time rename prompt keys off.
 	UsernameSetAtMS *int64
+	UILocale        *string
 	CreatedAtMS     int64
 	UpdatedAtMS     int64
 }
@@ -429,7 +430,7 @@ func (snapshot *ArchiveSnapshot) Users(ctx context.Context, yield func(ArchiveUs
 	}
 	rows, err := snapshot.tx.QueryContext(ctx, `
 SELECT id, username, display_name, bio, avatar_media_id, cover_media_id,
-       role, status, username_set_at_ms, created_at_ms, updated_at_ms
+       role, status, username_set_at_ms, created_at_ms, updated_at_ms, ui_locale
 FROM users
 ORDER BY id`)
 	if err != nil {
@@ -442,7 +443,7 @@ ORDER BY id`)
 		var usernameSetAt sql.NullInt64
 		if err := rows.Scan(
 			&value.ID, &value.Username, &value.DisplayName, &value.Bio, &avatar, &cover,
-			&value.Role, &value.Status, &usernameSetAt, &value.CreatedAtMS, &value.UpdatedAtMS,
+			&value.Role, &value.Status, &usernameSetAt, &value.CreatedAtMS, &value.UpdatedAtMS, &value.UILocale,
 		); err != nil {
 			return fmt.Errorf("scan archive user: %w", err)
 		}

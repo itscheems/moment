@@ -40,6 +40,7 @@ const mediaId = "01ARZ3NDEKTSV4RRFFQ69G5FAY";
 function accountSessionEnvelope() {
   return {
     data: {
+      preferences: { ui_locale: null },
       expires_at: "2999-08-11T01:00:00.000Z",
       csrf_token: "csrf-from-cookie",
       account: {
@@ -365,6 +366,7 @@ function memberAccount(
 function memberSession(status: "active" | "pending") {
   return {
     data: {
+      preferences: { ui_locale: null },
       expires_at: "2999-08-11T01:00:00.000Z",
       csrf_token: "csrf-from-cookie",
       account: memberWire(status),

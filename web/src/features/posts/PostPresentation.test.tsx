@@ -76,6 +76,7 @@ function accountSessionResponse() {
   return new Response(
     JSON.stringify({
       data: {
+        preferences: { ui_locale: null },
         csrf_token: "csrf-pin",
         expires_at: "2999-08-11T01:00:00.000Z",
         account: {

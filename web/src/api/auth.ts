@@ -1,3 +1,4 @@
+import { parsePreferences, type AccountPreferences } from "./preferences";
 import {
   ApiClient,
   decodeExactSuccess,
@@ -51,6 +52,7 @@ export interface AccountSession {
   expiresAt: string;
   account: Account;
   limits: AccountLimits;
+  preferences: AccountPreferences;
 }
 
 export function hasKeys(
@@ -275,7 +277,13 @@ export class AuthApi extends ApiClient {
     const record = objectData((await decodeResponse(response)).data);
     // mirrors ginhttp.accountSessionView (internal/transport/http/gin/accounts.go)
     if (
-      !hasExactKeys(record, ["expires_at", "csrf_token", "account", "limits"])
+      !hasExactKeys(record, [
+        "expires_at",
+        "csrf_token",
+        "account",
+        "limits",
+        "preferences",
+      ])
     ) {
       throw invalidResponse("account session contains unsupported fields");
     }
@@ -290,6 +298,7 @@ export class AuthApi extends ApiClient {
       expiresAt,
       account: parsePrivateAccount(record.account),
       limits: parseAccountLimits(record.limits),
+      preferences: parsePreferences(record.preferences),
     };
   }
 

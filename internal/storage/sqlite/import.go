@@ -96,10 +96,10 @@ func (importer *PortableImporter) InsertUser(ctx context.Context, value ArchiveU
 	if _, err := importer.tx.ExecContext(ctx, `
 INSERT INTO users (
     id, username, display_name, bio, avatar_media_id, cover_media_id,
-    role, status, username_set_at_ms, created_at_ms, updated_at_ms
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    role, status, username_set_at_ms, created_at_ms, updated_at_ms, ui_locale
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		value.ID, value.Username, value.DisplayName, value.Bio, value.AvatarMediaID, value.CoverMediaID,
-		value.Role, value.Status, value.UsernameSetAtMS, value.CreatedAtMS, value.UpdatedAtMS); err != nil {
+		value.Role, value.Status, value.UsernameSetAtMS, value.CreatedAtMS, value.UpdatedAtMS, value.UILocale); err != nil {
 		return fmt.Errorf("insert portable account %s: %w", value.ID, err)
 	}
 	importer.users++
@@ -129,6 +129,9 @@ INSERT INTO identities (
 }
 
 func validatePortableUser(value ArchiveUser) error {
+	if err := domain.ValidateUILocale(value.UILocale); err != nil {
+		return err
+	}
 	if err := domain.ValidateUserID(value.ID); err != nil {
 		return err
 	}
