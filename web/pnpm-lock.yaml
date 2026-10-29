@@ -3348,12 +3348,12 @@ packages:
         integrity: sha512-XdjUArbK4Bm5fLLvlm5KpTFOiOThgfWWI4axAZDWg4E/0mKdZyI9tNEfds27qCi1ze/vwTR16kvmmGhRra3c2g==,
       }
 
-  re2js@2.8.6:
+  re2js@2.9.1:
     resolution:
       {
-        integrity: sha512-xLgQil4kIUCrAzVk9fRSkxkFNwmygLFjVxXrLc65aE1F0+Zsb8rxumFBy4XKyvgMCTL6kilDq3EZ0piE2dP/Dg==,
+        integrity: sha512-JIT3bEEUZTOR2YS1walNEIfH4cF/cQeZcBUFq7ldqO6lR6g0X5CBq/S8rsa9omzZcsNf8qc36jCkWpKKtncrZg==,
       }
-    engines: { node: ">=18.0.0" }
+    engines: { node: ">=20.0.0" }
 
   react-dom@19.2.8:
     resolution:
@@ -4812,7 +4812,7 @@ snapshots:
     dependencies:
       "@tiptap/core": 3.31.3(@tiptap/pm@3.31.3)
       "@tiptap/pm": 3.31.3
-      re2js: 2.8.6
+      re2js: 2.9.1
 
   "@tiptap/extension-floating-menu@3.31.3(@floating-ui/dom@1.8.0)(@tiptap/core@3.31.3(@tiptap/pm@3.31.3))(@tiptap/pm@3.31.3)":
     dependencies:
@@ -5876,7 +5876,7 @@ snapshots:
 
   quickselect@3.0.0: {}
 
-  re2js@2.8.6: {}
+  re2js@2.9.1: {}
 
   react-dom@19.2.8(react@19.2.8):
     dependencies:
