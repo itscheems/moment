@@ -63,7 +63,7 @@ function Surface({ editor, readOnly }: SurfaceProps) {
       <TocSidebar topOffset={92} maxShowCount={100} />
       {!readOnly && (
         <>
-          <DragContextMenu />
+          <DragContextMenu nested />
           <SlashDropdownMenu />
           <EmojiDropdownMenu />
           <MentionDropdownMenu />

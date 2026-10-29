@@ -316,6 +316,9 @@ export default function EditableMapPlaces({
         collisionDetection={closestCenter}
         modifiers={[restrictToVerticalAxis]}
         accessibility={{
+          // Keep live announcements outside any enclosing contenteditable.
+          // Modal isolation must not mutate ProseMirror's document nodes.
+          container: document.body,
           screenReaderInstructions: {
             draggable: t(
               "按空格开始排序，上下方向键移动，再按空格确认，Escape 取消。",

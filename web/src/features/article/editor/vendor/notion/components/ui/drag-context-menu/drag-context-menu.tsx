@@ -6,12 +6,16 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import type { Node as TiptapNode } from "@tiptap/pm/model";
 import { offset } from "@floating-ui/react";
 import { DragHandle } from "@tiptap/extension-drag-handle-react";
+import { isNodeRangeSelection } from "@tiptap/extension-node-range";
 
 // Hooks
 import { useTiptapEditor } from "@notion/hooks/use-tiptap-editor";
 import { useIsBreakpoint } from "@notion/hooks/use-is-breakpoint";
 import { useUiEditorState } from "@notion/hooks/use-ui-editor-state";
-import { selectNodeAndHideFloating } from "@notion/hooks/use-floating-toolbar-visibility";
+import {
+  markHideFloatingOnNext,
+  selectNodeAndHideFloating,
+} from "@notion/hooks/use-floating-toolbar-visibility";
 
 // Primitive UI Components
 import { Button, ButtonGroup } from "@notion/components/primitives/button";
@@ -467,9 +471,18 @@ export const DragContextMenu: React.FC<DragContextMenuProps> = ({
                       cursor: "grab",
                       ...(open ? { pointerEvents: "none" } : {}),
                     }}
-                    onMouseDown={() =>
-                      selectNodeAndHideFloating(editor, nodePos)
-                    }
+                    onMouseDown={() => {
+                      const selection = editor.state.selection;
+                      if (
+                        isNodeRangeSelection(selection) &&
+                        nodePos >= selection.from &&
+                        nodePos < selection.to
+                      ) {
+                        markHideFloatingOnNext(editor);
+                      } else {
+                        selectNodeAndHideFloating(editor, nodePos);
+                      }
+                    }}
                   >
                     <GripVerticalIcon className="tiptap-button-icon" />
                   </Button>

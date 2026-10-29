@@ -39,6 +39,18 @@ The vendored Tiptap UI for the pinned 3.31.3 editor retains its upstream actions
 
 See the [i18n integration and maintenance reference](i18n.md) for component integration, language expansion, shared-resource edits and validation.
 
+## Article block editing
+
+The article editor uses Tiptap's NodeRange and DragHandle extensions for block selection, keyboard expansion and reordering. A selected range remains intact when its drag handle is pressed. Clipboard HTML carries stable media identities and map snapshots, including image captions; image views resolve delivery URLs from those identities after paste.
+
+Drag previews and insertion feedback are temporary presentation state. Motion 13.1.0 animates surrounding blocks through styles outside the editable DOM, so ProseMirror's mutation observer does not replace the drag selection with a browser caret. Drop transactions and undo remain upstream responsibilities. Reduced motion removes the animated transition. Clicking an empty boundary next to media inserts a paragraph only when needed and reuses an existing empty paragraph. A plain click inside an empty paragraph explicitly collapses a block range to a text caret before native mouse handling; modifier selection and drag gestures retain their upstream behavior.
+
+In article editing, the embedded map surface participates in block selection and dragging. Map controls and the expanded map retain their own interactions. These editor behaviors do not alter the stored document schema or article reading views.
+
+Images isolate their editable captions from body paragraphs, so native join commands cannot discard captionless media as empty text blocks or merge body text into captions. The editor keymap owns deletion keys; floating action buttons invoke explicit commands without registering competing document-wide deletion handlers.
+
+Image caption content stays mounted in its node view even when hidden. Only the content DOM owned by ProseMirror becomes editable; captionless image selections remain node selections. Enter exits an image into the following paragraph without splitting its media identity or caption. Image range highlights follow the displayed media box rather than the row used for alignment. Closing floating controls become inert during their exit transition and preserve the document selection.
+
 
 ## Typography
 

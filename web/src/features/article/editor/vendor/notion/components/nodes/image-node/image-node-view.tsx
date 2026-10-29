@@ -1,6 +1,16 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
 import type { Editor, NodeViewProps } from "@tiptap/react";
-import { NodeViewWrapper, NodeViewContent } from "@tiptap/react";
+import {
+  NodeViewWrapper,
+  NodeViewContent,
+  useEditorState,
+} from "@tiptap/react";
 import { NodeSelection } from "@tiptap/pm/state";
 
 import { isValidPosition } from "@notion/lib/editor-utils";
@@ -74,6 +84,11 @@ export const ResizableImage: React.FC<ResizableImageProps> = ({
   onUpdateAttributes,
   getPos,
 }) => {
+  const editable =
+    useEditorState({
+      editor: editor ?? null,
+      selector: ({ editor }) => editor?.isEditable ?? false,
+    }) ?? false;
   const [resizeParams, setResizeParams] = useState<ResizeParams | undefined>();
   const [width, setWidth] = useState<number | undefined>(initialWidth);
   const [showHandles, setShowHandles] = useState(false);
@@ -83,6 +98,18 @@ export const ResizableImage: React.FC<ResizableImageProps> = ({
   const leftResizeHandleRef = useRef<HTMLDivElement>(null);
   const rightResizeHandleRef = useRef<HTMLDivElement>(null);
   const imageRef = useRef<HTMLImageElement>(null);
+  const shouldShowCaption = showCaption || hasContent;
+
+  useLayoutEffect(() => {
+    // Keyboard/input events must originate in ProseMirror's contentDOM.
+    const content = wrapperRef.current?.querySelector<HTMLElement>(
+      "[data-node-view-content-react]",
+    );
+    content?.setAttribute(
+      "contenteditable",
+      String(editable && shouldShowCaption),
+    );
+  }, [editable, shouldShowCaption]);
 
   // Listen to editor selection changes to detect when focus leaves the caption
   useEffect(() => {
@@ -115,7 +142,8 @@ export const ResizableImage: React.FC<ResizableImageProps> = ({
   // We treat the image-node-extension.ts as content: "inline*"
   const handleImageClick = useCallback(
     (event: React.MouseEvent) => {
-      if (!editor?.isEditable || !getPos || resizeParams) return;
+      if (!editor?.isEditable || !getPos || resizeParams || event.shiftKey)
+        return;
 
       event.preventDefault();
       event.stopPropagation();
@@ -296,10 +324,9 @@ export const ResizableImage: React.FC<ResizableImageProps> = ({
     };
   }, []);
 
-  const shouldShowCaption = showCaption || hasContent;
-
   return (
     <NodeViewWrapper
+      contentEditable={false}
       onMouseEnter={wrapperMouseEnterHandler}
       onMouseLeave={wrapperMouseLeaveHandler}
       onTouchStart={wrapperTouchStartHandler}
@@ -312,7 +339,11 @@ export const ResizableImage: React.FC<ResizableImageProps> = ({
         className="tiptap-image-container"
         style={{ width: width ? `${width}px` : "fit-content" }}
       >
-        <div className="tiptap-image-content">
+        <div
+          className="tiptap-image-content"
+          data-drag-handle=""
+          draggable={editable}
+        >
           <img
             {...imageAttributes}
             ref={imageRef}
@@ -343,15 +374,13 @@ export const ResizableImage: React.FC<ResizableImageProps> = ({
           )}
         </div>
 
-        {shouldShowCaption && (
-          <NodeViewContent
-            as="div"
-            className="tiptap-image-caption"
-            data-placeholder={
-              editor?.isEditable ? "Add a caption..." : undefined
-            }
-          />
-        )}
+        <NodeViewContent
+          as="div"
+          hidden={!shouldShowCaption}
+          contentEditable={false}
+          className="tiptap-image-caption"
+          data-placeholder={editable ? "Add a caption..." : undefined}
+        />
       </div>
     </NodeViewWrapper>
   );

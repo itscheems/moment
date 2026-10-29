@@ -61,7 +61,7 @@ export function NotionToolbarFloating() {
   if (lockDragHandle || isMobile) return null;
 
   return (
-    <FloatingElement shouldShow={shouldShow}>
+    <FloatingElement shouldShow={shouldShow} resetTextSelectionOnClose={false}>
       <Toolbar variant="floating">
         <ToolbarGroup>
           <TurnIntoDropdown hideWhenUnavailable={true} useCardLayout={false} />

@@ -49,6 +49,7 @@
     "@tiptap/extension-link": "3.31.3",
     "@tiptap/extension-list": "3.31.3",
     "@tiptap/extension-mention": "3.31.3",
+    "@tiptap/extension-node-range": "3.31.3",
     "@tiptap/extension-paragraph": "3.31.3",
     "@tiptap/extension-placeholder": "3.31.3",
     "@tiptap/extension-strike": "3.31.3",

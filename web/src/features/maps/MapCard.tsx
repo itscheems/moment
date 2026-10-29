@@ -45,6 +45,7 @@ export function MapCard({
   disabled,
   footer,
   onViewport,
+  editorBlock = false,
 }: {
   card: MapCardData;
   deferMap?: boolean;
@@ -54,6 +55,7 @@ export function MapCard({
   disabled?: boolean;
   footer?: ReactNode;
   onViewport?: (viewport: MapViewport) => void;
+  editorBlock?: boolean;
 }) {
   const { t } = useTranslation();
 
@@ -130,7 +132,10 @@ export function MapCard({
     </div>
   );
   const canvas = (large: boolean) => (
-    <div className={large ? styles.largeCanvas : styles.canvas}>
+    <div
+      className={large ? styles.largeCanvas : styles.canvas}
+      data-map-block-surface={editorBlock && !large ? "" : undefined}
+    >
       {!deferMap && (visible || large) && !failed ? (
         <MapFailureBoundary
           key={attempt}
@@ -181,7 +186,9 @@ export function MapCard({
         value1: card.places.map((p) => p.name).join("、"),
       })}
       onClick={(event) => event.stopPropagation()}
-      onMouseDown={(event) => event.stopPropagation()}
+      onMouseDown={(event) => {
+        if (!editorBlock) event.stopPropagation();
+      }}
     >
       <div className={styles.canvasFrame}>
         {expanded ? <div className={styles.canvas} /> : canvas(false)}

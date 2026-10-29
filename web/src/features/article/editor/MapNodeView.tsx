@@ -21,11 +21,13 @@ function MapNodeView({
     <NodeViewWrapper
       contentEditable={false}
       data-map-node=""
+      data-drag-handle=""
       data-selected={selected ? "true" : undefined}
     >
       {editor.isEditable ? (
         <MapCardEditor
           value={card}
+          editorBlock
           onChange={(next) => {
             editor.view.dispatch(closeHistory(editor.state.tr));
             if (next) updateAttributes({ map_card: mapCardPayload(next) });

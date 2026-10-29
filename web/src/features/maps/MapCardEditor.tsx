@@ -39,6 +39,7 @@ export function MapCardEditor({
   triggerOnly = false,
   onOpenChange,
   onOpenChangeComplete,
+  editorBlock = false,
 }: {
   value: MapCardData | null;
   onChange: (card: MapCardData | null) => void;
@@ -46,6 +47,7 @@ export function MapCardEditor({
   triggerOnly?: boolean;
   onOpenChange?: (open: boolean) => void;
   onOpenChangeComplete?: (open: boolean) => void;
+  editorBlock?: boolean;
 }) {
   const { t } = useTranslation();
 
@@ -209,6 +211,7 @@ export function MapCardEditor({
           <div data-map-editor="" className={styles.editor}>
             <MapCard
               card={value}
+              editorBlock={editorBlock}
               onChange={onChange}
               disabled={disabled}
               footer={

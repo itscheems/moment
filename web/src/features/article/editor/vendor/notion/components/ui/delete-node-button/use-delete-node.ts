@@ -3,13 +3,11 @@
 import { useTranslation } from "react-i18next";
 
 import { useCallback, useEffect, useState } from "react";
-import { useHotkeys } from "react-hotkeys-hook";
 import { type Editor } from "@tiptap/react";
 import { NodeSelection } from "@tiptap/pm/state";
 
 // --- Hooks ---
 import { useTiptapEditor } from "@notion/hooks/use-tiptap-editor";
-import { useIsBreakpoint } from "@notion/hooks/use-is-breakpoint";
 
 // --- Icons ---
 import { TrashIcon } from "@notion/components/icons/trash-icon";
@@ -186,7 +184,6 @@ export function useDeleteNode(config?: UseDeleteNodeConfig) {
   } = config || {};
 
   const { editor } = useTiptapEditor(providedEditor);
-  const isMobile = useIsBreakpoint();
   const [isVisible, setIsVisible] = useState<boolean>(true);
   const canDeleteNodeState = canDeleteNode(editor);
 
@@ -215,19 +212,6 @@ export function useDeleteNode(config?: UseDeleteNodeConfig) {
     }
     return success;
   }, [editor, onDeleted]);
-
-  useHotkeys(
-    DELETE_NODE_SHORTCUT_KEY,
-    (event) => {
-      event.preventDefault();
-      handleDeleteNode();
-    },
-    {
-      enabled: isVisible && canDeleteNodeState,
-      enableOnContentEditable: !isMobile,
-      enableOnFormTags: true,
-    },
-  );
 
   return {
     isVisible,

@@ -64,6 +64,22 @@ it("removes the entire card from its edit-only close control", () => {
   expect(onChange).toHaveBeenCalledWith(null);
 });
 
+it("keeps drag announcements outside editable documents during modal isolation", async () => {
+  const { container } = render(
+    <div contentEditable suppressContentEditableWarning>
+      <p>Document paragraph</p>
+      <MapCard card={card} onChange={vi.fn()} editorBlock />
+    </div>,
+  );
+  await waitFor(() => {
+    expect(document.body.querySelector('[aria-live="assertive"]')).toBeTruthy();
+  });
+  expect(container.querySelector('[aria-live="assertive"]')).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "展开地图" }));
+  expect(screen.getByRole("dialog", { name: "地图" })).toBeTruthy();
+  expect(container.querySelector("p")?.hasAttribute("aria-hidden")).toBe(false);
+});
+
 const manyPlaces: MapCardData = {
   connectPoints: true,
   places: Array.from({ length: 13 }, (_, index) => ({
