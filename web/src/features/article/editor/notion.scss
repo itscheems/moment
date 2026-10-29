@@ -26,6 +26,10 @@
   cursor: grab;
 }
 
+.notion-like-editor .node-mapCard + .node-mapCard {
+  margin-block-start: 1.5rem;
+}
+
 .notion-like-editor .ProseMirror-selectednoderange {
   border-radius: var(--tt-radius-xs, 0.25rem);
   outline: 2px solid var(--tt-brand-color-500);
