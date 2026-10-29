@@ -45,6 +45,8 @@ Drag previews and insertion feedback are temporary presentation state. Motion 13
 
 In article editing, the embedded map surface participates in block selection and dragging. Map controls and the expanded map retain their own interactions. These editor behaviors do not alter the stored document schema or article reading views.
 
+Image caption content stays mounted in its node view even when hidden. Only the content DOM owned by ProseMirror becomes editable; captionless image selections remain node selections. Enter exits an image into the following paragraph without splitting its media identity or caption. Image range highlights follow the displayed media box rather than the row used for alignment. Closing floating controls become inert during their exit transition and preserve the document selection.
+
 
 ## Typography
 

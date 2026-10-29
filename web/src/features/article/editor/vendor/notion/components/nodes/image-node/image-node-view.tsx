@@ -1,4 +1,10 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
 import type { Editor, NodeViewProps } from "@tiptap/react";
 import {
   NodeViewWrapper,
@@ -92,6 +98,18 @@ export const ResizableImage: React.FC<ResizableImageProps> = ({
   const leftResizeHandleRef = useRef<HTMLDivElement>(null);
   const rightResizeHandleRef = useRef<HTMLDivElement>(null);
   const imageRef = useRef<HTMLImageElement>(null);
+  const shouldShowCaption = showCaption || hasContent;
+
+  useLayoutEffect(() => {
+    // Keyboard/input events must originate in ProseMirror's contentDOM.
+    const content = wrapperRef.current?.querySelector<HTMLElement>(
+      "[data-node-view-content-react]",
+    );
+    content?.setAttribute(
+      "contenteditable",
+      String(editable && shouldShowCaption),
+    );
+  }, [editable, shouldShowCaption]);
 
   // Listen to editor selection changes to detect when focus leaves the caption
   useEffect(() => {
@@ -306,8 +324,6 @@ export const ResizableImage: React.FC<ResizableImageProps> = ({
     };
   }, []);
 
-  const shouldShowCaption = showCaption || hasContent;
-
   return (
     <NodeViewWrapper
       contentEditable={false}
@@ -358,16 +374,13 @@ export const ResizableImage: React.FC<ResizableImageProps> = ({
           )}
         </div>
 
-        {shouldShowCaption && (
-          <NodeViewContent
-            as="div"
-            contentEditable={editable}
-            className="tiptap-image-caption"
-            data-placeholder={
-              editor?.isEditable ? "Add a caption..." : undefined
-            }
-          />
-        )}
+        <NodeViewContent
+          as="div"
+          hidden={!shouldShowCaption}
+          contentEditable={false}
+          className="tiptap-image-caption"
+          data-placeholder={editable ? "Add a caption..." : undefined}
+        />
       </div>
     </NodeViewWrapper>
   );

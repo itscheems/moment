@@ -32,6 +32,20 @@
   background: var(--tt-selection-color);
 }
 
+/* Image rows span the text measure for alignment; paint only the media box. */
+.notion-like-editor .node-image.ProseMirror-selectednoderange {
+  outline: none;
+  background: none;
+}
+
+.notion-like-editor
+  .node-image.ProseMirror-selectednoderange
+  .tiptap-image-container {
+  outline: 2px solid var(--tt-brand-color-500);
+  border-radius: var(--tt-radius-xs, 0.25rem);
+  background: var(--tt-selection-color);
+}
+
 .notion-like-editor [data-map-node][data-selected] {
   outline: 2px solid var(--tt-brand-color-500);
   border-radius: var(--tt-radius-xs, 0.25rem);

@@ -349,7 +349,11 @@ export const FloatingElement = forwardRef<HTMLDivElement, FloatingElementProps>(
     return (
       <div
         ref={mergedRef}
-        style={finalStyle}
+        style={{
+          ...finalStyle,
+          pointerEvents: open ? finalStyle?.pointerEvents : "none",
+        }}
+        inert={!open}
         {...props}
         {...getFloatingProps()}
       >

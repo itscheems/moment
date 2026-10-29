@@ -106,7 +106,9 @@ it("keeps image chrome noneditable while captions follow editor editability", as
   render(<EditorContent editor={editor} />);
   await waitFor(() =>
     expect(
-      editor.view.dom.querySelector(".tiptap-image-caption"),
+      editor.view.dom.querySelector(
+        ".tiptap-image-caption [data-node-view-content-react]",
+      ),
     ).toHaveAttribute("contenteditable", "true"),
   );
   expect(editor.view.dom.querySelector(".tiptap-image")).toHaveAttribute(
@@ -116,15 +118,84 @@ it("keeps image chrome noneditable while captions follow editor editability", as
   act(() => editor.setEditable(false));
   await waitFor(() =>
     expect(
-      editor.view.dom.querySelector(".tiptap-image-caption"),
+      editor.view.dom.querySelector(
+        ".tiptap-image-caption [data-node-view-content-react]",
+      ),
     ).toHaveAttribute("contenteditable", "false"),
   );
   act(() => editor.setEditable(true));
   await waitFor(() =>
     expect(
-      editor.view.dom.querySelector(".tiptap-image-caption"),
+      editor.view.dom.querySelector(
+        ".tiptap-image-caption [data-node-view-content-react]",
+      ),
     ).toHaveAttribute("contenteditable", "true"),
   );
+});
+
+it("does not leave a text caret inside a captionless image", () => {
+  setup();
+  const imagePos = editor.state.doc.firstChild!.nodeSize;
+  editor.commands.setTextSelection(imagePos + 1);
+  expect(editor.state.selection.toJSON()).toEqual({
+    type: "node",
+    anchor: imagePos,
+  });
+});
+
+it.each([0, 3, 7])(
+  "exits a caption on Enter without splitting its image (offset %s)",
+  (offset) => {
+    setup();
+    editor.commands.setContent({
+      type: "doc",
+      content: [
+        {
+          type: "image",
+          attrs: {
+            media_id: mediaId,
+            src: `/api/v1/media/${mediaId}/preview`,
+            showCaption: true,
+          },
+          content: [{ type: "text", text: "Caption" }],
+        },
+      ],
+    });
+    const original = toArticleDocument(editor.getJSON()).content[0];
+    editor.commands.setTextSelection(1 + offset);
+    editor.view.dom.dispatchEvent(
+      new KeyboardEvent("keydown", {
+        key: "Enter",
+        bubbles: true,
+        cancelable: true,
+      }),
+    );
+    const saved = toArticleDocument(editor.getJSON());
+    expect(saved.content.map((node) => node.type)).toEqual([
+      "image",
+      "paragraph",
+    ]);
+    expect(saved.content[0]).toEqual(original);
+    expect(editor.state.selection.$from.parent.type.name).toBe("paragraph");
+  },
+);
+
+it("keeps the caption content DOM mounted and hidden without creating an editable fallback", async () => {
+  setup();
+  render(<EditorContent editor={editor} />);
+  await waitFor(() =>
+    expect(
+      editor.view.dom.querySelector(".tiptap-image-caption"),
+    ).toHaveAttribute("hidden"),
+  );
+  expect(
+    editor.view.dom.querySelector(".tiptap-image-caption"),
+  ).toHaveAttribute("contenteditable", "false");
+  expect(
+    editor.view.dom.querySelector(
+      ".node-image > [data-node-view-content-react]",
+    ),
+  ).toBeNull();
 });
 
 it.each([false, true])(
