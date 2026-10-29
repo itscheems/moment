@@ -34,6 +34,7 @@ describe("application languages", () => {
     const day = siteDate(date, "Asia/Shanghai");
     await i18n.changeLanguage("en");
     expect(getLocale()).toBe("en");
+    expect(t("主页")).toBe("Home");
     expect(formatMomentDate(date, "Asia/Shanghai", now).relative).toBe(
       "2 minutes ago",
     );
