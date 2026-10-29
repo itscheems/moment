@@ -23,12 +23,12 @@ func RegisterSearchRoutes(engine *gin.Engine, service *app.SearchService, gate *
 
 func searchEntries(service *app.SearchService, gate *Gate) gin.HandlerFunc {
 	return func(ctx *gin.Context) {
-		query, err := exactQuery(ctx, map[string]bool{"q": true, "from": false, "to": false, "cursor": false, "limit": false})
+		query, err := exactQuery(ctx, map[string]bool{"q": true, "from": false, "to": false, "cursor": false, "limit": false, "sort": false})
 		if err != nil {
 			writeSearchError(ctx, err)
 			return
 		}
-		input := app.SearchInput{Query: query.Get("q"), FromDate: query.Get("from"), ToDate: query.Get("to"), Cursor: query.Get("cursor"), Viewer: gate.Viewer(ctx)}
+		input := app.SearchInput{Sort: app.SearchSort(query.Get("sort")), Query: query.Get("q"), FromDate: query.Get("from"), ToDate: query.Get("to"), Cursor: query.Get("cursor"), Viewer: gate.Viewer(ctx)}
 		if query.Has("limit") {
 			input.Limit, err = strconv.Atoi(query.Get("limit"))
 			if err != nil || input.Limit == 0 {

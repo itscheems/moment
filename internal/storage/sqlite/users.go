@@ -471,7 +471,7 @@ func (store accountStore) DeleteAccount(ctx context.Context, userID string) erro
 	return nil
 }
 
-func (store accountStore) SearchAccounts(ctx context.Context, query string, limit int) ([]domain.User, error) {
+func (store accountStore) SearchAccounts(ctx context.Context, query string, limit, offset int) ([]domain.User, error) {
 	pattern := "%" + escapeAccountSearch(query) + "%"
 	prefix := escapeAccountSearch(query) + "%"
 	rows, err := store.queries.QueryContext(ctx, `
@@ -481,8 +481,10 @@ WHERE status = 'active'
   AND (? = ''
        OR username LIKE ? ESCAPE '\'
        OR lower(display_name) LIKE ? ESCAPE '\')
-ORDER BY CASE WHEN role = 'admin' THEN 0 ELSE 1 END, username
-LIMIT ?`, query, prefix, pattern, limit)
+ORDER BY CASE WHEN username = ? THEN 0 WHEN username LIKE ? ESCAPE '\' THEN 1
+              WHEN lower(display_name) = ? THEN 2 WHEN lower(display_name) LIKE ? ESCAPE '\' THEN 3 ELSE 4 END,
+         CASE WHEN role = 'admin' THEN 0 ELSE 1 END, username
+LIMIT ? OFFSET ?`, query, prefix, pattern, query, prefix, query, prefix, limit, offset)
 	if err != nil {
 		return nil, fmt.Errorf("search accounts: %w", err)
 	}

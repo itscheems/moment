@@ -116,7 +116,11 @@ func (store searchStore) SearchEntries(ctx context.Context, query app.SearchRepo
 	if err != nil {
 		return nil, err
 	}
-	if query.Position != nil {
+	if query.Position != nil && query.Sort == app.SearchSortLatest {
+		statement += `
+  AND (e.published_at_ms < ? OR (e.published_at_ms = ? AND e.id < ?))`
+		arguments = append(arguments, query.Position.PublishedAtMS, query.Position.PublishedAtMS, query.Position.ID.String())
+	} else if query.Position != nil {
 		statement += `
   AND (rank > ? OR (rank = ? AND (published_at_ms < ? OR (published_at_ms = ? AND id < ?))))`
 		arguments = append(arguments,
@@ -184,7 +188,11 @@ func searchSelect(query app.SearchRepositoryQuery, columns string) (string, []an
 	var arguments []any
 	switch query.Mode {
 	case app.SearchModeFTS:
-		statement = `SELECT ` + columns + `, bm25(entry_fts) AS rank
+		rank := "bm25(entry_fts)"
+		if query.Sort == app.SearchSortLatest {
+			rank = "0.0"
+		}
+		statement = `SELECT ` + columns + `, ` + rank + ` AS rank
 FROM entry_fts
 JOIN entries AS e ON e.id = entry_fts.entry_id
 WHERE entry_fts MATCH ?`

@@ -37,6 +37,8 @@ The session owns the account preference. A language provider combines it with a 
 
 The vendored Tiptap UI for the pinned 3.31.3 editor retains its upstream actions, focus management, keyboard navigation, plugins and node views. Local changes resolve labels, tooltips, placeholders, search text and accessibility descriptions through the shared language resources. Recent color data retains semantic color names; presentation translates those names when shown.
 
+See the [i18n integration and maintenance reference](i18n.md) for component integration, language expansion, shared-resource edits and validation.
+
 ## Article block editing
 
 The article editor uses Tiptap's NodeRange and DragHandle extensions for block selection, keyboard expansion and reordering. A selected range remains intact when its drag handle is pressed. Clipboard HTML carries stable media identities and map snapshots, including image captions; image views resolve delivery URLs from those identities after paste.

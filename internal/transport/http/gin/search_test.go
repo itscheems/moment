@@ -24,8 +24,12 @@ func TestSearchHTTPStrictQueriesAggregatesAndCursor(t *testing.T) {
 	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), `"year_counts":[{"year":2026,"count":2}]`) || !strings.Contains(response.Body.String(), `"next_cursor":"`) {
 		t.Fatalf("search = %d %s", response.Code, response.Body.String())
 	}
+	latest := performRequest(fixture.engine, httptest.NewRequest(http.MethodGet, "/api/v1/search?q=%E6%97%A7%E5%9F%8E%E9%9B%A8&sort=latest&limit=1", nil))
+	if latest.Code != http.StatusOK {
+		t.Fatalf("latest = %d %s", latest.Code, latest.Body)
+	}
 	for _, target := range []string{
-		"/api/v1/search", "/api/v1/search?q=", "/api/v1/search?q=a&q=b", "/api/v1/search?q=a&unknown=1",
+		"/api/v1/search?q=a&sort=unknown", "/api/v1/search", "/api/v1/search?q=", "/api/v1/search?q=a&q=b", "/api/v1/search?q=a&unknown=1",
 		"/api/v1/search?q=a&limit=0", "/api/v1/search?q=a&from=", "/api/v1/archive/month?month=2026-1",
 		"/api/v1/archive/months?from=2026-01-02&to=2026-01-01",
 	} {

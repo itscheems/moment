@@ -1160,7 +1160,7 @@ describe("owner composing flow", () => {
     await waitFor(() => expect(window.location.pathname).toBe("/search"));
     expect(window.location.search).toBe("?q=night");
     expect(
-      await screen.findByRole("searchbox", { name: "搜索 Moment" }),
+      await screen.findByRole("combobox", { name: "搜索内容或用户" }),
     ).toHaveValue("night");
     expect(screen.queryByRole("heading", { name: "Happening now" })).toBeNull();
   });
@@ -1888,6 +1888,7 @@ describe("owner composing flow", () => {
     await keepDraftAndResumeNavigation();
     await waitFor(() => expect(window.location.pathname).toBe("/search"));
 
+    fireEvent.keyDown(screen.getByRole("combobox"), { key: "Escape" });
     fireEvent.click(screen.getAllByRole("link", { name: "归档" })[0]);
     await waitFor(() => expect(window.location.pathname).toBe("/archive"));
     expect(screen.queryByRole("dialog", { name: "退出发布？" })).toBeNull();

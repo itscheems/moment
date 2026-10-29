@@ -241,7 +241,7 @@ func (store *memoryAccounts) ReconcileMediaReferences(_ context.Context, _ []dom
 	return nil
 }
 
-func (store *memoryAccounts) SearchAccounts(_ context.Context, query string, limit int) ([]domain.User, error) {
+func (store *memoryAccounts) SearchAccounts(_ context.Context, query string, limit, offset int) ([]domain.User, error) {
 	found := make([]domain.User, 0, limit)
 	for _, user := range store.users {
 		if user.Status != domain.AccountActive {
@@ -260,6 +260,10 @@ func (store *memoryAccounts) SearchAccounts(_ context.Context, query string, lim
 		}
 		return found[left].Username < found[right].Username
 	})
+	if offset >= len(found) {
+		return []domain.User{}, nil
+	}
+	found = found[offset:]
 	if len(found) > limit {
 		found = found[:limit]
 	}
