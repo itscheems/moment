@@ -64,7 +64,7 @@ func runPreferences(update bool) func(context.Context, Invocation, CommandInput)
 				return Result{}, err
 			}
 			defer func() { _ = db.Close() }()
-			user := actor
+			var user domain.User
 			if update {
 				user, err = accounts.UpdatePreferences(ctx, actor.ID, locale)
 			} else {

@@ -7,6 +7,7 @@ type Preferences struct {
 	UILocale *string `json:"ui_locale"`
 }
 
+// PreferencesFromUser projects the account's private interface preferences.
 func PreferencesFromUser(user domain.User) Preferences {
 	return Preferences{UILocale: user.UILocale}
 }
