@@ -8,7 +8,7 @@ import {
   type ArticleNode,
   type ArticleNodeType,
 } from "../../../api/public";
-import { mediaPreviewUrl } from "../../../api/mediaUrls";
+import { mediaIdFromUrl, mediaPreviewUrl } from "../../../api/mediaUrls";
 import { isAllowedArticleHref } from "./links";
 import {
   ARTICLE_MARK_ATTRS,
@@ -91,13 +91,7 @@ function wireAttrs(
     if (language !== null) attrs.language = language;
   }
   if (type === "image") {
-    const mediaId =
-      nonEmptyString(value.media_id) ??
-      (typeof value.src === "string"
-        ? (value.src.match(
-            /^\/api\/v1\/media\/([0-9A-HJKMNP-TV-Z]{26})(?:\/preview)?(?:\?|$)/,
-          )?.[1] ?? null)
-        : null);
+    const mediaId = nonEmptyString(value.media_id) ?? mediaIdFromUrl(value.src);
     // A picture with no media behind it is not a picture. Returning null drops
     // the node rather than writing one the server has to refuse.
     if (mediaId === null) return null;

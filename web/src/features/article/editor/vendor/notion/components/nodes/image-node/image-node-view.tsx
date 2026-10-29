@@ -115,7 +115,8 @@ export const ResizableImage: React.FC<ResizableImageProps> = ({
   // We treat the image-node-extension.ts as content: "inline*"
   const handleImageClick = useCallback(
     (event: React.MouseEvent) => {
-      if (!editor?.isEditable || !getPos || resizeParams) return;
+      if (!editor?.isEditable || !getPos || resizeParams || event.shiftKey)
+        return;
 
       event.preventDefault();
       event.stopPropagation();
@@ -312,7 +313,11 @@ export const ResizableImage: React.FC<ResizableImageProps> = ({
         className="tiptap-image-container"
         style={{ width: width ? `${width}px` : "fit-content" }}
       >
-        <div className="tiptap-image-content">
+        <div
+          className="tiptap-image-content"
+          data-drag-handle=""
+          draggable={editor?.isEditable}
+        >
           <img
             {...imageAttributes}
             ref={imageRef}

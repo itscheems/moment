@@ -12,6 +12,7 @@ import {
 } from "@tiptap/extensions";
 import CodeBlockLowlight from "@tiptap/extension-code-block-lowlight";
 import { ListKeymap } from "@tiptap/extension-list";
+import { NodeRange } from "@tiptap/extension-node-range";
 import {
   TableOfContents,
   getHierarchicalIndexes,
@@ -85,6 +86,7 @@ export function articleEditorExtensions(
     TableKit.configure({ table: { resizable: true, cellMinWidth: 120 } }),
     TableHandleExtension,
     Selection,
+    NodeRange.configure({ key: null }),
     ListNormalizationExtension,
     UiState,
     ManagedNotionImage,

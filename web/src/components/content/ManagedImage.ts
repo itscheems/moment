@@ -1,5 +1,5 @@
 import { Image } from "@content-notion/components/nodes/image-node/image-node-extension";
-import { mediaPreviewUrl } from "../../api/mediaUrls";
+import { mediaIdFromUrl, mediaPreviewUrl } from "../../api/mediaUrls";
 
 /** The template image stores a Moment media identity; its URL is derived at render time. */
 export const ManagedImage = Image.extend({
@@ -8,7 +8,14 @@ export const ManagedImage = Image.extend({
       ...this.parent?.(),
       media_id: {
         default: null,
-        parseHTML: (element) => element.getAttribute("data-media-id"),
+        parseHTML: (element) => {
+          const img =
+            element.tagName === "IMG" ? element : element.querySelector("img");
+          return (
+            img?.getAttribute("data-media-id") ??
+            mediaIdFromUrl(img?.getAttribute("src"))
+          );
+        },
         renderHTML: (attrs) =>
           attrs.media_id ? { "data-media-id": attrs.media_id } : {},
       },
@@ -28,7 +35,8 @@ export const ManagedImage = Image.extend({
     }));
   },
   renderHTML(props) {
-    const mediaId = props.node.attrs.media_id;
+    const mediaId =
+      props.node.attrs.media_id ?? mediaIdFromUrl(props.node.attrs.src);
     const node = mediaId
       ? props.node.type.create(
           { ...props.node.attrs, src: mediaPreviewUrl(mediaId) },

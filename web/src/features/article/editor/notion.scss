@@ -16,6 +16,26 @@
   color: var(--tt-theme-text);
 }
 
+/* The editor owns block dragging; the expanded map keeps its map gestures. */
+.notion-like-editor [data-map-block-surface] {
+  pointer-events: none;
+}
+
+.notion-like-editor [data-map-node] {
+  cursor: grab;
+}
+
+.notion-like-editor .ProseMirror-selectednoderange {
+  border-radius: var(--tt-radius-xs, 0.25rem);
+  outline: 2px solid var(--tt-brand-color-500);
+  background: var(--tt-selection-color);
+}
+
+.notion-like-editor [data-map-node][data-selected] {
+  outline: 2px solid var(--tt-brand-color-500);
+  border-radius: var(--tt-radius-xs, 0.25rem);
+}
+
 /* Keep the template's fixed toolbar below Moment's sticky article header. */
 @media (min-width: 481px) {
   .moment-article-format.tiptap-toolbar[data-variant="fixed"] {
