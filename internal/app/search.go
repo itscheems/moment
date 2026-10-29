@@ -33,8 +33,10 @@ const (
 type SearchSort string
 
 const (
+	// SearchSortRelevance orders matches by relevance, publication time and ID.
 	SearchSortRelevance SearchSort = "relevance"
-	SearchSortLatest    SearchSort = "latest"
+	// SearchSortLatest orders matches by descending publication time and ID.
+	SearchSortLatest SearchSort = "latest"
 )
 
 // SearchRepositoryQuery is the prepared repository contract.
