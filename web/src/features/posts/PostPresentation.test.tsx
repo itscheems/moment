@@ -1365,10 +1365,17 @@ describe("shared post presentation", () => {
     });
     await act(async () => {
       repost.focus();
+    });
+    expect(repost).toHaveFocus();
+    await act(async () => {
       fireEvent.keyDown(repost, { key: "ArrowDown", code: "ArrowDown" });
       fireEvent.keyUp(repost, { key: "ArrowDown", code: "ArrowDown" });
     });
-    fireEvent.click(await screen.findByRole("menuitem", { name: "转发" }));
+    await waitFor(() =>
+      expect(repost).toHaveAttribute("aria-expanded", "true"),
+    );
+    const menu = await screen.findByRole("menu", { name: "转发这条 Moment" });
+    fireEvent.click(within(menu).getByRole("menuitem", { name: "转发" }));
     await waitFor(() =>
       expect(
         screen.getByRole("button", { name: "转发这条 Moment" }),

@@ -1159,6 +1159,9 @@ describe("owner composing flow", () => {
     render(<App />);
     await waitFor(() => expect(window.location.pathname).toBe("/search"));
     expect(window.location.search).toBe("?q=night");
+    expect(
+      await screen.findByRole("searchbox", { name: "搜索 Moment" }),
+    ).toHaveValue("night");
     expect(screen.queryByRole("heading", { name: "Happening now" })).toBeNull();
   });
 
