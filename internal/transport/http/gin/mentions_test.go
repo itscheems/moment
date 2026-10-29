@@ -176,3 +176,43 @@ func TestMentionSuggestionsAreForApprovedAccountsOnly(t *testing.T) {
 		}
 	})
 }
+
+func TestPublicUserSearch(t *testing.T) {
+	fixture := newMentionFixture(t)
+	active := fixture.seed(t, "public-1", "Cedar Profile", domain.AccountActive)
+	fixture.seed(t, "public-2", "Cedar Waiting", domain.AccountPending)
+	fixture.seed(t, "public-3", "Cedar Suspended", domain.AccountSuspended)
+	for _, query := range []string{"Cedar", active.Username, "%40" + active.Username} {
+		response := performRequest(fixture.engine, httptest.NewRequest(http.MethodGet, "/api/v1/users/search?q="+query, nil))
+		if response.Code != http.StatusOK {
+			t.Fatalf("search = %d: %s", response.Code, response.Body)
+		}
+		var envelope struct {
+			Data app.UserSearchPage `json:"data"`
+		}
+		if err := json.Unmarshal(response.Body.Bytes(), &envelope); err != nil {
+			t.Fatal(err)
+		}
+		if len(envelope.Data.Items) != 1 || envelope.Data.Items[0].UserID != active.ID || envelope.Data.NextOffset != nil {
+			t.Fatalf("page = %#v", envelope.Data)
+		}
+	}
+	for _, suffix := range []string{"?q=", "?q=nobody", "?q=%25"} {
+		response := performRequest(fixture.engine, httptest.NewRequest(http.MethodGet, "/api/v1/users/search"+suffix, nil))
+		var envelope struct {
+			Data app.UserSearchPage `json:"data"`
+		}
+		if err := json.Unmarshal(response.Body.Bytes(), &envelope); err != nil {
+			t.Fatal(err)
+		}
+		if response.Code != http.StatusOK || len(envelope.Data.Items) != 0 {
+			t.Fatalf("empty query = %d %s", response.Code, response.Body)
+		}
+	}
+	for _, suffix := range []string{"?limit=0", "?limit=51", "?offset=-1", "?limit=no", "?offset=no"} {
+		response := performRequest(fixture.engine, httptest.NewRequest(http.MethodGet, "/api/v1/users/search"+suffix, nil))
+		if response.Code != http.StatusBadRequest {
+			t.Fatalf("invalid %s = %d", suffix, response.Code)
+		}
+	}
+}

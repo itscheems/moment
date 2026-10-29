@@ -71,6 +71,8 @@ function install(
 ) {
   const fetcher = vi.fn(async (input: RequestInfo | URL) => {
     const url = String(input);
+    if (url.startsWith("/api/v1/users/search?"))
+      return json({ data: { items: [], next_offset: null }, meta: {} });
     if (url === "/api/v1/site") return json(site);
     if (url === "/api/v1/account/session") {
       if (signedIn) {
@@ -128,7 +130,7 @@ describe("search and archive memory layer", () => {
     expect(window.location.pathname).toBe("/");
     fireEvent.keyDown(window, { key: "/" });
     await waitFor(() => expect(window.location.pathname).toBe("/search"));
-    const input = await screen.findByPlaceholderText("搜索 Moment");
+    const input = await screen.findByPlaceholderText("搜索");
     await new Promise<void>((resolve) =>
       window.requestAnimationFrame(() => resolve()),
     );
@@ -139,38 +141,30 @@ describe("search and archive memory layer", () => {
     expect(window.location.pathname).toBe("/search");
   });
 
-  it("keeps clear and submit inside one pill and clears results, URL, and focus state", async () => {
+  it("clears the draft while retaining committed results and opens recent searches", async () => {
     window.history.replaceState({}, "", "/search?q=%E9%9B%A8");
-    install((url) => {
-      if (!url.startsWith("/api/v1/search?")) return json({}, 404);
-      return json({
+    install(() =>
+      json({
         data: {
           items: [{ ...first, snippet: "雨" }],
           year_counts: [{ year: 2026, count: 1 }],
         },
         meta: { next_cursor: null, request_id: "req_search" },
-      });
-    });
+      }),
+    );
     render(<App />);
-
     await screen.findByText(paragraphText("旧城雨落在街口"));
-    const input = screen.getByRole("searchbox");
-    const control = input.closest("[data-search-control]");
-    expect(control).toContainElement(
+    const input = screen.getByRole("combobox");
+    expect(input.closest("[data-search-control]")).toContainElement(
       screen.getByRole("button", { name: "清除搜索内容" }),
     );
-    expect(control).toContainElement(
-      screen.getByRole("button", { name: "搜索" }),
-    );
-
     fireEvent.click(screen.getByRole("button", { name: "清除搜索内容" }));
-    await waitFor(() => expect(window.location.search).toBe(""));
-    const cleared = await screen.findByRole("searchbox");
-    expect(cleared).toHaveValue("");
-    await waitFor(() => expect(cleared).toHaveFocus());
+    expect(input).toHaveValue("");
+    expect(window.location.search).toBe("?q=%E9%9B%A8");
+    fireEvent.keyDown(input, { key: "Escape" });
     expect(
-      screen.queryByText(paragraphText("旧城雨落在街口")),
-    ).not.toBeInTheDocument();
+      screen.getByText(paragraphText("旧城雨落在街口")),
+    ).toBeInTheDocument();
   });
 
   it("shows a real search hit that carries nullable post fields", async () => {
@@ -242,88 +236,42 @@ describe("search and archive memory layer", () => {
     expect(trigger).toHaveFocus();
   });
 
-  it("uses Escape to clear, close filters, then release focus", async () => {
+  it("uses Escape to dismiss suggestions without discarding the draft", async () => {
     window.history.replaceState({}, "", "/search");
     install(() => json({}, 404));
     render(<App />);
-
-    const input = await screen.findByRole("searchbox");
+    const input = await screen.findByRole("combobox");
     fireEvent.change(input, { target: { value: "暂存搜索" } });
     fireEvent.keyDown(input, { key: "Escape" });
-    expect(input).toHaveValue("");
+    expect(input).toHaveValue("暂存搜索");
     expect(input).toHaveFocus();
-
-    fireEvent.click(screen.getByRole("button", { name: "日期" }));
-    expect(document.querySelector("#search-date-filters")).not.toHaveAttribute(
-      "hidden",
-    );
-    input.focus();
-    fireEvent.keyDown(input, { key: "Escape" });
-    expect(document.querySelector("#search-date-filters")).toHaveAttribute(
-      "hidden",
-    );
-    expect(input).toHaveFocus();
-
-    fireEvent.keyDown(input, { key: "Escape" });
-    expect(input).not.toHaveFocus();
+    expect(input).toHaveAttribute("aria-expanded", "false");
   });
 
-  it("treats the selected end date as an inclusive natural day", async () => {
-    window.history.replaceState({}, "", "/search");
-    let requestedSearch = "";
-    install((url) => {
-      if (url.startsWith("/api/v1/search?")) {
-        requestedSearch = url;
-        return json({
-          data: { items: [], year_counts: [] },
-          meta: { next_cursor: null, request_id: "req_search" },
-        });
-      }
-      return json({}, 404);
-    });
+  it("uses latest and people navigation with no date or year controls", async () => {
+    window.history.replaceState({}, "", "/search?q=river");
+    install(() =>
+      json({
+        data: { items: [], year_counts: [] },
+        meta: { next_cursor: null, request_id: "req_search" },
+      }),
+    );
     render(<App />);
-
-    const now = new Date();
-    const year = now.getFullYear();
-    const month = now.getMonth() + 1;
-    const day = now.getDate();
-    const selected = `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
-    const next = new Date(Date.UTC(year, month - 1, day + 1));
-    const exclusiveEnd = [
-      next.getUTCFullYear(),
-      String(next.getUTCMonth() + 1).padStart(2, "0"),
-      String(next.getUTCDate()).padStart(2, "0"),
-    ].join("-");
-    const dateLabel = `${year}年${month}月${day}日`;
-
-    fireEvent.change(await screen.findByRole("searchbox"), {
-      target: { value: "雨" },
-    });
-    fireEvent.click(screen.getByRole("button", { name: "日期" }));
-    fireEvent.click(screen.getByRole("button", { name: "开始日期：选择日期" }));
-    fireEvent.click(
-      within(screen.getByRole("dialog", { name: "开始日期" })).getByRole(
-        "button",
-        { name: dateLabel },
-      ),
-    );
-    fireEvent.click(screen.getByRole("button", { name: "结束日期：选择日期" }));
-    fireEvent.click(
-      within(screen.getByRole("dialog", { name: "结束日期" })).getByRole(
-        "button",
-        { name: dateLabel },
-      ),
-    );
-    fireEvent.click(screen.getByRole("button", { name: "应用" }));
-
-    await waitFor(() => expect(requestedSearch).not.toBe(""));
-    expect(window.location.search).toContain(`from=${selected}`);
-    expect(window.location.search).toContain(`to=${exclusiveEnd}`);
-    expect(requestedSearch).toContain(`from=${selected}`);
-    expect(requestedSearch).toContain(`to=${exclusiveEnd}`);
+    await screen.findByRole("heading", { name: "没有找到 Moment" });
+    expect(screen.queryByRole("button", { name: "日期" })).toBeNull();
     expect(
-      screen.getByText(`${dateLabel} 至 ${dateLabel}`),
+      screen.queryByRole("navigation", { name: "按年份筛选搜索结果" }),
+    ).toBeNull();
+    expect(screen.queryByText("按文字或日期查找 Moment")).toBeNull();
+    fireEvent.click(screen.getByRole("link", { name: "用户" }));
+    await waitFor(() => expect(window.location.search).toBe("?q=river&f=user"));
+    expect(
+      await screen.findByRole("heading", { name: "没有找到用户" }),
     ).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "用户" })).toHaveAttribute(
+      "aria-current",
+      "page",
+    );
   });
 
   it("keeps Unicode query/date state, renders safe snippets, and restores cursor pages", async () => {
@@ -335,6 +283,9 @@ describe("search and archive memory layer", () => {
     let searchRequests = 0;
     install((url) => {
       if (url.startsWith("/api/v1/search?")) {
+        expect(
+          new URL(url, "http://moment.invalid").searchParams.get("sort"),
+        ).toBe("latest");
         searchRequests += 1;
         const continued = url.includes("cursor=cursor-one");
         return json({
@@ -380,19 +331,7 @@ describe("search and archive memory layer", () => {
     expect(
       screen.getByText("旧城雨", { selector: "mark" }),
     ).toBeInTheDocument();
-    expect(screen.getByRole("status")).toHaveTextContent("找到 3 条");
-
-    const yearNavigation = screen.getByRole("navigation", {
-      name: "按年份筛选搜索结果",
-    });
-    fireEvent.click(
-      within(yearNavigation).getByRole("link", { name: "2026 2" }),
-    );
-    await waitFor(() => {
-      expect(window.location.search).toContain("q=%E6%97%A7%E5%9F%8E%E9%9B%A8");
-      expect(window.location.search).toContain("from=2026-01-01");
-      expect(window.location.search).toContain("to=2027-01-01");
-    });
+    expect(screen.queryByRole("region", { name: "搜索概览" })).toBeNull();
 
     fireEvent.click(screen.getByRole("button", { name: "加载更早的结果" }));
     expect(
@@ -483,7 +422,7 @@ describe("search and archive memory layer", () => {
     render(<App />);
 
     await screen.findByText(paragraphText("旧城雨落在街口"));
-    const searchbox = screen.getByRole("searchbox");
+    const searchbox = screen.getByRole("combobox");
     searchbox.focus();
     await waitFor(() => expect(intersect).toBeTypeOf("function"));
     const callback = intersect as unknown as IntersectionObserverCallback;
@@ -543,7 +482,7 @@ describe("search and archive memory layer", () => {
     expect(
       await screen.findByText("正在重新获取搜索结果…"),
     ).toBeInTheDocument();
-    expect(screen.getByRole("searchbox")).toHaveValue("a");
+    expect(screen.getByRole("combobox")).toHaveValue("a");
     expect(window.location.search).toBe("?q=a");
   });
 
@@ -592,7 +531,7 @@ describe("search and archive memory layer", () => {
     expect(window.location.search).toContain("from=2026-01-01");
     expect(window.location.search).toContain("to=2027-01-01");
     expect(window.location.search).not.toContain("loaded_through");
-    expect(screen.getByRole("searchbox")).toHaveValue("雨");
+    expect(screen.getByRole("combobox")).toHaveValue("雨");
   });
 
   it("recovers an unreachable saved search position from the first page", async () => {
@@ -645,9 +584,7 @@ describe("search and archive memory layer", () => {
     expect(
       await screen.findByText(paragraphText("旧城雨后的第二页")),
     ).toBeInTheDocument();
-    expect(screen.getByRole("region", { name: "搜索概览" })).toHaveTextContent(
-      /找到\s*3\s*条/,
-    );
+    expect(screen.queryByRole("region", { name: "搜索概览" })).toBeNull();
     expect(screen.queryByText("搜索失败")).toBeNull();
   });
 

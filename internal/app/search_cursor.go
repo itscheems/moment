@@ -87,14 +87,18 @@ func staleSearchCursor() error {
 	return domain.NewError(domain.CodeInvalidArgument, "cursor is stale because searchable posts changed", map[string]any{"field": "cursor", "reason": "stale"})
 }
 
-func searchSignature(normalizedQuery, timezone string, fromMS, toMS *int64) string {
+func searchSignature(normalizedQuery, timezone string, fromMS, toMS *int64, order SearchSort) string {
+	if order == SearchSortRelevance {
+		order = ""
+	}
 	payload, err := json.Marshal(struct {
-		Version  int    `json:"v"`
-		Query    string `json:"q"`
-		Timezone string `json:"timezone"`
-		FromMS   *int64 `json:"from_ms"`
-		ToMS     *int64 `json:"to_ms"`
-	}{Version: searchCursorV1, Query: normalizedQuery, Timezone: timezone, FromMS: fromMS, ToMS: toMS})
+		Sort     SearchSort `json:"sort,omitempty"`
+		Version  int        `json:"v"`
+		Query    string     `json:"q"`
+		Timezone string     `json:"timezone"`
+		FromMS   *int64     `json:"from_ms"`
+		ToMS     *int64     `json:"to_ms"`
+	}{Sort: order, Version: searchCursorV1, Query: normalizedQuery, Timezone: timezone, FromMS: fromMS, ToMS: toMS})
 	if err != nil {
 		panic("fixed search signature cannot fail to encode")
 	}

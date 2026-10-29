@@ -9,7 +9,10 @@ const SEARCH_LOCATION_ERROR = () =>
 const ARCHIVE_LOCATION_ERROR = () =>
   t("链接里的年份、月份、日期或分页位置无效。请从归档首页重新选择。");
 
+export type SearchTab = "latest" | "people";
+
 export interface SearchLocationState {
+  tab: SearchTab;
   query: string | null;
   from: string | null;
   to: string | null;
@@ -78,6 +81,7 @@ export function hasValidRawQueryEncoding(search: string): boolean {
 export function parseSearchLocation(search: string): SearchLocationState {
   if (!hasValidRawQueryEncoding(search)) {
     return {
+      tab: "latest",
       query: null,
       from: null,
       to: null,
@@ -87,18 +91,22 @@ export function parseSearchLocation(search: string): SearchLocationState {
   }
   const params = new URLSearchParams(search);
   const q = single(params, "q");
+  const f = single(params, "f");
   const from = single(params, "from");
   const to = single(params, "to");
   const loaded = loadedThroughFromSearch(search);
   const query = q.value;
   const invalid =
     q.error ||
+    f.error ||
+    (f.value !== null && f.value !== "live" && f.value !== "user") ||
     from.error ||
     to.error ||
-    unsupported(params, new Set(["q", "from", "to", "loaded_through"])) ||
+    unsupported(params, new Set(["q", "f", "from", "to", "loaded_through"])) ||
     (query !== null && (!query.trim() || Array.from(query).length > 1_000)) ||
     !validDateRange(from.value, to.value);
   return {
+    tab: f.value === "user" ? "people" : "latest",
     query,
     from: from.value,
     to: to.value,
@@ -250,11 +258,13 @@ export function activeSearchYear(
 
 export function searchHref(input: {
   query: string;
+  tab?: SearchTab;
   from?: string | null;
   to?: string | null;
   loadedThrough?: string | null;
 }): string {
   const params = new URLSearchParams({ q: input.query });
+  if (input.tab === "people") params.set("f", "user");
   if (input.from) params.set("from", input.from);
   if (input.to) params.set("to", input.to);
   if (input.loadedThrough) params.set("loaded_through", input.loadedThrough);

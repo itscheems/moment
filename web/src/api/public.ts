@@ -400,6 +400,7 @@ export interface SearchPage {
 }
 
 export interface SearchRequest {
+  sort?: "relevance" | "latest";
   query: string;
   cursor?: string | null;
   from?: string | null;
@@ -2391,6 +2392,37 @@ export function parseSiteIdentity(
 export type AccountRole = "admin" | "member";
 export type AccountStatus = "pending" | "active" | "suspended";
 
+function parseMentionSuggestion(item: unknown): MentionSuggestion {
+  // mirrors app.MentionSuggestion (internal/app/site.go)
+  if (
+    !isRecord(item) ||
+    !hasExactKeys(item, [
+      "user_id",
+      "username",
+      "display_name",
+      "avatar_media_id",
+      "profile_url",
+    ])
+  ) {
+    throw invalidResponse("mention suggestion contains unsupported fields");
+  }
+  const userId = stringField(item, "user_id");
+  const username = stringField(item, "username");
+  const displayName = stringField(item, "display_name");
+  const avatarMediaId = nullableStringField(item, "avatar_media_id");
+  const profileUrl = stringField(item, "profile_url");
+  if (
+    !/^[0-9a-f]{32}$/.test(userId) ||
+    !/^[a-z][a-z0-9_]{2,29}$/.test(username) ||
+    !displayName ||
+    profileUrl !== `/${username}` ||
+    (avatarMediaId !== null && !isCanonicalUlid(avatarMediaId))
+  ) {
+    throw invalidResponse("mention suggestion identity is invalid");
+  }
+  return { userId, username, displayName, avatarMediaId, profileUrl };
+}
+
 export interface PublicAccount {
   userId: string;
   username: string;
@@ -2568,36 +2600,38 @@ export class PublicApi {
     const { data } = await decodeResponse(response);
     if (!Array.isArray(data))
       throw invalidResponse("mention suggestions must be an array");
-    return data.map((item) => {
-      // mirrors app.MentionSuggestion (internal/app/site.go)
-      if (
-        !isRecord(item) ||
-        !hasExactKeys(item, [
-          "user_id",
-          "username",
-          "display_name",
-          "avatar_media_id",
-          "profile_url",
-        ])
-      ) {
-        throw invalidResponse("mention suggestion contains unsupported fields");
-      }
-      const userId = stringField(item, "user_id");
-      const username = stringField(item, "username");
-      const displayName = stringField(item, "display_name");
-      const avatarMediaId = nullableStringField(item, "avatar_media_id");
-      const profileUrl = stringField(item, "profile_url");
-      if (
-        !/^[0-9a-f]{32}$/.test(userId) ||
-        !/^[a-z][a-z0-9_]{2,29}$/.test(username) ||
-        !displayName ||
-        profileUrl !== `/${username}` ||
-        (avatarMediaId !== null && !isCanonicalUlid(avatarMediaId))
-      ) {
-        throw invalidResponse("mention suggestion identity is invalid");
-      }
-      return { userId, username, displayName, avatarMediaId, profileUrl };
+    return data.map(parseMentionSuggestion);
+  }
+
+  async searchUsers(
+    query: string,
+    signal?: AbortSignal,
+    offset = 0,
+    limit = 20,
+  ): Promise<{ items: MentionSuggestion[]; nextOffset: number | null }> {
+    const params = new URLSearchParams({
+      q: query,
+      offset: String(offset),
+      limit: String(limit),
     });
+    const response = await this.fetcher(`/api/v1/users/search?${params}`, {
+      headers: { Accept: "application/json" },
+      signal,
+    });
+    const { data } = await decodeResponse(response);
+    if (
+      !isRecord(data) ||
+      !Array.isArray(data.items) ||
+      (data.next_offset !== null &&
+        (typeof data.next_offset !== "number" ||
+          !Number.isSafeInteger(data.next_offset) ||
+          Number(data.next_offset) <= offset))
+    )
+      throw invalidResponse("invalid user search page");
+    return {
+      items: data.items.map(parseMentionSuggestion),
+      nextOffset: data.next_offset,
+    };
   }
 
   forArchive(): PublicApi {
@@ -2669,6 +2703,7 @@ export class PublicApi {
       q: request.query,
       limit: String(request.limit ?? 20),
     });
+    if (request.sort) query.set("sort", request.sort);
     if (request.cursor) query.set("cursor", request.cursor);
     if (request.from) query.set("from", request.from);
     if (request.to) query.set("to", request.to);

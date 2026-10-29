@@ -960,7 +960,6 @@
   "请检查搜索词和日期后调整条件。": "请检查搜索词和日期后调整条件。",
   "无法使用这些搜索条件": "无法使用这些搜索条件",
   "按文字或日期查找 Moment": "按文字或日期查找 Moment",
-  "搜索概览": "搜索概览",
   "找到": "找到",
   "条与“": "条与“",
   "”有关的 Moment": "”有关的 Moment",
@@ -1602,5 +1601,14 @@
   "{{value1}}年{{value2}}月，{{value3}} 条 Moment_one": "{{value1}}年{{value2}}月，{{value3}} 条 Moment",
   "{{value1}}年{{value2}}月，{{value3}} 条 Moment_other": "{{value1}}年{{value2}}月，{{value3}} 条 Moment",
   "{{value1}}，{{value2}} 条 Moment{{value3}}_one": "{{value1}}，{{value2}} 条 Moment{{value3}}",
-  "{{value1}}，{{value2}} 条 Moment{{value3}}_other": "{{value1}}，{{value2}} 条 Moment{{value3}}"
+  "{{value1}}，{{value2}} 条 Moment{{value3}}_other": "{{value1}}，{{value2}} 条 Moment{{value3}}",
+  "搜索内容或用户": "搜索内容或用户",
+  "无法搜索用户": "无法搜索用户",
+  "搜索类型": "搜索类型",
+  "用户": "用户",
+  "用户搜索结果": "用户搜索结果",
+  "没有找到用户": "没有找到用户",
+  "加载更多用户": "加载更多用户",
+  "换一个关键词再试。": "换一个关键词再试。",
+  "请调整搜索词后重试。": "请调整搜索词后重试。"
 }

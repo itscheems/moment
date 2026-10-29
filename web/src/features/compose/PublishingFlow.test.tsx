@@ -1885,6 +1885,7 @@ describe("owner composing flow", () => {
     await keepDraftAndResumeNavigation();
     await waitFor(() => expect(window.location.pathname).toBe("/search"));
 
+    fireEvent.keyDown(screen.getByRole("combobox"), { key: "Escape" });
     fireEvent.click(screen.getAllByRole("link", { name: "归档" })[0]);
     await waitFor(() => expect(window.location.pathname).toBe("/archive"));
     expect(screen.queryByRole("dialog", { name: "退出发布？" })).toBeNull();

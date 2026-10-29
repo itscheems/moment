@@ -86,4 +86,16 @@ func TestUserSuggestDirectAPIParity(t *testing.T) {
 	if invalid.exit != ExitInvalidInput || decodeOneDocument(t, invalid.stdout)["error"].(map[string]any)["code"] != "INVALID_ARGUMENT" {
 		t.Fatalf("invalid limit = %#v", invalid)
 	}
+	for _, args := range [][]string{{"--data-dir", dataDir}, {"--url", server.URL}} {
+		t.Setenv("MOMENT_TOKEN", "")
+		result := execute(application, "", append([]string{"user", "search", "--query", "chee", "--json"}, args...)...)
+		if result.exit != ExitSuccess || result.stderr != "" {
+			t.Fatalf("public search = %#v", result)
+		}
+		data := decodeOneDocument(t, result.stdout)["data"].(map[string]any)
+		if len(data["items"].([]any)) != 1 || data["next_offset"] != nil {
+			t.Fatalf("public page = %#v", data)
+		}
+	}
+
 }

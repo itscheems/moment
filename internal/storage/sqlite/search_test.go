@@ -575,3 +575,51 @@ WHERE id = ?`, entryOne).Scan(&kind, &storedContentMD, &contentText, &storedCrea
 		}
 	}
 }
+
+func TestSearchLatestOrderAndCursorIsolation(t *testing.T) {
+	ctx := testAccountContext()
+	database, runtimeState := openTestDatabase(t, Options{})
+	postRepository, err := newPostRepository(database)
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	posts, err := app.NewPostService(postRepository, app.WithPostClock(func() time.Time { return now }))
+	if err != nil {
+		t.Fatal(err)
+	}
+	older, err := posts.Create(ctx, app.CreatePostInput{ContentMD: strings.Repeat("cedar ", 20)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	now = now.Add(time.Hour)
+	newer, err := posts.Create(ctx, app.CreatePostInput{ContentMD: "cedar " + strings.Repeat("background ", 100)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	repository, err := NewSearchRepository(database, runtimeState.Locks)
+	if err != nil {
+		t.Fatal(err)
+	}
+	service, err := app.NewSearchService(repository)
+	if err != nil {
+		t.Fatal(err)
+	}
+	relevance, err := service.Search(ctx, app.SearchInput{Query: "cedar", Limit: 1})
+	if err != nil || len(relevance.Items) != 1 || relevance.Items[0].Post.Entry.ID != older.Post.Entry.ID {
+		t.Fatalf("relevance = %#v, %v", relevance, err)
+	}
+	latest, err := service.Search(ctx, app.SearchInput{Query: "cedar", Sort: app.SearchSortLatest, Limit: 1})
+	if err != nil || len(latest.Items) != 1 || latest.Items[0].Post.Entry.ID != newer.Post.Entry.ID || latest.NextCursor == "" {
+		t.Fatalf("latest = %#v, %v", latest, err)
+	}
+	next, err := service.Search(ctx, app.SearchInput{Query: "cedar", Sort: app.SearchSortLatest, Limit: 1, Cursor: latest.NextCursor})
+	if err != nil || len(next.Items) != 1 || next.Items[0].Post.Entry.ID != older.Post.Entry.ID || next.NextCursor != "" {
+		t.Fatalf("continued = %#v, %v", next, err)
+	}
+	for _, input := range []app.SearchInput{{Query: "cedar", Cursor: latest.NextCursor}, {Query: "cedar", Sort: app.SearchSortLatest, Cursor: relevance.NextCursor}, {Query: "cedar", Sort: "unknown"}} {
+		if _, err := service.Search(ctx, input); !domain.HasCode(err, domain.CodeInvalidArgument) {
+			t.Fatalf("invalid sort/cursor accepted: %#v, %v", input, err)
+		}
+	}
+}

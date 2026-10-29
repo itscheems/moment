@@ -1,7 +1,5 @@
-import { t } from "../../i18n";
 import { useTranslation } from "react-i18next";
 import {
-  type FormEvent,
   type ReactNode,
   useCallback,
   useEffect,
@@ -16,7 +14,6 @@ import {
   type SiteIdentity,
 } from "../../api/public";
 import { InternalLink, useNavigation } from "../../app/navigation";
-import { Icon } from "../../components/icons";
 import { useReadRecovery } from "../../components/useReadRecovery";
 import { ReadRecoveryToast } from "../timeline/PublicStates";
 import {
@@ -31,28 +28,13 @@ import {
   isCursorProgressError,
   validateCursorPage,
 } from "../timeline/cursorContinuity";
-import { DatePicker } from "./DatePicker";
-import {
-  activeSearchYear,
-  nextDate,
-  parseSearchLocation,
-  previousDate,
-  searchHref,
-} from "./memoryState";
+import { parseSearchLocation, searchHref } from "./memoryState";
+import { Icon } from "../../components/icons";
+import { SearchBox } from "./RailSearch";
+import { PeopleSearchResults } from "./PeopleSearchResults";
 import styles from "./Memory.module.css";
-import { rememberSearch } from "./recentSearches";
 
 const MAX_REPLAY_PAGES = 1_000;
-
-function naturalDate(value: string | null, fallback: string): string {
-  if (!value) return fallback;
-  const [year, month, day] = value.split("-").map(Number);
-  return t("{{value1}}年{{value2}}月{{value3}}日", {
-    value1: year,
-    value2: month,
-    value3: day,
-  });
-}
 
 function SearchMessage({
   title,
@@ -74,13 +56,12 @@ function SearchMessage({
   );
 }
 
-export function SearchPage({
+function ContentSearchResults({
   api,
   canPublish,
   search,
   site,
   onSiteChanged,
-  recentScope = null,
 }: {
   api: PublicApi;
   canPublish: boolean;
@@ -96,19 +77,7 @@ export function SearchPage({
   const state = stateRef.current;
   const savedProgress = useRef(state.loadedThrough);
   const { replaceWithinPage } = location;
-  const [queryInput, setQueryInput] = useState(state.query ?? "");
-  const [fromInput, setFromInput] = useState(state.from ?? "");
-  const [toInput, setToInput] = useState(
-    state.to ? previousDate(state.to) : "",
-  );
-  const [filtersOpen, setFiltersOpen] = useState(
-    Boolean(state.from || state.to),
-  );
-  const [formError, setFormError] = useState<string | null>(null);
   const [hits, setHits] = useState<SearchHit[]>([]);
-  const [yearCounts, setYearCounts] = useState<
-    Array<{ year: number; count: number }>
-  >([]);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [loading, setLoading] = useState(Boolean(state.query && !state.error));
   const [loadingMore, setLoadingMore] = useState(false);
@@ -166,6 +135,7 @@ export function SearchPage({
     setMoreError(null);
     try {
       let page = await api.search({
+        sort: "latest",
         query: state.query,
         from: state.from,
         to: state.to,
@@ -197,6 +167,7 @@ export function SearchPage({
         visited.add(continuation);
         requestedCursor = continuation;
         page = await api.search({
+          sort: "latest",
           query: state.query,
           from: state.from,
           to: state.to,
@@ -209,7 +180,7 @@ export function SearchPage({
       }
       visitedCursors.current = visited;
       setHits(combined);
-      setYearCounts(page.yearCounts);
+
       setNextCursor(page.nextCursor);
     } catch (requestError) {
       if (controller.signal.aborted) return;
@@ -241,32 +212,6 @@ export function SearchPage({
     location.restoreCurrentEntry();
   }, [error, loading, location, state.query]);
 
-  const submit = (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    const query = queryInput.trim();
-    if (!query) {
-      setFormError(t("输入要找的文字。一个字也可以搜索。"));
-      return;
-    }
-    if (Array.from(query).length > 1_000) {
-      setFormError(t("搜索词不能超过 1,000 个字符。"));
-      return;
-    }
-    if (fromInput && toInput && fromInput > toInput) {
-      setFormError(t("结束日期不能早于开始日期。"));
-      return;
-    }
-    setFormError(null);
-    rememberSearch(recentScope, query);
-    location.navigate(
-      searchHref({
-        query,
-        from: fromInput || null,
-        to: toInput ? nextDate(toInput) : null,
-      }),
-    );
-  };
-
   const loadMore = async (source: LoadSource = "manual") => {
     if (!state.query || !nextCursor || loadingMoreRef.current || loading)
       return;
@@ -281,6 +226,7 @@ export function SearchPage({
         throw invalidCursorProgress("search cursor cycle detected");
       }
       const page = await api.search({
+        sort: "latest",
         query: state.query,
         from: state.from,
         to: state.to,
@@ -295,7 +241,7 @@ export function SearchPage({
       const combined = appendUnique(hits, page.items, (item) => item.post.id);
       visitedCursors.current = visited;
       setHits(combined);
-      setYearCounts(page.yearCounts);
+
       setNextCursor(page.nextCursor);
       location.replaceTimelineProgress(requestedCursor);
       if (source === "manual" && firstNew) {
@@ -313,8 +259,6 @@ export function SearchPage({
     }
   };
 
-  const activeYear = activeSearchYear(state.from, state.to);
-  const total = yearCounts.reduce((sum, item) => sum + item.count, 0);
   const recoverMore = async () => {
     if (
       nextCursor &&
@@ -339,132 +283,8 @@ export function SearchPage({
     onRetry: recoverMore,
     enabled,
   });
-  const filterLabel =
-    fromInput || toInput
-      ? t("{{value1}} 至 {{value2}}", {
-          value1: naturalDate(fromInput || null, t("最早")),
-          value2: naturalDate(toInput || null, t("现在")),
-        })
-      : t("日期");
-  const clearQuery = () => {
-    setQueryInput("");
-    setFormError(null);
-    if (state.query || state.from || state.to || state.loadedThrough) {
-      location.navigate("/search");
-      return;
-    }
-    window.requestAnimationFrame(() => {
-      document.querySelector<HTMLInputElement>("#moment-search-input")?.focus();
-    });
-  };
-
   return (
     <div className={styles.memoryPage}>
-      <form className={styles.searchForm} onSubmit={submit}>
-        <div className={styles.searchPrimary}>
-          <div className={styles.queryField}>
-            <label htmlFor="moment-search-input">{t("搜索 Moment")}</label>
-            <div className={styles.queryControl} data-search-control>
-              <Icon name="search" />
-              <input
-                aria-describedby={
-                  formError
-                    ? "search-shortcut search-form-error"
-                    : "search-shortcut"
-                }
-                aria-keyshortcuts="/"
-                aria-label={t("搜索 Moment")}
-                autoComplete="off"
-                autoFocus={!state.query}
-                id="moment-search-input"
-                maxLength={1_000}
-                onChange={(event) => setQueryInput(event.target.value)}
-                onKeyDown={(event) => {
-                  if (event.key !== "Escape") return;
-                  event.preventDefault();
-                  if (queryInput) {
-                    clearQuery();
-                  } else if (filtersOpen) {
-                    setFiltersOpen(false);
-                  } else {
-                    event.currentTarget.blur();
-                  }
-                }}
-                placeholder={t("搜索 Moment")}
-                type="search"
-                value={queryInput}
-              />
-              {queryInput ? (
-                <button
-                  aria-label={t("清除搜索内容")}
-                  className={styles.searchClear}
-                  onClick={clearQuery}
-                  type="button"
-                >
-                  <Icon name="close" />
-                </button>
-              ) : null}
-              <button className={styles.searchSubmit} type="submit">
-                {t("搜索")}
-              </button>
-            </div>
-            <small id="search-shortcut">{t("按 / 聚焦搜索")}</small>
-          </div>
-        </div>
-        <div className={styles.filterBar}>
-          <button
-            aria-controls="search-date-filters"
-            aria-expanded={filtersOpen}
-            className={styles.filterToggle}
-            onClick={() => setFiltersOpen((current) => !current)}
-            type="button"
-          >
-            <Icon name="archive" />
-            <span>{filterLabel}</span>
-          </button>
-          {fromInput || toInput ? (
-            <button
-              className={styles.clearFilter}
-              onClick={() => {
-                setFromInput("");
-                setToInput("");
-                if (state.query) {
-                  location.navigate(searchHref({ query: state.query }));
-                }
-              }}
-              type="button"
-            >
-              {t("清除日期")}
-            </button>
-          ) : null}
-        </div>
-        <div
-          className={styles.dateFields}
-          hidden={!filtersOpen}
-          id="search-date-filters"
-        >
-          <DatePicker
-            id="moment-search-from"
-            label={t("开始日期")}
-            onChange={setFromInput}
-            value={fromInput}
-          />
-          <DatePicker
-            align="end"
-            id="moment-search-to"
-            label={t("结束日期")}
-            onChange={setToInput}
-            value={toInput}
-          />
-          <button type="submit">{t("应用")}</button>
-        </div>
-        {formError ? (
-          <p className={styles.formError} id="search-form-error" role="alert">
-            {formError}
-          </p>
-        ) : null}
-      </form>
-
       {state.error ? (
         <SearchMessage
           action={
@@ -495,76 +315,21 @@ export function SearchPage({
       ) : null}
       {!loading && error && !recovering ? (
         <SearchMessage
-          detail={t("请检查搜索词和日期后调整条件。")}
+          detail={t("请调整搜索词后重试。")}
           title={t("无法使用这些搜索条件")}
         />
-      ) : null}
-
-      {!state.query && !state.error ? (
-        <p className={styles.searchHint}>{t("按文字或日期查找 Moment")}</p>
       ) : null}
 
       {!state.error &&
       state.query &&
       (hits.length > 0 || (!loading && !error)) ? (
         <>
-          <section aria-label={t("搜索概览")} className={styles.searchSummary}>
-            <div>
-              <p aria-live="polite" role="status">
-                {t("找到")} <strong>{total}</strong> {t("条与“")}
-                {state.query}
-                {t("”有关的 Moment")}
-              </p>
-            </div>
-            {state.from || state.to ? (
-              <InternalLink href={searchHref({ query: state.query })}>
-                {t("清除日期")}
-              </InternalLink>
-            ) : null}
-          </section>
-          {yearCounts.length > 0 ? (
-            <nav
-              aria-label={t("按年份筛选搜索结果")}
-              className={styles.yearTrack}
-              data-compact={yearCounts.length <= 2 ? "true" : undefined}
-            >
-              <InternalLink
-                aria-current={
-                  activeYear === null && !state.from && !state.to
-                    ? "page"
-                    : undefined
-                }
-                data-focus-key="search-year-all"
-                href={searchHref({ query: state.query })}
-              >
-                <strong>{t("全部")}</strong>
-                <span>{total}</span>
-              </InternalLink>
-              {yearCounts.map((item) => (
-                <InternalLink
-                  aria-current={activeYear === item.year ? "page" : undefined}
-                  data-focus-key={`search-year-${item.year}`}
-                  href={searchHref({
-                    query: state.query!,
-                    from: `${item.year}-01-01`,
-                    to: `${item.year + 1}-01-01`,
-                  })}
-                  key={item.year}
-                >
-                  <strong>{item.year}</strong>
-                  <span>{item.count}</span>
-                </InternalLink>
-              ))}
-            </nav>
-          ) : null}
           {hits.length === 0 ? (
             <SearchMessage
               action={
                 <div className={styles.messageActions}>
                   <button
                     onClick={() => {
-                      setFromInput("");
-                      setToInput("");
                       document
                         .querySelector<HTMLInputElement>("#moment-search-input")
                         ?.focus();
@@ -573,10 +338,9 @@ export function SearchPage({
                   >
                     {t("修改搜索")}
                   </button>
-                  <InternalLink href="/archive">{t("按年月浏览")}</InternalLink>
                 </div>
               }
-              detail={t("换一个词，或清除日期后再试。")}
+              detail={t("换一个关键词再试。")}
               title={t("没有找到 Moment")}
             />
           ) : (
@@ -614,5 +378,69 @@ export function SearchPage({
       ) : null}
       {replyDialog}
     </div>
+  );
+}
+
+export function SearchPage(props: {
+  api: PublicApi;
+  canPublish: boolean;
+  search: string;
+  site: SiteIdentity;
+  onSiteChanged?: (site: SiteIdentity) => void;
+  recentScope?: string | null;
+}) {
+  const { t } = useTranslation();
+  const location = useNavigation();
+  const state = parseSearchLocation(props.search);
+  const query = state.query ?? "";
+  return (
+    <>
+      <header className={styles.searchTop}>
+        <h1 className={styles.searchTitle}>{t("搜索")}</h1>
+        <div className={styles.searchHeading}>
+          <button
+            aria-label={t("返回时间流")}
+            className={styles.searchBack}
+            type="button"
+            onClick={() => location.goBack("/")}
+          >
+            <Icon name="arrow-left" />
+          </button>
+          <SearchBox
+            api={props.api}
+            scope={props.recentScope ?? null}
+            initialValue={query}
+            tab={state.tab}
+            main
+            autoFocus={!state.error && !query}
+          />
+        </div>
+        <nav className={styles.searchTabs} aria-label={t("搜索类型")}>
+          <InternalLink
+            href={query ? searchHref({ query }) : "/search"}
+            aria-current={state.tab === "latest" ? "page" : undefined}
+          >
+            <span className={styles.searchTabLabel}>{t("最新")}</span>
+          </InternalLink>
+          <InternalLink
+            href={
+              query ? searchHref({ query, tab: "people" }) : "/search?f=user"
+            }
+            aria-current={state.tab === "people" ? "page" : undefined}
+          >
+            <span className={styles.searchTabLabel}>{t("用户")}</span>
+          </InternalLink>
+        </nav>
+      </header>
+      {state.tab === "people" && !state.error ? (
+        <PeopleSearchResults
+          api={props.api}
+          query={query}
+          scope={props.recentScope ?? null}
+        />
+      ) : (
+        <ContentSearchResults {...props} />
+      )}
+    </>
   );
 }

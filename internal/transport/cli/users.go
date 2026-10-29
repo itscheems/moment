@@ -29,6 +29,21 @@ func registerUsers(application *Application) {
 		},
 		Run: runUserSuggest,
 	})
+	application.MustRegisterLeaf(LeafSpec{
+		Path: []string{"user", "search"}, Short: "Search public profiles",
+		Long:       "Find active public profiles by username prefix or display-name fragment.",
+		Inputs:     "--query is the search text; --limit is 1 to 50; --offset continues a previous page. No account token is required in API mode.",
+		Output:     "A JSON object containing items and next_offset; a null next_offset marks the end.",
+		Errors:     "Invalid query or pagination returns INVALID_ARGUMENT; dependency failures use dependency exit codes.",
+		Example:    "moment user search --url http://127.0.0.1:18080 --query river --json",
+		Capability: CapabilityBoth,
+		Flags: func(flags *pflag.FlagSet) {
+			flags.String("query", "", "username or display-name fragment")
+			flags.Int("limit", 20, "maximum results from 1 to 50")
+			flags.Int("offset", 0, "next_offset returned by the previous page")
+		},
+		Run: runUserSearch,
+	})
 }
 
 func runUserSuggest(ctx context.Context, invocation Invocation, input CommandInput) (Result, error) {
@@ -118,4 +133,48 @@ func userAPIRequest(ctx context.Context, invocation Invocation, endpoint string,
 		return nil, invalidAPIResponse()
 	}
 	return meta, nil
+}
+
+func runUserSearch(ctx context.Context, invocation Invocation, input CommandInput) (Result, error) {
+	query, err := input.String("query")
+	if err != nil {
+		return Result{}, err
+	}
+	limit, err := input.Int("limit")
+	if err != nil {
+		return Result{}, err
+	}
+	offset, err := input.Int("offset")
+	if err != nil {
+		return Result{}, err
+	}
+	var page app.UserSearchPage
+	var meta map[string]any
+	switch invocation.Mode() {
+	case ModeDirect:
+		service, database, openErr := openDirectAccounts(ctx, invocation)
+		if openErr != nil {
+			return Result{}, openErr
+		}
+		defer func() { _ = database.Close() }()
+		page, err = service.SearchUsers(ctx, query, limit, offset)
+	case ModeAPI:
+		params := url.Values{"q": {query}, "limit": {fmt.Sprint(limit)}, "offset": {fmt.Sprint(offset)}}
+		target, targetErr := invocation.APITransport()
+		if targetErr != nil {
+			return Result{}, targetErr
+		}
+		request, requestErr := newAPIRequest(ctx, target, http.MethodGet, "/api/v1/users/search", nil)
+		if requestErr != nil {
+			return Result{}, requestErr
+		}
+		request.URL.RawQuery = params.Encode()
+		err = sendAPIRequest(request, &page)
+	default:
+		err = errors.New("unsupported user search transport")
+	}
+	if err != nil {
+		return Result{}, siteCLIError(err)
+	}
+	return Result{Data: page, Meta: meta, Text: fmt.Sprintf("%d profile(s)", len(page.Items))}, nil
 }

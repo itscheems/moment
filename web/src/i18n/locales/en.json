@@ -632,7 +632,7 @@
   "回复这条 Moment": "Reply to this Moment",
   "{{value1}}发布的 Moment": "Moment by {{value1}}",
   "最早": "Earliest",
-  "最新": "Newest",
+  "最新": "Latest",
   "回复排序：{{value1}}": "Reply order: {{value1}}",
   "回复排序": "Reply order",
   "所有人": "Everyone",
@@ -960,7 +960,6 @@
   "请检查搜索词和日期后调整条件。": "Check your keywords and dates, then adjust your search.",
   "无法使用这些搜索条件": "These search filters could not be used",
   "按文字或日期查找 Moment": "Find Moments by text or date",
-  "搜索概览": "Search overview",
   "找到": "Found",
   "条与“": "Moments matching “",
   "”有关的 Moment": "”",
@@ -1602,5 +1601,14 @@
   "{{value1}}年{{value2}}月，{{value3}} 条 Moment_one": "{{value1}}-{{value2}}, {{value3}} Moment",
   "{{value1}}年{{value2}}月，{{value3}} 条 Moment_other": "{{value1}}-{{value2}}, {{value3}} Moments",
   "{{value1}}，{{value2}} 条 Moment{{value3}}_one": "{{value1}}, {{value2}} Moment{{value3}}",
-  "{{value1}}，{{value2}} 条 Moment{{value3}}_other": "{{value1}}, {{value2}} Moments{{value3}}"
+  "{{value1}}，{{value2}} 条 Moment{{value3}}_other": "{{value1}}, {{value2}} Moments{{value3}}",
+  "搜索内容或用户": "Search content or people",
+  "无法搜索用户": "Could not search people",
+  "搜索类型": "Search type",
+  "用户": "People",
+  "用户搜索结果": "People search results",
+  "没有找到用户": "No people found",
+  "加载更多用户": "Load more people",
+  "换一个关键词再试。": "Try another keyword.",
+  "请调整搜索词后重试。": "Adjust your search and try again."
 }
