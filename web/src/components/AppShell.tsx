@@ -16,7 +16,7 @@ import {
 import type { Account, SiteIdentity } from "../api/public";
 import { InternalLink, useNavigation } from "../app/navigation";
 import type { AppRoute, RouteId } from "../app/routes";
-import { SiteAvatar, siteDisplayName } from "./SiteIdentity";
+import { SiteAvatar, shellTitle } from "./SiteIdentity";
 import { Icon, type IconName } from "./icons";
 import { RailSlotContext } from "./railSlot";
 import { HeaderActionsContext } from "./headerActions";
@@ -315,10 +315,16 @@ function useMobileNavigationObscured(mobileViewport: boolean): boolean {
   return mobileViewport && obscured;
 }
 
-function Brand({ site }: { site: SiteIdentity }) {
+function Brand({
+  site,
+  account,
+}: {
+  site: SiteIdentity;
+  account: Account | null;
+}) {
   const { t } = useTranslation();
 
-  const title = site.title.trim() || "Moment";
+  const title = shellTitle(site, account);
   const { pathname } = useNavigation();
   const scrollHomeToTop = useHomeScrollToTop();
   return (
@@ -380,7 +386,7 @@ function LeftRail({
     <Tooltip.Provider delay={400}>
       <aside aria-label={t("站点导航")} className={styles.leftRail}>
         <div className={styles.leftRailInner}>
-          <Brand site={site} />
+          <Brand site={site} account={account} />
           <nav aria-label={t("主要导航")} className={styles.desktopNav}>
             {items.slice(0, 2).map((item) => (
               <NavLink item={item} key={item.href} route={route} />
@@ -479,11 +485,11 @@ function MemoryRail({
 
 function MobileAccountMenu({
   accountSettingsAvailable,
-  site,
+  account,
   profileHref,
 }: {
   accountSettingsAvailable: boolean;
-  site: SiteIdentity;
+  account: Account | null;
   profileHref: string;
 }) {
   const { t } = useTranslation();
@@ -498,7 +504,11 @@ function MobileAccountMenu({
         aria-label={t("打开账户菜单")}
         className={styles.mobileAvatar}
       >
-        <SiteAvatar eager site={site} />
+        {account ? (
+          <SiteAvatar eager site={account} />
+        ) : (
+          <Icon name="account" />
+        )}
       </Menu.Trigger>
       <Menu.Portal>
         <Menu.Positioner
@@ -682,7 +692,7 @@ export function AppShell({
                     <MobileAccountMenu
                       accountSettingsAvailable={accountSettingsAvailable}
                       profileHref={profileHref}
-                      site={site}
+                      account={account}
                     />
                   )}
                   {route.id === "home" ? (
@@ -714,7 +724,7 @@ export function AppShell({
                               identity={{
                                 userId: profileHeader?.userId ?? null,
                                 displayName:
-                                  profileHeader?.title ?? siteDisplayName(site),
+                                  profileHeader?.title ?? route.title,
                               }}
                               prominent
                             />

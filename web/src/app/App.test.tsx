@@ -702,6 +702,86 @@ describe("App shell and public routes", () => {
     );
   });
 
+  describe("account identity across the shell", () => {
+    function memberApi(avatar: string | null) {
+      preauthenticate();
+      const session = accountSessionEnvelope("reader");
+      Object.assign(session.data.account, {
+        user_id: "1".repeat(32),
+        display_name: "Reader",
+        role: "member",
+        avatar_media_id: avatar,
+      });
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async (input: RequestInfo | URL) => {
+          const url = String(input);
+          if (url === "/api/v1/account/session") return json(session);
+          if (url === "/api/v1/site") return json(siteEnvelope);
+          if (url === "/api/v1/users/reader")
+            return new Promise<Response>(() => {});
+          return json(
+            timelineEnvelope([
+              post("01K2ABCDEF0123456789ABCDE0", "Public post"),
+            ]),
+          );
+        }),
+      );
+    }
+
+    it.each([null, "01K2ABCDEF0123456789ABCDE1"])(
+      "uses the member avatar and neutral brand with avatar %s",
+      async (avatar) => {
+        memberApi(avatar);
+        render(<App />);
+        await screen.findByRole("button", { name: "Reader 的账户菜单" });
+        const mobile = document.querySelector<HTMLButtonElement>(
+          'button[aria-label="打开账户菜单"]',
+        )!;
+        const rail = screen.getByRole("button", { name: "Reader 的账户菜单" });
+        expect(mobile.querySelector("img")).toHaveAttribute(
+          "src",
+          rail.querySelector("img")!.getAttribute("src"),
+        );
+        expect(
+          screen.getByRole("link", { name: "Moment首页" }),
+        ).toHaveTextContent("Moment");
+        await waitFor(() => expect(document.title).toBe("Moment"));
+        // Public content keeps its real author even when another account signs in.
+        expect(
+          screen.getByText("Public post").closest("article"),
+        ).toHaveTextContent("乔乔");
+        fireEvent.click(mobile);
+        fireEvent.click(
+          await screen.findByRole("menuitem", { name: "账号设置" }),
+        );
+        await waitFor(() => expect(document.title).toBe("设置 · Moment"));
+      },
+    );
+
+    it("does not borrow the display account for a signed-out account control", async () => {
+      render(<App />);
+      await screen.findByRole("heading", { name: "还没有 Moment" });
+      expect(
+        document.querySelector('button[aria-label="打开账户菜单"] img'),
+      ).toBeNull();
+      expect(document.title).toBe("乔乔的 Moment");
+    });
+
+    it("keeps a pending member profile header neutral", async () => {
+      memberApi(null);
+      window.history.replaceState({}, "", "/reader");
+      render(<App />);
+      await screen.findByRole("button", { name: "Reader 的账户菜单" });
+      expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent(
+        "个人资料",
+      );
+      expect(screen.getByRole("heading", { level: 1 })).not.toHaveTextContent(
+        "乔乔",
+      );
+    });
+  });
+
   // The foot of the rail used to read "账号", which names a rank rather than a
   // person and said the same thing to whoever was looking at it. What belongs
   // in the corner of a signed-in app is who you are.
