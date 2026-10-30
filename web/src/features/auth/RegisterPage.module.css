@@ -92,16 +92,19 @@
   cursor: default;
 }
 .form {
+  --registration-field-gap: 20px;
   display: flex;
   flex-direction: column;
-  gap: 20px;
+  gap: var(--registration-field-gap);
   padding-block-start: 12px;
 }
-.hint {
-  margin: -6px 0 0;
-  font-size: 12px;
-  color: var(--text-secondary);
-  line-height: 1.65;
+.emailControls {
+  min-inline-size: 0;
+}
+.codeReveal {
+  overflow: hidden;
+  overflow: clip;
+  overflow-clip-margin: 4px;
 }
 .codeSection {
   display: flex;
@@ -109,27 +112,47 @@
   gap: 8px;
   min-inline-size: 0;
 }
-.send {
+.resendLine {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 14px;
+  line-height: 20px;
+}
+.send,
+.resendAction {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  justify-content: center;
   min-block-size: 44px;
-  align-self: flex-start;
   border: 0;
-  border-radius: 4px;
+  border-radius: 2px;
   padding: 0;
-  color: var(--text-primary);
   background: transparent;
-  font-family: var(--font-sans);
+  font: inherit;
   font-size: 14px;
   font-weight: 700;
   line-height: 20px;
-  font-variant-numeric: tabular-nums;
   cursor: pointer;
 }
-.send:disabled {
+.send {
+  color: var(--accent);
+}
+.resendAction {
+  color: var(--text-primary);
+}
+.send:disabled,
+.resendAction:disabled {
   color: var(--text-secondary);
   cursor: default;
+  opacity: 0.65;
+}
+.cooldown {
+  font-variant-numeric: tabular-nums;
+  font-size: 13px;
 }
 .primary {
   position: relative;
@@ -170,12 +193,12 @@
   cursor: default;
 }
 .primary:active:not(:disabled),
-.send:active:not(:disabled),
 .back:active:not(:disabled) {
   transform: scale(0.98);
 }
 .primary:focus-visible,
 .send:focus-visible,
+.resendAction:focus-visible,
 .back:focus-visible,
 .secondary:focus-visible {
   outline: 2px solid var(--accent);
@@ -196,8 +219,15 @@
     transform: rotate(360deg);
   }
 }
+.errorSlot {
+  /* Keep the empty slot neutral; its spacing exits together with the text. */
+  margin-block: calc(var(--registration-field-gap) * -0.5);
+}
 .errorWrap {
   overflow: hidden;
+}
+.errorContent {
+  padding-block: calc(var(--registration-field-gap) * 0.5);
 }
 .error {
   margin: 0;
@@ -308,10 +338,14 @@
   background: var(--surface-muted);
 }
 @media (hover: hover) {
+  .send:hover:not(:disabled),
+  .resendAction:hover:not(:disabled) {
+    text-decoration: underline;
+    text-underline-offset: 3px;
+  }
   .primary:hover:not(:disabled) {
     background: var(--button-primary-hover);
   }
-  .send:hover:not(:disabled),
   .back:hover:not(:disabled) {
     background: var(--surface-hover);
   }

@@ -14,10 +14,12 @@ import styles from "../../components/Forms.module.css";
 export function AuthPageFrame({
   headline,
   subtitle,
+  artwork = false,
   children,
 }: {
   headline: string;
   subtitle?: string;
+  artwork?: boolean;
   children: ReactNode;
 }) {
   const { t } = useTranslation();
@@ -25,7 +27,8 @@ export function AuthPageFrame({
   const { goBackAuth } = useNavigation();
   const reduced = useReducedMotion();
   return (
-    <div className={styles.loginScreen}>
+    <div className={`${styles.loginScreen} ${artwork ? styles.withBrand : ""}`}>
+      {artwork && <div aria-hidden="true" className={styles.brandPanel} />}
       <InternalLink
         aria-label={t("返回时间流")}
         className={styles.loginBack}

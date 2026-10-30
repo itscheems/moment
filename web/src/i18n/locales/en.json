@@ -1634,7 +1634,6 @@
   "重新发送": "Resend code",
   "发送中…": "Sending…",
   "{{seconds}} 秒后重发": "Resend in {{seconds}}s",
-  "验证码已发送，10 分钟内有效。没收到时请检查垃圾邮件。": "Code sent. It expires in 10 minutes. Check your spam folder if it has not arrived.",
   "邮箱验证成功": "Email verified",
   "输入名字（选填）": "Enter your name (optional)",
   "正在检查…": "Checking…",
@@ -1658,5 +1657,8 @@
   "请输入 6 位验证码。": "Enter the 6-digit verification code.",
   "邮箱验证已过期，请返回上一步重新验证。": "Email verification has expired. Go back and verify again.",
   "名字最多 80 个字，不能包含控制字符。": "Use up to 80 characters for your name, without control characters.",
-  "验证码第 {{value1}} 位": "Verification code digit {{value1}}"
+  "验证码第 {{value1}} 位": "Verification code digit {{value1}}",
+  "验证码已发送，10 分钟内有效。": "Verification code sent. It is valid for 10 minutes.",
+  "未收到验证码？": "Didn't receive a code?",
+  "（{{seconds}} 秒）": "({{seconds}}s)"
 }

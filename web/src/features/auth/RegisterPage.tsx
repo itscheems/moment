@@ -23,6 +23,7 @@ import {
 import { PublicApiError } from "../../api/public";
 import { InternalLink, useNavigation } from "../../app/navigation";
 import { Icon } from "../../components/icons";
+import { feedback, notify } from "../../components/Feedback";
 import { AuthPageFrame } from "./AuthPageFrame";
 import { AuthField as Field, PasswordVisibilityToggle } from "./AuthField";
 import { VerificationCode } from "./VerificationCode";
@@ -99,6 +100,7 @@ export function RegisterPage() {
       ? { message: t("邮箱验证已过期，请返回上一步重新验证。") }
       : null);
 
+  useEffect(() => () => feedback.close(`${id}-email-sent`), [id]);
   useEffect(() => {
     mounted.current = true;
     return () => {
@@ -272,8 +274,9 @@ export function RegisterPage() {
       setVerified(null);
       setCode("");
       setClock(Date.now());
+      notify(t("验证码已发送，10 分钟内有效。"), { id: `${id}-email-sent` });
       window.requestAnimationFrame(() =>
-        document.getElementById(`${id}-code`)?.focus(),
+        document.getElementById(`${id}-code`)?.focus({ preventScroll: true }),
       );
     });
   };
@@ -496,7 +499,7 @@ export function RegisterPage() {
         <motion.div
           className={styles.viewport}
           initial={false}
-          animate={{ height: panelHeight }}
+          animate={{ height: transitioning ? panelHeight : "auto" }}
           transition={{ duration, ease }}
         >
           <AnimatePresence initial={false} custom={direction} mode="wait">
@@ -606,45 +609,92 @@ export function RegisterPage() {
                           spellCheck={false}
                         />
                         {!emailVerified && (
-                          <div className={styles.codeSection}>
-                            <VerificationCode
-                              id={`${id}-code`}
-                              value={code}
-                              onChange={(value) => {
-                                setCode(value);
-                                setError(null);
-                              }}
-                              disabled={busy || !challenge}
-                              invalid={error?.field === "code"}
-                              descriptionId={
-                                error?.field === "code"
-                                  ? `${id}-error`
-                                  : undefined
-                              }
-                            />
-                            <button
-                              className={styles.send}
-                              type="button"
-                              disabled={
-                                busy || resendSeconds > 0 || transitioning
-                              }
-                              onClick={sendCode}
-                            >
-                              {pending === "send" ? (
-                                <>
-                                  <span className={styles.spinner} />
-                                  {t("发送中…")}
-                                </>
-                              ) : resendSeconds > 0 ? (
-                                t("{{seconds}} 秒后重发", {
-                                  seconds: resendSeconds,
-                                })
-                              ) : challenge ? (
-                                t("重新发送")
+                          <div className={styles.emailControls}>
+                            <AnimatePresence initial={false} mode="wait">
+                              {!challenge ? (
+                                <motion.div
+                                  key="request"
+                                  initial={{ opacity: 0 }}
+                                  animate={{ opacity: 1 }}
+                                  exit={{ opacity: 0 }}
+                                  transition={{ duration: reduced ? 0 : 0.1 }}
+                                >
+                                  <button
+                                    className={styles.send}
+                                    type="button"
+                                    disabled={busy || transitioning}
+                                    onClick={sendCode}
+                                  >
+                                    {pending === "send"
+                                      ? t("发送中…")
+                                      : t("获取验证码")}
+                                  </button>
+                                </motion.div>
                               ) : (
-                                t("获取验证码")
+                                <motion.div
+                                  key="code"
+                                  className={styles.codeReveal}
+                                  initial="collapsed"
+                                  animate="expanded"
+                                  exit="collapsed"
+                                  variants={{
+                                    collapsed: { height: 44, opacity: 0 },
+                                    expanded: { height: "auto", opacity: 1 },
+                                  }}
+                                  onAnimationComplete={(definition) => {
+                                    if (definition === "expanded")
+                                      document
+                                        .getElementById(`${id}-code`)
+                                        ?.focus({ preventScroll: true });
+                                  }}
+                                  transition={{ duration, ease }}
+                                >
+                                  <PresenceContent>
+                                    <div className={styles.codeSection}>
+                                      <VerificationCode
+                                        id={`${id}-code`}
+                                        value={code}
+                                        onChange={(value) => {
+                                          setCode(value);
+                                          setError(null);
+                                        }}
+                                        disabled={busy}
+                                        invalid={error?.field === "code"}
+                                        descriptionId={
+                                          error?.field === "code"
+                                            ? `${id}-error`
+                                            : undefined
+                                        }
+                                      />
+                                      <p className={styles.resendLine}>
+                                        <span>{t("未收到验证码？")}</span>
+                                        <button
+                                          className={styles.resendAction}
+                                          type="button"
+                                          disabled={
+                                            busy ||
+                                            resendSeconds > 0 ||
+                                            transitioning
+                                          }
+                                          onClick={sendCode}
+                                        >
+                                          {pending === "send"
+                                            ? t("发送中…")
+                                            : t("重新发送")}
+                                        </button>
+                                        {resendSeconds > 0 && (
+                                          <span className={styles.cooldown}>
+                                            {t("（{{seconds}} 秒）", {
+                                              seconds: resendSeconds,
+                                            })}
+                                          </span>
+                                        )}
+                                      </p>
+                                    </div>
+                                  </PresenceContent>
+                                </motion.div>
                               )}
-                            </button>
+                            </AnimatePresence>
                           </div>
                         )}
                         <AnimatePresence initial={false} mode="wait">
@@ -665,20 +715,6 @@ export function RegisterPage() {
                                 <strong>{t("邮箱验证成功")}</strong>
                               </span>
                             </motion.div>
-                          ) : challenge ? (
-                            <motion.p
-                              key="sent"
-                              className={styles.hint}
-                              role="status"
-                              initial={{ opacity: 0 }}
-                              animate={{ opacity: 1 }}
-                              exit={{ opacity: 0 }}
-                              transition={{ duration: duration / 2 }}
-                            >
-                              {t(
-                                "验证码已发送，10 分钟内有效。没收到时请检查垃圾邮件。",
-                              )}
-                            </motion.p>
                           ) : null}
                         </AnimatePresence>
                       </>
@@ -704,26 +740,30 @@ export function RegisterPage() {
                         )}
                       </>
                     )}
-                    <AnimatePresence initial={false}>
-                      {visibleError && (
-                        <motion.div
-                          key="error"
-                          initial={{ height: 0, opacity: 0 }}
-                          animate={{ height: "auto", opacity: 1 }}
-                          exit={{ height: 0, opacity: 0 }}
-                          transition={{ duration, ease }}
-                          className={styles.errorWrap}
-                        >
-                          <p
-                            role="alert"
-                            id={`${id}-error`}
-                            className={styles.error}
+                    <div className={styles.errorSlot}>
+                      <AnimatePresence initial={false}>
+                        {visibleError && (
+                          <motion.div
+                            key="error"
+                            initial={{ height: 0, opacity: 0 }}
+                            animate={{ height: "auto", opacity: 1 }}
+                            exit={{ height: 0, opacity: 0 }}
+                            transition={{ duration, ease }}
+                            className={styles.errorWrap}
                           >
-                            {visibleError.message}
-                          </p>
-                        </motion.div>
-                      )}
-                    </AnimatePresence>
+                            <div className={styles.errorContent}>
+                              <p
+                                role="alert"
+                                id={`${id}-error`}
+                                className={styles.error}
+                              >
+                                {visibleError.message}
+                              </p>
+                            </div>
+                          </motion.div>
+                        )}
+                      </AnimatePresence>
+                    </div>
                     <div
                       className={styles.actions}
                       data-has-back={step > 0 || undefined}

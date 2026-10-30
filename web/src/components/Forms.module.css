@@ -138,6 +138,10 @@
   font-size: var(--text-sm);
 }
 
+.loginScreen .loginForm + .oauthSeparator {
+  margin-block-start: 4px;
+}
+
 .oauthRule {
   border-block-end: 1px solid var(--border-subtle);
 }
@@ -1689,10 +1693,10 @@
 }
 .displayHeadline {
   margin: 0;
-  font-family: var(--font-sans);
-  font-size: 32px;
-  font-weight: 700;
-  line-height: 1.2;
+  font-family: var(--font-signin-display);
+  font-size: clamp(2.25rem, min(5vw, calc(12dvh - 2.25rem)), 3.75rem);
+  font-weight: 800;
+  line-height: 1.05;
   letter-spacing: normal;
   word-break: break-word;
   user-select: none;
@@ -1769,6 +1773,39 @@
 }
 .loginBack:focus-visible {
   background: var(--surface-hover);
+}
+
+.brandPanel {
+  display: none;
+}
+
+@media (min-width: 1280px) {
+  .withBrand .loginSplit {
+    padding-inline-start: calc(55% + 24px);
+  }
+  .brandPanel {
+    position: fixed;
+    z-index: 0;
+    inset-block: 0;
+    inset-inline-start: 0;
+    inline-size: 55%;
+    display: block;
+    background-color: var(--accent);
+    background-image: url("/login-banner.png");
+    background-position: center;
+    background-size: cover;
+  }
+  .withBrand .loginBack {
+    color: #0f1419;
+    background: #fff;
+    box-shadow:
+      0 1px 2px rgb(15 20 25 / 20%),
+      0 4px 12px rgb(15 20 25 / 12%);
+  }
+  .withBrand .loginBack:hover,
+  .withBrand .loginBack:focus-visible {
+    background: #eff3f4;
+  }
 }
 @media (hover: hover) {
   .loginBack:hover {

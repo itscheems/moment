@@ -11,7 +11,7 @@ export function LoginPage({ site }: { site: SiteIdentity }) {
 
   const { search } = useNavigation();
   return (
-    <AuthPageFrame headline="Happening now">
+    <AuthPageFrame headline="Happening now" artwork>
       <CredentialLogin heading={false} site={site} />
       <p className={styles.authSwitch}>
         {t("还没有账号？")}{" "}

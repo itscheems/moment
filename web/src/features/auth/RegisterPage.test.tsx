@@ -164,7 +164,7 @@ async function sendCode() {
     target: { value: "reader@example.test" },
   });
   fireEvent.click(screen.getByRole("button", { name: "获取验证码" }));
-  await screen.findByText(/验证码已发送/);
+  await screen.findByRole("textbox", { name: "验证码" });
 }
 async function verifyCode(code = "123456") {
   fireEvent.paste(screen.getByRole("textbox", { name: "验证码" }), {
@@ -225,7 +225,26 @@ describe("three-step email registration", () => {
     expect(
       screen.getByPlaceholderText("邮箱地址", { exact: true }),
     ).toHaveAccessibleName("邮箱地址");
-    expect(screen.getByRole("textbox", { name: "验证码" })).toBeInTheDocument();
+    expect(
+      screen.queryByRole("textbox", { name: "验证码" }),
+    ).not.toBeInTheDocument();
+  });
+  it("reveals the code field only after a successful send and uses a toast", async () => {
+    installApi();
+    renderRegister();
+    await nextToEmail();
+    expect(
+      screen.queryByRole("textbox", { name: "验证码" }),
+    ).not.toBeInTheDocument();
+    await sendCode();
+    expect(
+      screen.getByText("验证码已发送，10 分钟内有效。"),
+    ).toBeInTheDocument();
+    expect(screen.getByText("未收到验证码？")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "重新发送" })).toBeDisabled();
+    expect(
+      screen.queryByText(/没收到时请检查垃圾邮件/),
+    ).not.toBeInTheDocument();
   });
   it("shows ordered progress and preserves the return destination", async () => {
     installApi();
