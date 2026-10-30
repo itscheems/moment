@@ -668,26 +668,26 @@ export function RegisterPage() {
                                       />
                                       <p className={styles.resendLine}>
                                         <span>{t("未收到验证码？")}</span>
-                                        <button
-                                          className={styles.resendAction}
-                                          type="button"
-                                          disabled={
-                                            busy ||
-                                            resendSeconds > 0 ||
-                                            transitioning
-                                          }
-                                          onClick={sendCode}
-                                        >
-                                          {pending === "send"
-                                            ? t("发送中…")
-                                            : t("重新发送")}
-                                        </button>
-                                        {resendSeconds > 0 && (
-                                          <span className={styles.cooldown}>
-                                            {t("（{{seconds}} 秒）", {
-                                              seconds: resendSeconds,
-                                            })}
-                                          </span>
+                                        {resendSeconds > 0 ? (
+                                          <>
+                                            <span>{t("请稍后重试")}</span>
+                                            <strong className={styles.cooldown}>
+                                              {t("{{seconds}} 秒", {
+                                                seconds: resendSeconds,
+                                              })}
+                                            </strong>
+                                          </>
+                                        ) : (
+                                          <button
+                                            className={styles.resendAction}
+                                            type="button"
+                                            disabled={busy || transitioning}
+                                            onClick={sendCode}
+                                          >
+                                            {pending === "send"
+                                              ? t("发送中…")
+                                              : t("重新发送")}
+                                          </button>
                                         )}
                                       </p>
                                     </div>

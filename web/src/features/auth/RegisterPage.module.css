@@ -114,6 +114,7 @@
 }
 .resendLine {
   display: flex;
+  min-block-size: 44px;
   align-items: center;
   flex-wrap: wrap;
   gap: 4px;
@@ -151,8 +152,10 @@
   opacity: 0.65;
 }
 .cooldown {
+  color: var(--text-primary);
+  font-size: inherit;
+  font-weight: 700;
   font-variant-numeric: tabular-nums;
-  font-size: 13px;
 }
 .primary {
   position: relative;
@@ -338,11 +341,6 @@
   background: var(--surface-muted);
 }
 @media (hover: hover) {
-  .send:hover:not(:disabled),
-  .resendAction:hover:not(:disabled) {
-    text-decoration: underline;
-    text-underline-offset: 3px;
-  }
   .primary:hover:not(:disabled) {
     background: var(--button-primary-hover);
   }

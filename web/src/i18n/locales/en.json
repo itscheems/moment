@@ -1660,5 +1660,6 @@
   "验证码第 {{value1}} 位": "Verification code digit {{value1}}",
   "验证码已发送，10 分钟内有效。": "Verification code sent. It is valid for 10 minutes.",
   "未收到验证码？": "Didn't receive a code?",
-  "（{{seconds}} 秒）": "({{seconds}}s)"
+  "请稍后重试": "Please try again in",
+  "{{seconds}} 秒": "{{seconds}} seconds"
 }

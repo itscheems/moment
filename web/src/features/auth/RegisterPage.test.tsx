@@ -241,7 +241,10 @@ describe("three-step email registration", () => {
       screen.getByText("验证码已发送，10 分钟内有效。"),
     ).toBeInTheDocument();
     expect(screen.getByText("未收到验证码？")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "重新发送" })).toBeDisabled();
+    expect(
+      screen.queryByRole("button", { name: "重新发送" }),
+    ).not.toBeInTheDocument();
+    expect(screen.getByText("请稍后重试")).toBeInTheDocument();
     expect(
       screen.queryByText(/没收到时请检查垃圾邮件/),
     ).not.toBeInTheDocument();
