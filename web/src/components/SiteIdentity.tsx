@@ -22,6 +22,15 @@ export function siteProfileHref(site: { username: string }): string {
   return `/${site.username}`;
 }
 
+/** Personal site branding belongs to its display account, not other sessions. */
+export function shellTitle(
+  site: SiteIdentity,
+  account: { userId: string } | null,
+): string {
+  if (account && account.userId !== site.profileUserId) return "Moment";
+  return site.title.trim() || "Moment";
+}
+
 export function siteDisplayName(site: IdentityFace): string {
   return site.displayName.trim() || site.title?.trim() || "Moment";
 }

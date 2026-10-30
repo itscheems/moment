@@ -1,3 +1,4 @@
+import { shellTitle } from "../components/SiteIdentity";
 import { t } from "../i18n";
 import { useTranslation } from "react-i18next";
 import { LanguageProvider } from "../i18n/LanguageProvider";
@@ -419,7 +420,7 @@ function PublicApp() {
   }, [authRoute, entryRoute.requiresSession, auth.state, requestLogin]);
 
   useEffect(() => {
-    const siteTitle = site.title.trim() || "Moment";
+    const siteTitle = shellTitle(site, auth.account);
     const titleRoute = authRoute
       ? resolveRoute(location.pathname)
       : overlayCompose
@@ -436,6 +437,8 @@ function PublicApp() {
     requestedRoute,
     route,
     site.title,
+    site.profileUserId,
+    auth.account,
     t,
   ]);
 
