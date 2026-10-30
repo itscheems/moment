@@ -11,7 +11,7 @@ export function AuthPageFrame({
   children,
 }: {
   headline: string;
-  subtitle: string;
+  subtitle?: string;
   children: ReactNode;
 }) {
   const { t } = useTranslation();
@@ -44,7 +44,7 @@ export function AuthPageFrame({
         <main className={styles.actionPanel}>
           <div className={styles.headlineBlock}>
             <h1 className={styles.displayHeadline}>{headline}</h1>
-            <p className={styles.subHeadline}>{subtitle}</p>
+            {subtitle ? <p className={styles.subHeadline}>{subtitle}</p> : null}
           </div>
           {children}
         </main>

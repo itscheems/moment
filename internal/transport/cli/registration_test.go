@@ -11,6 +11,7 @@ import (
 	"testing"
 	"testing/fstest"
 
+	"github.com/moment/moment/internal/app"
 	"github.com/moment/moment/internal/auth"
 	"github.com/moment/moment/internal/domain"
 	"github.com/moment/moment/internal/runtimefs"
@@ -106,7 +107,7 @@ func TestAccountRegistrationDirectAndAnonymousAPIParity(t *testing.T) {
 		t.Fatal(err)
 	}
 	direct := registrationCommandData(t, execute(application, secret+"\n", "auth", "register", "--data-dir", directRoot, "--username", "Alice", "--password-file", "-", "--json"), secret)
-	api := registrationCommandData(t, execute(application, "", "auth", "register", "--url", server.URL, "--username", "Alice", "--password-file", file, "--json"), secret)
+	api := registrationCommandData(t, execute(application, "", "auth", "register", "--url", server.URL, "--username", "Alice", "--password-file", file, "--verification-token-file", registrationProofFile(t, apiRoot, "alice@example.test"), "--json"), secret)
 	if !reflect.DeepEqual(direct, api) || direct["username"] != "alice" || direct["account_status"] != "pending" {
 		t.Fatalf("approval parity: direct=%v api=%v", direct, api)
 	}
@@ -138,7 +139,7 @@ func TestAccountRegistrationDirectAndAnonymousAPIParity(t *testing.T) {
 	registrationMode(t, directDB, domain.RegistrationOpen)
 	registrationMode(t, apiDB, domain.RegistrationOpen)
 	direct = registrationCommandData(t, execute(application, secret+"\n", "auth", "register", "--data-dir", directRoot, "--username", "Bob", "--password-file", "-", "--json"), secret)
-	api = registrationCommandData(t, execute(application, secret+"\n", "auth", "register", "--url", server.URL, "--username", "Bob", "--password-file", "-", "--json"), secret)
+	api = registrationCommandData(t, execute(application, secret+"\n", "auth", "register", "--url", server.URL, "--username", "Bob", "--password-file", "-", "--verification-token-file", registrationProofFile(t, apiRoot, "bob@example.test"), "--json"), secret)
 	if !reflect.DeepEqual(direct, api) || direct["account_status"] != "active" {
 		t.Fatalf("open parity: direct=%v api=%v", direct, api)
 	}
@@ -248,4 +249,37 @@ func TestAccountRegistrationHelpDocumentsSecretInput(t *testing.T) {
 	if output.exit != ExitSuccess || output.stderr != "" || !strings.Contains(output.stdout, "--password-file") || !strings.Contains(output.stdout, "--username") || !strings.Contains(output.stdout, "moment auth register --data-dir") || strings.Contains(output.stdout, "--password ") {
 		t.Fatalf("registration help = %#v", output)
 	}
+}
+
+type registrationTestSender struct{ code string }
+
+func (sender *registrationTestSender) SendVerification(_ context.Context, _, code, _ string) error {
+	sender.code = code
+	return nil
+}
+func registrationProofFile(t *testing.T, root, email string) string {
+	t.Helper()
+	state, db := registrationAccounts(t, root)
+	repository, err := sqlitestore.NewAccountRepository(db, state.Locks)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sender := &registrationTestSender{}
+	accounts, err := app.NewAccountService(repository, app.WithVerificationSender(sender))
+	if err != nil {
+		t.Fatal(err)
+	}
+	receipt, err := accounts.RequestRegistrationEmail(context.Background(), email, "cli-fixture")
+	if err != nil {
+		t.Fatal(err)
+	}
+	proof, err := accounts.VerifyRegistrationEmail(context.Background(), receipt.ChallengeID, sender.code)
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(t.TempDir(), "email-proof.txt")
+	if err = os.WriteFile(path, []byte(proof.Token), 0600); err != nil {
+		t.Fatal(err)
+	}
+	return path
 }

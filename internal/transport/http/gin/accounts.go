@@ -234,6 +234,11 @@ func listOwnIdentities(gate *Gate) gin.HandlerFunc {
 		}
 		items := make([]identityView, 0, len(identities))
 		for _, identity := range identities {
+			// Local email verification is not an OAuth binding. Its management
+			// is intentionally outside the third-party identity controls.
+			if identity.Provider == "email" {
+				continue
+			}
 			item := identityView{
 				Provider:    identity.Provider,
 				DisplayName: identity.DisplayName,

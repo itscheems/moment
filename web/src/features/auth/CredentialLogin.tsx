@@ -475,7 +475,9 @@ export function CredentialLogin({
         className={styles.loginForm}
         onSubmit={(event) => void submit(event)}
       >
-        <label htmlFor="login-username">{t("用户名")}</label>
+        <label htmlFor="login-username">
+          {method === "password" ? t("邮箱或用户名") : t("用户名")}
+        </label>
         <div className={styles.tokenField}>
           <input
             aria-describedby={invalidField === "username" ? errorId : undefined}
@@ -487,7 +489,9 @@ export function CredentialLogin({
               setUsername(event.target.value);
               clearError();
             }}
-            placeholder={t("你的用户名")}
+            placeholder={
+              method === "password" ? t("输入邮箱或用户名") : t("你的用户名")
+            }
             readOnly={pending}
             spellCheck={false}
             type="text"

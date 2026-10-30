@@ -7,116 +7,93 @@ import {
   waitFor,
 } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-
 import { NavigationProvider } from "../../app/navigation";
 import { FeedbackProvider } from "../../components/Feedback";
 import { makeAccountLimits } from "../../test/accountFixtures";
 import { RegisterPage } from "./RegisterPage";
 import { SessionProvider } from "./SessionProvider";
 
-function json(body: unknown, status = 200): Response {
-  return new Response(JSON.stringify(body), {
+vi.mock("motion/react", async () => {
+  const actual =
+    await vi.importActual<typeof import("motion/react")>("motion/react");
+  return { ...actual, useReducedMotion: () => true };
+});
+function json(data: unknown, status = 200) {
+  return new Response(JSON.stringify(data), {
     status,
     headers: { "Content-Type": "application/json" },
   });
 }
-
-function registrationOptions(mode: "open" | "approval" | "closed") {
-  return json({
-    data: {
-      registration_mode: mode,
-      username_min_length: 3,
-      username_max_length: 30,
-      password_min_bytes: 8,
-      password_max_bytes: 72,
-    },
-    meta: {},
-  });
-}
-
-function accountSession(status: "active" | "pending") {
-  return json({
-    data: {
-      preferences: { ui_locale: null },
-      csrf_token: "csrf-registered",
-      expires_at: "2999-08-11T01:00:00.000Z",
-      account: {
-        user_id: "1".repeat(32),
-        username: "newmember",
-        display_name: "newmember",
-        bio: "",
-        avatar_media_id: null,
-        cover_media_id: null,
-        role: "member",
-        status,
-        username_chosen: true,
-        profile_url: "/newmember",
-      },
-      limits: makeAccountLimits(),
-    },
-    meta: {},
-  });
-}
-
 function installApi(
-  mode: "open" | "approval" | "closed",
-  failure?:
-    | "session-restore"
-    | "server-session"
-    | "closed-after-load"
-    | "username-taken",
+  mode: "open" | "approval" | "closed" = "open",
+  failure?: string,
 ) {
-  let registered = false;
-  let restoreFails = false;
+  let created = false;
+  const calls: { path: string; body: Record<string, string> }[] = [];
   const fetcher = vi.fn(
     async (input: RequestInfo | URL, init?: RequestInit) => {
-      const path = String(input);
-      if (path === "/api/v1/register/options") return registrationOptions(mode);
-      if (path === "/api/v1/register") {
-        if (init?.method !== "POST") return json({}, 405);
-        if (failure === "closed-after-load") {
-          return json(
-            {
-              error: {
-                code: "REGISTRATION_CLOSED",
-                message: "registration closed",
+      const path = String(input),
+        body = JSON.parse(String(init?.body || "{}")) as Record<string, string>;
+      calls.push({ path, body });
+      if (path === "/api/v1/register/options")
+        return json({
+          data: {
+            registration_mode: mode,
+            username_min_length: 3,
+            username_max_length: 30,
+            password_min_bytes: 8,
+            password_max_bytes: 72,
+          },
+          meta: {},
+        });
+      if (path === "/api/v1/register/check")
+        return failure === "username"
+          ? json({ error: { code: "USERNAME_TAKEN" } }, 409)
+          : json({ data: { username: body.username }, meta: {} });
+      if (path === "/api/v1/register/email")
+        return failure === "send"
+          ? json({ error: { code: "EMAIL_UNAVAILABLE" } }, 503)
+          : json({
+              data: {
+                challenge_id: "challenge",
+                expires_at: "2999-01-01T00:00:00Z",
+                resend_at: "2999-01-01T00:00:00Z",
               },
-            },
-            403,
-          );
-        }
-        if (failure === "username-taken") {
-          return json(
-            { error: { code: "USERNAME_TAKEN", message: "username taken" } },
-            409,
-          );
-        }
-        registered = true;
-        if (failure === "server-session") {
+              meta: {},
+            });
+      if (path === "/api/v1/register/email/verify")
+        return body.code === "000000"
+          ? json({ error: { code: "VERIFICATION_INVALID" } }, 400)
+          : json({
+              data: {
+                verification_token: "private-proof",
+                email: "reader@example.test",
+                expires_at: "2999-01-01T00:00:00Z",
+              },
+              meta: {},
+            });
+      if (path === "/api/v1/register") {
+        if (failure === "finish")
+          return json({ error: { code: "EMAIL_UNAVAILABLE" } }, 503);
+        created = true;
+        if (failure === "server-session")
           return json(
             {
               error: {
                 code: "REGISTRATION_SESSION_UNAVAILABLE",
-                message: "account created, but sign-in is unavailable",
-                details: {
-                  account_created: true,
-                  username: "newmember",
-                  recovery: "login",
-                },
+                details: { account_created: true },
               },
             },
             503,
           );
-        }
-        if (failure === "session-restore") restoreFails = true;
         return json(
           {
             data: {
               account_created: true,
               username: "newmember",
-              account_status: mode === "open" ? "active" : "pending",
-              expires_at: "2999-08-11T01:00:00.000Z",
-              csrf_token: "csrf-registered",
+              account_status: mode === "approval" ? "pending" : "active",
+              expires_at: "2999-01-01T00:00:00Z",
+              csrf_token: "registered-csrf",
             },
             meta: {},
           },
@@ -124,21 +101,39 @@ function installApi(
         );
       }
       if (path === "/api/v1/account/session") {
-        if (restoreFails)
+        if (!created) return json({ error: { code: "UNAUTHORIZED" } }, 401);
+        if (failure === "session-restore")
           return json({ error: { code: "AUTH_UNAVAILABLE" } }, 503);
-        return registered
-          ? accountSession(mode === "open" ? "active" : "pending")
-          : json({ error: { code: "UNAUTHORIZED" } }, 401);
+        return json({
+          data: {
+            csrf_token: "registered-csrf",
+            expires_at: "2999-01-01T00:00:00Z",
+            account: {
+              user_id: "1".repeat(32),
+              username: "newmember",
+              display_name: "newmember",
+              bio: "",
+              avatar_media_id: null,
+              cover_media_id: null,
+              role: "member",
+              status: mode === "approval" ? "pending" : "active",
+              username_chosen: true,
+              profile_url: "/newmember",
+            },
+            limits: makeAccountLimits(),
+            preferences: { ui_locale: null },
+          },
+          meta: {},
+        });
       }
       return json({}, 404);
     },
   );
   vi.stubGlobal("fetch", fetcher);
-  return { fetcher };
+  return calls;
 }
-
 function renderRegister() {
-  return render(
+  render(
     <FeedbackProvider>
       <NavigationProvider>
         <SessionProvider>
@@ -148,8 +143,7 @@ function renderRegister() {
     </FeedbackProvider>,
   );
 }
-
-async function fillRegistration(password = "password123", confirm = password) {
+async function fillAccount(password = "password123", confirmation = password) {
   fireEvent.change(await screen.findByLabelText("用户名"), {
     target: { value: "NewMember" },
   });
@@ -157,171 +151,193 @@ async function fillRegistration(password = "password123", confirm = password) {
     target: { value: password },
   });
   fireEvent.change(screen.getByLabelText("确认密码"), {
-    target: { value: confirm },
+    target: { value: confirmation },
   });
 }
+async function nextToEmail() {
+  await fillAccount();
+  fireEvent.click(screen.getByRole("button", { name: "下一步" }));
+  await screen.findByLabelText("邮箱地址");
+}
+async function sendCode() {
+  fireEvent.change(screen.getByLabelText("邮箱地址"), {
+    target: { value: "reader@example.test" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "获取验证码" }));
+  await screen.findByText(/验证码已发送/);
+}
+async function verifyCode(code = "123456") {
+  fireEvent.change(screen.getByLabelText("验证码"), {
+    target: { value: code },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "验证邮箱" }));
+}
+async function nextToName() {
+  await nextToEmail();
+  await sendCode();
+  await verifyCode();
+  await screen.findByPlaceholderText("输入名字（选填）");
+}
 
-describe("account registration page", () => {
+describe("three-step email registration", () => {
   beforeEach(() => {
     window.history.replaceState({}, "", "/register?return=%2Farchive");
     window.sessionStorage.clear();
   });
-
   afterEach(() => {
     cleanup();
     vi.restoreAllMocks();
     vi.unstubAllGlobals();
   });
-
-  it("keeps login navigation and explains approval before submission", async () => {
-    installApi("approval");
+  it("shows ordered progress and preserves the return destination", async () => {
+    installApi();
     renderRegister();
-    expect(await screen.findByLabelText("用户名")).toBeInTheDocument();
+    await screen.findByLabelText("用户名");
     expect(
-      screen.getByRole("heading", { name: "Join Moment" }),
+      screen.getByRole("progressbar", { name: "注册进度" }),
     ).toBeInTheDocument();
-    expect(screen.getByText(/注册后需要管理员批准/)).toBeInTheDocument();
+    expect(screen.getByText("第 1 步，共 3 步")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "立即登录" })).toHaveAttribute(
       "href",
       "/login?return=%2Farchive",
     );
   });
-
-  it("uses UTF-8 byte limits and confirmation feedback before sending", async () => {
-    const { fetcher } = installApi("approval");
+  it("checks UTF-8 password length and confirmation before making requests", async () => {
+    const calls = installApi();
     renderRegister();
-    await fillRegistration("ééé", "ééé");
-    fireEvent.click(screen.getByRole("button", { name: "注册" }));
-    await waitFor(() =>
-      expect(document.querySelector('[role="alertdialog"]')).toHaveTextContent(
-        "8–72 字节",
-      ),
-    );
-    expect(screen.getByLabelText("密码", { exact: true })).toHaveAttribute(
-      "aria-invalid",
-      "true",
-    );
-    expect(
-      fetcher.mock.calls.filter(([path]) => path === "/api/v1/register"),
-    ).toHaveLength(0);
-
+    await fillAccount("ééé");
+    fireEvent.click(screen.getByRole("button", { name: "下一步" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("8–72 字节");
     fireEvent.change(screen.getByLabelText("密码", { exact: true }), {
       target: { value: "password123" },
     });
-    fireEvent.click(screen.getByRole("button", { name: "注册" }));
-    await waitFor(() =>
-      expect(document.querySelector('[role="alertdialog"]')).toHaveTextContent(
-        "两次输入的密码不一致",
-      ),
+    fireEvent.click(screen.getByRole("button", { name: "下一步" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "两次输入的密码不一致",
     );
-    expect(
-      fetcher.mock.calls.filter(([path]) => path === "/api/v1/register"),
-    ).toHaveLength(0);
+    expect(calls.filter((call) => call.path.endsWith("/check"))).toHaveLength(
+      0,
+    );
   });
-
-  it("creates a pending account, adopts its session, and shows approval status", async () => {
-    const { fetcher } = installApi("approval");
+  it("keeps account fields and email draft when going back and forward", async () => {
+    installApi();
     renderRegister();
-    await fillRegistration();
-    fireEvent.click(screen.getByRole("button", { name: "注册" }));
-    expect(await screen.findByRole("status")).toHaveTextContent(
-      "账号已创建，正在等待管理员批准",
-    );
-    expect(screen.queryByRole("link", { name: "立即登录" })).toBeNull();
-    expect(window.location.pathname).toBe("/register");
-    expect(
-      JSON.parse(
-        window.sessionStorage.getItem("moment.auth.session.v2") ?? "{}",
-      ),
-    ).toMatchObject({ csrf_token: "csrf-registered" });
-    const call = fetcher.mock.calls.find(
-      ([path]) => path === "/api/v1/register",
-    );
-    expect(JSON.parse(String(call?.[1]?.body))).toEqual({
-      username: "newmember",
-      password: "password123",
+    await nextToEmail();
+    fireEvent.change(screen.getByLabelText("邮箱地址"), {
+      target: { value: "reader@example.test" },
     });
-  });
-
-  it("redirects an active account to the safe return path", async () => {
-    installApi("open");
-    renderRegister();
-    await fillRegistration();
-    fireEvent.click(screen.getByRole("button", { name: "注册" }));
-    await waitFor(() => expect(window.location.pathname).toBe("/archive"));
-  });
-
-  it("does not offer registration when the site is closed", async () => {
-    const { fetcher } = installApi("closed");
-    renderRegister();
-    expect(await screen.findByRole("status")).toHaveTextContent(
-      "本站当前不接受新注册。",
-    );
-    expect(screen.queryByRole("button", { name: "注册" })).toBeNull();
-    expect(
-      fetcher.mock.calls.filter(([path]) => path === "/api/v1/register"),
-    ).toHaveLength(0);
-  });
-
-  it("handles a policy change after the form opened", async () => {
-    installApi("approval", "closed-after-load");
-    renderRegister();
-    await fillRegistration();
-    fireEvent.click(screen.getByRole("button", { name: "注册" }));
-    expect(await screen.findByRole("status")).toHaveTextContent(
-      "本站当前不接受新注册。",
-    );
-    expect(screen.queryByRole("button", { name: "注册" })).toBeNull();
-  });
-
-  it("keeps the entered values and focuses a username rejected by the server", async () => {
-    installApi("approval", "username-taken");
-    renderRegister();
-    await fillRegistration();
-    fireEvent.click(screen.getByRole("button", { name: "注册" }));
-    await waitFor(() =>
-      expect(screen.getByLabelText("用户名")).toHaveAttribute(
-        "aria-invalid",
-        "true",
-      ),
-    );
-    expect(screen.getByLabelText("用户名")).toHaveFocus();
+    fireEvent.click(screen.getByRole("button", { name: "返回上一步" }));
+    await screen.findByLabelText("用户名");
     expect(screen.getByLabelText("密码", { exact: true })).toHaveValue(
       "password123",
     );
-  });
-
-  it("drops an external return address from the login link", async () => {
-    window.history.replaceState(
-      {},
-      "",
-      "/register?return=https%3A%2F%2Fexample.org",
+    expect(screen.getByLabelText("确认密码")).toHaveValue("password123");
+    fireEvent.click(screen.getByRole("button", { name: "下一步" }));
+    expect(await screen.findByLabelText("邮箱地址")).toHaveValue(
+      "reader@example.test",
     );
-    installApi("approval");
-    renderRegister();
-    expect(
-      await screen.findByRole("link", { name: "立即登录" }),
-    ).toHaveAttribute("href", "/login?return=%2F");
   });
-
-  it.each(["session-restore", "server-session"] as const)(
-    "keeps account-created recovery visible after %s fails",
+  it("keeps the email and code after rejection and prevents resend during cooldown", async () => {
+    const calls = installApi();
+    renderRegister();
+    await nextToEmail();
+    await sendCode();
+    await verifyCode("000000");
+    expect(await screen.findByRole("alert")).toHaveTextContent("验证码不正确");
+    expect(screen.getByLabelText("验证码")).toHaveValue("000000");
+    expect(screen.getByLabelText("邮箱地址")).toHaveValue(
+      "reader@example.test",
+    );
+    expect(calls.filter((call) => call.path.endsWith("/email"))).toHaveLength(
+      1,
+    );
+  });
+  it("completes only after verification and accepts an optional name", async () => {
+    const calls = installApi();
+    renderRegister();
+    await nextToName();
+    fireEvent.change(screen.getByPlaceholderText("输入名字（选填）"), {
+      target: { value: "Forest" },
+    });
+    const button = screen.getByRole("button", { name: "完成注册" });
+    fireEvent.click(button);
+    fireEvent.click(button);
+    await screen.findByRole("heading", { name: "注册完成" });
+    expect(calls.filter((call) => call.path === "/api/v1/register")).toEqual([
+      {
+        path: "/api/v1/register",
+        body: {
+          username: "newmember",
+          password: "password123",
+          verification_token: "private-proof",
+          display_name: "Forest",
+        },
+      },
+    ]);
+    expect(window.location.pathname).toBe("/register");
+    fireEvent.click(screen.getByRole("button", { name: "继续浏览" }));
+    await waitFor(() => expect(window.location.pathname).toBe("/archive"));
+  });
+  it("retains verification and name across a backward visit", async () => {
+    installApi();
+    renderRegister();
+    await nextToName();
+    fireEvent.change(screen.getByPlaceholderText("输入名字（选填）"), {
+      target: { value: "Forest" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "返回上一步" }));
+    await screen.findByText("邮箱验证成功");
+    fireEvent.click(screen.getByRole("button", { name: "下一步" }));
+    await screen.findByPlaceholderText("输入名字（选填）");
+    expect(screen.getByPlaceholderText("输入名字（选填）")).toHaveValue(
+      "Forest",
+    );
+  });
+  it("keeps draft inputs after a delivery failure", async () => {
+    installApi("open", "send");
+    renderRegister();
+    await nextToEmail();
+    fireEvent.change(screen.getByLabelText("邮箱地址"), {
+      target: { value: "reader@example.test" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "获取验证码" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("暂时无法发送");
+    expect(screen.getByLabelText("邮箱地址")).toHaveValue(
+      "reader@example.test",
+    );
+    expect(screen.getByRole("button", { name: "获取验证码" })).toBeEnabled();
+  });
+  it("explains approval and permits leaving the name blank", async () => {
+    const calls = installApi("approval");
+    renderRegister();
+    await nextToName();
+    expect(screen.getByText(/注册后需要管理员批准/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "完成注册" }));
+    await screen.findByRole("heading", { name: "注册完成" });
+    expect(screen.getByText(/正在等待管理员批准/)).toBeInTheDocument();
+    expect(
+      calls.find((call) => call.path === "/api/v1/register")?.body.display_name,
+    ).toBe("");
+  });
+  it.each(["server-session", "session-restore"])(
+    "offers sign-in recovery after account creation: %s",
     async (failure) => {
-      const { fetcher } = installApi("approval", failure);
+      installApi("open", failure);
       renderRegister();
-      await fillRegistration();
-      fireEvent.click(screen.getByRole("button", { name: "注册" }));
-      expect(await screen.findByRole("status")).toHaveTextContent(
-        "账号 newmember 已创建，暂时无法确认登录状态",
-      );
-      expect(screen.getByRole("link", { name: "立即登录" })).toHaveAttribute(
-        "href",
-        "/login?return=%2Farchive",
-      );
+      await nextToName();
+      fireEvent.click(screen.getByRole("button", { name: "完成注册" }));
       expect(
-        fetcher.mock.calls.filter(([path]) => path === "/api/v1/register"),
-      ).toHaveLength(1);
-      expect(screen.queryByRole("button", { name: "注册" })).toBeNull();
+        await screen.findByRole("button", { name: "前往登录" }),
+      ).toBeInTheDocument();
+      expect(
+        screen.getByText(/账号已创建，暂时无法确认登录状态/),
+      ).toBeInTheDocument();
     },
   );
+  it("does not offer a form when registration is closed", async () => {
+    installApi("closed");
+    renderRegister();
+    await screen.findByText("本站当前不接受新注册。");
+    expect(screen.queryByLabelText("用户名")).not.toBeInTheDocument();
+  });
 });

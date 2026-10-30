@@ -23,8 +23,10 @@ type registrationOptions struct {
 }
 
 type registrationRequest struct {
-	Username string `json:"username"`
-	Password string `json:"password"`
+	Username          string `json:"username"`
+	Password          string `json:"password"`
+	DisplayName       string `json:"display_name"`
+	VerificationToken string `json:"verification_token"`
 }
 
 type registrationResponse struct {
@@ -57,6 +59,54 @@ func RegisterRegistrationRoutes(engine *gin.Engine, gate *Gate, cookies CookieOp
 			PasswordMaxBytes:  app.PasswordMaxBytes,
 		}, nil)
 	})
+	register.POST("/check", func(ctx *gin.Context) {
+		var request struct {
+			Username string `json:"username"`
+			Password string `json:"password"`
+		}
+		if !decodeRegistrationBody(ctx, &request) {
+			return
+		}
+		username, err := gate.accounts.CheckRegistrationAccount(ctx.Request.Context(), request.Username, request.Password)
+		if err != nil {
+			writeAccountError(ctx, err)
+			return
+		}
+		Success(ctx, http.StatusOK, map[string]string{"username": username}, nil)
+	})
+	register.POST("/email", func(ctx *gin.Context) {
+		var request struct {
+			Email string `json:"email"`
+		}
+		if !decodeRegistrationBody(ctx, &request) {
+			return
+		}
+		if gate.HasSignedInAccount(ctx) {
+			Failure(ctx, http.StatusConflict, "ALREADY_SIGNED_IN", "sign out before creating another account", nil)
+			return
+		}
+		receipt, err := gate.accounts.RequestRegistrationEmail(ctx.Request.Context(), request.Email, ctx.ClientIP())
+		if err != nil {
+			writeAccountError(ctx, err)
+			return
+		}
+		Success(ctx, http.StatusOK, receipt, nil)
+	})
+	register.POST("/email/verify", func(ctx *gin.Context) {
+		var request struct {
+			ChallengeID string `json:"challenge_id"`
+			Code        string `json:"code"`
+		}
+		if !decodeRegistrationBody(ctx, &request) {
+			return
+		}
+		receipt, err := gate.accounts.VerifyRegistrationEmail(ctx.Request.Context(), request.ChallengeID, request.Code)
+		if err != nil {
+			writeAccountError(ctx, err)
+			return
+		}
+		Success(ctx, http.StatusOK, receipt, nil)
+	})
 	register.POST("", func(ctx *gin.Context) {
 		if !requireJSONContentType(ctx, "registration") {
 			return
@@ -80,7 +130,11 @@ func RegisterRegistrationRoutes(engine *gin.Engine, gate *Gate, cookies CookieOp
 			Failure(ctx, http.StatusBadRequest, "INVALID_ARGUMENT", "a JSON username and password are required", nil)
 			return
 		}
-		account, err := gate.accounts.RegisterPasswordAccount(ctx.Request.Context(), request.Username, request.Password)
+		if _, err := gate.accounts.CheckRegistrationAccount(ctx.Request.Context(), request.Username, request.Password); err != nil {
+			writeAccountError(ctx, err)
+			return
+		}
+		account, err := gate.accounts.RegisterEmailAccount(ctx.Request.Context(), request.Username, request.Password, request.DisplayName, request.VerificationToken)
 		if err != nil {
 			writeAccountError(ctx, err)
 			return
@@ -110,4 +164,21 @@ func RegisterRegistrationRoutes(engine *gin.Engine, gate *Gate, cookies CookieOp
 			ExpiresAt: session.ExpiresAt, CSRFToken: session.CSRFToken,
 		}, nil)
 	})
+}
+
+func decodeRegistrationBody(ctx *gin.Context, destination any) bool {
+	if !requireJSONContentType(ctx, "registration") {
+		return false
+	}
+	body, ok := readBody(ctx)
+	if !ok {
+		return false
+	}
+	decoder := json.NewDecoder(strings.NewReader(string(body)))
+	decoder.DisallowUnknownFields()
+	if !utf8.Valid(body) || decoder.Decode(destination) != nil || decoder.Decode(&struct{}{}) != io.EOF {
+		Failure(ctx, http.StatusBadRequest, "INVALID_ARGUMENT", "registration requires a valid JSON object", nil)
+		return false
+	}
+	return true
 }
