@@ -207,6 +207,10 @@ describe("public image grid", () => {
       mediaPosterUrl("01K2ABCDEF0123456789ABCDV0"),
     );
     expect(element).toHaveAttribute("preload", "metadata");
+    expect(screen.getByRole("button", { name: "播放视频" })).toBeVisible();
+    expect(
+      screen.queryByRole("status", { name: "视频正在加载" }),
+    ).not.toBeInTheDocument();
     expect(
       document.querySelector(
         `img[src="${mediaPosterUrl("01K2ABCDEF0123456789ABCDV0")}"]`,

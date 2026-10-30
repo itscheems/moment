@@ -61,7 +61,7 @@ export function VideoPlayer({
   const initial = useRef(initialPlayback);
   const restorePending = useRef(Boolean(initialPlayback));
   const [playing, setPlaying] = useState(false);
-  const [waiting, setWaiting] = useState(attached);
+  const [waiting, setWaiting] = useState(autoplay);
   const [showPoster, setShowPoster] = useState(true);
   const [duration, setDuration] = useState(0);
   const [time, setTime] = useState(0);
@@ -124,10 +124,6 @@ export function VideoPlayer({
     // Each mounted player owns one media source and its final snapshot.
   }, []);
   useEffect(() => {
-    if (attached) {
-      setWaiting(true);
-      return;
-    }
     if (!attached) {
       node.current?.pause();
       setPlaying(false);
@@ -142,6 +138,8 @@ export function VideoPlayer({
     const video = node.current;
     if (!video) return;
     pauseVideos(video);
+    // Metadata-only preloading must not gate a user's playback request.
+    video.preload = "auto";
     setWaiting(true);
     void video.play().catch(() => {
       setPlaying(false);
@@ -309,7 +307,7 @@ export function VideoPlayer({
           }
           restorePending.current = false;
           callbacks.current.onMetadata?.(video);
-          setWaiting(false);
+          if (video.paused) setWaiting(false);
           if (resumeAfterLoad.current) play();
         }}
         onDurationChange={(event) =>
@@ -327,7 +325,11 @@ export function VideoPlayer({
           setShowPoster(false);
           reveal();
         }}
-        onWaiting={() => setWaiting(true)}
+        onWaiting={(event) => {
+          // Loading a paused preview is not playback buffering. Late waiting
+          // events must also leave an explicitly paused card interactive.
+          if (!event.currentTarget.paused) setWaiting(true);
+        }}
         onPause={(event) => {
           setPlaying(false);
           setWaiting(false);
