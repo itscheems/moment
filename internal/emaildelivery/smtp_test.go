@@ -162,17 +162,16 @@ func TestSMTPRejectsHeaderInjectionBeforeConnecting(t *testing.T) {
 	}
 }
 
-func TestEnvironmentPrefersGmailAndNormalizesAppPassword(t *testing.T) {
+func TestEnvironmentLoadsOnlyCompleteGmailCredentials(t *testing.T) {
 	t.Setenv("MOMENT_GMAIL_USERNAME", " sender@example.test ")
 	t.Setenv("MOMENT_GMAIL_APP_PASSWORD", "aaaa bbbb cccc dddd")
-	t.Setenv("MOMENT_RESEND_API_KEY", "test-resend")
 	sender := NewFromEnvironment(testBudget{true})
-	if len(sender.Providers) == 0 || sender.Providers[0].Name != "gmail" || sender.Providers[0].Key != "aaaabbbbccccdddd" || sender.Providers[0].Daily != 500 {
+	if sender.Username != "sender@example.test" || sender.Password != "aaaabbbbccccdddd" {
 		t.Fatal("Gmail configuration was not loaded")
 	}
 	t.Setenv("MOMENT_GMAIL_APP_PASSWORD", "")
 	sender = NewFromEnvironment(testBudget{true})
-	if sender.Providers[0].Name != "resend" {
+	if err := sender.SendVerification(context.Background(), "reader@example.test", "123456", "id"); err == nil {
 		t.Fatal("incomplete Gmail configuration was enabled")
 	}
 }

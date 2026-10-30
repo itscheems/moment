@@ -53,45 +53,26 @@ func (store accountStore) RegistrationRequestBudget(ctx context.Context, email, 
 }
 
 // ReserveEmailBudget commits before network IO so concurrent sends cannot overspend.
-func (repository *AccountRepository) ReserveEmailBudget(ctx context.Context, provider string, daily, monthly int, now time.Time) (bool, error) {
+func (repository *AccountRepository) ReserveEmailBudget(ctx context.Context, daily int, now time.Time) (bool, error) {
+	if daily <= 0 {
+		return false, nil
+	}
 	allowed := false
+	period := now.UTC().Format("2006-01-02")
 	err := repository.WriteAccounts(ctx, func(accounts app.AccountStore, _ app.SessionStore) error {
 		store := accounts.(accountStore)
-		periods := []struct {
-			key   string
-			limit int
-		}{{now.UTC().Format("2006-01-02"), daily}, {now.UTC().Format("2006-01"), monthly}}
-		for _, period := range periods {
-			if period.limit <= 0 {
-				continue
-			}
-			var used int
-			err := store.queries.QueryRowContext(ctx, `SELECT COALESCE((SELECT used FROM email_delivery_usage WHERE provider=? AND period=?),0)`, provider, period.key).Scan(&used)
-			if err != nil {
-				return err
-			}
-			if used >= period.limit {
-				return nil
-			}
+		var used int
+		if err := store.queries.QueryRowContext(ctx, `SELECT COALESCE((SELECT used FROM email_delivery_usage WHERE provider='gmail' AND period=?),0)`, period).Scan(&used); err != nil {
+			return err
 		}
-		for _, period := range periods {
-			if period.limit <= 0 {
-				continue
-			}
-			if _, err := store.queries.ExecContext(ctx, `INSERT INTO email_delivery_usage(provider,period,used)VALUES(?,?,1) ON CONFLICT(provider,period) DO UPDATE SET used=used+1`, provider, period.key); err != nil {
-				return err
-			}
+		if used >= daily {
+			return nil
+		}
+		if _, err := store.queries.ExecContext(ctx, `INSERT INTO email_delivery_usage(provider,period,used)VALUES('gmail',?,1) ON CONFLICT(provider,period) DO UPDATE SET used=used+1`, period); err != nil {
+			return err
 		}
 		allowed = true
 		return nil
 	})
 	return allowed, err
-}
-
-func (repository *AccountRepository) ExhaustEmailBudget(ctx context.Context, provider, period string, limit int) error {
-	return repository.WriteAccounts(ctx, func(accounts app.AccountStore, _ app.SessionStore) error {
-		store := accounts.(accountStore)
-		_, err := store.queries.ExecContext(ctx, `INSERT INTO email_delivery_usage(provider,period,used)VALUES(?,?,?) ON CONFLICT(provider,period) DO UPDATE SET used=max(used,excluded.used)`, provider, period, limit)
-		return err
-	})
 }

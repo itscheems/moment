@@ -156,7 +156,7 @@ func TestEmailDeliveryLimitsPersistAndReserveConcurrently(t *testing.T) {
 	results := make(chan bool, 8)
 	for range 8 {
 		wg.Go(func() {
-			ok, err := repository.ReserveEmailBudget(ctx, "resend", 3, 4, *now)
+			ok, err := repository.ReserveEmailBudget(ctx, 3, *now)
 			if err != nil {
 				t.Error(err)
 			}
@@ -175,13 +175,21 @@ func TestEmailDeliveryLimitsPersistAndReserveConcurrently(t *testing.T) {
 		t.Fatalf("reserved=%d", allowed)
 	}
 	tomorrow := now.Add(24 * time.Hour)
-	ok, err := repository.ReserveEmailBudget(ctx, "resend", 3, 4, tomorrow)
+	ok, err := repository.ReserveEmailBudget(ctx, 3, tomorrow)
 	if err != nil || !ok {
 		t.Fatalf("new day=%v %v", ok, err)
 	}
-	ok, err = repository.ReserveEmailBudget(ctx, "resend", 3, 4, tomorrow)
+	ok, err = repository.ReserveEmailBudget(ctx, 3, tomorrow)
+	if err != nil || !ok {
+		t.Fatalf("new daily capacity=%v %v", ok, err)
+	}
+	ok, err = repository.ReserveEmailBudget(ctx, 3, tomorrow)
+	if err != nil || !ok {
+		t.Fatalf("third daily reservation=%v %v", ok, err)
+	}
+	ok, err = repository.ReserveEmailBudget(ctx, 3, tomorrow)
 	if err != nil || ok {
-		t.Fatalf("monthly cap=%v %v", ok, err)
+		t.Fatalf("new daily cap=%v %v", ok, err)
 	}
 }
 
@@ -201,25 +209,5 @@ func TestEmailRegistrationPolicyAndProviderFailure(t *testing.T) {
 	setRegistrationMode(t, db, domain.RegistrationClosed)
 	if _, err := service.RequestRegistrationEmail(ctx, "other@example.test", "requester"); !domain.HasCode(err, domain.CodeRegistrationClosed) {
 		t.Fatalf("closed=%v", err)
-	}
-}
-
-func TestProviderQuotaRefusalBlocksOnlyTheAffectedPeriod(t *testing.T) {
-	_, _, _, now, repository := emailRegistrationFixture(t)
-	ctx := context.Background()
-	if err := repository.ExhaustEmailBudget(ctx, "resend", now.UTC().Format("2006-01-02"), 100); err != nil {
-		t.Fatal(err)
-	}
-	allowed, err := repository.ReserveEmailBudget(ctx, "resend", 100, 3000, *now)
-	if err != nil || allowed {
-		t.Fatalf("exhausted provider still selected: %v %v", allowed, err)
-	}
-	allowed, err = repository.ReserveEmailBudget(ctx, "brevo", 300, 0, *now)
-	if err != nil || !allowed {
-		t.Fatalf("backup budget unavailable: %v %v", allowed, err)
-	}
-	allowed, err = repository.ReserveEmailBudget(ctx, "resend", 100, 3000, now.Add(24*time.Hour))
-	if err != nil || !allowed {
-		t.Fatalf("daily budget did not reset: %v %v", allowed, err)
 	}
 }
