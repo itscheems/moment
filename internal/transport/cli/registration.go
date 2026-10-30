@@ -54,7 +54,16 @@ func runAccountRegister(ctx context.Context, invocation Invocation, input Comman
 	if invocation.Mode() == ModeDirect {
 		result, err = registerDirect(ctx, invocation, username, password)
 	} else {
-		result, meta, err = registerAPI(ctx, invocation, username, password)
+		proof := ""
+		proofPath, _ := input.String("verification-token-file")
+		if proofPath != "" {
+			proof, err = readPasswordInput(input.In(), proofPath)
+			if err != nil {
+				return Result{}, err
+			}
+		}
+		name, _ := input.String("name")
+		result, meta, err = registerAPI(ctx, invocation, username, password, proof, name)
 	}
 	if err != nil {
 		return Result{}, err
@@ -105,12 +114,19 @@ func registerDirect(ctx context.Context, invocation Invocation, username, passwo
 	return registrationResult{AccountCreated: true, Username: created.Username, AccountStatus: created.Status}, nil
 }
 
-func registerAPI(ctx context.Context, invocation Invocation, username, password string) (registrationResult, map[string]any, error) {
+func registerAPI(ctx context.Context, invocation Invocation, username, password string, extra ...string) (registrationResult, map[string]any, error) {
 	target, err := invocation.APITransport()
 	if err != nil {
 		return registrationResult{}, nil, err
 	}
-	request, err := newAPIRequest(ctx, target, http.MethodPost, "/api/v1/register", map[string]string{"username": username, "password": password})
+	payload := map[string]string{"username": username, "password": password}
+	if len(extra) > 0 && extra[0] != "" {
+		payload["verification_token"] = extra[0]
+	}
+	if len(extra) > 1 && extra[1] != "" {
+		payload["display_name"] = extra[1]
+	}
+	request, err := newAPIRequest(ctx, target, http.MethodPost, "/api/v1/register", payload)
 	if err != nil {
 		return registrationResult{}, nil, err
 	}

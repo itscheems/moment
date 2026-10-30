@@ -168,6 +168,21 @@ describe("owner login third-party entry points", () => {
     vi.unstubAllGlobals();
   });
 
+  it("keeps password visibility on an icon button", async () => {
+    installApi([]);
+    renderLogin();
+    const password = await screen.findByLabelText("密码", { exact: true });
+    fireEvent.change(password, { target: { value: "visibility-check" } });
+    const show = screen.getByRole("button", { name: "显示密码" });
+    expect(show.textContent).toBe("");
+    expect(show.querySelector("svg")).not.toBeNull();
+    fireEvent.click(show);
+    expect(password).toHaveAttribute("type", "text");
+    expect(password).toHaveValue("visibility-check");
+    fireEvent.click(screen.getByRole("button", { name: "隐藏密码" }));
+    expect(password).toHaveAttribute("type", "password");
+  });
+
   // The form used to arrive in pieces -- the credential fields as soon as
   // the methods answered, the provider buttons a request later -- and the
   // page moved under the reader as each piece landed. It waits for both.
@@ -214,7 +229,9 @@ describe("owner login third-party entry points", () => {
     );
 
     releaseProviders!();
-    expect(await screen.findByLabelText("用户名")).toBeInTheDocument();
+    expect(
+      await screen.findByLabelText(/^(邮箱或)?用户名$/),
+    ).toBeInTheDocument();
     expect(
       screen.getByRole("button", { name: "使用 GitHub 登录" }),
     ).toBeInTheDocument();
@@ -473,7 +490,7 @@ describe("owner login names who is signing in", () => {
   }
 
   async function signIn(username: string, password: string) {
-    fireEvent.change(await screen.findByLabelText("用户名"), {
+    fireEvent.change(await screen.findByLabelText(/^(邮箱或)?用户名$/), {
       target: { value: username },
     });
     fireEvent.change(await screen.findByLabelText("密码"), {
@@ -497,7 +514,7 @@ describe("owner login names who is signing in", () => {
     expect(toast).toHaveAttribute("data-ending-style");
     expect(password).not.toHaveAttribute("aria-describedby");
     expect(password).not.toHaveAttribute("aria-invalid");
-    expect(screen.getByLabelText("用户名")).toHaveValue("owner");
+    expect(screen.getByLabelText(/^(邮箱或)?用户名$/)).toHaveValue("owner");
     expect(screen.getByRole("button", { name: "登录" })).toBeEnabled();
   });
 
@@ -535,7 +552,9 @@ describe("owner login names who is signing in", () => {
     renderLogin();
     await signIn("owner", "password");
     expect(await findErrorToast()).toHaveTextContent("登录没有完成");
-    expect(screen.getByLabelText("用户名")).not.toHaveAttribute("aria-invalid");
+    expect(screen.getByLabelText(/^(邮箱或)?用户名$/)).not.toHaveAttribute(
+      "aria-invalid",
+    );
     expect(screen.getByLabelText("密码")).not.toHaveAttribute("aria-invalid");
   });
 
@@ -566,7 +585,9 @@ describe("owner login names who is signing in", () => {
     const view = renderLogin();
     await signIn("owner", "password");
     expect(screen.getByLabelText("密码")).toHaveAttribute("readonly");
-    expect(screen.getByLabelText("用户名")).toHaveAttribute("readonly");
+    expect(screen.getByLabelText(/^(邮箱或)?用户名$/)).toHaveAttribute(
+      "readonly",
+    );
     expect(screen.getByRole("button", { name: "正在登录…" })).toBeDisabled();
     view.unmount();
     window.history.replaceState({}, "", "/search");
@@ -700,7 +721,7 @@ describe("owner login names who is signing in", () => {
     await signIn("nobodyhere", "hunter2");
 
     expect(await findErrorToast("本站没有这个用户名。")).toBeInTheDocument();
-    expect(screen.getByLabelText("用户名")).toHaveAttribute(
+    expect(screen.getByLabelText(/^(邮箱或)?用户名$/)).toHaveAttribute(
       "aria-invalid",
       "true",
     );

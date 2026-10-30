@@ -76,7 +76,21 @@ type PasswordAuthorization struct {
 func (service *AccountService) VerifyPasswordCredential(ctx context.Context, username, password string) (PasswordAuthorization, error) {
 	var verified PasswordAuthorization
 	err := service.transactions.ReadAccounts(ctx, func(accounts AccountStore, _ SessionStore) error {
-		account, err := accounts.UserByUsername(ctx, strings.ToLower(strings.TrimSpace(username)))
+		identifier := strings.ToLower(strings.TrimSpace(username))
+		var account domain.User
+		var err error
+		if strings.Contains(identifier, "@") {
+			identity, found, lookupErr := accounts.IdentityLookup(ctx, "email", identifier)
+			if lookupErr != nil {
+				return lookupErr
+			}
+			if !found || !identity.EmailVerified {
+				return domain.NewError(domain.CodeUnauthorized, "account credential is invalid", nil)
+			}
+			account, err = accounts.UserByID(ctx, identity.UserID)
+		} else {
+			account, err = accounts.UserByUsername(ctx, identifier)
+		}
 		if err != nil {
 			return err
 		}

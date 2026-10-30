@@ -16,6 +16,7 @@ import (
 	"github.com/moment/moment/internal/auth"
 	"github.com/moment/moment/internal/auth/oauth"
 	"github.com/moment/moment/internal/doctor"
+	"github.com/moment/moment/internal/emaildelivery"
 	"github.com/moment/moment/internal/linkfetch"
 	locationprovider "github.com/moment/moment/internal/location"
 	"github.com/moment/moment/internal/media"
@@ -192,7 +193,12 @@ func (host *liveServerHost) Activate(ctx context.Context, runtimeState *runtimef
 	if err != nil {
 		return fail(err)
 	}
+	emailSender := emaildelivery.NewFromEnvironment(accountRepository)
+	emailSender.Log = func(level, event string, fields map[string]any) {
+		host.log(observability.SurfaceWeb, level, event, fields)
+	}
 	accountService, err := app.NewAccountService(accountRepository,
+		app.WithVerificationSender(emailSender),
 		// An account picture is fetched through the same hardened transport a
 		// link thumbnail is, and ingested through the same media path an account
 		// upload uses. Remote bytes get no exemption from either.

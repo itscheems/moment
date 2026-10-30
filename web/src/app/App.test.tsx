@@ -859,7 +859,9 @@ describe("App shell and public routes", () => {
     });
     render(<App />);
 
-    expect(await screen.findByLabelText("用户名")).toBeInTheDocument();
+    expect(
+      await screen.findByLabelText(/^(邮箱或)?用户名$/),
+    ).toBeInTheDocument();
     expect(screen.getByLabelText("密码")).toBeInTheDocument();
     expect(
       screen.queryByRole("complementary", { name: "站点导航" }),
@@ -907,7 +909,9 @@ describe("App shell and public routes", () => {
     });
     render(<App />);
 
-    expect(await screen.findByLabelText("用户名")).toBeInTheDocument();
+    expect(
+      await screen.findByLabelText(/^(邮箱或)?用户名$/),
+    ).toBeInTheDocument();
     expect(screen.getByLabelText("确认密码")).toBeInTheDocument();
     expect(
       screen.getByRole("heading", { name: "Join Moment" }),
@@ -941,7 +945,9 @@ describe("App shell and public routes", () => {
     render(<App />);
 
     await waitFor(() => expect(window.location.pathname).toBe("/login"));
-    expect(await screen.findByLabelText("用户名")).toBeInTheDocument();
+    expect(
+      await screen.findByLabelText(/^(邮箱或)?用户名$/),
+    ).toBeInTheDocument();
     // Sent in place, not pushed: the /profile entry that would only send the
     // visitor here again is gone, and the arrow leads to the timeline.
     expect(window.history.length).toBe(entries);
@@ -982,7 +988,9 @@ describe("App shell and public routes", () => {
     fireEvent.click(screen.getAllByRole("link", { name: "个人资料" })[0]!);
     await waitFor(() => expect(window.location.pathname).toBe("/login"));
     expect(window.location.search).toBe("?return=%2Fprofile");
-    expect(await screen.findByLabelText("用户名")).toBeInTheDocument();
+    expect(
+      await screen.findByLabelText(/^(邮箱或)?用户名$/),
+    ).toBeInTheDocument();
     // One entry for the sign-in page, standing where /profile was.
     expect(window.history.length).toBe(entries + 1);
 
@@ -997,7 +1005,9 @@ describe("App shell and public routes", () => {
     // Forward is the sign-in page itself, standing where /profile was.
     act(() => window.history.forward());
     await waitFor(() => expect(window.location.pathname).toBe("/login"));
-    expect(await screen.findByLabelText("用户名")).toBeInTheDocument();
+    expect(
+      await screen.findByLabelText(/^(邮箱或)?用户名$/),
+    ).toBeInTheDocument();
   });
 
   // A sibling tab hands over a working session before the account behind it is
@@ -1637,7 +1647,7 @@ describe("central account-required routing", () => {
       expect(window.history.length).toBe(length);
       expect(await screen.findByText("Happening now")).toBeInTheDocument();
       expect(screen.queryByRole("navigation", { name: "主要导航" })).toBeNull();
-      expect(screen.getAllByLabelText("用户名")).toHaveLength(1);
+      expect(screen.getAllByLabelText(/^(邮箱或)?用户名$/)).toHaveLength(1);
     },
   );
   it("waits for a real session answer and offers recovery on an unavailable server", async () => {

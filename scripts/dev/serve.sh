@@ -33,7 +33,8 @@ load_local_settings() {
     for key in MOMENT_USERNAME AMAP_API_KEY GEOAPIFY_API_KEY \
       MOMENT_GOOGLE_CLIENT_ID MOMENT_GOOGLE_CLIENT_SECRET \
       MOMENT_GITHUB_CLIENT_ID MOMENT_GITHUB_CLIENT_SECRET \
-      MOMENT_GOOGLE_IOS_CLIENT_ID; do
+      MOMENT_GOOGLE_IOS_CLIENT_ID \
+      MOMENT_GMAIL_USERNAME MOMENT_GMAIL_APP_PASSWORD; do
       [[ -z "${!key:-}" ]] || continue
       value="$(read_local_setting "$config_file" "$key")"
       [[ -z "$value" ]] || export "$key=$value"

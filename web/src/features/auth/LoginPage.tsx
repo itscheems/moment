@@ -11,10 +11,7 @@ export function LoginPage({ site }: { site: SiteIdentity }) {
 
   const { search } = useNavigation();
   return (
-    <AuthPageFrame
-      headline="Happening now"
-      subtitle={t("登录后继续记录此刻。")}
-    >
+    <AuthPageFrame headline="Happening now" artwork>
       <CredentialLogin heading={false} site={site} />
       <p className={styles.authSwitch}>
         {t("还没有账号？")}{" "}

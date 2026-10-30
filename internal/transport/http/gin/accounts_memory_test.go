@@ -24,6 +24,8 @@ import (
 // behaviour is the thing under test. Here the store is a map, which keeps a
 // route test from failing for reasons that have nothing to do with the route.
 type memoryAccounts struct {
+	emailChallenges  map[string]app.RegistrationChallenge
+	emailCodes       map[string]string
 	mu               sync.Mutex
 	users            map[string]domain.User
 	identities       map[string]domain.Identity
@@ -37,6 +39,8 @@ type memoryAccounts struct {
 
 func newMemoryAccounts(primaryAccount domain.User) *memoryAccounts {
 	return &memoryAccounts{
+		emailChallenges:  map[string]app.RegistrationChallenge{},
+		emailCodes:       map[string]string{},
 		users:            map[string]domain.User{primaryAccount.ID: primaryAccount},
 		identities:       map[string]domain.Identity{},
 		sessions:         map[string]domain.SessionRecord{},

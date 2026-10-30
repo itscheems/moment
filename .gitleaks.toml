@@ -16,5 +16,5 @@ targetRules = ["generic-api-key"]
 description = "CLI auth help snapshots contain SHA-256 output digests, not credentials."
 condition = "AND"
 regexTarget = "line"
-regexes = ['''^\s*"auth(?: (?:create-token|list-tokens|register|revoke-all|revoke-token|set-password|status))?": "[a-f0-9]{64}",?$''']
+regexes = ['''^\s*"auth(?: (?:create-token|list-tokens|register|request-email-code|revoke-all|revoke-token|set-password|status|verify-email-code))?": "[a-f0-9]{64}",?$''']
 paths = ['''^internal/transport/cli/testdata/help-digests\.json$''']

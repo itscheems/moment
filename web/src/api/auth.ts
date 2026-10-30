@@ -25,6 +25,17 @@ export interface RegistrationOptions {
   passwordMaxBytes: number;
 }
 
+export interface EmailChallenge {
+  challengeId: string;
+  expiresAt: string;
+  resendAt: string;
+}
+export interface VerifiedEmail {
+  token: string;
+  email: string;
+  expiresAt: string;
+}
+
 export interface RegistrationResult extends AuthSession {
   username: string;
   accountStatus: "active" | "pending";
@@ -133,13 +144,66 @@ export class AuthApi extends ApiClient {
     };
   }
 
+  async checkRegistration(username: string, password: string): Promise<string> {
+    const response = await this.fetcher(
+      "/api/v1/register/check",
+      requestInit("POST", undefined, { username, password }),
+    );
+    return stringField(
+      objectData((await decodeResponse(response)).data),
+      "username",
+    );
+  }
+
+  async requestRegistrationEmail(email: string): Promise<EmailChallenge> {
+    const response = await this.fetcher(
+      "/api/v1/register/email",
+      requestInit("POST", undefined, { email }),
+    );
+    const record = objectData((await decodeResponse(response)).data);
+    const challengeId = stringField(record, "challenge_id"),
+      expiresAt = stringField(record, "expires_at"),
+      resendAt = stringField(record, "resend_at");
+    if (
+      !challengeId ||
+      !Number.isFinite(Date.parse(expiresAt)) ||
+      !Number.isFinite(Date.parse(resendAt))
+    )
+      throw invalidResponse("email challenge is invalid");
+    return { challengeId, expiresAt, resendAt };
+  }
+
+  async verifyRegistrationEmail(
+    challengeId: string,
+    code: string,
+  ): Promise<VerifiedEmail> {
+    const response = await this.fetcher(
+      "/api/v1/register/email/verify",
+      requestInit("POST", undefined, { challenge_id: challengeId, code }),
+    );
+    const record = objectData((await decodeResponse(response)).data);
+    const token = stringField(record, "verification_token"),
+      email = stringField(record, "email"),
+      expiresAt = stringField(record, "expires_at");
+    if (!token || !email || !Number.isFinite(Date.parse(expiresAt)))
+      throw invalidResponse("email verification is invalid");
+    return { token, email, expiresAt };
+  }
+
   async register(
     username: string,
     password: string,
+    verificationToken: string,
+    displayName = "",
   ): Promise<RegistrationResult> {
     const response = await this.fetcher(
       "/api/v1/register",
-      requestInit("POST", undefined, { username, password }),
+      requestInit("POST", undefined, {
+        username,
+        password,
+        verification_token: verificationToken,
+        display_name: displayName,
+      }),
     );
     const record = objectData((await decodeResponse(response)).data);
     if (

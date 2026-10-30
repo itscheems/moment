@@ -1,0 +1,134 @@
+.field {
+  --auth-field-ink: #000000;
+  --auth-field-border: #d1d5db;
+  --auth-field-focus: #0ea5e9;
+  position: relative;
+  inline-size: 100%;
+  min-inline-size: 0;
+  block-size: 60.875px;
+  border: 2px solid var(--auth-field-border);
+  border-radius: 6px;
+  background: var(--canvas);
+  color: var(--auth-field-ink);
+  cursor: text;
+  transition: border-color 150ms ease;
+}
+.input {
+  display: block;
+  inline-size: 100%;
+  block-size: 100%;
+  min-inline-size: 0;
+  border: 0;
+  border-radius: inherit;
+  padding: 28.875px 8px 8px;
+  outline: none;
+  color: inherit;
+  background: transparent;
+  font-family: var(--font-sans);
+  font-size: 17px;
+  font-weight: 400;
+  line-height: 20px;
+}
+.input::placeholder {
+  color: transparent;
+  opacity: 0;
+}
+.label {
+  position: absolute;
+  inset-block-start: 8px;
+  inset-inline-start: 8px;
+  max-inline-size: calc(100% - 16px);
+  overflow: hidden;
+  color: var(--auth-field-ink);
+  font-family: var(--font-sans);
+  font-size: 11.25px;
+  font-weight: 400;
+  line-height: 16.875px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  opacity: 0.5;
+  pointer-events: none;
+  transform: translateY(50%) scale(1.333);
+  transform-origin: left top;
+  transition:
+    transform 150ms cubic-bezier(0.4, 0, 0.2, 1),
+    color 150ms ease,
+    opacity 150ms ease;
+}
+.field:is(
+    :focus-within,
+    [data-has-value],
+    :has(input:-webkit-autofill),
+    :has(input:autofill)
+  )
+  .label {
+  transform: translateY(0) scale(1);
+}
+.field:focus-within {
+  border-color: var(--auth-field-focus);
+}
+.field:focus-within .label {
+  color: var(--auth-field-focus);
+  opacity: 1;
+}
+.field[data-invalid] {
+  border-color: var(--danger);
+}
+.field[data-invalid] .label {
+  color: var(--danger);
+  opacity: 1;
+}
+.field[data-has-end] .input {
+  padding-inline-end: 48px;
+}
+.field[data-has-end] .label {
+  max-inline-size: calc(100% - 56px);
+}
+.end {
+  position: absolute;
+  inset-block: 0;
+  inset-inline-end: 2px;
+  display: grid;
+  align-items: center;
+}
+.field .visibility {
+  display: grid;
+  place-items: center;
+  inline-size: 44px;
+  block-size: 44px;
+  min-block-size: 44px;
+  border: 0;
+  border-radius: 50%;
+  padding: 0;
+  color: var(--text-secondary);
+  background: transparent;
+  cursor: pointer;
+}
+.visibility svg {
+  inline-size: 20px;
+  block-size: 20px;
+}
+.visibility:focus-visible {
+  outline: 2px solid var(--auth-field-focus);
+  outline-offset: -3px;
+}
+.visibility:disabled {
+  cursor: default;
+}
+@media (hover: hover) {
+  .visibility:hover:not(:disabled) {
+    color: var(--text-primary);
+    background: var(--surface-hover);
+  }
+}
+:global([data-theme="dim"]) .field,
+:global([data-theme="lights-out"]) .field {
+  --auth-field-ink: var(--text-primary);
+  --auth-field-border: var(--border-strong);
+}
+@media (prefers-reduced-motion: reduce) {
+  .field,
+  .label {
+    transition: none;
+  }
+}

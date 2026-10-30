@@ -24,7 +24,7 @@ func TestRegistrationOptionsAndSessionContract(t *testing.T) {
 		}
 	}
 	fixture.store.mode = domain.RegistrationApproval
-	response := performRequest(fixture.engine, jsonRequest(http.MethodPost, "/api/v1/register", `{"username":"NewMember","password":"password123"}`))
+	response := performRequest(fixture.engine, jsonRequest(http.MethodPost, "/api/v1/register", verifiedRegistrationBody(t, fixture, "newmember", "password123")))
 	if response.Code != http.StatusCreated {
 		t.Fatalf("register: %d %s", response.Code, response.Body.String())
 	}
@@ -93,7 +93,7 @@ func TestRegistrationRejectsClosedInvalidAndForgedInput(t *testing.T) {
 		t.Fatalf("closed registration: %d %s", closed.Code, closed.Body.String())
 	}
 	fixture.store.mode = domain.RegistrationOpen
-	created := performRequest(fixture.engine, jsonRequest(http.MethodPost, "/api/v1/register", `{"username":"validname","password":"password123"}`))
+	created := performRequest(fixture.engine, jsonRequest(http.MethodPost, "/api/v1/register", verifiedRegistrationBody(t, fixture, "validname", "password123")))
 	if created.Code != http.StatusCreated || decodeDataMap(t, created)["account_status"] != "active" {
 		t.Fatalf("open registration: %d %s", created.Code, created.Body.String())
 	}
@@ -106,7 +106,7 @@ func TestRegistrationRejectsClosedInvalidAndForgedInput(t *testing.T) {
 func TestRegistrationCreationSurvivesSessionStoreFailure(t *testing.T) {
 	fixture := newAuthenticationTestFixture(t, false)
 	fixture.store.failSession = true
-	response := performRequest(fixture.engine, jsonRequest(http.MethodPost, "/api/v1/register", `{"username":"recoverable","password":"password123"}`))
+	response := performRequest(fixture.engine, jsonRequest(http.MethodPost, "/api/v1/register", verifiedRegistrationBody(t, fixture, "recoverable", "password123")))
 	if response.Code != http.StatusServiceUnavailable {
 		t.Fatalf("session failure: %d %s", response.Code, response.Body.String())
 	}

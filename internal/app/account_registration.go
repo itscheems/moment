@@ -16,12 +16,24 @@ type PasswordAccountStore interface {
 // RegisterPasswordAccount creates a member with the status selected by the
 // site's current registration policy. Only the server supplies role and status.
 func (service *AccountService) RegisterPasswordAccount(ctx context.Context, username, password string) (domain.User, error) {
+	return service.createPasswordAccount(ctx, username, password, "", nil)
+}
+
+func (service *AccountService) createPasswordAccount(ctx context.Context, username, password, name string, bind func(AccountStore, domain.User) error) (domain.User, error) {
 	username, err := domain.NormalizeUsername(username)
 	if err != nil {
 		return domain.User{}, err
 	}
 	if err := validateAccountPassword(password); err != nil {
 		return domain.User{}, err
+	}
+	if name == "" {
+		name = username
+	} else {
+		name, err = domain.NormalizeDisplayName(name)
+		if err != nil {
+			return domain.User{}, err
+		}
 	}
 	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
 	if err != nil {
@@ -49,7 +61,7 @@ func (service *AccountService) RegisterPasswordAccount(ctx context.Context, user
 			status = domain.AccountActive
 		}
 		created = domain.User{
-			ID: id, Username: username, DisplayName: username,
+			ID: id, Username: username, DisplayName: name,
 			Role: domain.UserRoleMember, Status: status,
 			UsernameSetAtMS: &nowMS, CreatedAtMS: nowMS, UpdatedAtMS: nowMS,
 		}
@@ -57,7 +69,13 @@ func (service *AccountService) RegisterPasswordAccount(ctx context.Context, user
 		if !ok {
 			return domain.NewError(domain.CodeDataIntegrityFailed, "password account storage is unavailable", nil)
 		}
-		return store.CreateAccountWithPassword(ctx, created, hash)
+		if err := store.CreateAccountWithPassword(ctx, created, hash); err != nil {
+			return err
+		}
+		if bind != nil {
+			return bind(accounts, created)
+		}
+		return nil
 	})
 	if err != nil {
 		return domain.User{}, err

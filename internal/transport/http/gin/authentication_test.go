@@ -49,7 +49,7 @@ func newAuthenticationTestFixture(t *testing.T, secure bool) authenticationTestF
 		t.Fatal(err)
 	}
 	store := newMemoryAccounts(testProfileAccount())
-	accounts, err := app.NewAccountService(store)
+	accounts, err := app.NewAccountService(store, app.WithVerificationSender(memoryVerificationSender{store: store}))
 	if err != nil {
 		t.Fatal(err)
 	}

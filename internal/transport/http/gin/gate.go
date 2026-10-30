@@ -282,6 +282,14 @@ func writeAccountError(ctx *gin.Context, err error) {
 		return
 	}
 	switch domainErr.Code {
+	case app.CodeEmailUnavailable:
+		Failure(ctx, http.StatusServiceUnavailable, string(domainErr.Code), domainErr.Message, domainErr.Details)
+	case domain.CodeRateLimited:
+		Failure(ctx, http.StatusTooManyRequests, string(domainErr.Code), domainErr.Message, domainErr.Details)
+	case app.CodeEmailTaken:
+		Failure(ctx, http.StatusConflict, string(domainErr.Code), domainErr.Message, domainErr.Details)
+	case app.CodeVerificationExpired, app.CodeVerificationInvalid:
+		Failure(ctx, http.StatusBadRequest, string(domainErr.Code), domainErr.Message, domainErr.Details)
 	case domain.CodeUnauthorized, domain.CodeAccountNotFound:
 		unauthorized(ctx)
 	// A refusal about which credential the account carries, not about whether

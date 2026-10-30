@@ -87,7 +87,12 @@ interface SessionContextValue {
     method?: "password" | "token",
     username?: string,
   ) => Promise<void>;
-  register: (username: string, password: string) => Promise<Account>;
+  register: (
+    username: string,
+    password: string,
+    verificationToken: string,
+    displayName?: string,
+  ) => Promise<Account>;
   logout: (instanceId: string | null) => Promise<void>;
   /**
    * Drop this browser's session without asking the server to end it, for when
@@ -592,8 +597,18 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   );
 
   const register = useCallback(
-    async (username: string, password: string) => {
-      const created = await authApi.register(username, password);
+    async (
+      username: string,
+      password: string,
+      verificationToken: string,
+      displayName = "",
+    ) => {
+      const created = await authApi.register(
+        username,
+        password,
+        verificationToken,
+        displayName,
+      );
       let restored: Awaited<ReturnType<AuthApi["accountSession"]>>;
       try {
         restored = await authApi.accountSession();

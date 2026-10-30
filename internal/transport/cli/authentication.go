@@ -27,6 +27,7 @@ type accountSecurityStatus struct {
 }
 
 func registerAuthentication(application *Application) {
+	registerEmailRegistration(application)
 	username := func(flags *pflag.FlagSet) {
 		flags.String("username", "", "account username for local operations; not accepted in API mode")
 	}
@@ -55,7 +56,7 @@ func registerAuthentication(application *Application) {
 	})
 	application.MustRegisterLeaf(LeafSpec{
 		Path: []string{"auth", "register"}, Short: "Register a member account",
-		Long:       "Create a password-backed member account under the site's open, approval, or closed registration policy. API mode sends an anonymous request; direct mode requires a stopped instance.",
+		Long:       "Create a password-backed member account under the site's open, approval, or closed registration policy. API mode requires a verified email token and sends an anonymous request; direct mode requires a stopped instance.",
 		Inputs:     "Required --username and --password-file path or -. The file or stdin contains only the password and may end in one line break.",
 		Output:     "Whether the account was created, its normalized username, and active or pending status. Browser session credentials are never printed.",
 		Errors:     "Invalid or occupied names, invalid passwords, and closed registration return stable codes. An uncertain API result asks you to try signing in before another registration attempt.",
@@ -64,6 +65,8 @@ func registerAuthentication(application *Application) {
 		Capability: CapabilityBoth,
 		Flags: func(flags *pflag.FlagSet) {
 			flags.String("username", "", "username for the new member account")
+			flags.String("verification-token-file", "", "private file containing the verified email token; required in API mode")
+			flags.String("name", "", "optional display name")
 			flags.Var(&onceStringFlag{name: "--password-file"}, "password-file", "read the password from one private file or - for stdin")
 		},
 		Run: runAccountRegister,

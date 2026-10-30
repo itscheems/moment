@@ -10,6 +10,8 @@ import { type FormEvent, useEffect, useId, useRef, useState } from "react";
 import { PublicApiError, type SiteIdentity } from "../../api/public";
 import { useNavigation } from "../../app/navigation";
 import { Icon } from "../../components/icons";
+import { AuthField, PasswordVisibilityToggle } from "./AuthField";
+import { motion } from "motion/react";
 import { feedback, notify } from "../../components/Feedback";
 import { useSession } from "./SessionProvider";
 import { oauthStartUrl, PROVIDER_ICONS } from "./providers";
@@ -423,17 +425,18 @@ export function CredentialLogin({
     (state === "checking" || optionsPending || providersPending)
   )
     return (
-      <section
+      <motion.section
+        layout="position"
         aria-busy="true"
         aria-label={t("正在准备登录")}
         className={styles.loginGate}
       >
         {title}
-      </section>
+      </motion.section>
     );
   if (state === "signed-in")
     return (
-      <section className={styles.loginGate}>
+      <motion.section layout="position" className={styles.loginGate}>
         <p className={styles.eyebrow}>
           {canPublish ? t("账号会话") : t("已登录")}
         </p>
@@ -455,13 +458,13 @@ export function CredentialLogin({
               ? t("退出登录")
               : t("退出登录")}
         </button>
-      </section>
+      </motion.section>
     );
 
   const otherMethods = methods.filter((candidate) => candidate !== method);
 
   return (
-    <section className={styles.loginGate}>
+    <motion.section layout="position" className={styles.loginGate}>
       {title}
       {state === "unavailable" ? (
         <div className={styles.inlineNotice} role="alert">
@@ -475,54 +478,59 @@ export function CredentialLogin({
         className={styles.loginForm}
         onSubmit={(event) => void submit(event)}
       >
-        <label htmlFor="login-username">{t("用户名")}</label>
-        <div className={styles.tokenField}>
-          <input
-            aria-describedby={invalidField === "username" ? errorId : undefined}
-            aria-invalid={invalidField === "username" || undefined}
-            autoCapitalize="none"
-            autoComplete="username"
-            id="login-username"
-            onChange={(event) => {
-              setUsername(event.target.value);
-              clearError();
-            }}
-            placeholder={t("你的用户名")}
-            readOnly={pending}
-            spellCheck={false}
-            type="text"
-            value={username}
-          />
-        </div>
-        <label htmlFor="login-credential">{METHOD_LABELS[method]}</label>
-        <div className={styles.tokenField}>
-          <input
-            aria-describedby={
-              invalidField === "credential" ? errorId : undefined
-            }
-            aria-invalid={invalidField === "credential" || undefined}
-            autoCapitalize="none"
-            autoComplete={method === "password" ? "current-password" : "off"}
-            id="login-credential"
-            onChange={(event) => {
-              setCredential(event.target.value);
-              clearError();
-            }}
-            readOnly={pending}
-            required
-            spellCheck={false}
-            type={showCredential ? "text" : "password"}
-            value={credential}
-          />
-          <button
-            aria-pressed={showCredential}
-            disabled={pending}
-            onClick={() => setShowCredential((current) => !current)}
-            type="button"
-          >
-            {showCredential ? t("隐藏") : t("显示")}
-          </button>
-        </div>
+        <AuthField
+          label={method === "password" ? t("邮箱或用户名") : t("用户名")}
+          id="login-username"
+          aria-describedby={invalidField === "username" ? errorId : undefined}
+          aria-invalid={invalidField === "username" || undefined}
+          autoCapitalize="none"
+          autoComplete="username"
+          onChange={(event) => {
+            setUsername(event.target.value);
+            clearError();
+          }}
+          placeholder={
+            method === "password" ? t("输入邮箱或用户名") : t("你的用户名")
+          }
+          readOnly={pending}
+          spellCheck={false}
+          type="text"
+          value={username}
+        />
+        <AuthField
+          label={METHOD_LABELS[method]}
+          id="login-credential"
+          aria-describedby={invalidField === "credential" ? errorId : undefined}
+          aria-invalid={invalidField === "credential" || undefined}
+          autoCapitalize="none"
+          autoComplete={method === "password" ? "current-password" : "off"}
+          onChange={(event) => {
+            setCredential(event.target.value);
+            clearError();
+          }}
+          readOnly={pending}
+          required
+          spellCheck={false}
+          type={showCredential ? "text" : "password"}
+          value={credential}
+          end={
+            <PasswordVisibilityToggle
+              shown={showCredential}
+              controls="login-credential"
+              disabled={pending}
+              label={
+                method === "password"
+                  ? showCredential
+                    ? t("隐藏密码")
+                    : t("显示密码")
+                  : showCredential
+                    ? t("隐藏")
+                    : t("显示")
+              }
+              onToggle={() => setShowCredential((current) => !current)}
+            />
+          }
+        />
         <p className={styles.srOnly} id={errorId}>
           {invalidField ? error : null}
         </p>
@@ -599,6 +607,6 @@ export function CredentialLogin({
           )}
         </div>
       ) : null}
-    </section>
+    </motion.section>
   );
 }

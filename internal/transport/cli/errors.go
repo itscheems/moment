@@ -102,6 +102,15 @@ func canonicalPublicError(code, message string, details map[string]any, httpStat
 	case "LAST_ADMINISTRATOR", "ACCOUNT_IN_USE", "INSTANCE_ALREADY_INITIALIZED":
 		exit = ExitConflict
 		suggestion = "resolve the account dependency before retrying"
+	case "EMAIL_UNAVAILABLE":
+		exit = ExitUnavailable
+		suggestion = "check email provider configuration and available quota"
+	case "VERIFICATION_INVALID", "VERIFICATION_EXPIRED":
+		exit = ExitConflict
+		suggestion = "request a fresh email code and verify it before registering"
+	case "EMAIL_TAKEN":
+		exit = ExitConflict
+		suggestion = "sign in using the registered email and password"
 	case "USERNAME_TAKEN":
 		exit = ExitConflict
 		suggestion = "choose an available username"

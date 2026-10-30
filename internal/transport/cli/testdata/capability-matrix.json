@@ -534,6 +534,35 @@
       ]
     },
     {
+      "command": "auth request-email-code",
+      "direct": {
+        "availability": "unsupported",
+        "auth": "not_applicable",
+        "locks": []
+      },
+      "api": {
+        "availability": "supported",
+        "auth": "none",
+        "locks": [
+          "server_managed"
+        ]
+      },
+      "destructive": {
+        "requires_yes": false,
+        "supports_dry_run": false
+      },
+      "output_schema": "registration_email_challenge_v1",
+      "expected_exits": [
+        0,
+        2,
+        4,
+        8,
+        9,
+        10
+      ],
+      "parity_strategy": "api_only_email_verification"
+    },
+    {
       "command": "auth revoke-all",
       "direct": {
         "availability": "offline",
@@ -676,6 +705,35 @@
         9,
         10
       ]
+    },
+    {
+      "command": "auth verify-email-code",
+      "direct": {
+        "availability": "unsupported",
+        "auth": "not_applicable",
+        "locks": []
+      },
+      "api": {
+        "availability": "supported",
+        "auth": "none",
+        "locks": [
+          "server_managed"
+        ]
+      },
+      "destructive": {
+        "requires_yes": false,
+        "supports_dry_run": false
+      },
+      "output_schema": "registration_email_proof_v1",
+      "expected_exits": [
+        0,
+        2,
+        4,
+        8,
+        9,
+        10
+      ],
+      "parity_strategy": "api_only_email_verification"
     },
     {
       "command": "backup export",

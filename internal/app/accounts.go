@@ -78,12 +78,13 @@ type AccountTransactions interface {
 // is the same regardless of which provider produced it -- which is what keeps
 // adding a third provider from touching any of this.
 type AccountService struct {
-	transactions AccountTransactions
-	clock        func() time.Time
-	newID        func() (string, error)
-	tokenEntropy io.Reader
-	avatarSource AvatarSource
-	avatars      AvatarStore
+	transactions       AccountTransactions
+	clock              func() time.Time
+	newID              func() (string, error)
+	tokenEntropy       io.Reader
+	avatarSource       AvatarSource
+	avatars            AvatarStore
+	verificationSender VerificationSender
 }
 
 // WithAvatarCapture enables storing a provider's account picture as managed
@@ -334,6 +335,9 @@ func (service *AccountService) LinkIdentity(ctx context.Context, userID string, 
 // a pair as "your only way in" and refused, while the delete that follows it
 // took both rows for one click.
 func (service *AccountService) UnlinkIdentity(ctx context.Context, user domain.User, provider string) error {
+	if provider == "email" {
+		return domain.NewError(domain.CodeInvalidArgument, "verified email management is not available", map[string]any{"field": "provider"})
+	}
 	return service.transactions.WriteAccounts(ctx, func(accounts AccountStore, sessions SessionStore) error {
 		if err := authorizeCredentialMutation(ctx, accounts, sessions, user.ID, domain.TimeToMillis(domain.NormalizeTime(service.clock()))); err != nil {
 			return err
@@ -346,6 +350,9 @@ func (service *AccountService) UnlinkIdentity(ctx context.Context, user domain.U
 		found := false
 		remaining := 0
 		for _, identity := range identities {
+			if identity.Provider == "email" {
+				continue
+			}
 			if !found && identity.Provider == provider {
 				target, found = identity, true
 				continue
