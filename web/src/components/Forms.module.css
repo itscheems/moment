@@ -193,6 +193,38 @@
   font-size: var(--text-sm);
 }
 
+.tokenField .passwordToggle {
+  display: grid;
+  place-items: center;
+  min-block-size: 44px;
+  inline-size: 44px;
+  inset-inline-end: 4px;
+  padding: 0;
+  color: var(--text-secondary);
+  border-radius: 50%;
+}
+
+.passwordToggle svg {
+  inline-size: 20px;
+  block-size: 20px;
+}
+
+.passwordToggle:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -3px;
+}
+
+.tokenField:has(.passwordToggle) input {
+  padding-inline-end: 3.25rem;
+}
+
+@media (hover: hover) {
+  .tokenField .passwordToggle:hover:not(:disabled) {
+    color: var(--text-primary);
+    background: var(--surface-hover);
+  }
+}
+
 .loginForm small {
   color: var(--text-tertiary);
   font-size: var(--text-xs);

@@ -519,12 +519,24 @@ export function CredentialLogin({
             value={credential}
           />
           <button
+            aria-controls="login-credential"
+            aria-label={
+              method === "password"
+                ? showCredential
+                  ? t("隐藏密码")
+                  : t("显示密码")
+                : showCredential
+                  ? t("隐藏")
+                  : t("显示")
+            }
             aria-pressed={showCredential}
+            className={styles.passwordToggle}
+            onMouseDown={(event) => event.preventDefault()}
             disabled={pending}
             onClick={() => setShowCredential((current) => !current)}
             type="button"
           >
-            {showCredential ? t("隐藏") : t("显示")}
+            <Icon name={showCredential ? "eye-off" : "eye"} />
           </button>
         </div>
         <p className={styles.srOnly} id={errorId}>

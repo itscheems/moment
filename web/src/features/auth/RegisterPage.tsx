@@ -56,7 +56,9 @@ function Field({
 }) {
   return (
     <div className={styles.field}>
-      <label htmlFor={input.id}>{label}</label>
+      <label className={forms.srOnly} htmlFor={input.id}>
+        {label}
+      </label>
       <div className={styles.inputShell} data-invalid={error || undefined}>
         <input {...input} aria-invalid={error || undefined} />
         {end}
@@ -406,9 +408,10 @@ export function RegisterPage() {
       disabled={busy}
       aria-label={label}
       aria-pressed={shown}
+      onMouseDown={(event) => event.preventDefault()}
       onClick={() => set(!shown)}
     >
-      {shown ? t("隐藏") : t("显示")}
+      <Icon name={shown ? "eye-off" : "eye"} />
     </button>
   );
 
@@ -499,15 +502,20 @@ export function RegisterPage() {
             aria-valuemax={3}
             aria-valuenow={step + 1}
           >
-            <motion.span
-              initial={false}
-              animate={{ width: `${((step + 1) / 3) * 100}%` }}
-              transition={{ duration, ease }}
-            />
+            {[0, 1, 2].map((index) => (
+              <span
+                className={styles.progressSegment}
+                key={index}
+                aria-hidden="true"
+              >
+                <motion.span
+                  initial={false}
+                  animate={{ scaleX: index <= step ? 1 : 0 }}
+                  transition={{ duration, ease }}
+                />
+              </span>
+            ))}
           </div>
-          <span className={styles.stepCount} aria-hidden="true">
-            {step + 1} / 3
-          </span>
         </div>
         <span className={forms.srOnly} role="status">
           {t("第 {{step}} 步，共 3 步", { step: step + 1 })}
@@ -549,17 +557,6 @@ export function RegisterPage() {
                   data-registration-step={step + 1}
                 >
                   <div className={styles.stepHeading}>
-                    {step > 0 && (
-                      <button
-                        aria-label={t("返回上一步")}
-                        className={styles.back}
-                        type="button"
-                        disabled={busy || transitioning}
-                        onClick={() => move(step - 1)}
-                      >
-                        <Icon name="arrow-left" />
-                      </button>
-                    )}
                     <h2
                       className={step < 2 ? forms.srOnly : undefined}
                       tabIndex={-1}
@@ -581,7 +578,7 @@ export function RegisterPage() {
                           label={t("用户名")}
                           value={username}
                           onChange={edit(setUsername)}
-                          placeholder={t("选择用户名")}
+                          placeholder={t("用户名")}
                           autoComplete="username"
                           autoCapitalize="none"
                           spellCheck={false}
@@ -591,7 +588,7 @@ export function RegisterPage() {
                           label={t("密码")}
                           value={password}
                           onChange={edit(setPassword)}
-                          placeholder={t("至少 8 个字符")}
+                          placeholder={t("密码")}
                           type={showPassword ? "text" : "password"}
                           autoComplete="new-password"
                           end={toggle(
@@ -605,7 +602,7 @@ export function RegisterPage() {
                           label={t("确认密码")}
                           value={confirm}
                           onChange={edit(setConfirm)}
-                          placeholder={t("再次输入密码")}
+                          placeholder={t("确认密码")}
                           type={showConfirm ? "text" : "password"}
                           autoComplete="new-password"
                           end={toggle(
@@ -629,7 +626,7 @@ export function RegisterPage() {
                             setCode("");
                             setError(null);
                           }}
-                          placeholder="name@example.com"
+                          placeholder={t("邮箱地址")}
                           autoComplete="email"
                           type="email"
                           autoCapitalize="none"
@@ -649,7 +646,7 @@ export function RegisterPage() {
                                 );
                                 setError(null);
                               }}
-                              placeholder={t("6 位数字")}
+                              placeholder={t("验证码")}
                               autoComplete="one-time-code"
                               inputMode="numeric"
                               maxLength={6}
@@ -697,9 +694,9 @@ export function RegisterPage() {
                                 <strong>{t("邮箱验证成功")}</strong>
                               </span>
                             </motion.div>
-                          ) : (
+                          ) : challenge ? (
                             <motion.p
-                              key={challenge ? "sent" : "hint"}
+                              key="sent"
                               className={styles.hint}
                               role="status"
                               initial={{ opacity: 0 }}
@@ -707,13 +704,11 @@ export function RegisterPage() {
                               exit={{ opacity: 0 }}
                               transition={{ duration: duration / 2 }}
                             >
-                              {challenge
-                                ? t(
-                                    "验证码已发送，10 分钟内有效。没收到时请检查垃圾邮件。",
-                                  )
-                                : null}
+                              {t(
+                                "验证码已发送，10 分钟内有效。没收到时请检查垃圾邮件。",
+                              )}
                             </motion.p>
-                          )}
+                          ) : null}
                         </AnimatePresence>
                       </>
                     )}
@@ -758,41 +753,59 @@ export function RegisterPage() {
                         </motion.div>
                       )}
                     </AnimatePresence>
-                    <button
-                      className={styles.primary}
-                      type="submit"
-                      disabled={
-                        busy || transitioning || (step === 2 && !emailVerified)
-                      }
+                    <div
+                      className={styles.actions}
+                      data-has-back={step > 0 || undefined}
                     >
-                      <AnimatePresence mode="popLayout" initial={false}>
-                        <motion.span
-                          key={
-                            pending || (emailVerified ? "verified" : "ready")
-                          }
-                          initial={{ opacity: 0, y: reduced ? 0 : 5 }}
-                          animate={{ opacity: 1, y: 0 }}
-                          exit={{ opacity: 0, y: reduced ? 0 : -5 }}
-                          transition={{ duration: duration / 2 }}
+                      {step > 0 && (
+                        <button
+                          aria-label={t("返回上一步")}
+                          className={styles.back}
+                          type="button"
+                          disabled={busy || transitioning}
+                          onClick={() => move(step - 1)}
                         >
-                          {busy && <span className={styles.spinner} />}
-                          {pending === "next"
-                            ? t("正在检查…")
-                            : pending === "verify"
-                              ? t("正在验证…")
-                              : pending === "send"
-                                ? t("正在发送…")
-                                : pending === "finish"
-                                  ? t("正在完成注册…")
-                                  : step === 0 || (step === 1 && emailVerified)
-                                    ? t("下一步")
-                                    : step === 1
-                                      ? t("验证邮箱")
-                                      : t("完成注册")}
-                        </motion.span>
-                      </AnimatePresence>
-                      {!busy && <Icon name="arrow-right" />}
-                    </button>
+                          {t("返回")}
+                        </button>
+                      )}
+                      <button
+                        className={styles.primary}
+                        type="submit"
+                        disabled={
+                          busy ||
+                          transitioning ||
+                          (step === 2 && !emailVerified)
+                        }
+                      >
+                        <AnimatePresence mode="popLayout" initial={false}>
+                          <motion.span
+                            key={
+                              pending || (emailVerified ? "verified" : "ready")
+                            }
+                            initial={{ opacity: 0, y: reduced ? 0 : 5 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            exit={{ opacity: 0, y: reduced ? 0 : -5 }}
+                            transition={{ duration: duration / 2 }}
+                          >
+                            {busy && <span className={styles.spinner} />}
+                            {pending === "next"
+                              ? t("正在检查…")
+                              : pending === "verify"
+                                ? t("正在验证…")
+                                : pending === "send"
+                                  ? t("正在发送…")
+                                  : pending === "finish"
+                                    ? t("正在完成注册…")
+                                    : step === 0 ||
+                                        (step === 1 && emailVerified)
+                                      ? t("下一步")
+                                      : step === 1
+                                        ? t("验证邮箱")
+                                        : t("完成注册")}
+                          </motion.span>
+                        </AnimatePresence>
+                      </button>
+                    </div>
                   </form>
                 </div>
               </PresenceContent>

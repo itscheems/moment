@@ -189,6 +189,46 @@ describe("three-step email registration", () => {
     vi.restoreAllMocks();
     vi.unstubAllGlobals();
   });
+  it("uses field placeholders and icon-only password controls", async () => {
+    installApi();
+    renderRegister();
+    expect(
+      await screen.findByPlaceholderText("用户名", { exact: true }),
+    ).toHaveAccessibleName("用户名");
+    const password = screen.getByPlaceholderText("密码", { exact: true });
+    expect(
+      screen.getByPlaceholderText("确认密码", { exact: true }),
+    ).toHaveAccessibleName("确认密码");
+    fireEvent.change(password, { target: { value: "visibility-check" } });
+    const show = screen.getByRole("button", { name: "显示密码" });
+    expect(show.textContent).toBe("");
+    expect(show.querySelector("svg")).not.toBeNull();
+    fireEvent.click(show);
+    expect(password).toHaveAttribute("type", "text");
+    expect(password).toHaveValue("visibility-check");
+    fireEvent.click(screen.getByRole("button", { name: "隐藏密码" }));
+    expect(password).toHaveAttribute("type", "password");
+  });
+  it("places a plain back action beside the verification submit", async () => {
+    installApi();
+    renderRegister();
+    await nextToEmail();
+    const verify = screen.getByRole("button", {
+      name: "验证邮箱",
+    });
+    const back = screen.getByRole("button", {
+      name: "返回上一步",
+    });
+    expect(back.parentElement).toBe(verify.parentElement);
+    expect(back).toHaveAttribute("type", "button");
+    expect(verify.querySelector("svg")).toBeNull();
+    expect(
+      screen.getByPlaceholderText("邮箱地址", { exact: true }),
+    ).toHaveAccessibleName("邮箱地址");
+    expect(
+      screen.getByPlaceholderText("验证码", { exact: true }),
+    ).toHaveAccessibleName("验证码");
+  });
   it("shows ordered progress and preserves the return destination", async () => {
     installApi();
     renderRegister();

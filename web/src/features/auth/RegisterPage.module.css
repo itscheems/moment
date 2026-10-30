@@ -10,29 +10,26 @@
   padding-block-start: 4px;
 }
 .progressRow {
-  display: flex;
-  align-items: center;
-  gap: 16px;
   margin: 6px 2px 28px;
 }
 .progress {
-  flex: 1;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+  inline-size: 100%;
   block-size: 4px;
-  border-radius: 999px;
+}
+.progressSegment {
   overflow: hidden;
+  border-radius: 999px;
   background: var(--border-subtle);
 }
-.progress > span {
+.progressSegment > span {
   display: block;
   block-size: 100%;
   border-radius: inherit;
   background: var(--accent);
-}
-.stepCount {
-  flex-shrink: 0;
-  color: var(--text-secondary);
-  font-size: 12px;
-  font-variant-numeric: tabular-nums;
+  transform-origin: left;
 }
 .viewport {
   position: relative;
@@ -61,23 +58,38 @@
   text-decoration-color: var(--accent);
   text-underline-offset: 5px;
 }
-.back {
+.actions {
   display: grid;
-  place-items: center;
-  inline-size: 44px;
-  min-block-size: 44px;
-  margin-inline-start: -8px;
-  padding: 0;
-  flex-shrink: 0;
-  border: 0;
-  border-radius: 50%;
-  color: var(--text-primary);
-  background: transparent;
-  transition: background 150ms;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 12px;
+  margin-block-start: 6px;
 }
-.back svg {
-  inline-size: 20px;
-  block-size: 20px;
+.actions[data-has-back] {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 2fr);
+}
+.back {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  block-size: 48px;
+  min-inline-size: 0;
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  padding: 12px 16px;
+  color: var(--text-primary);
+  background: var(--canvas);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 24px;
+  transition:
+    background 150ms,
+    transform 120ms,
+    opacity 150ms;
+}
+.back:disabled {
+  opacity: 0.55;
+  cursor: default;
 }
 .form {
   display: flex;
@@ -86,10 +98,11 @@
   padding-block-start: 12px;
 }
 .field {
+  position: relative;
   display: flex;
   min-inline-size: 0;
   flex-direction: column;
-  gap: 8px;
+  gap: 0;
 }
 .field label {
   font-size: 13px;
@@ -98,6 +111,7 @@
   color: var(--text-primary);
 }
 .inputShell {
+  block-size: 48px;
   display: flex;
   position: relative;
   align-items: center;
@@ -122,7 +136,8 @@
 .inputShell input {
   min-inline-size: 0;
   inline-size: 100%;
-  min-block-size: 48px;
+  block-size: 100%;
+  min-block-size: 0;
   padding: 12px 14px;
   border: 0;
   border-radius: inherit;
@@ -135,26 +150,33 @@
 }
 .inputShell input::placeholder {
   color: var(--text-secondary);
-  opacity: 0.7;
+  opacity: 1;
 }
 .inputShell input:read-only {
   opacity: 0.75;
 }
 .inputShell:has(.reveal) input {
-  padding-inline-end: 58px;
+  padding-inline-end: 50px;
 }
 .reveal {
   position: absolute;
   inset-inline-end: 2px;
   min-block-size: 44px;
-  min-inline-size: 52px;
+  inline-size: 44px;
+  min-inline-size: 44px;
+  display: grid;
+  place-items: center;
   border: 0;
   border-radius: 8px;
-  padding: 0 10px;
+  padding: 0;
   font-size: 12px;
   font-weight: 600;
   color: var(--text-secondary);
   background: transparent;
+}
+.reveal svg {
+  inline-size: 20px;
+  block-size: 20px;
 }
 .hint {
   margin: -6px 0 0;
@@ -165,7 +187,7 @@
 .codeRow {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
-  align-items: end;
+  align-items: stretch;
   gap: 10px;
 }
 .codeRow input {
@@ -176,6 +198,7 @@
   letter-spacing: normal;
 }
 .send {
+  block-size: 48px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -207,7 +230,7 @@
   min-block-size: 48px;
   inline-size: 100%;
   flex-shrink: 0;
-  margin-block-start: 6px;
+  margin-block-start: 0;
   border: 0;
   border-radius: 999px;
   padding: 12px 24px;
@@ -237,7 +260,8 @@
   cursor: default;
 }
 .primary:active:not(:disabled),
-.send:active:not(:disabled) {
+.send:active:not(:disabled),
+.back:active:not(:disabled) {
   transform: scale(0.98);
 }
 .primary:focus-visible,

@@ -168,6 +168,21 @@ describe("owner login third-party entry points", () => {
     vi.unstubAllGlobals();
   });
 
+  it("keeps password visibility on an icon button", async () => {
+    installApi([]);
+    renderLogin();
+    const password = await screen.findByLabelText("密码", { exact: true });
+    fireEvent.change(password, { target: { value: "visibility-check" } });
+    const show = screen.getByRole("button", { name: "显示密码" });
+    expect(show.textContent).toBe("");
+    expect(show.querySelector("svg")).not.toBeNull();
+    fireEvent.click(show);
+    expect(password).toHaveAttribute("type", "text");
+    expect(password).toHaveValue("visibility-check");
+    fireEvent.click(screen.getByRole("button", { name: "隐藏密码" }));
+    expect(password).toHaveAttribute("type", "password");
+  });
+
   // The form used to arrive in pieces -- the credential fields as soon as
   // the methods answered, the provider buttons a request later -- and the
   // page moved under the reader as each piece landed. It waits for both.
