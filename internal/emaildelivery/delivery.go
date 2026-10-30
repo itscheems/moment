@@ -14,6 +14,7 @@ type Budget interface {
 	ReserveEmailBudget(context.Context, int, time.Time) (bool, error)
 }
 
+// Sender delivers verification messages using a configured mailbox and budget.
 type Sender struct {
 	Username, Password string
 	Budget             Budget
@@ -29,6 +30,7 @@ func NewFromEnvironment(budget Budget) *Sender {
 	}
 }
 
+// SendVerification reserves capacity and attempts one authenticated delivery.
 func (sender *Sender) SendVerification(ctx context.Context, to, code, id string) error {
 	if sender == nil || sender.Budget == nil || sender.Username == "" || sender.Password == "" {
 		return errors.New("email delivery is not configured")

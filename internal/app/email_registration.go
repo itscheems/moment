@@ -15,6 +15,7 @@ import (
 	"github.com/moment/moment/internal/domain"
 )
 
+// Email registration errors distinguish delivery, identity, and proof failures.
 const (
 	CodeEmailUnavailable    domain.Code = "EMAIL_UNAVAILABLE"
 	CodeEmailTaken          domain.Code = "EMAIL_TAKEN"
@@ -27,6 +28,7 @@ type VerificationSender interface {
 	SendVerification(context.Context, string, string, string) error
 }
 
+// WithVerificationSender configures delivery for registration challenges.
 func WithVerificationSender(sender VerificationSender) AccountOption {
 	return func(service *AccountService) { service.verificationSender = sender }
 }
@@ -40,6 +42,7 @@ type RegistrationChallenge struct {
 	Verified, Consumed         bool
 }
 
+// EmailRegistrationStore persists short-lived challenges and request limits.
 type EmailRegistrationStore interface {
 	InsertRegistrationChallenge(context.Context, RegistrationChallenge) error
 	RegistrationChallenge(context.Context, string, bool) (RegistrationChallenge, bool, error)
@@ -55,6 +58,7 @@ func emailStore(accounts AccountStore) (EmailRegistrationStore, error) {
 	return store, nil
 }
 
+// NormalizeEmail validates and canonicalizes a mailbox address.
 func NormalizeEmail(value string) (string, error) {
 	value = strings.ToLower(strings.TrimSpace(value))
 	parsed, err := mail.ParseAddress(value)
@@ -64,6 +68,7 @@ func NormalizeEmail(value string) (string, error) {
 	return value, nil
 }
 
+// CheckRegistrationAccount validates credentials and checks username availability.
 func (service *AccountService) CheckRegistrationAccount(ctx context.Context, username, password string) (string, error) {
 	username, err := domain.NormalizeUsername(username)
 	if err != nil {
@@ -92,12 +97,14 @@ func (service *AccountService) CheckRegistrationAccount(ctx context.Context, use
 	return username, err
 }
 
+// EmailChallengeReceipt identifies a challenge and its expiry and resend times.
 type EmailChallengeReceipt struct {
 	ChallengeID string    `json:"challenge_id"`
 	ExpiresAt   time.Time `json:"expires_at"`
 	ResendAt    time.Time `json:"resend_at"`
 }
 
+// VerifiedEmailReceipt carries the private proof needed to finish registration.
 type VerifiedEmailReceipt struct {
 	Token     string    `json:"verification_token"`
 	Email     string    `json:"email"`
@@ -116,6 +123,7 @@ func verificationDigest(value string) []byte {
 	return digest[:]
 }
 
+// RequestRegistrationEmail reserves a challenge before attempting delivery.
 func (service *AccountService) RequestRegistrationEmail(ctx context.Context, address, requester string) (EmailChallengeReceipt, error) {
 	email, err := NormalizeEmail(address)
 	if err != nil {
@@ -176,6 +184,7 @@ func (service *AccountService) RequestRegistrationEmail(ctx context.Context, add
 	return EmailChallengeReceipt{ChallengeID: id, ExpiresAt: expires, ResendAt: now.Add(time.Minute)}, nil
 }
 
+// VerifyRegistrationEmail exchanges an unexpired code for a registration proof.
 func (service *AccountService) VerifyRegistrationEmail(ctx context.Context, id, code string) (VerifiedEmailReceipt, error) {
 	if len(id) != 64 || len(code) != 6 || strings.IndexFunc(code, func(r rune) bool { return r < '0' || r > '9' }) >= 0 {
 		return VerifiedEmailReceipt{}, domain.NewError(CodeVerificationInvalid, "verification code is invalid", map[string]any{"field": "code"})
@@ -223,6 +232,7 @@ func (service *AccountService) VerifyRegistrationEmail(ctx context.Context, id, 
 	return receipt, refusal
 }
 
+// RegisterEmailAccount atomically creates an account and consumes its email proof.
 func (service *AccountService) RegisterEmailAccount(ctx context.Context, username, password, name, proof string) (domain.User, error) {
 	if len(proof) != 64 {
 		return domain.User{}, domain.NewError(CodeVerificationInvalid, "a verified email is required", map[string]any{"field": "email"})

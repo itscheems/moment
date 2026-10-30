@@ -44,7 +44,7 @@ func sendSMTPVerification(ctx context.Context, config smtpConfig, to, code, id s
 	if err != nil {
 		return errors.New("smtp connection failed")
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 	stop := context.AfterFunc(ctx, func() { _ = conn.Close() })
 	defer stop()
 	deadline, _ := ctx.Deadline()
@@ -55,7 +55,7 @@ func sendSMTPVerification(ctx context.Context, config smtpConfig, to, code, id s
 	if err != nil {
 		return errors.New("smtp greeting failed")
 	}
-	defer client.Close()
+	defer func() { _ = client.Close() }()
 	if err := client.Auth(smtp.PlainAuth("", config.username, config.password, host)); err != nil {
 		return errors.New("smtp authentication failed")
 	}

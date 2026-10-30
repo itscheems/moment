@@ -37,7 +37,7 @@ func smtpFixture(t *testing.T, mode string) (smtpConfig, <-chan smtpRecord) {
 		if err != nil {
 			return
 		}
-		defer conn.Close()
+		defer func() { _ = conn.Close() }()
 		_ = conn.SetDeadline(time.Now().Add(3 * time.Second))
 		wire := textproto.NewConn(conn)
 		if mode == "stall" {
