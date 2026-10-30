@@ -83,7 +83,7 @@ func (sender *Sender) SendVerification(ctx context.Context, to, code, id string)
 				address: "smtp.gmail.com:465", username: provider.From, password: provider.Key,
 			}, to, code, id)
 			if err != nil && sender.Log != nil {
-				sender.Log("warn", "email_delivery_failed", map[string]any{"provider": provider.Name})
+				sender.Log("warn", "email_delivery_failed", map[string]any{"provider": provider.Name, "reason": err.Error()})
 			}
 			// A disconnect after DATA may conceal an accepted message. Never
 			// retry the same challenge through another provider after SMTP fails.

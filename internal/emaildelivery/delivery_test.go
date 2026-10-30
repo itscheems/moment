@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 )
@@ -81,8 +82,14 @@ func TestGmailFailureNeverFallsBackOrLogsCredentials(t *testing.T) {
 	if err == nil || calls != 0 {
 		t.Fatal("SMTP failure was hidden or retried through another provider")
 	}
-	if string(logged) != `{"provider":"gmail"}` {
-		t.Fatalf("unexpected diagnostic fields: %s", logged)
+	var fields map[string]string
+	if json.Unmarshal(logged, &fields) != nil || fields["provider"] != "gmail" || fields["reason"] == "" {
+		t.Fatal("missing delivery diagnostics")
+	}
+	for _, secret := range []string{"private-app-password", "123456", "reader@example.test", "sender@example.test"} {
+		if strings.Contains(string(logged), secret) {
+			t.Fatal("sensitive delivery data appeared in diagnostics")
+		}
 	}
 }
 func TestBrevoZeroCreditsNeverQueuesVerification(t *testing.T) {
