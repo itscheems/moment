@@ -139,7 +139,7 @@
 }
 
 .loginScreen .loginForm + .oauthSeparator {
-  margin-block-start: 4px;
+  margin-block-start: 8px;
 }
 
 .oauthRule {
