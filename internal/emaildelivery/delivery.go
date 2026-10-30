@@ -36,6 +36,11 @@ type Sender struct {
 // NewFromEnvironment keeps credentials in process configuration, never site data.
 func NewFromEnvironment(budget Budget) *Sender {
 	sender := &Sender{Budget: budget, Client: &http.Client{Timeout: 8 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}}
+	username := strings.TrimSpace(os.Getenv("MOMENT_GMAIL_USERNAME"))
+	password := strings.Join(strings.Fields(os.Getenv("MOMENT_GMAIL_APP_PASSWORD")), "")
+	if username != "" && password != "" {
+		sender.Providers = append(sender.Providers, Provider{Name: "gmail", Key: password, From: username, Daily: 500})
+	}
 	if key := strings.TrimSpace(os.Getenv("MOMENT_RESEND_API_KEY")); key != "" {
 		from := strings.TrimSpace(os.Getenv("MOMENT_RESEND_FROM"))
 		if from == "" {
@@ -72,6 +77,17 @@ func (sender *Sender) SendVerification(ctx context.Context, to, code, id string)
 		}
 		if !allowed {
 			continue
+		}
+		if provider.Name == "gmail" {
+			err := sendSMTPVerification(ctx, smtpConfig{
+				address: "smtp.gmail.com:465", username: provider.From, password: provider.Key,
+			}, to, code, id)
+			if err != nil && sender.Log != nil {
+				sender.Log("warn", "email_delivery_failed", map[string]any{"provider": provider.Name})
+			}
+			// A disconnect after DATA may conceal an accepted message. Never
+			// retry the same challenge through another provider after SMTP fails.
+			return err
 		}
 		// Brevo accepts over-quota transactional mail into a backlog. Check its own
 		// remaining credits as well as our reservations before submitting an OTP.

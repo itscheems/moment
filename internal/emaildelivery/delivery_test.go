@@ -65,6 +65,26 @@ func TestUnknownOutcomeDoesNotSendThroughBothProviders(t *testing.T) {
 		t.Fatalf("sent through %d channels", calls)
 	}
 }
+
+func TestGmailFailureNeverFallsBackOrLogsCredentials(t *testing.T) {
+	calls := 0
+	server := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { calls++ }))
+	defer server.Close()
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	var logged []byte
+	sender := Sender{Budget: testBudget{true}, Providers: []Provider{
+		{Name: "gmail", From: "sender@example.test", Key: "private-app-password"},
+		{Name: "resend", Endpoint: server.URL},
+	}, Log: func(_, _ string, fields map[string]any) { logged, _ = json.Marshal(fields) }}
+	err := sender.SendVerification(ctx, "reader@example.test", "123456", "challenge")
+	if err == nil || calls != 0 {
+		t.Fatal("SMTP failure was hidden or retried through another provider")
+	}
+	if string(logged) != `{"provider":"gmail"}` {
+		t.Fatalf("unexpected diagnostic fields: %s", logged)
+	}
+}
 func TestBrevoZeroCreditsNeverQueuesVerification(t *testing.T) {
 	sends := 0
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
