@@ -1,7 +1,6 @@
 import { useTranslation } from "react-i18next";
 import {
   type FormEvent,
-  type InputHTMLAttributes,
   type ReactNode,
   useCallback,
   useEffect,
@@ -25,6 +24,8 @@ import { PublicApiError } from "../../api/public";
 import { InternalLink, useNavigation } from "../../app/navigation";
 import { Icon } from "../../components/icons";
 import { AuthPageFrame } from "./AuthPageFrame";
+import { AuthField as Field, PasswordVisibilityToggle } from "./AuthField";
+import { VerificationCode } from "./VerificationCode";
 import { RegistrationSessionRestoreError, useSession } from "./SessionProvider";
 import { authPageHref, safeReturnPath } from "./returnPath";
 import forms from "../../components/Forms.module.css";
@@ -40,29 +41,6 @@ function PresenceContent({ children }: { children: ReactNode }) {
   return (
     <div inert={!present} aria-hidden={!present || undefined}>
       {children}
-    </div>
-  );
-}
-
-function Field({
-  label,
-  error,
-  end,
-  ...input
-}: InputHTMLAttributes<HTMLInputElement> & {
-  label: string;
-  error?: boolean;
-  end?: ReactNode;
-}) {
-  return (
-    <div className={styles.field}>
-      <label className={forms.srOnly} htmlFor={input.id}>
-        {label}
-      </label>
-      <div className={styles.inputShell} data-invalid={error || undefined}>
-        <input {...input} aria-invalid={error || undefined} />
-        {end}
-      </div>
     </div>
   );
 }
@@ -402,17 +380,12 @@ export function RegisterPage() {
     set: (value: boolean) => void,
     label: string,
   ) => (
-    <button
-      className={styles.reveal}
-      type="button"
+    <PasswordVisibilityToggle
+      shown={shown}
+      onToggle={() => set(!shown)}
+      label={label}
       disabled={busy}
-      aria-label={label}
-      aria-pressed={shown}
-      onMouseDown={(event) => event.preventDefault()}
-      onClick={() => set(!shown)}
-    >
-      <Icon name={shown ? "eye-off" : "eye"} />
-    </button>
+    />
   );
 
   let content: ReactNode;
@@ -633,23 +606,21 @@ export function RegisterPage() {
                           spellCheck={false}
                         />
                         {!emailVerified && (
-                          <div className={styles.codeRow}>
-                            <Field
-                              {...inputProps("code")}
-                              label={t("验证码")}
+                          <div className={styles.codeSection}>
+                            <VerificationCode
+                              id={`${id}-code`}
                               value={code}
-                              onChange={(event) => {
-                                setCode(
-                                  event.target.value
-                                    .replace(/\D/g, "")
-                                    .slice(0, 6),
-                                );
+                              onChange={(value) => {
+                                setCode(value);
                                 setError(null);
                               }}
-                              placeholder={t("验证码")}
-                              autoComplete="one-time-code"
-                              inputMode="numeric"
-                              maxLength={6}
+                              disabled={busy || !challenge}
+                              invalid={error?.field === "code"}
+                              descriptionId={
+                                error?.field === "code"
+                                  ? `${id}-error`
+                                  : undefined
+                              }
                             />
                             <button
                               className={styles.send}
@@ -716,7 +687,7 @@ export function RegisterPage() {
                       <>
                         <Field
                           {...inputProps("display_name")}
-                          label={t("名字")}
+                          label={t("输入名字（选填）")}
                           value={name}
                           onChange={edit(setName)}
                           placeholder={t("输入名字（选填）")}
@@ -774,6 +745,9 @@ export function RegisterPage() {
                         disabled={
                           busy ||
                           transitioning ||
+                          (step === 1 &&
+                            !emailVerified &&
+                            (!challenge || code.length !== 6)) ||
                           (step === 2 && !emailVerified)
                         }
                       >

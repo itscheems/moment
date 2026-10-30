@@ -3,14 +3,14 @@
 .notice,
 .skeleton {
   inline-size: 100%;
-  max-inline-size: 22rem;
+  max-inline-size: 100%;
   flex-shrink: 0;
 }
 .wizard {
   padding-block-start: 4px;
 }
 .progressRow {
-  margin: 6px 2px 28px;
+  margin: 6px 0 24px;
 }
 .progress {
   display: grid;
@@ -37,7 +37,7 @@
   overflow-clip-margin: 6px;
 }
 .panel {
-  padding: 0 2px 2px;
+  padding: 0 0 2px;
 }
 .stepHeading {
   display: flex;
@@ -94,89 +94,8 @@
 .form {
   display: flex;
   flex-direction: column;
-  gap: 18px;
+  gap: 20px;
   padding-block-start: 12px;
-}
-.field {
-  position: relative;
-  display: flex;
-  min-inline-size: 0;
-  flex-direction: column;
-  gap: 0;
-}
-.field label {
-  font-size: 13px;
-  font-weight: 650;
-  line-height: 1.4;
-  color: var(--text-primary);
-}
-.inputShell {
-  block-size: 48px;
-  display: flex;
-  position: relative;
-  align-items: center;
-  border: 1px solid var(--border-strong);
-  border-radius: 10px;
-  background: var(--canvas);
-  transition:
-    border-color 150ms,
-    box-shadow 150ms,
-    background-color 150ms;
-}
-.inputShell:focus-within {
-  border-color: var(--accent);
-  box-shadow: 0 0 0 3px var(--accent-soft);
-}
-.inputShell[data-invalid] {
-  border-color: var(--danger);
-}
-.inputShell[data-invalid]:focus-within {
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--danger) 12%, transparent);
-}
-.inputShell input {
-  min-inline-size: 0;
-  inline-size: 100%;
-  block-size: 100%;
-  min-block-size: 0;
-  padding: 12px 14px;
-  border: 0;
-  border-radius: inherit;
-  outline: none;
-  background: transparent;
-  color: var(--text-primary);
-  font: inherit;
-  font-size: 15px;
-  line-height: 22px;
-}
-.inputShell input::placeholder {
-  color: var(--text-secondary);
-  opacity: 1;
-}
-.inputShell input:read-only {
-  opacity: 0.75;
-}
-.inputShell:has(.reveal) input {
-  padding-inline-end: 50px;
-}
-.reveal {
-  position: absolute;
-  inset-inline-end: 2px;
-  min-block-size: 44px;
-  inline-size: 44px;
-  min-inline-size: 44px;
-  display: grid;
-  place-items: center;
-  border: 0;
-  border-radius: 8px;
-  padding: 0;
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--text-secondary);
-  background: transparent;
-}
-.reveal svg {
-  inline-size: 20px;
-  block-size: 20px;
 }
 .hint {
   margin: -6px 0 0;
@@ -184,38 +103,29 @@
   color: var(--text-secondary);
   line-height: 1.65;
 }
-.codeRow {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: stretch;
-  gap: 10px;
-}
-.codeRow input {
-  letter-spacing: 0.16em;
-  font-variant-numeric: tabular-nums;
-}
-.codeRow input::placeholder {
-  letter-spacing: normal;
+.codeSection {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-inline-size: 0;
 }
 .send {
-  block-size: 48px;
   display: inline-flex;
   align-items: center;
-  justify-content: center;
   gap: 6px;
-  min-block-size: 48px;
-  min-inline-size: 112px;
-  border: 1px solid var(--border-strong);
-  border-radius: 10px;
-  padding: 0 12px;
-  background: var(--canvas);
-  color: var(--accent);
-  font-size: 12px;
+  min-block-size: 44px;
+  align-self: flex-start;
+  border: 0;
+  border-radius: 4px;
+  padding: 0;
+  color: var(--text-primary);
+  background: transparent;
+  font-family: var(--font-sans);
+  font-size: 14px;
   font-weight: 700;
+  line-height: 20px;
   font-variant-numeric: tabular-nums;
-  transition:
-    background 150ms,
-    transform 120ms;
+  cursor: pointer;
 }
 .send:disabled {
   color: var(--text-secondary);
@@ -266,7 +176,6 @@
 }
 .primary:focus-visible,
 .send:focus-visible,
-.reveal:focus-visible,
 .back:focus-visible,
 .secondary:focus-visible {
   outline: 2px solid var(--accent);
@@ -345,7 +254,7 @@
   display: flex;
   align-items: flex-start;
   flex-direction: column;
-  gap: 18px;
+  gap: 20px;
   padding-block: 16px;
 }
 .successMark {
@@ -376,7 +285,7 @@
 .notice {
   display: flex;
   flex-direction: column;
-  gap: 18px;
+  gap: 20px;
 }
 .secondary {
   align-self: flex-start;
@@ -403,20 +312,13 @@
     background: var(--button-primary-hover);
   }
   .send:hover:not(:disabled),
-  .back:hover:not(:disabled),
-  .reveal:hover:not(:disabled) {
+  .back:hover:not(:disabled) {
     background: var(--surface-hover);
-  }
-  .inputShell:hover:not(:focus-within):not([data-invalid]) {
-    border-color: var(--text-secondary);
   }
 }
 @media (max-width: 719px) {
   .stepHeading h2 {
     font-size: 24px;
-  }
-  .inputShell input {
-    font-size: 16px;
   }
 }
 @media (prefers-reduced-motion: reduce) {

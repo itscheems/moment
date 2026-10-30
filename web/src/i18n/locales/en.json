@@ -1657,5 +1657,6 @@
   "请输入有效的邮箱地址。": "Enter a valid email address.",
   "请输入 6 位验证码。": "Enter the 6-digit verification code.",
   "邮箱验证已过期，请返回上一步重新验证。": "Email verification has expired. Go back and verify again.",
-  "名字最多 80 个字，不能包含控制字符。": "Use up to 80 characters for your name, without control characters."
+  "名字最多 80 个字，不能包含控制字符。": "Use up to 80 characters for your name, without control characters.",
+  "验证码第 {{value1}} 位": "Verification code digit {{value1}}"
 }

@@ -489,25 +489,8 @@ describe("visual foundation contract", () => {
     );
   });
 
-  // The sign-in page draws its form once and anchors the column to the top,
-  // so nothing already on screen moves when a late answer lands; and its
-  // corner arrow stands on a plain white disc over the artwork, not the
-  // dark blurred one that read as a smudge.
-  it("keeps the sign-in page still while it loads and its arrow on a white disc", () => {
-    expect(formsCss).toMatch(
-      /\._actionPanel_[\w-]+\s*\{[^}]*position: relative;[^}]*justify-content: flex-start;/s,
-    );
-    expect(formsCss).not.toMatch(
-      /\._actionPanel_[\w-]+\s*\{[^}]*justify-content: center/s,
-    );
-    expect(formsCss).not.toMatch(
-      /\._loginBack_[\w-]+[^{]*\{[^}]*backdrop-filter/s,
-    );
-    expect(formsCss).toMatch(
-      /\._loginBack_[\w-]+\s*\{[^}]*color: #0f1419;[^}]*background: #fff;[^}]*box-shadow:/s,
-    );
-  });
-
+  // Authentication alignment is checked in a browser; the old top-anchored
+  // artwork layout is no longer the product contract.
   // The archive calendar's legend and grid are one seven-column shape: the
   // letters used to run full width over an inset grid, so Monday stood a few
   // pixels left of its column.

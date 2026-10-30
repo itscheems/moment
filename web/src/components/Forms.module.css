@@ -156,75 +156,6 @@
   padding-block-start: var(--space-5);
 }
 
-.loginForm label {
-  color: var(--text-secondary);
-  font-size: var(--text-sm);
-  font-weight: 700;
-}
-
-.tokenField {
-  position: relative;
-}
-
-.tokenField input {
-  min-block-size: 3rem;
-  inline-size: 100%;
-  border: 1px solid var(--border-strong);
-  border-radius: var(--radius-action);
-  padding-inline: var(--space-4) 4.5rem;
-  color: var(--text-primary);
-  background: var(--surface);
-  font-family: var(--font-sans);
-}
-
-.tokenField input[aria-invalid="true"] {
-  border-color: var(--danger);
-}
-
-.tokenField button {
-  position: absolute;
-  inset-block: 0;
-  inset-inline-end: var(--space-2);
-  min-block-size: auto;
-  border: 0;
-  padding-inline: var(--space-2);
-  color: var(--accent);
-  background: transparent;
-  font-size: var(--text-sm);
-}
-
-.tokenField .passwordToggle {
-  display: grid;
-  place-items: center;
-  min-block-size: 44px;
-  inline-size: 44px;
-  inset-inline-end: 4px;
-  padding: 0;
-  color: var(--text-secondary);
-  border-radius: 50%;
-}
-
-.passwordToggle svg {
-  inline-size: 20px;
-  block-size: 20px;
-}
-
-.passwordToggle:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: -3px;
-}
-
-.tokenField:has(.passwordToggle) input {
-  padding-inline-end: 3.25rem;
-}
-
-@media (hover: hover) {
-  .tokenField .passwordToggle:hover:not(:disabled) {
-    color: var(--text-primary);
-    background: var(--surface-hover);
-  }
-}
-
 .loginForm small {
   color: var(--text-tertiary);
   font-size: var(--text-xs);
@@ -1717,12 +1648,7 @@
   inline-size: 100%;
 }
 
-/* The sign-in page stands on its own rather than inside the reading shell.
-   A visitor here is not browsing, and the sidebars offer navigation that every
-   destination behind them would bounce straight back to this page.
-
-   Artwork and content are separate siblings: the viewport sizes the artwork,
-   while only the action panel scrolls as the form grows. */
+/* Authentication is a compact, centered column with its own scroll region. */
 .loginScreen {
   position: relative;
   isolation: isolate;
@@ -1732,168 +1658,104 @@
   overflow: hidden;
   background: var(--canvas);
 }
-
 .loginSplit {
-  position: relative;
-  z-index: 1;
-  display: grid;
-  min-block-size: 0;
-}
-
-/* The brand panel carries no information, so it is the first thing to go when
-   there is not room for both columns -- not stacked above the form, where it
-   would push the only actionable part of the page below the fold. */
-.brandPanel {
-  display: none;
-}
-
-/* Anchored to the top, not centred. Centred, the column re-centred every
-   time the form under the headline grew -- the session answer, then the
-   methods, then the provider buttons a request later -- and the headline
-   jumped 90px on each arrival. From the top, what arrives late extends
-   downwards and nothing already drawn moves; the offset keeps the block in
-   the upper third the centred layout put it in on an ordinary window. */
-.actionPanel {
-  --login-block-gap-max: var(--space-6);
-  --login-pad-top: clamp(4.5rem, calc((100dvh - 36rem) / 2), 10rem);
-  --login-pad-bottom: clamp(var(--space-4), 3dvh, var(--space-10));
-  position: relative;
-  min-block-size: 0;
-  min-inline-size: 0;
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: flex-start;
-  gap: clamp(
-    var(--space-3),
-    calc((100dvh - 37.5rem) / 10),
-    var(--login-block-gap-max)
-  );
-  padding: var(--login-pad-top) var(--space-5) var(--login-pad-bottom);
+  min-block-size: 0;
+  padding: 76px max(24px, env(safe-area-inset-right))
+    max(40px, env(safe-area-inset-bottom)) max(24px, env(safe-area-inset-left));
   overflow-y: auto;
   overscroll-behavior: contain;
-  scrollbar-gutter: stable;
+  scrollbar-gutter: stable both-edges;
 }
-
+.actionPanel {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 24px;
+  inline-size: 100%;
+  max-inline-size: 412px;
+  flex-shrink: 0;
+  min-inline-size: 0;
+  margin-block: auto;
+}
 .headlineBlock {
   display: flex;
-  flex-shrink: 0;
-  inline-size: 100%;
-  max-inline-size: 22rem;
   flex-direction: column;
-  gap: clamp(var(--space-2), 1.5dvh, var(--space-3));
+  gap: 12px;
+  inline-size: 100%;
 }
-
-/* The extended-heavy cut, which is the display face this layout is drawn
-   around. The tracking is reset because `:where(h1)` applies --tracking-display
-   globally and negative tracking reads as cramped on both this face and on
-   Chinese glyphs -- the same reason AppShell resets it. */
 .displayHeadline {
   margin: 0;
-  font-family: var(--font-signin-display);
-  font-size: clamp(2.25rem, min(5vw, calc(12dvh - 2.25rem)), 3.75rem);
-  font-weight: 800;
-  line-height: 1.05;
+  font-family: var(--font-sans);
+  font-size: 32px;
+  font-weight: 700;
+  line-height: 1.2;
   letter-spacing: normal;
   word-break: break-word;
-  /* Suppress large selection highlights while keeping the headline available
-     to assistive technology, find-in-page, and browser translation. */
   user-select: none;
   -webkit-user-select: none;
 }
-
 .subHeadline {
   margin: 0;
-  color: var(--text-primary);
-  font-family: var(--font-signin-display);
-  font-size: clamp(1.125rem, 3dvh, var(--text-xl));
-  font-weight: 800;
-  line-height: 1.3;
-  letter-spacing: normal;
+  color: var(--text-secondary);
+  font-size: 17px;
+  line-height: 1.4;
 }
-
 .loginScreen .loginGate {
-  flex-shrink: 0;
   inline-size: 100%;
-  max-inline-size: 22rem;
+  max-inline-size: none;
   margin: 0;
   padding: 0;
 }
-
-.loginSubmitButton {
-  margin-block-start: calc(var(--space-3) - var(--login-field-gap));
-}
-
 .loginScreen .loginForm {
-  --login-field-gap: clamp(var(--space-2), 1.5dvh, var(--space-3));
+  --login-field-gap: 20px;
+  border: 0;
+  padding: 0;
 }
-
-.loginScreen .tokenField input {
-  min-block-size: clamp(var(--target-size), 6dvh, 3rem);
+.loginSubmitButton {
+  margin-block-start: 4px;
 }
-
-.loginScreen .oauthOptions {
-  gap: clamp(var(--space-2), 1.5dvh, var(--space-3));
-  margin-block-end: clamp(var(--space-2), 2dvh, var(--space-4));
-}
-
-.loginScreen .oauthSeparator {
-  margin-block-end: clamp(var(--space-2), 2dvh, var(--space-4));
-}
-
-.loginScreen .otherMethods {
-  margin-block-start: clamp(var(--space-2), 2dvh, var(--space-4));
-}
-
 .authSwitch {
-  flex-shrink: 0;
   inline-size: 100%;
-  max-inline-size: 22rem;
   margin: 0;
   color: var(--text-secondary);
   font-size: var(--text-sm);
   line-height: 1.5;
   text-align: center;
 }
-
 .authSwitch a {
   color: var(--accent);
   font-weight: 700;
   text-decoration: none;
 }
-
 .authSwitch a:hover {
   text-decoration: underline;
 }
-
 .authSwitch a:focus-visible {
   border-radius: 2px;
   outline: 2px solid var(--accent);
   outline-offset: 3px;
 }
-
 .loginScreen .loginGate > .registerStatus {
   margin: 0 0 var(--space-4);
   color: var(--text-secondary);
   font-size: var(--text-sm);
   line-height: 1.55;
 }
-
 .registerContinue {
   color: var(--accent);
   font-weight: 700;
 }
-
-/* The same 2.75rem arrow the shell's headers carry, pinned to the viewport.
-   Over the canvas it is the glyph with the shell's hover wash;
-   over the brand panel (the wide layout, below) it stands on a white disc. */
 .loginBack {
   position: fixed;
   z-index: 2;
   inset-block-start: max(var(--space-3), env(safe-area-inset-top));
   inset-inline-start: max(var(--space-3), env(safe-area-inset-left));
-  inline-size: 2.75rem;
-  block-size: 2.75rem;
+  inline-size: 44px;
+  block-size: 44px;
   display: grid;
   place-items: center;
   border-radius: 50%;
@@ -1901,87 +1763,22 @@
   background: var(--canvas);
   transition: background-color var(--motion-fast) var(--ease-out);
 }
-
 .loginBack svg {
-  inline-size: 1.25rem;
-  block-size: 1.25rem;
+  inline-size: 20px;
+  block-size: 20px;
 }
-
 .loginBack:focus-visible {
   background: var(--surface-hover);
 }
-
 @media (hover: hover) {
   .loginBack:hover {
     background: var(--surface-hover);
   }
 }
-
-/* 1280 is one of this project's two shell breakpoints, so the tablet range gets
-   the single column rather than a 45vw panel with no room to breathe. */
-@media (min-width: 1280px) {
-  .loginSplit {
-    grid-template-columns: minmax(0, 1fr) 45%;
-  }
-
-  .brandPanel {
-    position: fixed;
-    z-index: 0;
-    inset-block: 0;
-    inset-inline-start: 0;
-    inline-size: 55%;
-    display: block;
-    background-color: var(--accent);
-    background-image: url("/login-banner.png");
-    background-position: center;
-    background-size: cover;
-  }
-
-  .actionPanel {
-    --login-block-gap-max: var(--space-8);
-    grid-column: 2;
-    align-items: start;
-    padding-inline: clamp(var(--space-8), 6vw, 4.5rem);
-  }
-
-  /* A white disc, lifted off the artwork by its shadow, with the arrow in
-     fixed dark ink: the picture is the same in every theme, so the control on
-     it does not follow the theme's text colour. The dark, blurred disc this
-     replaces read as a smudge on the busy picture; a solid white one reads as
-     a control. Hover darkens it the way the shell's washes do. */
-  .loginBack {
-    color: #0f1419;
-    background: #fff;
-    box-shadow:
-      0 1px 2px rgb(15 20 25 / 20%),
-      0 4px 12px rgb(15 20 25 / 12%);
-  }
-
-  .loginBack:focus-visible {
-    background: #eff3f4;
-  }
-
-  @media (hover: hover) {
-    .loginBack:hover {
-      background: #eff3f4;
-    }
-  }
-
-  .headlineBlock {
-    max-inline-size: 26rem;
-  }
-}
-
 @media (max-width: 719px) {
-  /* The top clears the corner arrow (12px down, 44px tall); the column is
-     anchored there as at every width. */
-  .actionPanel {
-    padding: calc(
-        max(var(--space-3), env(safe-area-inset-top)) + 2.75rem + var(--space-4)
-      )
-      max(var(--space-4), env(safe-area-inset-right))
-      max(var(--login-pad-bottom), env(safe-area-inset-bottom))
-      max(var(--space-4), env(safe-area-inset-left));
+  .loginSplit {
+    padding-inline: max(20px, env(safe-area-inset-left))
+      max(20px, env(safe-area-inset-right));
   }
 }
 

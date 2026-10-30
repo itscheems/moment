@@ -167,8 +167,8 @@ async function sendCode() {
   await screen.findByText(/验证码已发送/);
 }
 async function verifyCode(code = "123456") {
-  fireEvent.change(screen.getByLabelText("验证码"), {
-    target: { value: code },
+  fireEvent.paste(screen.getByRole("textbox", { name: "验证码" }), {
+    clipboardData: { getData: () => code },
   });
   fireEvent.click(screen.getByRole("button", { name: "验证邮箱" }));
 }
@@ -225,9 +225,7 @@ describe("three-step email registration", () => {
     expect(
       screen.getByPlaceholderText("邮箱地址", { exact: true }),
     ).toHaveAccessibleName("邮箱地址");
-    expect(
-      screen.getByPlaceholderText("验证码", { exact: true }),
-    ).toHaveAccessibleName("验证码");
+    expect(screen.getByRole("textbox", { name: "验证码" })).toBeInTheDocument();
   });
   it("shows ordered progress and preserves the return destination", async () => {
     installApi();
@@ -284,7 +282,13 @@ describe("three-step email registration", () => {
     await sendCode();
     await verifyCode("000000");
     expect(await screen.findByRole("alert")).toHaveTextContent("验证码不正确");
-    expect(screen.getByLabelText("验证码")).toHaveValue("000000");
+    expect(
+      screen
+        .getAllByRole("textbox")
+        .filter((input) => input.getAttribute("inputmode") === "numeric")
+        .map((input) => (input as HTMLInputElement).value)
+        .join(""),
+    ).toBe("000000");
     expect(screen.getByLabelText("邮箱地址")).toHaveValue(
       "reader@example.test",
     );
