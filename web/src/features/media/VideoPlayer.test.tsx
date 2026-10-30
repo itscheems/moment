@@ -24,6 +24,89 @@ function video() {
   return v;
 }
 describe("video player interactions", () => {
+  it("can request playback before metadata or the complete video has loaded", () => {
+    render(
+      <VideoPlayer
+        src="/clip.mp4"
+        poster="/poster.jpg"
+        label="Clip"
+        onError={vi.fn()}
+      />,
+    );
+    const v = screen.getByLabelText("Clip") as HTMLVideoElement;
+    expect(v.preload).toBe("metadata");
+    expect(screen.queryByLabelText("视频正在加载")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "播放视频" }));
+    expect(HTMLMediaElement.prototype.play).toHaveBeenCalledOnce();
+    expect(v.preload).toBe("auto");
+    expect(screen.getByLabelText("视频正在加载")).toBeInTheDocument();
+
+    fireEvent.canPlay(v);
+    fireEvent.playing(v);
+    expect(screen.queryByLabelText("视频正在加载")).not.toBeInTheDocument();
+    expect(screen.getByRole("group", { name: "视频播放器" })).toHaveAttribute(
+      "data-playback-state",
+      "playing",
+    );
+  });
+
+  it("does not show playback buffering for an idle or paused preload", () => {
+    render(<VideoPlayer src="/clip.mp4" label="Clip" onError={vi.fn()} />);
+    const v = video();
+    fireEvent.waiting(v);
+    expect(screen.queryByLabelText("视频正在加载")).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "播放视频" }),
+    ).toBeInTheDocument();
+
+    fireEvent.playing(v);
+    fireEvent.pause(v);
+    fireEvent.waiting(v);
+    expect(screen.getByRole("group", { name: "视频播放器" })).toHaveAttribute(
+      "data-playback-state",
+      "paused",
+    );
+  });
+
+  it("shows actual playback buffering and clears it when playback resumes", () => {
+    render(<VideoPlayer src="/clip.mp4" label="Clip" onError={vi.fn()} />);
+    const v = video();
+    Object.defineProperty(v, "paused", { configurable: true, value: false });
+    fireEvent.playing(v);
+    fireEvent.waiting(v);
+    expect(screen.getByLabelText("视频正在加载")).toBeInTheDocument();
+
+    fireEvent.canPlay(v);
+    fireEvent.playing(v);
+    expect(screen.queryByLabelText("视频正在加载")).not.toBeInTheDocument();
+    expect(screen.getByRole("group", { name: "视频播放器" })).toHaveAttribute(
+      "data-playback-state",
+      "playing",
+    );
+  });
+
+  it("keeps a pending play request buffering when metadata arrives first", () => {
+    render(<VideoPlayer src="/clip.mp4" label="Clip" onError={vi.fn()} />);
+    const v = screen.getByLabelText("Clip") as HTMLVideoElement;
+    fireEvent.click(screen.getByRole("group", { name: "视频播放器" }));
+    Object.defineProperty(v, "paused", { configurable: true, value: false });
+    fireEvent.loadedMetadata(v);
+    expect(screen.getByLabelText("视频正在加载")).toBeInTheDocument();
+    fireEvent.playing(v);
+    expect(screen.queryByLabelText("视频正在加载")).not.toBeInTheDocument();
+  });
+
+  it("allows immediate playback when an offscreen video is attached again", () => {
+    const props = { src: "/clip.mp4", label: "Clip", onError: vi.fn() };
+    const { rerender } = render(<VideoPlayer {...props} attached={false} />);
+    rerender(<VideoPlayer {...props} attached />);
+    expect(
+      screen.getByRole("button", { name: "播放视频" }),
+    ).toBeInTheDocument();
+    expect(screen.queryByLabelText("视频正在加载")).not.toBeInTheDocument();
+  });
+
   it("offers manual playback when autoplay is rejected without reporting a failed media", async () => {
     vi.mocked(HTMLMediaElement.prototype.play).mockRejectedValue(
       new DOMException("blocked", "NotAllowedError"),
