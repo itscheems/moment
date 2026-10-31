@@ -15,7 +15,6 @@ import { NotificationBadge, notificationBadgeText } from "./NotificationBadge";
 import { NotificationProvider } from "./NotificationProvider";
 import { NotificationsPage } from "./NotificationsPage";
 import { LikeProvider, LikeAction } from "./LikeAction";
-import { ReplyRecipients } from "./ReplyRecipients";
 const mocks = vi.hoisted(() => ({
   auth: {
     state: "signed-in",
@@ -178,54 +177,6 @@ describe("notification interactions", () => {
       scope: "mentions",
       through_cursor: "mentions-boundary",
     });
-  });
-  it("keeps the direct reply author required while allowing optional participants to be excluded", async () => {
-    const required = "1".repeat(32),
-      optional = "2".repeat(32);
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async () =>
-        json({
-          subject: { type: "comment", id: "01ARZ3NDEKTSV4RRFFQ69G5FAV" },
-          participants: [
-            {
-              user_id: required,
-              username: "cedar",
-              display_name: "Cedar",
-              avatar_media_id: null,
-              required: true,
-            },
-            {
-              user_id: optional,
-              username: "maple",
-              display_name: "Maple",
-              avatar_media_id: null,
-              required: false,
-            },
-          ],
-        }),
-      ),
-    );
-    const change = vi.fn();
-    render(
-      <ReplyRecipients
-        kind="comment"
-        id="01ARZ3NDEKTSV4RRFFQ69G5FAV"
-        enabled
-        disabled={false}
-        fallback="@cedar"
-        excluded={[]}
-        onChange={change}
-      />,
-    );
-    await screen.findByRole("button", { name: "正在回复 @cedar, @maple" });
-    fireEvent.click(
-      screen.getByRole("button", { name: "正在回复 @cedar, @maple" }),
-    );
-    const checkboxes = await screen.findAllByRole("checkbox");
-    expect(checkboxes[0]).toBeDisabled();
-    fireEvent.click(checkboxes[1]);
-    expect(change).toHaveBeenCalledWith([optional]);
   });
 });
 

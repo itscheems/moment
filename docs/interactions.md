@@ -13,6 +13,10 @@ receives one notification for an action, with all applicable reasons preserved.
 The selected participants are stored with the comment so later replies do not
 silently restore excluded people.
 
+The browser displays server-derived reply addressing as read-only context and
+summarizes longer participant lists without changing delivery. Optional
+recipient exclusions remain available through the HTTP API and CLI.
+
 Mentions are extracted from Markdown prose and structured article text. Code,
 links, email addresses, titles and media descriptions are not implicit mentions.
 A handle keeps its resolved account binding across account renames. Unresolved

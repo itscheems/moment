@@ -132,6 +132,7 @@ export function PostReplyDialog({
             </article>
             {canCompose ? (
               <CommentForm
+                active={open}
                 replyParticipantLabel={
                   author.username ? "@" + author.username : author.displayName
                 }

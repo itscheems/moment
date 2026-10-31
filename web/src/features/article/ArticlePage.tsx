@@ -259,9 +259,7 @@ function ArticlePageBody({
               ) : null}
             </button>
           </ActionTooltip>
-          {canPublish && showActions ? (
-            <RepostAction onChanged={onReposted} post={post} />
-          ) : null}
+          <RepostAction onChanged={onReposted} post={post} />
           <LikeAction kind="post" id={post.id} />
           <ShareMenu
             align="start"

@@ -628,9 +628,7 @@ export function PostPresentation({
                 ) : null}
               </button>
             </ActionTooltip>
-            {canPublish || post.commentPostId ? (
-              <RepostAction onChanged={onReposted} post={post} />
-            ) : null}
+            <RepostAction onChanged={onReposted} post={post} />
             <LikeAction
               kind={post.commentPostId ? "comment" : "post"}
               id={post.id}
@@ -778,9 +776,7 @@ export function PostPresentation({
               )}
             </ActionTooltip>
           )}
-          {canPublish || post.commentPostId ? (
-            <RepostAction onChanged={onReposted} post={post} />
-          ) : null}
+          <RepostAction onChanged={onReposted} post={post} />
           <LikeAction
             kind={post.commentPostId ? "comment" : "post"}
             id={post.id}

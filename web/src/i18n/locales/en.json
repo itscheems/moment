@@ -569,7 +569,7 @@
   "一级回复": "Top-level reply",
   "加入这段对话": "Join the conversation",
   "写下回复": "Write a reply",
-  "正在回复": "Replying",
+  "正在回复": "Replying to",
   "回复内容": "Reply text",
   "发布你的回复": "Post your reply",
   "支持 Markdown；请勿粘贴图片语法。Ctrl/⌘ + Enter 发表": "Markdown supported; no image syntax. Ctrl/⌘ + Enter to send",
@@ -1694,5 +1694,9 @@
   "请求未确认，已重新读取点赞状态": "The request was not confirmed. Like status has been refreshed.",
   "点赞状态暂时无法读取，请重试": "Like status is temporarily unavailable. Try again.",
   "正在同步查看进度…": "Syncing your viewing progress…",
-  "通知内容暂时无法加载": "Notification content could not be loaded"
+  "通知内容暂时无法加载": "Notification content could not be loaded",
+  "{{value1}}和{{value2}}": "{{value1}} and {{value2}}",
+  "{{value1}} {{value2}}和{{value3}}": "{{value1}} {{value2}} and {{value3}}",
+  "{{value1}} {{value2}} 和其他 {{value3}} 人": "{{value1}} {{value2}} and {{value3}} others",
+  "账号通过审核后即可转发": "You can repost once your account is approved"
 }

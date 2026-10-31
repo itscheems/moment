@@ -531,6 +531,12 @@ describe("comment action bar", () => {
 
     const action = screen.getByRole("button", { name: /^回复/ });
     expect(action).toBeInTheDocument();
+    const row = document.querySelector("[data-post-actions]")!;
+    expect(
+      [...row.querySelectorAll("[data-post-action]")].map((button) =>
+        button.getAttribute("data-post-action"),
+      ),
+    ).toEqual(["reply", "repost", "like", "share"]);
 
     fireEvent.click(action);
     expect(window.location.pathname).toBe("/login");
@@ -539,6 +545,22 @@ describe("comment action bar", () => {
       new URLSearchParams(window.location.search).get("return"),
     ).toBeTruthy();
   });
+
+  it.each(["repost", "like"])(
+    "keeps the guest comment %s action visible and asks for sign-in without writing",
+    (action) => {
+      window.history.replaceState({}, "", `/m/${postId}`);
+      renderItem(comment(rootId, "Reply actions"), [], { canReply: false });
+      fireEvent.click(
+        document.querySelector(`[data-post-action="${action}"]`)!,
+      );
+      expect(window.location.pathname).toBe("/login");
+      const calls = vi.mocked(window.fetch).mock.calls;
+      expect(
+        calls.some(([, init]) => init?.method && init.method !== "GET"),
+      ).toBe(false);
+    },
+  );
 
   it("keeps the reply action when a reply target is available", () => {
     const root = comment(rootId, "顶级回应");

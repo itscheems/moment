@@ -1,4 +1,3 @@
-import { ReplyRecipients } from "../notifications/ReplyRecipients";
 import { t } from "../../i18n";
 import { useTranslation } from "react-i18next";
 import { locationsApi } from "../../api/locations";
@@ -49,6 +48,7 @@ import {
 } from "../compose/LocationPicker";
 import { MentionSuggestions } from "../compose/MentionSuggestions";
 import { activeMention, type ActiveMention } from "../compose/mentions";
+import { ReplyParticipants } from "./ReplyParticipants";
 import styles from "./Comments.module.css";
 
 const MAX_COMMENT = 2_000;
@@ -324,23 +324,14 @@ export function CommentForm({
   const formId =
     suppliedFormId ??
     (parentId ? `reply-${replyTargetId ?? parentId}` : "top-level-comment");
-  // The composer already knew who it was answering — it just spent that on the
-  // 「正在回复 @X」 line and threw it away. A root comment answers nobody, so it
-  // never carries one; a reply with no explicit target is answering its root.
+  // Nested replies address the selected comment, independently of their flat
+  // presentation under the root comment. Top-level replies address the post.
   const replyToCommentId =
     parentId === null ? null : (replyTargetId ?? parentId);
-  const selectionKey =
-    (auth.account?.userId ?? "guest") +
-    ":" +
-    postId +
-    ":" +
-    (replyToCommentId ?? "post");
-  const [replySelection, setReplySelection] = useState<{
-    key: string;
-    ids: string[];
-  }>({ key: selectionKey, ids: [] });
-  const excludedReplyUserIds =
-    replySelection.key === selectionKey ? [...replySelection.ids].sort() : [];
+  const replyLabel =
+    replyTargetAuthor ??
+    replyParticipantLabel ??
+    (topLevelTargetUsername ? "@" + topLevelTargetUsername : "");
   const inlineTopLevel = topLevelTargetUsername !== undefined;
   const displayReauth =
     authExpired || (auth.state === "expired" && !auth.session);
@@ -545,7 +536,6 @@ export function CommentForm({
       // different siblings under one root are two different comments, and
       // reusing the key would replay the first one back as the second.
       replyToCommentId,
-      excludedReplyUserIds,
       content,
       mediaItems.map((item) => [
         item.key,
@@ -575,7 +565,6 @@ export function CommentForm({
         mediaInput(mediaItemsRef.current),
         commentLocation,
         replyToCommentId,
-        excludedReplyUserIds,
       );
       onCreated(result.comment);
       resetEditHistory.current();
@@ -681,21 +670,12 @@ export function CommentForm({
               className={`${styles.replyTargetRow} ${expanded ? "" : styles.replyTargetRowCollapsed}`}
               aria-hidden={expanded ? undefined : true}
             >
-              <ReplyRecipients
-                key={selectionKey}
+              <ReplyParticipants
+                key={`${postId}:${replyToCommentId ?? "post"}:${auth.account.userId}`}
                 kind={replyToCommentId ? "comment" : "post"}
                 id={replyToCommentId ?? postId}
                 enabled={active && expanded && auth.state === "signed-in"}
-                disabled={pending}
-                fallback={
-                  replyTargetAuthor ??
-                  replyParticipantLabel ??
-                  (topLevelTargetUsername ? "@" + topLevelTargetUsername : "")
-                }
-                excluded={excludedReplyUserIds}
-                onChange={(ids) =>
-                  setReplySelection({ key: selectionKey, ids })
-                }
+                fallback={replyLabel}
               />
             </div>
           ) : null}

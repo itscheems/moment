@@ -18,8 +18,9 @@ import { MentionProvider } from "../../app/mentions";
 import { makeAccountLimits } from "../../test/accountFixtures";
 import { NavigationProvider } from "../../app/navigation";
 import { FeedbackProvider } from "../../components/Feedback";
-import { SessionProvider } from "../auth/SessionProvider";
+import { SessionProvider, useSession } from "../auth/SessionProvider";
 import { PostPresentation } from "./PostPresentation";
+import { LikeProvider } from "../notifications/LikeAction";
 import contentCss from "../../components/content/notion.scss?inline";
 import postCss from "./PostPresentation.module.css?inline";
 
@@ -129,7 +130,111 @@ function makePost(
   };
 }
 
+function SessionStateProbe() {
+  return <output data-testid="session-state">{useSession().state}</output>;
+}
+
 describe("shared post presentation", () => {
+  it.each([
+    [false, false],
+    [true, false],
+    [false, true],
+  ])(
+    "keeps the four action slots identical for guests and members (detail=%s, comment=%s)",
+    async (detail, isComment) => {
+      const post = {
+        ...makePost("Action layout", "<p>Action layout</p>", 2),
+        id: "01ARZ3NDEKTSV4RRFFQ69G5FAV",
+        ...(isComment ? { commentPostId: "01ARZ3NDEKTSV4RRFFQ69G5FAW" } : {}),
+      };
+      for (const signedIn of [false, true]) {
+        window.history.replaceState({}, "", `/m/${post.id}`);
+        window.sessionStorage.clear();
+        const fetcher = vi.fn<typeof fetch>(
+          async (input: RequestInfo | URL) => {
+            const url = String(input);
+            if (url.startsWith("/api/v1/likes?"))
+              return new Response(
+                JSON.stringify({
+                  data: { [post.id]: { like_count: 3, liked_by_me: false } },
+                  meta: { request_id: "likes" },
+                }),
+                { headers: { "Content-Type": "application/json" } },
+              );
+            if (url === "/api/v1/account/session" && signedIn)
+              return accountSessionResponse();
+            return new Response(
+              JSON.stringify({
+                error: {
+                  code: "UNAUTHORIZED",
+                  message: "sign in",
+                  details: {},
+                },
+              }),
+              { status: 401, headers: { "Content-Type": "application/json" } },
+            );
+          },
+        );
+        vi.stubGlobal("fetch", fetcher);
+        const view = render(
+          <NavigationProvider>
+            <SessionProvider>
+              <SessionStateProbe />
+              <LikeProvider scope={signedIn ? "member" : "guest"}>
+                <PostPresentation
+                  post={post}
+                  site={site}
+                  detail={detail}
+                  timelineDensity={!detail}
+                  canPublish={signedIn}
+                  onReply={() => {}}
+                />
+              </LikeProvider>
+            </SessionProvider>
+          </NavigationProvider>,
+        );
+        await waitFor(() =>
+          expect(screen.getByTestId("session-state")).toHaveTextContent(
+            signedIn ? "signed-in" : "guest",
+          ),
+        );
+        const row = view.container.querySelector<HTMLElement>(
+          "[data-post-actions]",
+        )!;
+        expect(
+          [...row.querySelectorAll("[data-post-action]")].map((button) =>
+            button.getAttribute("data-post-action"),
+          ),
+        ).toEqual(["reply", "repost", "like", "share"]);
+        expect(
+          within(row).queryByRole("button", { name: /收藏/ }),
+        ).not.toBeInTheDocument();
+        await waitFor(() =>
+          expect(
+            row.querySelector('[data-post-action="like"]'),
+          ).toHaveTextContent("3"),
+        );
+        if (!signedIn) {
+          fireEvent.click(row.querySelector('[data-post-action="repost"]')!);
+          expect(window.location.pathname).toBe("/login");
+          expect(
+            new URLSearchParams(window.location.search).get("return"),
+          ).toBe(`/m/${post.id}`);
+          expect(
+            screen.queryByRole("menu", { name: "转发选项" }),
+          ).not.toBeInTheDocument();
+          expect(
+            fetcher.mock.calls.some(
+              (call) => call[1]?.method && call[1].method !== "GET",
+            ),
+          ).toBe(false);
+        }
+        view.unmount();
+        window.sessionStorage.clear();
+      }
+    },
+  );
+
   it("keeps the author's verification independent from the displayed site account", () => {
     render(
       <NavigationProvider>
