@@ -160,11 +160,19 @@ func RegisterInteractionRoutes(engine *gin.Engine, service *app.InteractionServi
 }
 
 func emptyInteractionRequest(ctx *gin.Context) bool {
-	if ctx.Request.URL.RawQuery != "" || ctx.Request.ContentLength != 0 || len(ctx.Request.TransferEncoding) != 0 {
-		writeInteractionError(ctx, invalidCommentArgument("this operation accepts no query parameters or body", "request"))
-		return false
+	if ctx.Request.URL.RawQuery == "" {
+		if ctx.Request.Body == nil {
+			return true
+		}
+		// Empty bodies may arrive with unknown length or chunked framing.
+		var probe [1]byte
+		n, err := io.ReadFull(ctx.Request.Body, probe[:])
+		if n == 0 && err == io.EOF {
+			return true
+		}
 	}
-	return true
+	writeInteractionError(ctx, invalidCommentArgument("this operation accepts no query parameters or body", "request"))
+	return false
 }
 func interactionRef(ctx *gin.Context, kind string) (domain.ContentRef, error) {
 	id, err := domain.ParseID(ctx.Param("id"))
