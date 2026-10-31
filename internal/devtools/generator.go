@@ -22,18 +22,19 @@ import (
 )
 
 type fixtureBuilder struct {
-	target   *Target
-	runtime  *runtimefs.Runtime
-	database *sqlitestore.Database
-	recipe   Scenario
-	seed     int64
-	base     time.Time
-	posts    *app.PostService
-	comments *app.CommentService
-	site     *app.SiteService
-	media    *media.Store
-	staged   *generationGuard
-	progress func(Progress)
+	target       *Target
+	runtime      *runtimefs.Runtime
+	database     *sqlitestore.Database
+	recipe       Scenario
+	seed         int64
+	base         time.Time
+	posts        *app.PostService
+	interactions *app.InteractionService
+	comments     *app.CommentService
+	site         *app.SiteService
+	media        *media.Store
+	staged       *generationGuard
+	progress     func(Progress)
 
 	// The showcase alone writes accounts, dates everything from a clock it
 	// sets by hand, and reports what it built under stable keys.

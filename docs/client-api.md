@@ -169,7 +169,7 @@ timezone, and a cursor minted under a window is valid only with that window.
 
 ## Personal data and site backups
 
-`GET /backups/export` returns a complete `moment-export-v5` backup for an active administrator. `GET /account/export` returns the authenticated account's `moment-account-export-v3` personal archive. Pending accounts can export their own data; unauthenticated, revoked or suspended sessions cannot. Both routes reject query parameters and request bodies. Personal export cannot select another account.
+`GET /backups/export` returns a complete `moment-export-v6` backup for an active administrator. `GET /account/export` returns the authenticated account's `moment-account-export-v4` personal archive. Pending accounts can export their own data; unauthenticated, revoked or suspended sessions cannot. Both routes reject query parameters and request bodies. Personal export cannot select another account.
 
 Personal archives contain the selected account's profile and provider metadata, its posts, full article bodies, server-side article drafts, and the complete comment conversations attached to those posts. They include referenced originals, including comment attachments and historical author avatars. Comments the account wrote elsewhere and external quoted content are excluded. External comment authors carry public display snapshots, without local account authority or provider bindings. Missing external quote targets become unavailable references. Media records contain no source account reuse grants.
 
@@ -177,7 +177,7 @@ Personal archives contain the selected account's profile and provider metadata, 
 
 Historical imported comment authors can have a `username` and `avatar_media_id` while `user_id` and `profile_url` are null. Clients must render these as unlinked display data; a username alone does not identify a local account. Fully linked local authors retain their existing representation.
 
-Personal format 3 is restorable through these account endpoints; earlier personal formats require a new export. Site backup endpoints do not accept personal archives. Site recovery remains an administrator operation and supports backup formats 2 through 5.
+Personal formats 3 and 4 are restorable through these account endpoints; earlier personal formats require a new export. Site backup endpoints do not accept personal archives. Site recovery remains an administrator operation and supports backup formats 2 through 6.
 
 `GET /archive/months`, `GET /archive/month?month=YYYY-MM` and `GET /archive/posts` require a signed-in account and always select that account, including for administrators. Archive post requests support the normal paging and calendar positioning parameters but cannot select an author. Public timeline, search and member profile visibility are unchanged.
 
@@ -300,3 +300,5 @@ Root-list reads accept `sort=oldest|newest` (default `oldest`) and default to 20
 The CLI exposes `user get-preferences` and `user update-preferences --ui-locale zh-CN|en|auto`. Direct mode requires `--as`; API mode uses the authenticated account. `auto` saves null. Both modes return the same `ui_locale` data in the JSON envelope.
 
 Interface language changes text, accessibility labels, dates and numbers without changing business URLs, authored content, site timezone or date partitions. Editor instances and undo history are retained. Installation metadata uses a bundled manifest for the selected language.
+
+Interaction history is included in site format 6 and personal format 4. Site replacement preserves likes, recipient bindings, immutable events and both viewing positions. Supported site merges combine likes, keep local viewing positions, and add incoming events as already viewed history. Bindings follow the selected content version. Personal restore remaps only the importing account; external participants remain inert display snapshots, even when their identifiers match local accounts. Imported history does not produce live notifications or increase unread counts. Older supported archives restore with no interaction history. Exports and imports reject more than 2,000,000 interaction records.

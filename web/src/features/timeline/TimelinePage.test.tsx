@@ -1,3 +1,4 @@
+import { makeAccountSession } from "../../test/accountFixtures";
 import "@testing-library/jest-dom/vitest";
 import {
   act,
@@ -432,9 +433,36 @@ describe("public timeline", () => {
         expires_at: "2999-08-11T01:00:00.000Z",
       }),
     );
-    const item = post("01K2ABCDEF0123456789ABCDE0", "直接在时间流回复");
+    const item = post("01ARZ3NDEKTSV4RRFFQ69G5FAV", "直接在时间流回复");
     const fetcher = vi.fn(async (input: RequestInfo | URL) =>
-      String(input) === "/api/v1/status" ? ownerStatus() : page([item], null),
+      String(input) === "/api/v1/status"
+        ? ownerStatus()
+        : String(input) === "/api/v1/account/session"
+          ? new Response(
+              JSON.stringify({
+                data: makeAccountSession(),
+                meta: { request_id: "reply-session" },
+              }),
+              { headers: { "Content-Type": "application/json" } },
+            )
+          : String(input).endsWith("/reply-context")
+            ? new Response(
+                JSON.stringify({
+                  data: {
+                    subject: { type: "post", id: item.id },
+                    participants: ["owner", "maple"].map((username, index) => ({
+                      user_id: String(index + 1).repeat(32),
+                      username,
+                      display_name: username,
+                      avatar_media_id: null,
+                      required: index === 0,
+                    })),
+                  },
+                  meta: { request_id: "reply-context" },
+                }),
+                { headers: { "Content-Type": "application/json" } },
+              )
+            : page([item], null),
     );
     vi.stubGlobal("fetch", fetcher);
     vi.spyOn(window, "scrollY", "get").mockReturnValue(360);
@@ -461,13 +489,10 @@ describe("public timeline", () => {
     });
     expect(window.location.pathname).toBe("/");
     expect(within(dialog).getByLabelText("回复内容")).toHaveFocus();
-    expect(
-      within(
-        within(dialog).getByRole("article", {
-          name: "Moment发布的 Moment",
-        }),
-      ).getByText(/正在回复/),
-    ).toHaveTextContent("正在回复 @owner");
+    expect(await within(dialog).findByText(/正在回复/)).toBeVisible();
+    await within(dialog).findByText(/@maple/);
+    expect(within(dialog).getByLabelText("回复内容")).toHaveValue("");
+    expect(within(dialog).queryByRole("checkbox")).not.toBeInTheDocument();
     expect(document.documentElement.style.overflow).toBe("hidden");
     expect(document.body.style.top).toBe("");
 

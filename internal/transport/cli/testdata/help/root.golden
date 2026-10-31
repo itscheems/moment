@@ -5,24 +5,25 @@ Usage:
   moment [command]
 
 Available Commands:
-  article     Write and publish long posts
-  auth        Manage account credentials
-  backup      Export, inspect, and restore portable data
-  comment     Inspect and manage comments
-  dev         Build deterministic development scenarios
-  doctor      Diagnose runtime and data health
-  help        Help about any command
-  init        Initialize a named administrator account
-  link        Capture link preview cards
-  location    Resolve post locations
-  login       Sign in to a Moment server from this terminal
-  media       Inspect and maintain managed media
-  post        Create and manage Moments
-  search      Search and rebuild the memory index
-  serve       Run the Moment HTTP server
-  site        Inspect and update site identity
-  user        Inspect and manage accounts
-  version     Show build identity
+  article      Write and publish long posts
+  auth         Manage account credentials
+  backup       Export, inspect, and restore portable data
+  comment      Inspect and manage comments
+  dev          Build deterministic development scenarios
+  doctor       Diagnose runtime and data health
+  help         Help about any command
+  init         Initialize a named administrator account
+  link         Capture link preview cards
+  location     Resolve post locations
+  login        Sign in to a Moment server from this terminal
+  media        Inspect and maintain managed media
+  notification Read account activity
+  post         Create and manage Moments
+  search       Search and rebuild the memory index
+  serve        Run the Moment HTTP server
+  site         Inspect and update site identity
+  user         Inspect and manage accounts
+  version      Show build identity
 
 Flags:
       --as string                     local account username for content operations; not accepted in API mode

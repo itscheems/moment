@@ -129,6 +129,9 @@ func canonicalPublicError(code, message string, details map[string]any, httpStat
 	case "POST_NOT_FOUND":
 		exit = ExitNotFound
 		suggestion = "run 'moment post list --json' to inspect available posts"
+	case "NOTIFICATION_NOT_FOUND":
+		exit = ExitNotFound
+		suggestion = "run moment notification list --json to inspect this account inbox"
 	case "COMMENT_NOT_FOUND":
 		exit = ExitNotFound
 		suggestion = "run 'moment comment list <post-id> --json' to inspect available comments"

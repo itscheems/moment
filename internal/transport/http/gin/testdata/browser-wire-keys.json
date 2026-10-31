@@ -21,10 +21,36 @@
     "user_id",
     "username"
   ],
+  "app.ActivityAccount": [
+    "avatar_media_id",
+    "display_name",
+    "user_id",
+    "username"
+  ],
+  "app.BoundMention": [
+    "account",
+    "handle"
+  ],
   "app.MentionSuggestion": [
     "avatar_media_id",
     "display_name",
     "profile_url",
+    "user_id",
+    "username"
+  ],
+  "app.NotificationState": [
+    "mentions_new_count",
+    "new_count",
+    "through_cursor"
+  ],
+  "app.ReplyContext": [
+    "participants",
+    "subject"
+  ],
+  "app.ReplyParticipant": [
+    "avatar_media_id",
+    "display_name",
+    "required",
     "user_id",
     "username"
   ],
@@ -47,6 +73,7 @@
     "comments",
     "entries",
     "identities",
+    "interactions",
     "media",
     "users"
   ],
@@ -123,12 +150,50 @@
     "reply_target",
     "root_comment_id"
   ],
+  "domain.ContentRef": [
+    "id",
+    "type"
+  ],
+  "domain.LikeState": [
+    "like_count",
+    "liked_by_me"
+  ],
   "identityView": [
     "display_name",
     "email",
     "last_login_at",
     "linked_at",
     "provider"
+  ],
+  "interactiondto.Actor": [
+    "avatar_media_id",
+    "display_name",
+    "profile_url",
+    "user_id",
+    "username"
+  ],
+  "interactiondto.Notification": [
+    "actor",
+    "available",
+    "comment",
+    "event_type",
+    "excerpt",
+    "id",
+    "occurred_at",
+    "post",
+    "post_id",
+    "post_kind",
+    "reasons",
+    "reply_to_comment_id",
+    "seen",
+    "subject"
+  ],
+  "interactiondto.Page": [
+    "items",
+    "mentions_new_count",
+    "new_count",
+    "next_cursor",
+    "through_cursor"
   ],
   "oauth.Descriptor": [
     "flows",

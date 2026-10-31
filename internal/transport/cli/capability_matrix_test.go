@@ -183,6 +183,9 @@ func TestEveryMatrixModeExecutesOrRejectsBeforeHandlerAndPrompt(t *testing.T) {
 		application.MustRegisterLeaf(leaf)
 	}
 	positional := map[string][]string{
+		"post mentions": {"01ARZ3NDEKTSV4RRFFQ69G5FAV"}, "comment mentions": {"01ARZ3NDEKTSV4RRFFQ69G5FAV"},
+		"post like": {"01ARZ3NDEKTSV4RRFFQ69G5FAV"}, "post unlike": {"01ARZ3NDEKTSV4RRFFQ69G5FAV"}, "post like-status": {"01ARZ3NDEKTSV4RRFFQ69G5FAV"}, "post reply-context": {"01ARZ3NDEKTSV4RRFFQ69G5FAV"},
+		"comment like": {"01ARZ3NDEKTSV4RRFFQ69G5FAV"}, "comment unlike": {"01ARZ3NDEKTSV4RRFFQ69G5FAV"}, "comment like-status": {"01ARZ3NDEKTSV4RRFFQ69G5FAV"}, "comment reply-context": {"01ARZ3NDEKTSV4RRFFQ69G5FAV"}, "notification get": {"01ARZ3NDEKTSV4RRFFQ69G5FAV"},
 		"user import":       {"archive.zip"},
 		"comment get":       {"01ARZ3NDEKTSV4RRFFQ69G5FAV", "01ARZ3NDEKTSV4RRFFQ69G5FAW"},
 		"auth revoke-token": {"0123456789abcdef0123456789abcdef"},

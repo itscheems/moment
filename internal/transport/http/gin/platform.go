@@ -63,6 +63,7 @@ type Config struct {
 	Locations             *app.LocationService
 	Links                 *app.LinkPreviewService
 	Comments              *app.CommentService
+	Interactions          *app.InteractionService
 	Search                *app.SearchService
 	ShareMetadata         *app.ShareMetadataService
 	Media                 *media.Store
@@ -214,6 +215,12 @@ func New(config Config) (*gin.Engine, error) {
 			return nil, errors.New("comment routes require account authentication")
 		}
 		RegisterCommentRoutes(engine, config.Comments, gate)
+	}
+	if config.Interactions != nil {
+		if gate == nil {
+			return nil, errors.New("interaction routes require account authentication")
+		}
+		RegisterInteractionRoutes(engine, config.Interactions, gate)
 	}
 	if config.Search != nil {
 		RegisterSearchRoutes(engine, config.Search, gate)

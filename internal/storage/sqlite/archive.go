@@ -20,11 +20,12 @@ import (
 // derived state. Every field here must be read by that same first statement or
 // it describes a different instant than the rest.
 type ArchiveCounts struct {
-	Entries    int64
-	Comments   int64
-	Media      int64
-	Users      int64
-	Identities int64
+	Interactions int64
+	Entries      int64
+	Comments     int64
+	Media        int64
+	Users        int64
+	Identities   int64
 	// Articles counts published bodies, not article entries. The two are the
 	// same number in any consistent database, which is exactly why counting
 	// the bodies is worth doing: an envelope whose body was left behind shows
@@ -277,7 +278,7 @@ SELECT
     (SELECT count(*) FROM users),
     (SELECT count(*) FROM identities),
     (SELECT count(*) FROM entry_article),
-    (SELECT count(*) FROM article_drafts)`).Scan(
+    (SELECT count(*) FROM article_drafts),`+interactionCountSQL).Scan(
 		&snapshot.counts.Entries,
 		&snapshot.counts.Comments,
 		&snapshot.counts.Media,
@@ -285,6 +286,7 @@ SELECT
 		&snapshot.counts.Identities,
 		&snapshot.counts.Articles,
 		&snapshot.counts.ArticleDrafts,
+		&snapshot.counts.Interactions,
 	)
 	if err != nil {
 		_ = tx.Rollback()

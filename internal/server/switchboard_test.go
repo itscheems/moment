@@ -167,3 +167,29 @@ func TestReviewedReplacementDoesNotDrainItsOwnRequest(t *testing.T) {
 		t.Fatalf("review replacement waited on its own admitted request: %d %s", response.Code, response.Body.String())
 	}
 }
+
+func TestSwitchboardCancelsNotificationStreamsBeforeMaintenanceDrain(t *testing.T) {
+	board := NewSwitchboard()
+	entered := make(chan struct{})
+	finished := make(chan struct{})
+	if err := board.Swap(http.HandlerFunc(func(_ http.ResponseWriter, request *http.Request) {
+		close(entered)
+		<-request.Context().Done()
+		close(finished)
+	})); err != nil {
+		t.Fatal(err)
+	}
+	board.EndMaintenance()
+	go board.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest("GET", "/api/v1/account/notifications/stream", nil))
+	<-entered
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	if err := board.BeginMaintenance(ctx); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-finished:
+	default:
+		t.Fatal("maintenance did not close the stream")
+	}
+}

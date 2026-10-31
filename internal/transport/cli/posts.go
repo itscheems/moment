@@ -22,6 +22,7 @@ import (
 	"github.com/moment/moment/internal/runtimefs"
 	sqlitestore "github.com/moment/moment/internal/storage/sqlite"
 	"github.com/moment/moment/internal/transport/commentdto"
+	"github.com/moment/moment/internal/transport/interactiondto"
 	"github.com/moment/moment/internal/transport/linkdto"
 	"github.com/moment/moment/internal/transport/locationdto"
 	"github.com/moment/moment/internal/transport/postdto"
@@ -1538,6 +1539,48 @@ func postAPIRequest(
 
 func validPostAPIRawData(data json.RawMessage, destination any) bool {
 	switch typed := destination.(type) {
+	case *[]app.BoundMention:
+		if typed == nil || *typed == nil {
+			return false
+		}
+		items, ok := apiRawArray(data)
+		if !ok || len(items) != len(*typed) {
+			return false
+		}
+		for i, item := range items {
+			if !hasRequiredAPIDataFields(item, "handle", "account") || domain.ValidateStoredUsername((*typed)[i].Handle) != nil {
+				return false
+			}
+			if a := (*typed)[i].Account; a != nil && (domain.ValidateUserID(a.UserID) != nil || domain.ValidateStoredUsername(a.Username) != nil) {
+				return false
+			}
+		}
+		return true
+
+	case *domain.LikeState:
+		return typed != nil && typed.Count >= 0 && hasRequiredNonNullAPIDataFields(data, "like_count", "liked_by_me")
+	case *app.ReplyContext:
+		return typed != nil && typed.Subject.Validate() == nil && typed.Participants != nil && hasRequiredNonNullAPIDataFields(data, "subject", "participants")
+	case *app.NotificationState:
+		return typed != nil && typed.NewCount >= 0 && typed.MentionsNewCount >= 0 && typed.MentionsNewCount <= typed.NewCount && typed.ThroughCursor != "" && hasRequiredNonNullAPIDataFields(data, "new_count", "mentions_new_count", "through_cursor")
+	case *interactiondto.Notification:
+		return typed != nil && validRawAPIInboxItem(data, *typed)
+	case *interactiondto.Page:
+		if typed == nil || typed.Items == nil || typed.NewCount < 0 || typed.MentionsNewCount < 0 || typed.MentionsNewCount > typed.NewCount || typed.ThroughCursor == "" || !hasRequiredNonNullAPIDataFields(data, "items", "next_cursor", "through_cursor", "new_count", "mentions_new_count") {
+			return false
+		}
+		fields, _ := apiDataFields(data)
+		items, ok := apiRawArray(fields["items"])
+		if !ok || len(items) != len(typed.Items) {
+			return false
+		}
+		for i, item := range items {
+			if !validRawAPIInboxItem(item, typed.Items[i]) {
+				return false
+			}
+		}
+		return true
+
 	case *postdto.ArticleDraft:
 		return typed != nil && validRawAPIArticleDraft(data, *typed)
 	case *[]postdto.ArticleDraftSummary:
@@ -1875,4 +1918,8 @@ func postMapInputFromFlags(ctx context.Context, input CommandInput, allowClear b
 		return postMapInput{}, postCLIError(err)
 	}
 	return postMapInput{Present: true, Card: card}, nil
+}
+
+func validRawAPIInboxItem(data json.RawMessage, n interactiondto.Notification) bool {
+	return hasRequiredNonNullAPIDataFields(data, "id", "event_type", "subject", "post_id", "post_kind", "reasons", "occurred_at", "actor", "seen", "available", "excerpt") && hasRequiredAPIDataFields(data, "post", "comment", "reply_to_comment_id") && interactiondto.ValidNotification(n)
 }

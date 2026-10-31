@@ -202,7 +202,7 @@ func createComment(service *app.CommentService) gin.HandlerFunc {
 			unauthorized(ctx)
 			return
 		}
-		result, err := service.Create(ctx.Request.Context(), app.CreateCommentInput{EntryID: postID, ParentID: request.ParentID, ReplyToCommentID: request.ReplyToCommentID, ContentMD: request.ContentMD, Media: request.Media, Location: request.Location, IdempotencyKey: key, Author: author})
+		result, err := service.Create(ctx.Request.Context(), app.CreateCommentInput{EntryID: postID, ParentID: request.ParentID, ReplyToCommentID: request.ReplyToCommentID, ExcludedReplyUserIDs: request.ExcludeReplyUserIDs, ContentMD: request.ContentMD, Media: request.Media, Location: request.Location, IdempotencyKey: key, Author: author})
 		if err != nil {
 			writeCommentError(ctx, err)
 			return
@@ -246,11 +246,12 @@ func deleteComment(service *app.CommentService) gin.HandlerFunc {
 }
 
 type commentWriteRequest struct {
-	ContentMD        string
-	ParentID         *domain.ID
-	ReplyToCommentID *domain.ID
-	Media            []domain.EntryMediaUsage
-	Location         *domain.Location
+	ExcludeReplyUserIDs []string
+	ContentMD           string
+	ParentID            *domain.ID
+	ReplyToCommentID    *domain.ID
+	Media               []domain.EntryMediaUsage
+	Location            *domain.Location
 }
 
 func decodeCommentWrite(ctx *gin.Context) (commentWriteRequest, error) {
@@ -317,6 +318,10 @@ func decodeCommentWrite(ctx *gin.Context) (commentWriteRequest, error) {
 				return commentWriteRequest{}, parseErr
 			}
 			request.ReplyToCommentID = &id
+		case "exclude_reply_user_ids":
+			if bytes.Equal(bytes.TrimSpace(raw), []byte("null")) || json.Unmarshal(raw, &request.ExcludeReplyUserIDs) != nil || len(request.ExcludeReplyUserIDs) > 100 {
+				return commentWriteRequest{}, invalidCommentArgument("exclude_reply_user_ids must be a bounded account ID array", key)
+			}
 		case "media":
 			media, decodeErr := decodeCommentMedia(raw)
 			if decodeErr != nil {

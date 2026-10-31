@@ -1,5 +1,6 @@
 import { t } from "../i18n";
 export type RouteId =
+  | "notifications"
   | "home"
   | "detail"
   | "comment-detail"
@@ -167,6 +168,18 @@ export function isComposeDraftsPath(pathname: string): boolean {
 const routes: Array<
   AppRoute & { requiresSession: boolean; match: (pathname: string) => boolean }
 > = [
+  {
+    id: "notifications",
+    requiresSession: true,
+    activeAccountOnly: true,
+    get title() {
+      return t("通知");
+    },
+    eyebrow: "",
+    href: "/account/notifications",
+    match: (pathname) =>
+      /^\/account\/notifications(?:\/mentions)?\/?$/.test(pathname),
+  },
   {
     id: "comment-detail",
     requiresSession: false,

@@ -190,3 +190,44 @@ INSERT INTO sessions(id,user_id,issued_at_ms,expires_at_ms,last_seen_at_ms,surfa
 		t.Fatalf("upgrade not idempotent: %v", err)
 	}
 }
+
+func TestInteractionHistoryUpgradePreservesLiveRelationships(t *testing.T) {
+	pool := openRawMigrationPool(t)
+	migrations, err := embeddedMigrations()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := applyMigrations(testAccountContext(), pool, migrations[:8], time.Unix(1, 0)); err != nil {
+		t.Fatal(err)
+	}
+	_, err = pool.Exec(`
+ INSERT INTO users(id,username,display_name,role,status,created_at_ms,updated_at_ms) VALUES ('11111111111111111111111111111111','cedar','Cedar','admin','active',1,1);
+ INSERT INTO entries(id,kind,content_md,author_user_id,created_at_ms,updated_at_ms,published_at_ms) VALUES ('01ARZ3NDEKTSV4RRFFQ69G5FAV','moment','message','11111111111111111111111111111111',1,1,1);
+ INSERT INTO comments(id,entry_id,author_name,content_md,created_at_ms) VALUES ('01ARZ3NDEKTSV4RRFFQ69G5FAW','01ARZ3NDEKTSV4RRFFQ69G5FAV','Cedar','reply',1);
+ INSERT INTO post_likes VALUES ('01ARZ3NDEKTSV4RRFFQ69G5FAV','11111111111111111111111111111111',1);
+ INSERT INTO comment_likes VALUES ('01ARZ3NDEKTSV4RRFFQ69G5FAW','11111111111111111111111111111111',1);
+ INSERT INTO entry_mentions VALUES ('01ARZ3NDEKTSV4RRFFQ69G5FAV','cedar','11111111111111111111111111111111',1);
+ INSERT INTO comment_mentions VALUES ('01ARZ3NDEKTSV4RRFFQ69G5FAW','cedar','11111111111111111111111111111111',1);
+ INSERT INTO comment_reply_recipients VALUES ('01ARZ3NDEKTSV4RRFFQ69G5FAW','11111111111111111111111111111111');
+ INSERT INTO notifications(id,recipient_id,actor_name,event_type,subject_kind,subject_id,post_id,post_kind,reasons,occurred_at_ms) VALUES ('01ARZ3NDEKTSV4RRFFQ69G5FAX','11111111111111111111111111111111','Maple','post.liked','post','01ARZ3NDEKTSV4RRFFQ69G5FAV','01ARZ3NDEKTSV4RRFFQ69G5FAV','moment',8,1);
+ INSERT INTO notification_seen VALUES ('11111111111111111111111111111111','all',1);`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := applyMigrations(testAccountContext(), pool, migrations, time.Unix(2, 0)); err != nil {
+		t.Fatal(err)
+	}
+	for _, table := range []string{"post_likes", "comment_likes", "entry_mentions", "comment_mentions", "comment_reply_recipients", "notifications", "notification_seen"} {
+		var count int
+		if err := pool.QueryRow(`SELECT count(*) FROM ` + table).Scan(&count); err != nil || count != 1 {
+			t.Fatalf("%s rows = %d, %v", table, count, err)
+		}
+	}
+	var historical, unavailable, sequence int
+	if err := pool.QueryRow(`SELECT historical,force_unavailable,sequence FROM notifications`).Scan(&historical, &unavailable, &sequence); err != nil || historical != 0 || unavailable != 0 || sequence != 1 {
+		t.Fatalf("live history changed: %d %d %d %v", historical, unavailable, sequence, err)
+	}
+	if _, err := pool.Exec(`INSERT INTO post_likes(post_id,user_id,created_at_ms) VALUES ('01ARZ3NDEKTSV4RRFFQ69G5FAV','11111111111111111111111111111111',2)`); err == nil {
+		t.Fatal("upgrade removed live like uniqueness")
+	}
+}

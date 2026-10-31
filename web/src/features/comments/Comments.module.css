@@ -309,6 +309,7 @@
 }
 
 .replyTarget {
+  overflow-wrap: anywhere;
   margin: 0.05rem 0 0.4rem;
   color: var(--text-secondary);
   font-size: var(--text-sm);

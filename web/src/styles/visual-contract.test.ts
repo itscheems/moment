@@ -203,13 +203,13 @@ describe("visual foundation contract", () => {
 
   it("keeps detail actions and inline replies separate from list and dialog contracts", () => {
     expect(postCss).toMatch(
-      /\._postActions_[\w-]+\s*\{[^}]*grid-template-columns:\s*var\(--post-edge-action-size\)\s+var\(--post-edge-action-size\)\s+minmax\(0, 1fr\)\s+var\(--post-edge-action-size\)/,
+      /\._postActions_[\w-]+\s*\{[^}]*grid-template-columns:\s*repeat\(3, minmax\(0, 1fr\)\)\s+var\(--post-edge-action-size\)/,
     );
     expect(postCss).toMatch(
       /\._postAction_[\w-]+ svg\s*\{[^}]*inline-size:\s*1\.171875rem;[^}]*block-size:\s*1\.171875rem;/s,
     );
     expect(postCss).toMatch(
-      /\._detail_[\w-]+ \._postActions_[\w-]+\s*\{[^}]*min-block-size:\s*3rem;[^}]*grid-template-columns:\s*1\.90625rem 1\.90625rem 1\.90625rem 1\.90625rem 1\.40625rem;[^}]*padding-inline:\s*var\(--space-1\);/s,
+      /\._detail_[\w-]+ \._postActions_[\w-]+\s*\{[^}]*min-block-size:\s*3rem;[^}]*grid-template-columns:\s*repeat\(3, minmax\(0, 1fr\)\) 1\.40625rem;[^}]*column-gap:\s*4px;[^}]*padding-inline:\s*var\(--space-1\);/s,
     );
     expect(commentsCss).toMatch(
       /\._formSurface_[\w-]+\._inlineTopLevelForm_[\w-]+\s*\{[^}]*border-block-end:\s*1px solid var\(--border-subtle\);[^}]*padding:\s*0\.25rem var\(--space-4\) 0\.75rem;/s,

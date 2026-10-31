@@ -25,6 +25,7 @@ type PortableImporter struct {
 	identities     int64
 	articles       int64
 	drafts         int64
+	interactions   int64
 	pendingQuotes  []pendingQuote
 	pendingReplies []pendingReplyTarget
 }
@@ -716,7 +717,7 @@ func (importer *PortableImporter) commit(ctx context.Context, expected ArchiveCo
 	}
 	if importer.entries != expected.Entries || importer.comments != expected.Comments || importer.media != expected.Media ||
 		importer.users != expected.Users || importer.identities != expected.Identities ||
-		importer.articles != expected.Articles || importer.drafts != expected.ArticleDrafts {
+		importer.articles != expected.Articles || importer.drafts != expected.ArticleDrafts || importer.interactions != expected.Interactions {
 		return errors.New("portable import counts do not match the manifest")
 	}
 	for _, quote := range importer.pendingQuotes {
@@ -877,6 +878,13 @@ SELECT
 		ftsRows != entries || missingFTS != 0 || extraFTS != 0 || mismatchedFTS != 0 || duplicateFTS != 0 ||
 		normalizerVersion != domain.ContentNormalizerVersion {
 		return errors.New("staged portable counts, FTS content, or normalizer version are inconsistent")
+	}
+	var interactions int64
+	if err := pool.QueryRowContext(ctx, "SELECT "+interactionCountSQL).Scan(&interactions); err != nil {
+		return err
+	}
+	if interactions != expected.Interactions {
+		return errors.New("staged interaction count is inconsistent")
 	}
 	// A body row can only exist for an article entry -- a trigger says so --
 	// but nothing in the schema stops an article entry from arriving without

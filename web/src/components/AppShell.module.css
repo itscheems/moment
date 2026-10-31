@@ -613,7 +613,7 @@
     inset-block-end: 0;
     block-size: calc(3.5rem + env(safe-area-inset-bottom));
     display: grid;
-    grid-template-columns: repeat(5, minmax(0, 1fr));
+    grid-template-columns: repeat(6, minmax(0, 1fr));
     align-items: start;
     border-block-start: 1px solid var(--border-subtle);
     padding: 0 var(--space-1) env(safe-area-inset-bottom);
@@ -633,7 +633,7 @@
   }
 
   .mobileNav .navLink {
-    min-block-size: 3.5rem;
+    min-block-size: calc(3.5rem - 1px);
     align-items: center;
     justify-content: center;
     border-radius: 0;
@@ -651,7 +651,7 @@
 
   .mobileNav .navPill {
     inline-size: 100%;
-    block-size: 3.5rem;
+    block-size: calc(3.5rem - 1px);
     justify-content: center;
     border-radius: 0;
     padding: 0;
@@ -974,4 +974,31 @@
   color: var(--text-secondary);
   font-size: 13px;
   line-height: 16px;
+}
+
+.notificationIcon {
+  position: relative;
+  display: inline-flex;
+  flex-shrink: 0;
+  inline-size: var(--rail-icon-size);
+  block-size: var(--rail-icon-size);
+}
+.notificationIcon > svg {
+  inline-size: 100%;
+  block-size: 100%;
+}
+.notificationsHeader {
+  block-size: 53px;
+  border-block-end: 0;
+}
+
+.notificationsHeader h1 {
+  padding-block: 2px;
+}
+
+@media (max-width: 719px) {
+  .mobileNav .notificationIcon {
+    inline-size: 1.5rem;
+    block-size: 1.5rem;
+  }
 }

@@ -169,6 +169,14 @@ func (host *liveServerHost) Activate(ctx context.Context, runtimeState *runtimef
 	if err != nil {
 		return fail(err)
 	}
+	interactionRepository, err := sqlitestore.NewInteractionRepository(database, runtimeState.Locks, runtimeState.Current.ID)
+	if err != nil {
+		return fail(err)
+	}
+	interactionService, err := app.NewInteractionService(interactionRepository, postService, commentService)
+	if err != nil {
+		return fail(err)
+	}
 	searchRepository, err := sqlitestore.NewSearchRepository(database, runtimeState.Locks)
 	if err != nil {
 		return fail(err)
@@ -213,7 +221,7 @@ func (host *liveServerHost) Activate(ctx context.Context, runtimeState *runtimef
 	}
 	engine, err := ginhttp.New(ginhttp.Config{
 		Assets: host.assets, SessionSigner: host.auth, Accounts: accountService, OAuthProviders: providers, SiteSettings: siteService, InstanceID: runtimeState.Instance.ID, InstanceInitializedAt: runtimeState.Instance.InitializedAt,
-		Media: mediaStore, Posts: postService, Locations: locationService, Links: linkService, Comments: commentService, Search: searchService,
+		Media: mediaStore, Posts: postService, Locations: locationService, Links: linkService, Comments: commentService, Interactions: interactionService, Search: searchService,
 		ShareMetadata: shareMetadata, Archive: host.exporter, ImportInspector: inspector, ImportCommitter: host.committer, Doctor: doctorService,
 		SecureCookies: host.secureCookies, TrustedProxies: host.trustedProxies, SurfaceLog: host.log,
 		Readiness: func(readyCtx context.Context) error {

@@ -748,3 +748,31 @@ describe("owner API client", () => {
     },
   );
 });
+
+it("forwards optional reply exclusions without replacing explicit body mentions", async () => {
+  const fetcher = vi.fn<typeof fetch>(async () =>
+    json(
+      {
+        data: comment,
+        meta: { request_id: "reply-exclusions", replayed: false },
+      },
+      201,
+    ),
+  );
+  const api = new CommentsApi(fetcher);
+  await api.createComment(
+    "csrf",
+    post.id,
+    "@cedar stays explicit",
+    null,
+    "reply-key",
+    [],
+    null,
+    null,
+    ["1".repeat(32)],
+  );
+  expect(JSON.parse(String(fetcher.mock.calls[0][1]?.body))).toMatchObject({
+    content_md: "@cedar stays explicit",
+    exclude_reply_user_ids: ["1".repeat(32)],
+  });
+});

@@ -844,3 +844,11 @@ it("reads v4 import plans and comment quote merge targets", () => {
     ).quoted_comment_id,
   ).toBe("01H00000000000000000000102");
 });
+
+it("reads current interaction counts and rejects invalid history totals", () => {
+  const wire = { ...planData(100), format_version: 6 };
+  wire.counts = { ...wire.counts, interactions: 12 };
+  expect(parseImportPlan(wire, 100).counts.interactions).toBe(12);
+  wire.counts.interactions = 2_000_001;
+  expect(() => parseImportPlan(wire, 100)).toThrow();
+});

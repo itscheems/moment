@@ -1,3 +1,5 @@
+import { SourceMentionProvider } from "../../app/mentions";
+import { LikeAction } from "../notifications/LikeAction";
 import { useTranslation } from "react-i18next";
 import { AccountName } from "../../components/AccountName";
 import { accountVerification } from "../../components/accountVerification";
@@ -37,7 +39,7 @@ import {
 import styles from "./Article.module.css";
 
 /** Share the document renderer while keeping detail and paper layouts distinct. */
-export function ArticlePage({
+function ArticlePageBody({
   post,
   site,
   now,
@@ -257,9 +259,8 @@ export function ArticlePage({
               ) : null}
             </button>
           </ActionTooltip>
-          {canPublish && showActions ? (
-            <RepostAction onChanged={onReposted} post={post} />
-          ) : null}
+          <RepostAction onChanged={onReposted} post={post} />
+          <LikeAction kind="post" id={post.id} />
           <ShareMenu
             align="start"
             baseUrl={site.publicBaseUrl}
@@ -295,5 +296,17 @@ export function ArticlePage({
         </div>
       ) : null}
     </article>
+  );
+}
+
+export function ArticlePage(props: Parameters<typeof ArticlePageBody>[0]) {
+  return (
+    <SourceMentionProvider
+      kind="post"
+      id={props.post.id}
+      revision={props.post.updatedAt}
+    >
+      <ArticlePageBody {...props} />
+    </SourceMentionProvider>
   );
 }

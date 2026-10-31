@@ -218,7 +218,7 @@ func TestCompleteArticleGraphUsesCurrentFormatVersion(t *testing.T) {
 	if err := json.Unmarshal(members["manifest.json"], &document); err != nil {
 		t.Fatal(err)
 	}
-	if document.FormatVersion != FormatVersion || FormatVersion != 5 || FormatHeaderValue != "moment-export-v5" {
+	if document.FormatVersion != FormatVersion || FormatVersion != 6 || FormatHeaderValue != "moment-export-v6" {
 		t.Fatalf("an archive carrying an article declared %#v", document)
 	}
 	if document.Counts.Articles != 1 || document.Counts.ArticleDrafts != 1 {

@@ -1,5 +1,6 @@
 /** An archive counts object as it appears on the wire. */
 export interface ImportCountsWire {
+  interactions?: number;
   entries: number;
   comments: number;
   media: number;

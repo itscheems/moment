@@ -4,6 +4,8 @@ import { locationIconArtwork } from "./locationIcon";
 const iconSprite = "/icons/ui-symbols-v3.svg";
 
 export type IconName =
+  | "heart"
+  | "heart-filled"
   | "globe"
   | "plus"
   | "article"
@@ -85,6 +87,12 @@ const iconViewBoxes: Partial<Record<IconName, string>> = {
 };
 
 const paths: Record<IconName, React.ReactNode> = {
+  heart: (
+    <path d="M20.884 13.19c-1.351 2.48-4.001 5.12-8.379 7.67l-.503.3-.504-.3c-4.379-2.55-7.029-5.19-8.382-7.67-1.36-2.5-1.41-4.86-.514-6.67.887-1.79 2.647-2.91 4.601-3.01 1.651-.09 3.368.56 4.798 2.01 1.429-1.45 3.146-2.1 4.796-2.01 1.954.1 3.714 1.22 4.601 3.01.896 1.81.846 4.17-.514 6.67z" />
+  ),
+  "heart-filled": (
+    <path d="M20.884 13.19c-1.351 2.48-4.001 5.12-8.379 7.67l-.503.3-.504-.3c-4.379-2.55-7.029-5.19-8.382-7.67-1.36-2.5-1.41-4.86-.514-6.67.887-1.79 2.647-2.91 4.601-3.01 1.651-.09 3.368.56 4.798 2.01 1.429-1.45 3.146-2.1 4.796-2.01 1.954.1 3.714 1.22 4.601 3.01.896 1.81.846 4.17-.514 6.67z" />
+  ),
   // Lucide eye and eye-off artwork, kept in the shared icon system.
   eye: (
     <>
@@ -457,6 +465,7 @@ const paths: Record<IconName, React.ReactNode> = {
 };
 
 const filledIcons = new Set<IconName>([
+  "heart-filled",
   "expand",
   "collapse",
   "ellipsis",
@@ -524,8 +533,15 @@ export function Icon({
       : navigationSymbols[name]?.[
           variant === "navigation-active" ? "active" : "idle"
         ];
-  const filled = navigationSymbol !== undefined || filledIcons.has(name);
-  const artwork = navigationSymbol ? (
+  const activeNotification =
+    name === "notification" && variant === "navigation-active";
+  const filled =
+    activeNotification ||
+    navigationSymbol !== undefined ||
+    filledIcons.has(name);
+  const artwork = activeNotification ? (
+    <path d="M19.993 9.042C19.48 5.017 16.054 2 11.996 2s-7.49 3.021-7.999 7.051L2.866 18H7.1c.463 2.282 2.481 4 4.9 4s4.437-1.718 4.9-4h4.236l-1.143-8.958zM12 20c-1.306 0-2.417-.835-2.829-2h5.658c-.412 1.165-1.523 2-2.829 2z" />
+  ) : navigationSymbol ? (
     <use href={`${iconSprite}#${navigationSymbol}`} />
   ) : (
     paths[name]

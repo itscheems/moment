@@ -83,10 +83,11 @@ type InspectOptions struct {
 
 // ImportCounts reports the complete portable entity graph considered for replacement.
 type ImportCounts struct {
-	Entries  int64 `json:"entries"`
-	Comments int64 `json:"comments"`
-	Media    int64 `json:"media"`
-	Users    int64 `json:"users"`
+	Interactions int64 `json:"interactions,omitempty"`
+	Entries      int64 `json:"entries"`
+	Comments     int64 `json:"comments"`
+	Media        int64 `json:"media"`
+	Users        int64 `json:"users"`
 	// Articles is a subset of Entries, since every article is one. It is
 	// reported separately because a preview that says only "entries" tells
 	// nobody how much of what is about to be replaced is long-form.
@@ -698,7 +699,7 @@ func (inspector *Inspector) preflight(ctx context.Context, archivePath string) (
 	defer func() { _ = reader.Close() }()
 	// The budget is stated against the largest v2 layout, and the floor
 	// against the smallest, so all of them remain readable.
-	maxMembers := inspector.limits.MaxMedia + int64(len(articlePortableMembers)+len(portableTrailerMembers))
+	maxMembers := inspector.limits.MaxMedia + int64(len(articlePortableMembers)+1+len(portableTrailerMembers))
 	if int64(len(reader.File)) > maxMembers || len(reader.File) < len(articlePortableMembers)+len(portableTrailerMembers) {
 		return manifest{}, importInvalid("archive ZIP member count exceeds the inspection budget", nil)
 	}
@@ -762,7 +763,7 @@ func (inspector *Inspector) preflight(ctx context.Context, archivePath string) (
 	if document.Format != formatName {
 		return manifest{}, importInvalid("archive format identifier is unsupported", nil)
 	}
-	if document.FormatVersion != 2 && document.FormatVersion != 3 && document.FormatVersion != 4 && document.FormatVersion != FormatVersion {
+	if !supportedSiteFormat(document.FormatVersion) {
 		return manifest{}, domain.NewError(domain.CodeExportVersionUnsupported, "archive format version is not supported", map[string]any{"format_version": document.FormatVersion, "supported_version": FormatVersion})
 	}
 	// Articles are bounded by the entry budget because every article is an
@@ -775,6 +776,7 @@ func (inspector *Inspector) preflight(ctx context.Context, archivePath string) (
 		document.Counts.Identities < 0 || document.Counts.Identities > inspector.limits.MaxIdentities ||
 		document.Counts.Articles < 0 || document.Counts.Articles > document.Counts.Entries ||
 		document.Counts.ArticleDrafts < 0 || document.Counts.ArticleDrafts > inspector.limits.MaxArticleDrafts ||
+		document.Counts.Interactions < 0 || document.Counts.Interactions > maxPortableInteractions ||
 		document.Limits.ExpandedBytes < 1 || document.Limits.ExpandedBytes > inspector.limits.MaxExpandedBytes {
 		return manifest{}, importInvalid("archive manifest counts or expanded bytes exceed the inspection budget", nil)
 	}
@@ -903,6 +905,7 @@ func (inspector *Inspector) currentReplacementImpact(ctx context.Context, runtim
 			Entries: impact.Entries, Comments: impact.Comments, Media: impact.Media,
 			Users: impact.Users, Identities: impact.Identities,
 			Articles: impact.Articles, ArticleDrafts: impact.ArticleDrafts,
+			Interactions: impact.Interactions,
 		},
 		MediaBytes: impact.MediaBytes, DataBytes: dataBytes,
 	}, nil
@@ -1406,6 +1409,9 @@ func rebuildPortableGeneration(ctx context.Context, parent *runtimefs.Runtime, g
 	if err := importer.SetSite(ctx, archiveSiteOf(site)); err != nil {
 		return err
 	}
+	if _, err := readInteractions(ctx, files, document, func(record sqlitestore.ArchiveInteraction) error { return importer.InsertInteraction(ctx, record) }); err != nil {
+		return err
+	}
 	expected := portableExpectedCounts(document)
 	if err := importer.Commit(ctx, expected); err != nil {
 		return err
@@ -1463,6 +1469,7 @@ func portableExpectedCounts(document manifest) sqlitestore.ArchiveCounts {
 		Entries: document.Counts.Entries, Comments: document.Counts.Comments, Media: document.Counts.Media,
 		Users: document.Counts.Users, Identities: document.Counts.Identities,
 		Articles: document.Counts.Articles, ArticleDrafts: document.Counts.ArticleDrafts,
+		Interactions: document.Counts.Interactions,
 	}
 	return counts
 }
@@ -1476,6 +1483,7 @@ func portableImportCounts(document manifest) ImportCounts {
 		Entries: expected.Entries, Comments: expected.Comments, Media: expected.Media,
 		Users: expected.Users, Identities: expected.Identities,
 		Articles: expected.Articles, ArticleDrafts: expected.ArticleDrafts,
+		Interactions: expected.Interactions,
 	}
 }
 

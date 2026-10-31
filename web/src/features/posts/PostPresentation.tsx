@@ -1,3 +1,4 @@
+import { LikeAction } from "../notifications/LikeAction";
 import { useTranslation } from "react-i18next";
 import { AccountName } from "../../components/AccountName";
 import { commentDetailPath } from "../../app/routes";
@@ -503,6 +504,10 @@ export function PostPresentation({
         <QuotedArticle article={quoted.article} />
       ) : (
         <MarkdownBody
+          source={{
+            kind: quoted.commentPostId ? "comment" : "post",
+            id: quoted.id,
+          }}
           className={styles.quoteMarkdown}
           html={quoted.contentHtml}
         />
@@ -555,6 +560,10 @@ export function PostPresentation({
         <div className={styles.detailBody}>
           {post.contentHtml ? (
             <MarkdownBody
+              source={{
+                kind: post.commentPostId ? "comment" : "post",
+                id: post.id,
+              }}
               className={styles.markdown}
               html={post.contentHtml}
               searchQuery={searchQuery}
@@ -619,9 +628,11 @@ export function PostPresentation({
                 ) : null}
               </button>
             </ActionTooltip>
-            {canPublish || post.commentPostId ? (
-              <RepostAction onChanged={onReposted} post={post} />
-            ) : null}
+            <RepostAction onChanged={onReposted} post={post} />
+            <LikeAction
+              kind={post.commentPostId ? "comment" : "post"}
+              id={post.id}
+            />
             {share("start")}
           </div>
         </div>
@@ -671,6 +682,10 @@ export function PostPresentation({
           <ArticleCard post={post} />
         ) : (
           <MarkdownBody
+            source={{
+              kind: post.commentPostId ? "comment" : "post",
+              id: post.id,
+            }}
             className={`${styles.markdown} ${collapsed && preview.clipped ? styles.clippedPreview : ""}`}
             html={previewHtml}
             searchQuery={searchQuery}
@@ -761,9 +776,11 @@ export function PostPresentation({
               )}
             </ActionTooltip>
           )}
-          {canPublish || post.commentPostId ? (
-            <RepostAction onChanged={onReposted} post={post} />
-          ) : null}
+          <RepostAction onChanged={onReposted} post={post} />
+          <LikeAction
+            kind={post.commentPostId ? "comment" : "post"}
+            id={post.id}
+          />
           {share("end")}
         </div>
       </div>

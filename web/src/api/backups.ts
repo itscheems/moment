@@ -17,6 +17,7 @@ import {
 import { decodeResponse, PublicApiError } from "./public";
 
 export interface ImportCounts {
+  interactions?: number;
   entries: number;
   comments: number;
   media: number;
@@ -323,11 +324,15 @@ export function parseImportCounts(value: unknown): ImportCounts {
       "articles",
       "article_drafts",
       "identities",
+      ...(record.interactions === undefined ? [] : ["interactions"]),
     ])
   ) {
     throw invalidResponse("import counts contain unsupported fields");
   }
   return {
+    ...(record.interactions === undefined
+      ? {}
+      : { interactions: nonNegativeIntegerField(record, "interactions") }),
     entries: nonNegativeIntegerField(record, "entries"),
     comments: nonNegativeIntegerField(record, "comments"),
     media: nonNegativeIntegerField(record, "media"),
@@ -696,7 +701,8 @@ export function parseMergeInspection(value: unknown): MergeInspection {
     incomingCounts.comments > 500_000 ||
     incomingCounts.media > 100_000 ||
     incomingCounts.users > 100_000 ||
-    incomingCounts.identities > 500_000
+    incomingCounts.identities > 500_000 ||
+    (incomingCounts.interactions ?? 0) > 2_000_000
   ) {
     throw invalidResponse("merge incoming counts exceed supported limits");
   }
@@ -1177,7 +1183,9 @@ export function parseImportPlan(
     record.dry_run !== true ||
     (record.format_version !== 2 &&
       record.format_version !== 3 &&
-      record.format_version !== 4)
+      record.format_version !== 4 &&
+      record.format_version !== 5 &&
+      record.format_version !== 6)
   ) {
     throw invalidResponse("import plan contract is invalid");
   }
@@ -1243,6 +1251,7 @@ export function parseImportPlan(
   const peak = expectedArchiveBytes + replacementDataBytes + requiredAdditional;
   if (
     expectedArchiveBytes <= 0 ||
+    (counts.interactions ?? 0) > 2_000_000 ||
     counts.entries > 100_000 ||
     counts.comments > 500_000 ||
     counts.media > 100_000 ||

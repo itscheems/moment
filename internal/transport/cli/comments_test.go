@@ -70,7 +70,12 @@ func newCommentCLIFixture(t *testing.T) commentCLIFixture {
 	if err != nil {
 		t.Fatal(err)
 	}
-	engine, err := ginhttp.New(ginhttp.Config{Assets: fstest.MapFS{"index.html": &fstest.MapFile{Data: []byte("Moment")}}, SessionSigner: manager, Accounts: testAccountService(t, database, runtimeState), SiteSettings: site, Posts: posts, Comments: comments, Media: mediaStore})
+	interactionRepository, _ := sqlitestore.NewInteractionRepository(database, runtimeState.Locks, runtimeState.Current.ID)
+	interactions, err := app.NewInteractionService(interactionRepository, posts, comments)
+	if err != nil {
+		t.Fatal(err)
+	}
+	engine, err := ginhttp.New(ginhttp.Config{Assets: fstest.MapFS{"index.html": &fstest.MapFile{Data: []byte("Moment")}}, SessionSigner: manager, Accounts: testAccountService(t, database, runtimeState), SiteSettings: site, Posts: posts, Comments: comments, Interactions: interactions, Media: mediaStore})
 	if err != nil {
 		t.Fatal(err)
 	}

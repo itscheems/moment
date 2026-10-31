@@ -539,7 +539,7 @@
   min-block-size: 2.75rem;
   display: grid;
   grid-template-columns:
-    var(--post-edge-action-size) var(--post-edge-action-size) minmax(0, 1fr)
+    repeat(3, minmax(0, 1fr))
     var(--post-edge-action-size);
   align-items: center;
   justify-content: start;
@@ -610,22 +610,23 @@
   inset-inline-start: calc(100% + 0.08rem);
   min-inline-size: 1ch;
   color: currentColor;
+  font-size: 0.8125rem;
   font-variant-numeric: tabular-nums;
-  line-height: 1;
+  line-height: 1rem;
   pointer-events: none;
   transform: translateY(-50%);
   white-space: nowrap;
 }
 
 .postAction:focus-visible {
-  color: var(--accent);
-  background: var(--accent-soft);
+  color: var(--post-action-color, var(--accent));
+  background: var(--post-action-background, var(--accent-soft));
 }
 
 @media (hover: hover) {
   .postAction:hover {
-    color: var(--accent);
-    background: var(--accent-soft);
+    color: var(--post-action-color, var(--accent));
+    background: var(--post-action-background, var(--accent-soft));
   }
 }
 
@@ -676,7 +677,7 @@
 
 .timelineDensity .postActions {
   min-block-size: 1.25rem;
-  grid-template-columns: repeat(4, minmax(0, 1fr)) 3.09375rem;
+  grid-template-columns: repeat(3, minmax(0, 1fr)) 1.171875rem;
   gap: var(--space-1);
   margin-block-start: 0.75rem;
 }
@@ -730,22 +731,23 @@
 }
 
 .timelineDensity .shareAction {
-  grid-column: 5;
+  grid-column: 4;
 }
 
-.timelineDensity .actionCount {
+.timelineDensity .actionCount,
+.detail .actionCount {
   position: static;
   inset: auto;
   min-inline-size: 0;
   padding-inline: var(--space-1);
   font-variant-numeric: normal;
-  line-height: 1.25rem;
+  line-height: 1rem;
   transform: none;
 }
 
 .timelineDensity .repostAction {
-  --feed-action-color: #00ba7c;
-  --feed-action-background: rgb(0 186 124 / 10%);
+  --post-action-color: #00ba7c;
+  --post-action-background: rgb(0 186 124 / 10%);
 }
 
 .timelineDensity .postAction.repostActive {
@@ -753,22 +755,22 @@
 }
 
 .post.timelineDensity .postAction:focus-visible {
-  color: var(--feed-action-color, #1d9bf0);
+  color: var(--post-action-color, #1d9bf0);
   background: transparent;
 }
 
 .timelineDensity .postAction:focus-visible::before {
-  background: var(--feed-action-background, rgb(29 155 240 / 10%));
+  background: var(--post-action-background, rgb(29 155 240 / 10%));
 }
 
 @media (hover: hover) {
   .post.timelineDensity .postAction:hover:not(:disabled) {
-    color: var(--feed-action-color, #1d9bf0);
+    color: var(--post-action-color, #1d9bf0);
     background: transparent;
   }
 
   .timelineDensity .postAction:hover:not(:disabled)::before {
-    background: var(--feed-action-background, rgb(29 155 240 / 10%));
+    background: var(--post-action-background, rgb(29 155 240 / 10%));
   }
 }
 
@@ -904,10 +906,10 @@
 .detail .postActions {
   min-block-size: 3rem;
   display: grid;
-  grid-template-columns: 1.90625rem 1.90625rem 1.90625rem 1.90625rem 1.40625rem;
+  grid-template-columns: repeat(3, minmax(0, 1fr)) 1.40625rem;
   align-items: center;
   justify-content: space-between;
-  column-gap: 0;
+  column-gap: 4px;
   max-inline-size: none;
   border-block-start: 1px solid var(--border-subtle);
   margin-block-start: var(--space-4);
@@ -964,12 +966,12 @@
 }
 
 .detail .postAction:focus-visible::before {
-  background: var(--accent-soft);
+  background: var(--post-action-background, var(--accent-soft));
 }
 
 @media (hover: hover) {
   .detail .postAction:hover::before {
-    background: var(--accent-soft);
+    background: var(--post-action-background, var(--accent-soft));
   }
 }
 
@@ -995,7 +997,7 @@
 
 .detail .shareAction {
   min-inline-size: 0;
-  grid-column: 5;
+  grid-column: 4;
   inline-size: 1.40625rem;
   justify-self: end;
 }
@@ -1096,16 +1098,6 @@
   .post {
     transition: none;
   }
-}
-
-.detail .actionCount {
-  font-size: 0.9375rem;
-  font-variant-numeric: normal;
-  line-height: 1.25rem;
-  position: static;
-  inset: auto;
-  padding-inline: var(--space-1);
-  transform: none;
 }
 
 /* The media discussion is the detail presentation inside a 350px column. */

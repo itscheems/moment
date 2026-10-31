@@ -28,10 +28,10 @@ import type { DiscussionChange } from "./discussionChanges";
 import commentsCss from "./Comments.module.css?inline";
 import { makeAccountLimits } from "../../test/accountFixtures";
 
-const postId = "01K2ABCDEF0123456789ABCDE0";
-const rootId = "01K2ABCDEF0123456789ABCDE1";
-const replyId = "01K2ABCDEF0123456789ABCDE2";
-const createdId = "01K2ABCDEF0123456789ABCDE3";
+const postId = "01ARZ3NDEKTSV4RRFFQ69G5FAV";
+const rootId = "01ARZ3NDEKTSV4RRFFQ69G5FAW";
+const replyId = "01ARZ3NDEKTSV4RRFFQ69G5FAX";
+const createdId = "01ARZ3NDEKTSV4RRFFQ69G5FAY";
 const sessionKey = "moment.auth.session.v2";
 
 const site: SiteIdentity = {
@@ -333,6 +333,23 @@ function installApi(
   const fetcher = vi.fn(
     async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
+      if (url.endsWith("/reply-context")) {
+        return success({
+          subject: {
+            type: url.includes("/posts/") ? "post" : "comment",
+            id: url.split("/").at(-2),
+          },
+          participants: [
+            {
+              user_id: site.profileUserId,
+              username: "owner",
+              display_name: "Moment",
+              avatar_media_id: null,
+              required: true,
+            },
+          ],
+        });
+      }
       const response = await handler(url, init);
       if (
         url === "/api/v1/login/session" &&
@@ -1534,10 +1551,12 @@ describe("public comment thread", () => {
     });
     const form = within(dialog).getByRole("form", { name: "发表回复" });
     expect(within(context).getByText("一段需要回应的 Moment")).toBeVisible();
-    expect(within(context).getByText(/正在回复/)).toHaveTextContent(
-      "正在回复 @owner",
-    );
-    expect(within(form).queryByText(/正在回复/)).not.toBeInTheDocument();
+    expect(within(form).getByText(/正在回复/)).toBeVisible();
+    expect(within(context).queryByText(/正在回复/)).not.toBeInTheDocument();
+    expect(
+      within(form).queryByRole("button", { name: /正在回复/ }),
+    ).not.toBeInTheDocument();
+    expect(within(dialog).queryByRole("checkbox")).not.toBeInTheDocument();
     expect(
       within(dialog).getByRole("button", { name: "选择媒体" }),
     ).toBeVisible();

@@ -5,15 +5,20 @@ Usage:
   moment post [command]
 
 Available Commands:
-  create      Publish a Moment post
-  delete      Delete a Moment post
-  get         Get one Moment post
-  list        List the public Moment timeline
-  pin         Pin one Moment post to the public profile
-  repost      Repost one Moment to the top of the timeline
-  unpin       Remove a pinned Moment from the public profile
-  unrepost    Remove one Moment repost
-  update      Update a Moment post
+  create        Publish a Moment post
+  delete        Delete a Moment post
+  get           Get one Moment post
+  like          Like one post
+  like-status   Read one post like state
+  list          List the public Moment timeline
+  mentions      Read one post saved mention identities
+  pin           Pin one Moment post to the public profile
+  reply-context Read one post reply participants
+  repost        Repost one Moment to the top of the timeline
+  unlike        Remove a like from one post
+  unpin         Remove a pinned Moment from the public profile
+  unrepost      Remove one Moment repost
+  update        Update a Moment post
 
 Flags:
   -h, --help   help for post

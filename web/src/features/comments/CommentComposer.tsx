@@ -48,6 +48,7 @@ import {
 } from "../compose/LocationPicker";
 import { MentionSuggestions } from "../compose/MentionSuggestions";
 import { activeMention, type ActiveMention } from "../compose/mentions";
+import { ReplyParticipants } from "./ReplyParticipants";
 import styles from "./Comments.module.css";
 
 const MAX_COMMENT = 2_000;
@@ -266,6 +267,7 @@ export function CommentForm({
   initialExpanded = false,
   textareaRef: suppliedTextareaRef,
   topLevelTargetUsername,
+  replyParticipantLabel,
 }: {
   active?: boolean;
   api: PublicApi;
@@ -285,6 +287,7 @@ export function CommentForm({
   initialExpanded?: boolean;
   textareaRef?: RefObject<HTMLTextAreaElement | null>;
   topLevelTargetUsername?: string;
+  replyParticipantLabel?: string;
 }) {
   const { t } = useTranslation();
 
@@ -321,11 +324,14 @@ export function CommentForm({
   const formId =
     suppliedFormId ??
     (parentId ? `reply-${replyTargetId ?? parentId}` : "top-level-comment");
-  // The composer already knew who it was answering — it just spent that on the
-  // 「正在回复 @X」 line and threw it away. A root comment answers nobody, so it
-  // never carries one; a reply with no explicit target is answering its root.
+  // Nested replies address the selected comment, independently of their flat
+  // presentation under the root comment. Top-level replies address the post.
   const replyToCommentId =
     parentId === null ? null : (replyTargetId ?? parentId);
+  const replyLabel =
+    replyTargetAuthor ??
+    replyParticipantLabel ??
+    (topLevelTargetUsername ? "@" + topLevelTargetUsername : "");
   const inlineTopLevel = topLevelTargetUsername !== undefined;
   const displayReauth =
     authExpired || (auth.state === "expired" && !auth.session);
@@ -659,29 +665,18 @@ export function CommentForm({
               </h3>
             </div>
           </header>
-          {!inlineTopLevel && parentId && replyTargetAuthor ? (
-            <p className={styles.replyTarget}>
-              {t("正在回复")}{" "}
-              {/*
-               * The label arrives whole. A handle carries its own @; a legacy
-               * row that has no account carries a plain display name, and
-               * prefixing that with @ would present a name — spaces and all —
-               * as though it were a handle.
-               */}
-              <span>{replyTargetAuthor}</span>
-            </p>
-          ) : null}
-          {inlineTopLevel && topLevelTargetUsername ? (
-            /* Always mounted so the line can grow in as the composer opens.
-               Folded, it is hidden from assistive tech, exactly as it was
-               when it was not rendered at all. */
+          {(expanded || inlineTopLevel) && auth.account?.status === "active" ? (
             <div
-              aria-hidden={expanded ? undefined : true}
               className={`${styles.replyTargetRow} ${expanded ? "" : styles.replyTargetRowCollapsed}`}
+              aria-hidden={expanded ? undefined : true}
             >
-              <p className={styles.replyTarget}>
-                {t("正在回复")} <span>@{topLevelTargetUsername}</span>
-              </p>
+              <ReplyParticipants
+                key={`${postId}:${replyToCommentId ?? "post"}:${auth.account.userId}`}
+                kind={replyToCommentId ? "comment" : "post"}
+                id={replyToCommentId ?? postId}
+                enabled={active && expanded && auth.state === "signed-in"}
+                fallback={replyLabel}
+              />
             </div>
           ) : null}
           <label className={styles.srOnly} htmlFor={`${formId}-content`}>

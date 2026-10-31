@@ -1,3 +1,4 @@
+import { NotificationBadge } from "../features/notifications/NotificationBadge";
 import { t } from "../i18n";
 import { useTranslation } from "react-i18next";
 import { AccountName } from "./AccountName";
@@ -352,10 +353,20 @@ function NavLink({ item, route }: { item: NavItem; route: AppRoute }) {
         href={item.href}
       >
         <span className={styles.navPill}>
-          <Icon
-            name={item.icon}
-            variant={current ? "navigation-active" : "navigation"}
-          />
+          {item.icon === "notification" ? (
+            <span className={styles.notificationIcon}>
+              <Icon
+                name="notification"
+                variant={current ? "navigation-active" : "navigation"}
+              />
+              <NotificationBadge />
+            </span>
+          ) : (
+            <Icon
+              name={item.icon}
+              variant={current ? "navigation-active" : "navigation"}
+            />
+          )}
           <span className={styles.navLabel}>{item.label}</span>
         </span>
       </InternalLink>
@@ -391,19 +402,15 @@ function LeftRail({
             {items.slice(0, 2).map((item) => (
               <NavLink item={item} key={item.href} route={route} />
             ))}
-            <SidebarTooltip label={t("通知")}>
-              <button
-                aria-label={t("通知")}
-                className={styles.navLink}
-                data-compact-label={t("通知")}
-                type="button"
-              >
-                <span className={styles.navPill}>
-                  <Icon name="notification" variant="navigation" />
-                  <span className={styles.navLabel}>{t("通知")}</span>
-                </span>
-              </button>
-            </SidebarTooltip>
+            <NavLink
+              item={{
+                label: t("通知"),
+                href: "/account/notifications",
+                icon: "notification",
+                active: ["notifications"],
+              }}
+              route={route}
+            />
             {items.slice(2).map((item) => (
               <NavLink item={item} key={item.href} route={route} />
             ))}
@@ -566,7 +573,14 @@ function MobileNavigation({
   const mobileViewport = useMediaQuery(MOBILE_VIEWPORT_QUERY);
   const obscured = useMobileNavigationObscured(mobileViewport);
   const items: NavItem[] = [
-    ...primaryNavFor(DEFAULT_PROFILE_HREF).slice(0, 3),
+    ...primaryNavFor(DEFAULT_PROFILE_HREF).slice(0, 2),
+    {
+      label: t("通知"),
+      href: "/account/notifications",
+      icon: "notification",
+      active: ["notifications"],
+    },
+    primaryNavFor(DEFAULT_PROFILE_HREF)[2],
     publishNav,
     accountNav(accountSettingsAvailable, loginDestination),
   ];
@@ -645,7 +659,7 @@ export function AppShell({
                   style={
                     route.id === "search" ? { display: "none" } : undefined
                   }
-                  className={`${styles.timelineHeader} ${
+                  className={`${styles.timelineHeader} ${route.id === "notifications" ? styles.notificationsHeader : ""} ${
                     route.id === "home" ? styles.homeHeader : ""
                   } ${route.id === "detail" || route.id === "comment-detail" ? styles.detailHeader : ""} ${route.id === "profile" ? styles.profileHeader : ""} ${workspace ? styles.workspaceHiddenHeader : ""}`}
                 >
@@ -758,6 +772,7 @@ export function AppShell({
                   route.id !== "comment-detail" &&
                   route.id !== "profile" &&
                   route.id !== "edit" &&
+                  route.id !== "notifications" &&
                   !focusReading ? (
                     <span className={styles.headerTheme}>
                       <ThemeMenu account={account} site={site} />

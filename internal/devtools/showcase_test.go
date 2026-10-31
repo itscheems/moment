@@ -325,3 +325,66 @@ func TestShowcasePicturesFitTheirBudgets(t *testing.T) {
 		t.Fatalf("an impossible budget must be refused, got %v", err)
 	}
 }
+
+func TestShowcaseInteractionCasesUsePersistedApplicationRelations(t *testing.T) {
+	result, root := buildShowcase(t, time.Date(2026, time.September, 14, 12, 0, 0, 0, time.UTC), 1)
+	cases := map[string]ShowcaseCase{}
+	for _, item := range result.Showcase.Cases {
+		cases[item.Key] = item
+	}
+	for _, key := range []string{"interaction.post-like", "interaction.comment-like", "notifications.all", "notifications.mentions"} {
+		if cases[key].Path == "" {
+			t.Fatalf("missing interaction case %s", key)
+		}
+	}
+	exporter, err := archive.NewExporter(archive.Options{DataDir: root, AppVersion: RecipeVersion})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var output bytes.Buffer
+	if _, err := exporter.Export(context.Background(), &output); err != nil {
+		t.Fatal(err)
+	}
+	reader, err := zip.NewReader(bytes.NewReader(output.Bytes()), int64(output.Len()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := map[string]bool{}
+	likes := 0
+	for _, file := range reader.File {
+		if file.Name != "data/interactions.jsonl" {
+			continue
+		}
+		opened, err := file.Open()
+		if err != nil {
+			t.Fatal(err)
+		}
+		scanner := bufio.NewScanner(opened)
+		for scanner.Scan() {
+			var row map[string]any
+			if err := json.Unmarshal(scanner.Bytes(), &row); err != nil {
+				t.Fatal(err)
+			}
+			kind := row["kind"]
+			if kind == "post_like" && row["subject_id"] == cases["interaction.post-like"].ID {
+				found["post"] = true
+			}
+			if kind == "comment_like" && row["subject_id"] == cases["interaction.comment-like"].ID {
+				found["comment"] = true
+			}
+			if kind == "notification" {
+				n := row["notification"].(map[string]any)
+				if n["event_type"] == "post.liked" || n["event_type"] == "comment.liked" {
+					likes++
+				}
+			}
+		}
+		if err := scanner.Err(); err != nil {
+			t.Fatal(err)
+		}
+		_ = opened.Close()
+	}
+	if !found["post"] || !found["comment"] || likes != 2 {
+		t.Fatalf("showcase omitted relations or live events: %+v / %d", found, likes)
+	}
+}

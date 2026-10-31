@@ -1,3 +1,5 @@
+import { SourceMentionProvider } from "../../app/mentions";
+import type { SubjectKind } from "../../api/interactions";
 import { useMemo } from "react";
 import { DOMParser as DocumentParser } from "@tiptap/pm/model";
 import { contentSchemas } from "./schema";
@@ -42,13 +44,15 @@ export function MarkdownBody({
   html,
   className,
   searchQuery,
+  source,
 }: {
   html: string;
   className?: string;
   searchQuery?: string;
+  source?: { kind: SubjectKind; id: string };
 }) {
   const document = useMemo(() => parseRenderedMarkdown(html), [html]);
-  return (
+  const content = (
     <RichContent
       document={document}
       searchQuery={searchQuery}
@@ -56,5 +60,12 @@ export function MarkdownBody({
       density="compact"
       className={className}
     />
+  );
+  return source ? (
+    <SourceMentionProvider kind={source.kind} id={source.id} revision={html}>
+      {content}
+    </SourceMentionProvider>
+  ) : (
+    content
   );
 }

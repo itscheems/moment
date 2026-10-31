@@ -17,6 +17,7 @@ const (
 	CodeExternalImageNotAllowed     Code = "EXTERNAL_IMAGE_NOT_ALLOWED"
 	CodePostNotFound                Code = "POST_NOT_FOUND"
 	CodeCommentNotFound             Code = "COMMENT_NOT_FOUND"
+	CodeNotificationNotFound        Code = "NOTIFICATION_NOT_FOUND"
 	CodeCommentDepthExceeded        Code = "COMMENT_DEPTH_EXCEEDED"
 	CodeCommentsDisabled            Code = "COMMENTS_DISABLED"
 	CodeCommentRejected             Code = "COMMENT_REJECTED"
