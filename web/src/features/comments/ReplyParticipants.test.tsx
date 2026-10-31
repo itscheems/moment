@@ -1,18 +1,24 @@
 import "@testing-library/jest-dom/vitest";
+import type { ReactElement } from "react";
 import {
   act,
   cleanup,
   fireEvent,
-  render,
+  render as renderUI,
   screen,
   waitFor,
 } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
 import { ReplyParticipants } from "./ReplyParticipants";
+import { MentionProvider } from "../../app/mentions";
+import { NavigationProvider } from "../../app/navigation";
 import i18n from "../../i18n";
 
 const postId = "01ARZ3NDEKTSV4RRFFQ69G5FAV";
 const commentId = "01ARZ3NDEKTSV4RRFFQ69G5FAW";
+function render(ui: ReactElement) {
+  return renderUI(ui, { wrapper: NavigationProvider });
+}
 function response(type: "post" | "comment", id: string, names: string[]) {
   return new Response(
     JSON.stringify({
@@ -144,7 +150,14 @@ it.each([
     const view = render(
       <ReplyParticipants kind="post" id={postId} enabled fallback="@cedar" />,
     );
-    expect(await screen.findByText(summary)).toBeVisible();
+    await waitFor(() => expect(view.container).toHaveTextContent(summary));
+    const visibleNames = names.slice(0, names.length > 3 ? 2 : 3);
+    for (const username of visibleNames) {
+      expect(
+        screen.getByRole("link", { name: "@" + username }),
+      ).toHaveAttribute("href", "/" + username);
+    }
+    expect(screen.getAllByRole("link")).toHaveLength(visibleNames.length);
     if (names.length > 3) {
       expect(view.container.textContent).not.toContain("@birch");
       expect(
@@ -155,3 +168,43 @@ it.each([
     expect(fetcher.mock.calls).toHaveLength(1);
   },
 );
+
+it("opens the existing full-profile preview from a reply participant", async () => {
+  const fetcher = vi.fn<typeof fetch>(async (input) =>
+    String(input).endsWith("/reply-context")
+      ? response("post", postId, ["cedar"])
+      : new Response(
+          JSON.stringify({
+            data: {
+              user_id: "1".repeat(32),
+              username: "cedar",
+              display_name: "Cedar",
+              bio: "A current account biography",
+              avatar_media_id: null,
+              cover_media_id: null,
+              profile_url: "/cedar",
+            },
+            meta: { request_id: "profile-preview" },
+          }),
+          { headers: { "Content-Type": "application/json" } },
+        ),
+  );
+  vi.stubGlobal("fetch", fetcher);
+  await act(async () => {
+    render(
+      <MentionProvider>
+        <ReplyParticipants kind="post" id={postId} enabled fallback="@cedar" />
+      </MentionProvider>,
+    );
+  });
+  const link = await screen.findByRole("link", { name: "@cedar" });
+  fireEvent.mouseEnter(link);
+  await waitFor(() =>
+    expect(screen.getByText("A current account biography")).toBeVisible(),
+  );
+  expect(screen.getByRole("link", { name: "Cedar" })).toHaveAttribute(
+    "href",
+    "/cedar",
+  );
+  expect(link).not.toHaveAttribute("title");
+});

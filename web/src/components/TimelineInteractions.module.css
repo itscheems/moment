@@ -1,4 +1,8 @@
-.identityPositioner,
+.identityPositioner {
+  /* Profile cards opened inside a reply dialog must clear its viewport. */
+  z-index: calc(var(--layer-popover) + 2);
+}
+
 .sharePositioner {
   z-index: var(--layer-popover);
 }
