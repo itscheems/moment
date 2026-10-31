@@ -1,3 +1,4 @@
+import { LikeAction } from "../notifications/LikeAction";
 import { useTranslation } from "react-i18next";
 import {
   useCallback,
@@ -274,6 +275,11 @@ export function MediaViewerProvider({
                     <>
                       <RepostAction
                         post={shown}
+                        tooltipPlacement={viewerTooltipPlacement}
+                      />
+                      <LikeAction
+                        kind={shown.commentPostId ? "comment" : "post"}
+                        id={shown.id}
                         tooltipPlacement={viewerTooltipPlacement}
                       />
                       <ShareMenu

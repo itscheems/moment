@@ -51,3 +51,5 @@ CLI supports `post|comment like|unlike|like-status|reply-context <id>` and `noti
 Saved mention bindings are readable through `GET /api/v1/posts/{id}/mentions` and `/comments/{id}/mentions`, or `post|comment mentions <id>` in the CLI. Each record contains the original `handle` and its current bounded `account`, or null when it is unresolved, historical or unavailable. Visibility is checked on the source before returning bindings. A renamed account keeps its original mention identity; reusing its previous username does not acquire that reference. Imported display snapshots remain unlinked. Content created before bindings were recorded retains its existing handle lookup behavior.
 
 The notification `subject` wire shape is `{ "type": "post" | "comment", "id": "…" }`. `post_kind` independently distinguishes moments and structured articles.
+
+Only an unfiltered All or Mentions boundary can be acknowledged with seen. Reason-filtered checkpoints are for machine consumption and cannot acknowledge events omitted by that filter.

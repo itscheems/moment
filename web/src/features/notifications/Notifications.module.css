@@ -1,0 +1,315 @@
+.badge {
+  position: absolute;
+  inset-block-start: -6px;
+  inset-inline-end: -4px;
+  box-sizing: content-box;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-inline-size: 16px;
+  block-size: 16px;
+  border: 1px solid var(--surface);
+  border-radius: 9999px;
+  padding-inline: 0;
+  background: #1d9bf0;
+  color: #fff;
+  font-family: var(--font-sans);
+  font-size: 11px;
+  font-weight: 400;
+  line-height: 12px;
+  white-space: nowrap;
+  pointer-events: none;
+}
+.badge[data-size="double"] {
+  padding-inline: 4px;
+}
+.badge[data-size="capped"] {
+  padding-inline: 8px;
+}
+.page {
+  min-block-size: calc(100dvh - 53px);
+}
+.tabs {
+  box-sizing: content-box;
+  display: flex;
+  position: sticky;
+  inset-block-start: 53px;
+  z-index: calc(var(--layer-header) - 1);
+  block-size: 53px;
+  border-block-end: 1px solid var(--border-subtle);
+  background: color-mix(in srgb, var(--surface) 86%, transparent);
+  backdrop-filter: blur(12px);
+}
+.tabs > a {
+  display: flex;
+  flex: 1 1 auto;
+  justify-content: center;
+  align-items: flex-end;
+  min-inline-size: 56px;
+  padding-inline: 16px;
+  color: var(--text-secondary);
+  text-decoration: none;
+  font-size: 15px;
+  font-weight: 500;
+  line-height: 20px;
+}
+.tabs > a > span {
+  min-inline-size: 24px;
+  position: relative;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  block-size: 52px;
+}
+.tabs > a[aria-current="page"] {
+  color: var(--text-primary);
+  font-weight: 700;
+}
+.tabs > a[aria-current="page"] > span::after {
+  content: "";
+  position: absolute;
+  inset-inline-start: 50%;
+  transform: translateX(-50%);
+  inline-size: 100%;
+  min-inline-size: 56px;
+  inset-block-end: 0;
+  block-size: 4px;
+  border-radius: 9999px;
+  background: #1d9bf0;
+}
+.top {
+  block-size: 0;
+}
+.row {
+  position: relative;
+  display: flex;
+  gap: 8px;
+  padding: 12px 16px;
+  border-block-end: 1px solid var(--border-subtle);
+  font-size: 15px;
+  line-height: 20px;
+  overflow-wrap: anywhere;
+}
+.eventIcon {
+  flex: 0 0 40px;
+  display: flex;
+  justify-content: flex-end;
+  color: #1d9bf0;
+}
+.eventIcon[data-like] {
+  color: #f91880;
+}
+.eventIcon > svg {
+  inline-size: 30px;
+  block-size: 30px;
+}
+.rowBody {
+  position: relative;
+  z-index: 1;
+  flex: 1;
+  min-inline-size: 0;
+  pointer-events: none;
+}
+.rowBody a {
+  pointer-events: auto;
+}
+.avatarLine {
+  display: flex;
+  block-size: 32px;
+  margin-block-end: 12px;
+  padding-inline-end: 20px;
+}
+.avatarLine > a,
+.avatarLine > span {
+  display: block;
+  inline-size: 32px;
+  block-size: 32px;
+  border-radius: 50%;
+  overflow: hidden;
+}
+.avatarLine img {
+  display: block;
+  inline-size: 100%;
+  block-size: 100%;
+  object-fit: cover;
+}
+.eventText {
+  margin: 0;
+  color: var(--text-primary);
+}
+.actor {
+  color: inherit;
+  text-decoration: none;
+  font-weight: 700;
+}
+.actor:hover {
+  text-decoration: underline;
+}
+.excerpt,
+.unavailable {
+  display: block;
+  margin: 4px 0 0;
+  color: var(--text-secondary);
+  text-decoration: none;
+  white-space: pre-wrap;
+}
+.excerpt {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  overflow: hidden;
+}
+.rowHit {
+  position: absolute;
+  inset: 0;
+  inline-size: 100%;
+  block-size: 100%;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+}
+.empty {
+  inline-size: 336px;
+  max-inline-size: calc(100% - 64px);
+  margin: 32px auto;
+}
+.empty h2 {
+  margin: 0 0 8px;
+  font-size: 31px;
+  font-weight: 800;
+  line-height: 36px;
+}
+.empty p {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 15px;
+  line-height: 20px;
+}
+.status {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  align-items: center;
+  padding: 32px 16px;
+  color: var(--text-secondary);
+  font-size: 15px;
+}
+.status button {
+  border: 0;
+  padding: 10px 20px;
+  border-radius: 999px;
+  background: var(--text-primary);
+  color: var(--surface);
+  font-weight: 700;
+  cursor: pointer;
+}
+.connection {
+  margin: 16px;
+  color: var(--text-secondary);
+  font-size: 13px;
+}
+.like.liked,
+.like:hover {
+  color: #f91880;
+}
+.like.liked > svg {
+  fill: currentColor;
+}
+.like:hover::before {
+  background: rgb(249 24 128 / 10%);
+}
+@media (hover: hover) {
+  .row:hover {
+    background: rgb(0 0 0 / 1%);
+  }
+  .tabs > a:hover {
+    background: var(--navigation-hover);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .like {
+    transition: none;
+  }
+}
+.recipientTrigger {
+  border: 0;
+  padding: 0;
+  margin: 0 0 8px;
+  background: transparent;
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: 15px;
+  line-height: 20px;
+  text-align: start;
+  cursor: pointer;
+}
+.recipientTrigger span {
+  color: #1d9bf0;
+}
+.recipientPositioner {
+  z-index: var(--layer-picker);
+}
+.recipientPopup {
+  inline-size: min(340px, calc(100vw - 32px));
+  max-block-size: min(480px, 70dvh);
+  overflow-y: auto;
+  padding: 16px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 16px;
+  background: var(--surface-elevated);
+  box-shadow: var(--shadow-popover);
+}
+.recipientPopup h3 {
+  margin: 0 0 8px;
+  font-size: 20px;
+  line-height: 24px;
+}
+.recipientPopup p {
+  margin: 0 0 16px;
+  color: var(--text-secondary);
+  font-size: 15px;
+  line-height: 20px;
+}
+.recipientPopup label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  min-block-size: 56px;
+  cursor: pointer;
+}
+.recipientPopup label span {
+  display: flex;
+  flex-direction: column;
+  font-size: 15px;
+  font-weight: 700;
+}
+.recipientPopup small {
+  color: var(--text-secondary);
+  font-size: 13px;
+  font-weight: 400;
+}
+.recipientPopup input {
+  inline-size: 20px;
+  block-size: 20px;
+  accent-color: #1d9bf0;
+}
+
+.contentLoading {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  justify-content: center;
+  min-block-size: 120px;
+  padding: 16px;
+  border-block-end: 1px solid var(--border-subtle);
+  color: var(--text-secondary);
+  font-size: 15px;
+}
+
+@media (hover: hover) {
+  :global([data-theme="dim"]) .row:hover,
+  :global([data-theme="lights-out"]) .row:hover {
+    background: color-mix(in srgb, var(--text-primary) 1%, transparent);
+  }
+}

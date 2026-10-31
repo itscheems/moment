@@ -1,6 +1,8 @@
+import { interactionsApi, type SubjectKind } from "../api/interactions";
 import {
   createContext,
   useCallback,
+  useEffect,
   useContext,
   useMemo,
   useRef,
@@ -137,3 +139,97 @@ const unresolved: MentionResolver = {
   consider: () => {},
   identity: () => undefined,
 };
+
+/** New sources resolve saved account IDs; unresolved or imported identities stay text. */
+export function SourceMentionProvider({
+  kind,
+  id,
+  revision,
+  children,
+}: {
+  kind: SubjectKind;
+  id: string;
+  revision: string;
+  children: ReactNode;
+}) {
+  const inherited = useMentionResolver();
+  const key = kind + ":" + id + ":" + revision;
+  const [state, setState] = useState<{
+    key: string;
+    bindings: ReadonlyMap<string, PublicAccount | null> | null;
+  } | null>(null);
+  const requested = useRef<{ key: string; controller: AbortController } | null>(
+    null,
+  );
+  useEffect(
+    () => () => {
+      if (requested.current?.key === key) {
+        requested.current.controller.abort();
+        requested.current = null;
+      }
+    },
+    [key],
+  );
+  const consider = useCallback(
+    (handles: readonly string[]) => {
+      if (handles.length === 0) return;
+      if (state?.key === key) {
+        inherited.consider(
+          state.bindings === null
+            ? handles
+            : handles.flatMap((handle) => {
+                const account = state.bindings?.get(handle.toLowerCase());
+                return account ? [account.username] : [];
+              }),
+        );
+        return;
+      }
+      if (requested.current?.key === key) return;
+      requested.current?.controller.abort();
+      const controller = new AbortController();
+      requested.current = { key, controller };
+      void interactionsApi
+        .boundMentions(kind, id, controller.signal)
+        .then((bindings) => {
+          if (
+            controller.signal.aborted ||
+            requested.current?.controller !== controller
+          )
+            return;
+          setState({
+            key,
+            bindings: bindings.length
+              ? new Map(bindings.map((row) => [row.handle, row.account]))
+              : null,
+          });
+        })
+        .catch(() => {
+          if (!controller.signal.aborted)
+            setState({ key, bindings: new Map() });
+        });
+    },
+    [kind, id, key, state, inherited],
+  );
+  const value = useMemo<MentionResolver>(() => {
+    if (state?.key === key && state.bindings === null) return inherited;
+    const bindings = state?.key === key ? state.bindings : null;
+    return {
+      consider,
+      resolves: (handle) => Boolean(bindings?.get(handle.toLowerCase())),
+      identity: (handle) => {
+        const bound = bindings?.get(handle.toLowerCase());
+        if (!bound) return undefined;
+        const full = inherited.identity(bound.username);
+        const userId = full
+          ? "userId" in full
+            ? full.userId
+            : full.profileUserId
+          : null;
+        return userId === bound.userId ? full : bound;
+      },
+    };
+  }, [state, key, inherited, consider]);
+  return (
+    <MentionContext.Provider value={value}>{children}</MentionContext.Provider>
+  );
+}

@@ -543,3 +543,29 @@ func TestInteractionBoundMentionReadDoesNotFollowReusedHandles(t *testing.T) {
 		t.Fatalf("private bindings leaked: %v", err)
 	}
 }
+
+func TestInteractionReactivatedAccountsDoNotReceiveOldMentionsFromUnrelatedEdits(t *testing.T) {
+	f := newInteractionFixture(t)
+	cedar := f.member(t, "cedar")
+	if _, err := f.accounts.SetStatus(activityContext(f.owner), cedar.ID, domain.AccountSuspended); err != nil {
+		t.Fatal(err)
+	}
+	post := f.post(t, "Hello @cedar", domain.VisibilityEveryone)
+	if _, err := f.accounts.SetStatus(activityContext(f.owner), cedar.ID, domain.AccountActive); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.posts.Update(activityContext(f.owner), app.UpdatePostInput{ID: post.Entry.ID, ContentMD: "Edited text @cedar"}); err != nil {
+		t.Fatal(err)
+	}
+	if len(f.page(t, cedar, "all").Items) != 0 {
+		t.Fatal("an unrelated edit replayed a previously ineligible mention")
+	}
+	for _, body := range []string{"Removed mention", "Added again @cedar"} {
+		if _, err := f.posts.Update(activityContext(f.owner), app.UpdatePostInput{ID: post.Entry.ID, ContentMD: body}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if len(f.page(t, cedar, "all").Items) != 1 {
+		t.Fatal("a newly added mention failed to notify")
+	}
+}

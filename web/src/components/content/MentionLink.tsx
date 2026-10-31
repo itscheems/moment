@@ -17,7 +17,7 @@ export function MentionLink({
   if (!resolves(handle)) return children;
   const link = (
     <InternalLink
-      href={`/${handle.toLowerCase()}`}
+      href={`/${identity(handle)?.username ?? handle.toLowerCase()}`}
       data-moment-mention={handle.toLowerCase()}
       className={styles.mention}
     >

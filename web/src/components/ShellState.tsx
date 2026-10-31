@@ -15,6 +15,17 @@ const emptyCopy: Record<
     action?: { label: string; href: string };
   }
 > = {
+  notifications: {
+    get marker() {
+      return t("空");
+    },
+    get title() {
+      return t("这里会显示你的通知");
+    },
+    get detail() {
+      return t("点赞、回复和提及会显示在这里。");
+    },
+  },
   home: {
     get marker() {
       return t("空");

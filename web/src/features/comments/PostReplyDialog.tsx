@@ -121,23 +121,20 @@ export function PostReplyDialog({
                   {author.username ? <span>@{author.username}</span> : null}
                 </p>
                 <MarkdownBody
+                  source={{
+                    kind: comment ? "comment" : "post",
+                    id: comment?.id ?? post.id,
+                  }}
                   className={styles.replyContextContent}
                   html={comment?.contentHtml ?? post.contentHtml}
                 />
-                {!comment ? (
-                  <p className={styles.replyContextTarget}>
-                    {t("正在回复")}{" "}
-                    <span>
-                      {author.username
-                        ? "@" + author.username
-                        : author.displayName}
-                    </span>
-                  </p>
-                ) : null}
               </div>
             </article>
             {canCompose ? (
               <CommentForm
+                replyParticipantLabel={
+                  author.username ? "@" + author.username : author.displayName
+                }
                 api={api}
                 commentsEnabled={canComment}
                 content={content}

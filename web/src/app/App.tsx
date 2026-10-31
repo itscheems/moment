@@ -1,3 +1,6 @@
+import { NotificationProvider } from "../features/notifications/NotificationProvider";
+import { LikeProvider } from "../features/notifications/LikeAction";
+import { NotificationsPage } from "../features/notifications/NotificationsPage";
 import { shellTitle } from "../components/SiteIdentity";
 import { t } from "../i18n";
 import { useTranslation } from "react-i18next";
@@ -539,7 +542,8 @@ function PublicApp() {
     route.id !== "settings" &&
     route.id !== "search" &&
     route.id !== "archive" &&
-    route.id !== "profile";
+    route.id !== "profile" &&
+    route.id !== "notifications";
   const requestedProfileUsername = profileUsername(displayLocation.pathname);
   const ownProfile =
     requestedProfileUsername === null ||
@@ -646,6 +650,17 @@ function PublicApp() {
               site={site}
             />
           </div>
+        ) : null}
+        {siteIdentityReady && route.id === "notifications" ? (
+          <NotificationsPage
+            site={site}
+            key={`${auth.account?.userId ?? "guest"}:${displayLocation.pathname}`}
+            scope={
+              displayLocation.pathname.replace(/\/$/, "").endsWith("/mentions")
+                ? "mentions"
+                : "all"
+            }
+          />
         ) : null}
         {route.id === "search" ? (
           <SearchPage
@@ -981,18 +996,22 @@ function PublicApp() {
         inert={authRoute}
         style={authRoute ? undefined : { display: "contents" }}
       >
-        <MediaViewerProvider
-          scope={accountCacheScope(
-            site.instanceId,
-            discussionIdentity.accountKey,
-          )}
-          api={api}
-          site={site}
-          enabled={!authRoute && siteIdentityReady}
-          onSiteChanged={setSite}
+        <LikeProvider
+          scope={`${draftScope ?? "guest"}:${auth.session?.version ?? "public"}`}
         >
-          {readingSurface}
-        </MediaViewerProvider>
+          <MediaViewerProvider
+            scope={accountCacheScope(
+              site.instanceId,
+              discussionIdentity.accountKey,
+            )}
+            api={api}
+            site={site}
+            enabled={!authRoute && siteIdentityReady}
+            onSiteChanged={setSite}
+          >
+            <NotificationProvider>{readingSurface}</NotificationProvider>
+          </MediaViewerProvider>
+        </LikeProvider>
       </div>
     </>
   );

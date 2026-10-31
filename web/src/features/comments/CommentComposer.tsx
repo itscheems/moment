@@ -1,3 +1,4 @@
+import { ReplyRecipients } from "../notifications/ReplyRecipients";
 import { t } from "../../i18n";
 import { useTranslation } from "react-i18next";
 import { locationsApi } from "../../api/locations";
@@ -266,6 +267,7 @@ export function CommentForm({
   initialExpanded = false,
   textareaRef: suppliedTextareaRef,
   topLevelTargetUsername,
+  replyParticipantLabel,
 }: {
   active?: boolean;
   api: PublicApi;
@@ -285,6 +287,7 @@ export function CommentForm({
   initialExpanded?: boolean;
   textareaRef?: RefObject<HTMLTextAreaElement | null>;
   topLevelTargetUsername?: string;
+  replyParticipantLabel?: string;
 }) {
   const { t } = useTranslation();
 
@@ -326,6 +329,18 @@ export function CommentForm({
   // never carries one; a reply with no explicit target is answering its root.
   const replyToCommentId =
     parentId === null ? null : (replyTargetId ?? parentId);
+  const selectionKey =
+    (auth.account?.userId ?? "guest") +
+    ":" +
+    postId +
+    ":" +
+    (replyToCommentId ?? "post");
+  const [replySelection, setReplySelection] = useState<{
+    key: string;
+    ids: string[];
+  }>({ key: selectionKey, ids: [] });
+  const excludedReplyUserIds =
+    replySelection.key === selectionKey ? replySelection.ids : [];
   const inlineTopLevel = topLevelTargetUsername !== undefined;
   const displayReauth =
     authExpired || (auth.state === "expired" && !auth.session);
@@ -530,6 +545,7 @@ export function CommentForm({
       // different siblings under one root are two different comments, and
       // reusing the key would replay the first one back as the second.
       replyToCommentId,
+      excludedReplyUserIds,
       content,
       mediaItems.map((item) => [
         item.key,
@@ -559,6 +575,7 @@ export function CommentForm({
         mediaInput(mediaItemsRef.current),
         commentLocation,
         replyToCommentId,
+        excludedReplyUserIds,
       );
       onCreated(result.comment);
       resetEditHistory.current();
@@ -659,29 +676,27 @@ export function CommentForm({
               </h3>
             </div>
           </header>
-          {!inlineTopLevel && parentId && replyTargetAuthor ? (
-            <p className={styles.replyTarget}>
-              {t("正在回复")}{" "}
-              {/*
-               * The label arrives whole. A handle carries its own @; a legacy
-               * row that has no account carries a plain display name, and
-               * prefixing that with @ would present a name — spaces and all —
-               * as though it were a handle.
-               */}
-              <span>{replyTargetAuthor}</span>
-            </p>
-          ) : null}
-          {inlineTopLevel && topLevelTargetUsername ? (
-            /* Always mounted so the line can grow in as the composer opens.
-               Folded, it is hidden from assistive tech, exactly as it was
-               when it was not rendered at all. */
+          {(expanded || inlineTopLevel) && auth.account?.status === "active" ? (
             <div
-              aria-hidden={expanded ? undefined : true}
               className={`${styles.replyTargetRow} ${expanded ? "" : styles.replyTargetRowCollapsed}`}
+              aria-hidden={expanded ? undefined : true}
             >
-              <p className={styles.replyTarget}>
-                {t("正在回复")} <span>@{topLevelTargetUsername}</span>
-              </p>
+              <ReplyRecipients
+                key={selectionKey}
+                kind={replyToCommentId ? "comment" : "post"}
+                id={replyToCommentId ?? postId}
+                enabled={active && expanded && auth.state === "signed-in"}
+                disabled={pending}
+                fallback={
+                  replyTargetAuthor ??
+                  replyParticipantLabel ??
+                  (topLevelTargetUsername ? "@" + topLevelTargetUsername : "")
+                }
+                excluded={excludedReplyUserIds}
+                onChange={(ids) =>
+                  setReplySelection({ key: selectionKey, ids })
+                }
+              />
             </div>
           ) : null}
           <label className={styles.srOnly} htmlFor={`${formId}-content`}>

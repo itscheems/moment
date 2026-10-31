@@ -37,8 +37,12 @@ export class CommentsApi extends ApiClient {
     media: PostMediaInput[] = [],
     location: LocationInput | null = null,
     replyToCommentId: string | null = null,
+    excludedReplyUserIds: string[] = [],
   ): Promise<CreatedComment> {
     const init = requestInit("POST", csrfToken, {
+      ...(excludedReplyUserIds.length
+        ? { exclude_reply_user_ids: excludedReplyUserIds }
+        : {}),
       content_md: contentMd,
       parent_id: parentId,
       reply_to_comment_id: replyToCommentId,

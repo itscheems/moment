@@ -1534,10 +1534,10 @@ describe("public comment thread", () => {
     });
     const form = within(dialog).getByRole("form", { name: "发表回复" });
     expect(within(context).getByText("一段需要回应的 Moment")).toBeVisible();
-    expect(within(context).getByText(/正在回复/)).toHaveTextContent(
-      "正在回复 @owner",
-    );
-    expect(within(form).queryByText(/正在回复/)).not.toBeInTheDocument();
+    expect(
+      within(form).getByRole("button", { name: "正在回复 @owner" }),
+    ).toBeVisible();
+    expect(within(context).queryByText(/正在回复/)).not.toBeInTheDocument();
     expect(
       within(dialog).getByRole("button", { name: "选择媒体" }),
     ).toBeVisible();

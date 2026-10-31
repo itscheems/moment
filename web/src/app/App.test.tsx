@@ -241,7 +241,7 @@ describe("App shell and public routes", () => {
       Array.from(desktopNavigation.querySelectorAll("a"), (link) =>
         link.getAttribute("aria-label"),
       ),
-    ).toEqual(["主页", "搜索", "归档", "个人资料", "文章", "设置"]);
+    ).toEqual(["主页", "搜索", "通知", "归档", "个人资料", "文章", "设置"]);
     expect(
       Array.from(desktopNavigation.children, (item) =>
         item.getAttribute("aria-label"),
@@ -259,13 +259,10 @@ describe("App shell and public routes", () => {
     expect(
       within(desktopNavigation).getByRole("link", { name: "设置" }),
     ).toHaveAttribute("href", "/settings/account");
-    const notifications = within(desktopNavigation).getByRole("button", {
+    const notifications = within(desktopNavigation).getByRole("link", {
       name: "通知",
     });
-    const pushState = vi.spyOn(window.history, "pushState");
-    fireEvent.click(notifications);
-    expect(window.location.pathname).toBe("/");
-    expect(pushState).not.toHaveBeenCalled();
+    expect(notifications).toHaveAttribute("href", "/account/notifications");
     expect(notifications).not.toHaveAttribute("aria-current");
     expect(
       more.compareDocumentPosition(publish) & Node.DOCUMENT_POSITION_FOLLOWING,
@@ -474,7 +471,7 @@ describe("App shell and public routes", () => {
     },
   );
 
-  it("uses five distinct mobile destinations and hides the inline owner composer", async () => {
+  it("uses six distinct mobile destinations and hides the inline owner composer", async () => {
     const item = post("01K2ABCDEF0123456789ABCDE0", "手机首屏的第一条");
     preauthenticate();
     vi.mocked(window.matchMedia).mockImplementation((query) =>
@@ -508,7 +505,7 @@ describe("App shell and public routes", () => {
       Array.from(mobileNavigation?.querySelectorAll("a") ?? [], (link) =>
         link.getAttribute("aria-label"),
       ),
-    ).toEqual(["首页", "搜索", "归档", "发布", "账号"]);
+    ).toEqual(["首页", "搜索", "通知", "归档", "发布", "账号"]);
     expect(
       mobileNavigation?.querySelector('a[aria-label="发布"]'),
     ).toHaveAttribute("href", "/compose");
@@ -749,7 +746,7 @@ describe("App shell and public routes", () => {
         await waitFor(() => expect(document.title).toBe("Moment"));
         // Public content keeps its real author even when another account signs in.
         expect(
-          screen.getByText("Public post").closest("article"),
+          (await screen.findByText("Public post")).closest("article"),
         ).toHaveTextContent("乔乔");
         fireEvent.click(mobile);
         fireEvent.click(
