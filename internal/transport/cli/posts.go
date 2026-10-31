@@ -1539,6 +1539,24 @@ func postAPIRequest(
 
 func validPostAPIRawData(data json.RawMessage, destination any) bool {
 	switch typed := destination.(type) {
+	case *[]app.BoundMention:
+		if typed == nil || *typed == nil {
+			return false
+		}
+		items, ok := apiRawArray(data)
+		if !ok || len(items) != len(*typed) {
+			return false
+		}
+		for i, item := range items {
+			if !hasRequiredAPIDataFields(item, "handle", "account") || domain.ValidateStoredUsername((*typed)[i].Handle) != nil {
+				return false
+			}
+			if a := (*typed)[i].Account; a != nil && (domain.ValidateUserID(a.UserID) != nil || domain.ValidateStoredUsername(a.Username) != nil) {
+				return false
+			}
+		}
+		return true
+
 	case *domain.LikeState:
 		return typed != nil && typed.Count >= 0 && hasRequiredNonNullAPIDataFields(data, "like_count", "liked_by_me")
 	case *app.ReplyContext:

@@ -13,6 +13,7 @@ import (
 	"github.com/moment/moment/internal/auth/oauth"
 	"github.com/moment/moment/internal/domain"
 	"github.com/moment/moment/internal/transport/commentdto"
+	"github.com/moment/moment/internal/transport/interactiondto"
 	"github.com/moment/moment/internal/transport/postdto"
 )
 
@@ -33,21 +34,31 @@ var browserMirroredTypes = map[string]struct {
 	value  any
 	mirror string
 }{
-	"accountView":               {accountView{}, "web/src/api/public.ts parseAccount"},
-	"privateAccountView":        {privateAccountView{}, "web/src/api/public.ts parsePrivateAccount"},
-	"accountSessionView":        {accountSessionView{}, "web/src/api/owner.ts accountSession"},
-	"accountLimitsView":         {accountLimitsView{}, "web/src/api/owner.ts accountSession"},
-	"identityView":              {identityView{}, "web/src/api/owner.ts parseIdentity"},
-	"sessionListItem":           {sessionListItem{}, "web/src/api/owner.ts parseSessionListItem"},
-	"archive.ImportCounts":      {archive.ImportCounts{}, "web/src/api/owner.ts parseImportCounts"},
-	"archive.MergeReviewEntity": {archive.MergeReviewEntity{}, "web/src/api/owner.ts parseMergeReviewEntity"},
-	"postdto.Post":              {postdto.Post{}, "web/src/api/public.ts parsePost and parseSearchHit"},
-	"commentdto.Comment":        {commentdto.Comment{}, "web/src/api/public.ts parseComment"},
-	"commentdto.Context":        {commentdto.Context{}, "web/src/api/public.ts commentContext"},
-	"commentdto.Author":         {commentdto.Author{}, "web/src/api/public.ts parseCommentAuthor"},
-	"app.MentionSuggestion":     {app.MentionSuggestion{}, "web/src/api/public.ts mentionSuggestions"},
-	"app.SiteSettings":          {app.SiteSettings{}, "web/src/api/public.ts parseSiteIdentity"},
-	"oauth.Descriptor":          {oauth.Descriptor{}, "web/src/api/owner.ts loginProviders"},
+	"app.BoundMention":            {app.BoundMention{}, "web/src/api/interactions.ts boundMentions"},
+	"app.ActivityAccount":         {app.ActivityAccount{}, "web/src/api/interactions.ts boundMentions"},
+	"domain.ContentRef":           {domain.ContentRef{}, "web/src/api/interactions.ts subject"},
+	"domain.LikeState":            {domain.LikeState{}, "web/src/api/interactions.ts parseLikeState"},
+	"interactiondto.Notification": {interactiondto.Notification{}, "web/src/api/interactions.ts parseInboxItem"},
+	"interactiondto.Actor":        {interactiondto.Actor{}, "web/src/api/interactions.ts parseInboxItem"},
+	"interactiondto.Page":         {interactiondto.Page{}, "web/src/api/interactions.ts list"},
+	"app.NotificationState":       {app.NotificationState{}, "web/src/api/interactions.ts parseNotificationState"},
+	"app.ReplyContext":            {app.ReplyContext{}, "web/src/api/interactions.ts replyContext"},
+	"app.ReplyParticipant":        {app.ReplyParticipant{}, "web/src/api/interactions.ts replyContext"},
+	"accountView":                 {accountView{}, "web/src/api/public.ts parseAccount"},
+	"privateAccountView":          {privateAccountView{}, "web/src/api/public.ts parsePrivateAccount"},
+	"accountSessionView":          {accountSessionView{}, "web/src/api/owner.ts accountSession"},
+	"accountLimitsView":           {accountLimitsView{}, "web/src/api/owner.ts accountSession"},
+	"identityView":                {identityView{}, "web/src/api/owner.ts parseIdentity"},
+	"sessionListItem":             {sessionListItem{}, "web/src/api/owner.ts parseSessionListItem"},
+	"archive.ImportCounts":        {archive.ImportCounts{}, "web/src/api/owner.ts parseImportCounts"},
+	"archive.MergeReviewEntity":   {archive.MergeReviewEntity{}, "web/src/api/owner.ts parseMergeReviewEntity"},
+	"postdto.Post":                {postdto.Post{}, "web/src/api/public.ts parsePost and parseSearchHit"},
+	"commentdto.Comment":          {commentdto.Comment{}, "web/src/api/public.ts parseComment"},
+	"commentdto.Context":          {commentdto.Context{}, "web/src/api/public.ts commentContext"},
+	"commentdto.Author":           {commentdto.Author{}, "web/src/api/public.ts parseCommentAuthor"},
+	"app.MentionSuggestion":       {app.MentionSuggestion{}, "web/src/api/public.ts mentionSuggestions"},
+	"app.SiteSettings":            {app.SiteSettings{}, "web/src/api/public.ts parseSiteIdentity"},
+	"oauth.Descriptor":            {oauth.Descriptor{}, "web/src/api/owner.ts loginProviders"},
 }
 
 // browserMirroredBounds are the numeric limits a browser parser enforces by

@@ -521,3 +521,52 @@ func (service *InteractionService) LikeStatuses(ctx context.Context, kind string
 	})
 	return result, err
 }
+
+// BoundMention projects a source handle's saved identity without rebinding it.
+type BoundMention struct {
+	Handle  string           `json:"handle"`
+	Account *ActivityAccount `json:"account"`
+}
+
+// BoundMentions applies source visibility before resolving saved account IDs.
+func (service *InteractionService) BoundMentions(ctx context.Context, ref domain.ContentRef, viewer Viewer) ([]BoundMention, error) {
+	if err := ref.Validate(); err != nil {
+		return nil, err
+	}
+	result := make([]BoundMention, 0)
+	err := service.transactions.Read(ctx, func(store InteractionStore) error {
+		source, found, err := store.ActivitySource(ctx, ref)
+		if err != nil {
+			return err
+		}
+		if !found || !viewer.CanReadEntry(source.Entry) {
+			return sourceNotFound(ref)
+		}
+		bindings, err := store.MentionBindings(ctx, ref)
+		if err != nil {
+			return err
+		}
+		ids := make([]string, 0, len(bindings))
+		for _, binding := range bindings {
+			if binding.UserID != nil {
+				ids = append(ids, *binding.UserID)
+			}
+		}
+		accounts, err := store.ActivityAccounts(ctx, ids)
+		if err != nil {
+			return err
+		}
+		for _, binding := range bindings {
+			value := BoundMention{Handle: binding.Handle}
+			if binding.UserID != nil {
+				if account, ok := accounts[*binding.UserID]; ok && account.Active {
+					projected := account
+					value.Account = &projected
+				}
+			}
+			result = append(result, value)
+		}
+		return nil
+	})
+	return result, err
+}

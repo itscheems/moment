@@ -18,6 +18,8 @@ type InteractionRepository struct {
 	transactions Transactor
 	locks        *runtimefs.Locker
 	generation   string
+	development  *runtimefs.LeaseSet
+	root         string
 }
 
 // NewInteractionRepository coordinates ordinary writes through the runtime locker.
@@ -28,6 +30,14 @@ func NewInteractionRepository(transactions Transactor, locks *runtimefs.Locker, 
 	return &InteractionRepository{transactions: transactions, locks: locks, generation: generation}, nil
 }
 
+// NewDevelopmentInteractionRepository reuses the complete lock set of a fixture build.
+func NewDevelopmentInteractionRepository(transactions Transactor, root, generation string, held *runtimefs.LeaseSet) (*InteractionRepository, error) {
+	if transactions == nil || generation == "" || held == nil || !held.BelongsTo(root) || !held.Holds(runtimefs.ImportLock, runtimefs.Exclusive) || !held.Holds(runtimefs.ServeLock, runtimefs.Exclusive) || !held.Holds(runtimefs.MaintenanceLock, runtimefs.Exclusive) || !held.Holds(runtimefs.MediaLock, runtimefs.Exclusive) {
+		return nil, runtimefs.ErrInsufficientLocks
+	}
+	return &InteractionRepository{transactions: transactions, generation: generation, development: held, root: root}, nil
+}
+
 func (repository *InteractionRepository) Read(ctx context.Context, operation func(app.InteractionStore) error) error {
 	return repository.transactions.ReadTx(ctx, func(q Queries) error {
 		return operation(interactionStore{activityStore: activityStore{queries: q}, generation: repository.generation})
@@ -35,11 +45,21 @@ func (repository *InteractionRepository) Read(ctx context.Context, operation fun
 }
 
 func (repository *InteractionRepository) Write(ctx context.Context, operation func(app.InteractionStore) error) error {
+	if repository.development != nil {
+		if !repository.development.BelongsTo(repository.root) || !repository.development.Holds(runtimefs.MaintenanceLock, runtimefs.Exclusive) {
+			return runtimefs.ErrInsufficientLocks
+		}
+		return repository.write(ctx, operation)
+	}
 	lease, err := repository.locks.Acquire(ctx, runtimefs.MaintenanceLock, runtimefs.Shared)
 	if err != nil {
 		return err
 	}
 	defer func() { _ = lease.Release() }()
+	return repository.write(ctx, operation)
+}
+
+func (repository *InteractionRepository) write(ctx context.Context, operation func(app.InteractionStore) error) error {
 	return repository.transactions.WriteTx(ctx, func(q Queries) error {
 		return operation(interactionStore{activityStore: activityStore{queries: q}, generation: repository.generation})
 	})

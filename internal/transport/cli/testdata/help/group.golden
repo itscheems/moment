@@ -11,6 +11,7 @@ Available Commands:
   like          Like one post
   like-status   Read one post like state
   list          List the public Moment timeline
+  mentions      Read one post saved mention identities
   pin           Pin one Moment post to the public profile
   reply-context Read one post reply participants
   repost        Repost one Moment to the top of the timeline

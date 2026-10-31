@@ -675,6 +675,30 @@ func (builder *fixtureBuilder) buildShowcase(ctx context.Context) (Counts, error
 		}
 	}
 	builder.clock.now = anchor
+	likeActor := app.WithContentActor(ctx, authors["aming"])
+	if _, err := builder.interactions.Like(likeActor, domain.ContentRef{Kind: domain.SubjectPost, ID: ids["recent.text"]}, true); err != nil {
+		return Counts{}, err
+	}
+	manifest.Cases = append(manifest.Cases, ShowcaseCase{Key: "interaction.post-like", ID: ids["recent.text"].String(), Path: "/m/" + ids["recent.text"].String(), Note: "A member likes an existing public post; the relation and recipient event are persisted."})
+	thread, err := builder.comments.List(ctx, ids["member.author"], app.AccountViewer(builder.actor.ID))
+	if err != nil {
+		return Counts{}, err
+	}
+	foundLikeComment := false
+	for _, comment := range thread.Items {
+		if comment.Comment.AuthorUserID != nil && *comment.Comment.AuthorUserID == builder.actor.ID {
+			if _, err := builder.interactions.Like(likeActor, domain.ContentRef{Kind: domain.SubjectComment, ID: comment.Comment.ID}, true); err != nil {
+				return Counts{}, err
+			}
+			manifest.Cases = append(manifest.Cases, ShowcaseCase{Key: "interaction.comment-like", ID: comment.Comment.ID.String(), Path: "/m/" + ids["member.author"].String() + "/comments/" + comment.Comment.ID.String(), Note: "A member likes a comment; its author receives the event."})
+			foundLikeComment = true
+			break
+		}
+	}
+	if !foundLikeComment {
+		return Counts{}, fmt.Errorf("interaction showcase requires an administrator comment")
+	}
+	manifest.Cases = append(manifest.Cases, ShowcaseCase{Key: "notifications.all", ID: builder.actor.ID, Path: "/account/notifications", Note: "Authenticated activity list with persisted likes and replies."}, ShowcaseCase{Key: "notifications.mentions", ID: builder.actor.ID, Path: "/account/notifications/mentions", Note: "Mentions and conversation activity have an independent viewing boundary."})
 	if actual != builder.recipe.Counts {
 		return Counts{}, fmt.Errorf("fixture counts drifted: got=%+v want=%+v", actual, builder.recipe.Counts)
 	}
@@ -834,11 +858,19 @@ func newShowcaseBuilderWithinLocks(target *Target, runtimeState *runtimefs.Runti
 	if err != nil {
 		return nil, err
 	}
+	interactionRepository, err := sqlitestore.NewDevelopmentInteractionRepository(database, runtimeState.Root, runtimeState.Current.ID, held)
+	if err != nil {
+		return nil, err
+	}
+	interactions, err := app.NewInteractionService(interactionRepository, posts, comments)
+	if err != nil {
+		return nil, err
+	}
 	return &fixtureBuilder{
 		target: target, runtime: runtimeState, database: database, recipe: recipe,
 		seed: seed, base: anchor, posts: posts, comments: comments, site: site,
 		media: mediaStore, staged: staged, progress: progress,
-		accounts: accounts, clock: clock, anchor: anchor, zone: zone, actor: actor,
+		accounts: accounts, interactions: interactions, clock: clock, anchor: anchor, zone: zone, actor: actor,
 	}, nil
 }
 

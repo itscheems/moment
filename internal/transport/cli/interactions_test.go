@@ -22,21 +22,29 @@ func TestInteractionCLIDirectAPIParityAndIncrementalReads(t *testing.T) {
 	f := newCommentCLIFixture(t)
 	application := momentTestApplication()
 	t.Setenv("MOMENT_TOKEN", f.token)
+	interactionData := func(out commandOutput) any {
+		t.Helper()
+		if out.exit != ExitSuccess {
+			t.Fatalf("interaction command: %+v", out)
+		}
+		return decodeOneDocument(t, out.stdout)["data"]
+	}
+
 	direct := func(args ...string) commandOutput {
 		return execute(application, "", append([]string{"--data-dir", f.dataDir, "--as", "writer", "--json"}, args...)...)
 	}
 	api := func(args ...string) commandOutput {
 		return execute(application, "", append([]string{"--url", f.server.URL, "--json"}, args...)...)
 	}
-	for _, verb := range []string{"like", "like-status", "unlike", "reply-context"} {
-		a, b := commandData(t, direct("post", verb, f.postID)), commandData(t, api("post", verb, f.postID))
+	for _, verb := range []string{"like", "like-status", "unlike", "reply-context", "mentions"} {
+		a, b := interactionData(direct("post", verb, f.postID)), interactionData(api("post", verb, f.postID))
 		if !reflect.DeepEqual(a, b) {
 			t.Fatalf("%s direct=%+v api=%+v", verb, a, b)
 		}
 	}
 	root := commandData(t, direct("comment", "create", f.postID, "--content", "Root"))["id"].(string)
-	for _, verb := range []string{"like", "like-status", "unlike", "reply-context"} {
-		a, b := commandData(t, direct("comment", verb, root)), commandData(t, api("comment", verb, root))
+	for _, verb := range []string{"like", "like-status", "unlike", "reply-context", "mentions"} {
+		a, b := interactionData(direct("comment", verb, root)), interactionData(api("comment", verb, root))
 		if !reflect.DeepEqual(a, b) {
 			t.Fatalf("comment %s parity", verb)
 		}

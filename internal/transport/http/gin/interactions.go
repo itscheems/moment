@@ -47,6 +47,22 @@ func RegisterInteractionRoutes(engine *gin.Engine, service *app.InteractionServi
 			resource = "comments"
 		}
 		path := "/api/v1/" + resource + "/:id"
+		engine.GET(path+"/mentions", func(ctx *gin.Context) {
+			if !emptyInteractionRequest(ctx) {
+				return
+			}
+			ref, err := interactionRef(ctx, kind)
+			if err != nil {
+				writeInteractionError(ctx, err)
+				return
+			}
+			result, err := service.BoundMentions(ctx.Request.Context(), ref, gate.Viewer(ctx))
+			if err != nil {
+				writeInteractionError(ctx, err)
+				return
+			}
+			Success(ctx, 200, result, nil)
+		})
 		engine.GET(path+"/like", likeStatus(service, gate, kind))
 		engine.PUT(path+"/like", gate.RequireActiveAccount(), changeLike(service, kind, true))
 		engine.DELETE(path+"/like", gate.RequireActiveAccount(), changeLike(service, kind, false))

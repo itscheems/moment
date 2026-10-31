@@ -521,3 +521,25 @@ func TestInteractionCommentLikesPersistAndDeletedSourcesDoNotBlockIncrementalRea
 		t.Fatalf("incremental read stopped at %d events", count)
 	}
 }
+
+func TestInteractionBoundMentionReadDoesNotFollowReusedHandles(t *testing.T) {
+	f := newInteractionFixture(t)
+	cedar := f.member(t, "cedar")
+	post := f.post(t, "Hello @cedar @unknown_handle", domain.VisibilityEveryone)
+	name := "maple"
+	if _, err := f.accounts.UpdateProfile(activityContext(cedar), cedar.ID, app.ProfileUpdate{Username: &name}); err != nil {
+		t.Fatal(err)
+	}
+	f.member(t, "cedar")
+	values, err := f.service.BoundMentions(context.Background(), domain.ContentRef{Kind: "post", ID: post.Entry.ID}, app.PublicViewer())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(values) != 2 || values[0].Handle != "cedar" || values[0].Account == nil || values[0].Account.UserID != cedar.ID || values[0].Account.Username != "maple" || values[1].Account != nil {
+		t.Fatalf("saved identity drifted: %+v", values)
+	}
+	hidden := f.post(t, "@maple", domain.VisibilityOnlyMe)
+	if _, err := f.service.BoundMentions(context.Background(), domain.ContentRef{Kind: "post", ID: hidden.Entry.ID}, app.PublicViewer()); !domain.HasCode(err, domain.CodePostNotFound) {
+		t.Fatalf("private bindings leaked: %v", err)
+	}
+}

@@ -18,9 +18,13 @@ import (
 
 func registerInteractions(application *Application) {
 	for _, kind := range []string{domain.SubjectPost, domain.SubjectComment} {
-		for _, verb := range []string{"like", "unlike", "like-status", "reply-context"} {
-			short := map[string]string{"like": "Like one " + kind, "unlike": "Remove a like from one " + kind, "like-status": "Read one " + kind + " like state", "reply-context": "Read one " + kind + " reply participants"}[verb]
+		for _, verb := range []string{"like", "unlike", "like-status", "reply-context", "mentions"} {
+			short := map[string]string{"like": "Like one " + kind, "unlike": "Remove a like from one " + kind, "like-status": "Read one " + kind + " like state", "reply-context": "Read one " + kind + " reply participants", "mentions": "Read one " + kind + " saved mention identities"}[verb]
 			spec := LeafSpec{Path: []string{kind, verb}, ArgsUsage: "<id>", Short: short, Long: "Inspect or change one account-scoped content interaction using the shared application service.", Inputs: "Provide a canonical content ULID. Direct account operations require --as; API operations use the credential holder.", Output: "The canonical like state or server-derived reply participants.", Errors: "Invalid input, unavailable content and authorization failures return stable codes.", Example: "moment --as writer " + kind + " " + verb + " 01ARZ3NDEKTSV4RRFFQ69G5FAV --data-dir ./moment-data --json", Args: cobra.ExactArgs(1), Capability: CapabilityBoth}
+			if verb == "mentions" {
+				spec.Long = "Read saved mention bindings after applying current source visibility. A saved account identity survives handle changes; unresolved and external display identities remain unlinked."
+				spec.Output = "An array of original handles and nullable current account projections."
+			}
 			spec.Run = func(ctx context.Context, inv Invocation, input CommandInput) (Result, error) {
 				return runContentInteraction(ctx, inv, input, kind, verb)
 			}
@@ -77,6 +81,8 @@ func runContentInteraction(ctx context.Context, inv Invocation, input CommandInp
 		}
 		defer cleanup()
 		switch verb {
+		case "mentions":
+			result, err = service.BoundMentions(ctx, ref, app.ViewerFromContext(ctx))
 		case "reply-context":
 			result, err = service.ReplyContext(ctx, ref)
 		case "like-status":
@@ -107,8 +113,13 @@ func runContentInteraction(ctx context.Context, inv Invocation, input CommandInp
 			method = http.MethodDelete
 			auth = true
 		}
+		if verb == "mentions" {
+			suffix = "mentions"
+		}
 		if suffix == "like" {
 			result = &domain.LikeState{}
+		} else if verb == "mentions" {
+			result = &[]app.BoundMention{}
 		} else {
 			result = &app.ReplyContext{}
 		}
