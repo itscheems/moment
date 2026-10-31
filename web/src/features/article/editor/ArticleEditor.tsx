@@ -1,5 +1,6 @@
 import { t as translate } from "../../../i18n";
 import { useTranslation } from "react-i18next";
+import { BackControl } from "../../../components/BackControl";
 import { AccountName } from "../../../components/AccountName";
 import { accountVerification } from "../../../components/accountVerification";
 import { mediaApi } from "../../../api/media";
@@ -916,14 +917,13 @@ export function ArticleEditor({
         }}
       >
         <header className={styles.topBar} ref={topBar}>
-          <button
-            aria-label={embedded ? t("返回文章列表") : t("返回时间流")}
-            className={styles.toolButton}
-            onClick={() => (onBack ? onBack() : location.goBack("/"))}
-            type="button"
-          >
-            <Icon name="arrow-left" />
-          </button>
+          <BackControl>
+            <button
+              aria-label={embedded ? t("返回文章列表") : t("返回时间流")}
+              onClick={() => (onBack ? onBack() : location.goBack("/"))}
+              type="button"
+            />
+          </BackControl>
           {!embedded ? (
             <button
               aria-expanded={railOpen}

@@ -1,4 +1,5 @@
 import { NotificationProvider } from "../features/notifications/NotificationProvider";
+import { BackControl } from "../components/BackControl";
 import { LikeProvider } from "../features/notifications/LikeAction";
 import { NotificationsPage } from "../features/notifications/NotificationsPage";
 import { shellTitle } from "../components/SiteIdentity";
@@ -830,16 +831,14 @@ function PublicApp() {
                         the way in, and 草稿's blue label on 编辑's black pill
                         on the way back. */}
                     {draftsOpen ? (
-                      <button
-                        aria-label={t("返回发布")}
-                        className={styles.composeDialogIcon}
-                        key="drafts-back"
-                        onClick={closeDrafts}
-                        ref={draftsBackRef}
-                        type="button"
-                      >
-                        <Icon name="back" />
-                      </button>
+                      <BackControl inset key="drafts-back">
+                        <button
+                          aria-label={t("返回发布")}
+                          onClick={closeDrafts}
+                          ref={draftsBackRef}
+                          type="button"
+                        />
+                      </BackControl>
                     ) : (
                       <button
                         aria-label={t("关闭发布")}

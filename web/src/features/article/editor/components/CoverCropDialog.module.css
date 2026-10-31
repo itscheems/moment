@@ -33,26 +33,6 @@
   padding-inline: 16px;
 }
 
-.back {
-  display: grid;
-  place-items: center;
-  flex: 0 0 36px;
-  inline-size: 36px;
-  block-size: 36px;
-  border: 1px solid transparent;
-  border-radius: 9999px;
-  margin-inline-start: -8px;
-  padding: 0;
-  color: inherit;
-  background: transparent;
-  cursor: pointer;
-}
-
-.back svg {
-  inline-size: 20px;
-  block-size: 20px;
-}
-
 .title {
   flex: 1 1 auto;
   min-inline-size: 0;
@@ -184,7 +164,6 @@
   background: #1d9bf0;
 }
 
-.back:focus-visible,
 .apply:focus-visible {
   outline: 2px solid #1d9bf0;
   outline-offset: 2px;
@@ -200,9 +179,6 @@
 }
 
 @media (hover: hover) {
-  .back:hover {
-    background: var(--icon-button-hover);
-  }
   .apply:hover:not(:disabled) {
     background: var(--ink-button-hover);
   }

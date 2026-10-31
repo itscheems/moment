@@ -1,4 +1,5 @@
 import { NotificationBadge } from "../features/notifications/NotificationBadge";
+import { BackControl } from "./BackControl";
 import { t } from "../i18n";
 import { useTranslation } from "react-i18next";
 import { AccountName } from "./AccountName";
@@ -669,39 +670,39 @@ export function AppShell({
                   route.id === "profile" ||
                   route.id === "edit" ||
                   route.id === "compose" ? (
-                    <InternalLink
-                      aria-label={
-                        focusReading
-                          ? t("退出全屏阅读")
-                          : route.id === "comment-detail"
-                            ? t("返回上一级")
-                            : t("返回时间流")
-                      }
-                      className={styles.backLink}
-                      href={
-                        focusReading || route.id === "comment-detail"
-                          ? route.href
-                          : "/"
-                      }
-                      onClick={(event) => {
-                        if (
-                          event.button !== 0 ||
-                          event.metaKey ||
-                          event.ctrlKey ||
-                          event.shiftKey ||
-                          event.altKey
-                        )
-                          return;
-                        event.preventDefault();
-                        goBack(
+                    <BackControl>
+                      <InternalLink
+                        aria-label={
+                          focusReading
+                            ? t("退出全屏阅读")
+                            : route.id === "comment-detail"
+                              ? t("返回上一级")
+                              : t("返回时间流")
+                        }
+                        className={styles.backLink}
+                        href={
                           focusReading || route.id === "comment-detail"
                             ? route.href
-                            : "/",
-                        );
-                      }}
-                    >
-                      <Icon name="arrow-left" />
-                    </InternalLink>
+                            : "/"
+                        }
+                        onClick={(event) => {
+                          if (
+                            event.button !== 0 ||
+                            event.metaKey ||
+                            event.ctrlKey ||
+                            event.shiftKey ||
+                            event.altKey
+                          )
+                            return;
+                          event.preventDefault();
+                          goBack(
+                            focusReading || route.id === "comment-detail"
+                              ? route.href
+                              : "/",
+                          );
+                        }}
+                      />
+                    </BackControl>
                   ) : (
                     <MobileAccountMenu
                       accountSettingsAvailable={accountSettingsAvailable}

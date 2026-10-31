@@ -310,8 +310,7 @@
     0 0 15px rgb(101 119 134 / 20%),
     0 0 3px 1px rgb(101 119 134 / 15%);
 }
-.settingRow,
-.settingsTitle {
+.settingRow {
   display: flex;
   align-items: center;
   gap: 12px;
@@ -348,15 +347,17 @@
   color: var(--text-secondary);
   font-weight: 400;
 }
-.settingsTitle > svg {
-  inline-size: 18.75px;
-  block-size: 18.75px;
-  flex: 0 0 auto;
+.settingsTitle {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-block-size: 44px;
+  padding: 4px 16px;
+  font-size: 15px;
+  line-height: 20px;
 }
 .settingRow:hover,
-.settingRow:focus-visible,
-.settingsTitle:hover,
-.settingsTitle:focus-visible {
+.settingRow:focus-visible {
   background: var(--surface-hover);
   outline: none;
 }
@@ -385,7 +386,7 @@
 .settings[data-settings-page="speed"] .settingsTitle {
   block-size: 52px;
   min-block-size: 52px;
-  padding: 20px 24px 12px;
+  padding: 8px 24px;
 }
 .settings[data-settings-page="speed"] .options {
   padding: 12px 0 16px;

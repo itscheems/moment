@@ -1,0 +1,66 @@
+.control {
+  position: relative;
+  display: inline-flex;
+  flex: 0 0 36px;
+  align-items: center;
+  justify-content: center;
+  inline-size: 36px;
+  min-inline-size: 36px;
+  block-size: 36px;
+  min-block-size: 36px;
+  border: 0;
+  border-radius: 9999px;
+  padding: 0;
+  color: var(--text-primary);
+  background: transparent;
+  text-decoration: none;
+  cursor: pointer;
+  transition:
+    background-color 200ms,
+    box-shadow 200ms;
+}
+
+/* Keep the visible disc at 36px and the pointer target at 44px. */
+.control::after {
+  position: absolute;
+  inset: -4px;
+  border-radius: inherit;
+  content: "";
+}
+
+.control > svg {
+  flex: none;
+  inline-size: 20px;
+  block-size: 20px;
+}
+
+.control:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+  background: var(--icon-button-hover);
+}
+
+@media (hover: hover) {
+  .control:hover:not(:disabled) {
+    background: var(--icon-button-hover);
+  }
+}
+
+.control:active:not(:disabled) {
+  background: var(--icon-button-pressed);
+}
+
+.control:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.inset {
+  margin-inline-start: -8px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .control {
+    transition: none;
+  }
+}

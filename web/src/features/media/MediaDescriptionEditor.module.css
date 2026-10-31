@@ -109,7 +109,6 @@
   white-space: nowrap;
 }
 
-.back,
 .pager button {
   flex: none;
   display: grid;
@@ -123,17 +122,6 @@
   background: transparent;
   cursor: pointer;
   transition: background-color 200ms;
-}
-
-.back {
-  inline-size: 36px;
-  block-size: 36px;
-  margin-inline-start: -8px;
-}
-
-.back svg {
-  inline-size: 20px;
-  block-size: 20px;
 }
 
 .pager {
@@ -487,7 +475,6 @@
   .trigger:hover:not(:disabled) {
     text-decoration: underline;
   }
-  .back:hover,
   .pager button:hover:not(:disabled) {
     background: var(--icon-button-hover);
   }
@@ -522,7 +509,6 @@
 @media (prefers-reduced-motion: reduce) {
   .popup,
   .backdrop,
-  .back,
   .pager button,
   .field,
   .save {

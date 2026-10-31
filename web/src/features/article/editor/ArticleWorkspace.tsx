@@ -1,4 +1,5 @@
 import { useTranslation } from "react-i18next";
+import { BackControl } from "../../../components/BackControl";
 import { Menu } from "@base-ui/react/menu";
 import { Tabs } from "@base-ui/react/tabs";
 import {
@@ -706,18 +707,17 @@ export default function ArticleWorkspace({ site }: { site: SiteIdentity }) {
         ) : route.section === "published" && route.id ? (
           <>
             <header className={styles.workspacePublishedHeader}>
-              <button
-                className={styles.toolButton}
-                aria-label={t("返回文章列表")}
-                type="button"
-                onClick={() =>
-                  navigation.navigate(articlePublishedPath(), {
-                    preserveScroll: true,
-                  })
-                }
-              >
-                <Icon name="arrow-left" />
-              </button>
+              <BackControl>
+                <button
+                  aria-label={t("返回文章列表")}
+                  type="button"
+                  onClick={() =>
+                    navigation.navigate(articlePublishedPath(), {
+                      preserveScroll: true,
+                    })
+                  }
+                />
+              </BackControl>
               <span className={styles.publishedBadge}>{t("Published")}</span>
               {reading ? (
                 <>
