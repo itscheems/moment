@@ -194,11 +194,15 @@ func bindMentions(ctx context.Context, store ActivityStore, source ActivitySourc
 			continue
 		}
 		id := *binding.UserID
-		account, exists := accounts[id]
-		if !exists || !account.Active || !AccountViewer(id).CanReadEntry(source.Entry) {
+		if !AccountViewer(id).CanReadEntry(source.Entry) {
 			continue
 		}
+		// A public mention is handled once, including ineligible recipients.
 		bindings[i].Notified = true
+		account, exists := accounts[id]
+		if !exists || !account.Active {
+			continue
+		}
 		if !already[id] {
 			recipients[id] |= domain.ReasonMention
 		}

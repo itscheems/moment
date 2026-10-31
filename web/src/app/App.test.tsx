@@ -762,7 +762,7 @@ describe("App shell and public routes", () => {
       expect(
         document.querySelector('button[aria-label="打开账户菜单"] img'),
       ).toBeNull();
-      expect(document.title).toBe("乔乔的 Moment");
+      await waitFor(() => expect(document.title).toBe("乔乔的 Moment"));
     });
 
     it("keeps a pending member profile header neutral", async () => {

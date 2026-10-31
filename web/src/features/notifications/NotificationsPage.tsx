@@ -1,5 +1,6 @@
 import {
   PublicApi,
+  PublicApiError,
   type PublicPost,
   type SiteIdentity,
 } from "../../api/public";
@@ -181,7 +182,20 @@ function NotificationContent({
       .catch((error) => {
         if (!controller.signal.aborted) {
           auth.expireIfInvalidSession(error);
-          setFailed(true);
+          if (
+            error instanceof PublicApiError &&
+            (error.status === 403 || error.status === 404)
+          ) {
+            setDetail({
+              ...item,
+              available: false,
+              excerpt: "",
+              post: null,
+              comment: null,
+              replyToCommentId: null,
+            });
+            setParent(null);
+          } else setFailed(true);
         }
       });
     return () => controller.abort();

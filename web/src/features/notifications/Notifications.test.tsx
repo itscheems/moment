@@ -1,3 +1,4 @@
+import { PublicApiError } from "../../api/public";
 import { makeSiteIdentity } from "../../test/accountFixtures";
 import "@testing-library/jest-dom/vitest";
 import {
@@ -389,4 +390,86 @@ it("reads the current source before acknowledging a content notification", async
   expect(JSON.parse(String(writes[0].body)).through_cursor).toBe(
     "body-boundary",
   );
+});
+
+it("removes cached source content after an authoritative access failure", async () => {
+  const id = "01ARZ3NDEKTSV4RRFFQ69G5FAV";
+  let gone = false;
+  const progress = () => ({
+    new_count: gone ? 0 : 1,
+    mentions_new_count: gone ? 0 : 1,
+    through_cursor: gone ? "second-boundary" : "first-boundary",
+  });
+  const event = {
+    id,
+    event_type: "post.created",
+    subject: { type: "post", id },
+    post_id: id,
+    post_kind: "moment",
+    reply_to_comment_id: null,
+    reasons: ["mention"],
+    occurred_at: "2026-10-31T01:00:00Z",
+    actor: {
+      user_id: "1".repeat(32),
+      username: "cedar",
+      display_name: "Cedar",
+      avatar_media_id: null,
+      profile_url: "/cedar",
+    },
+    seen: false,
+    available: true,
+    excerpt: "A source preview",
+    post: null,
+    comment: null,
+  };
+  const post = {
+    id,
+    kind: "moment",
+    content_md: "Readable source",
+    article: null,
+    content_html: "<p>Readable source</p>",
+    created_at: event.occurred_at,
+    updated_at: event.occurred_at,
+    published_at: event.occurred_at,
+    reposted_at: null,
+    edited_at: null,
+    visibility: "everyone",
+    timeline_item_kind: "original",
+    quoted_post: null,
+    comment_count: 0,
+    media: [],
+    map_card: null,
+    location: null,
+    link_cards: [],
+  };
+  vi.stubGlobal("IntersectionObserver", undefined);
+  vi.stubGlobal(
+    "fetch",
+    vi.fn<typeof fetch>(async (input) => {
+      const url = String(input);
+      if (url.endsWith("/" + id)) {
+        if (gone)
+          throw new PublicApiError("source unavailable", {
+            code: "POST_NOT_FOUND",
+            status: 404,
+          });
+        return json({ ...event, post });
+      }
+      if (url.includes("?scope="))
+        return json({ ...progress(), items: [event], next_cursor: "" });
+      return json(progress());
+    }),
+  );
+  render(
+    <NavigationProvider>
+      <NotificationProvider>
+        <NotificationsPage scope="all" site={makeSiteIdentity()} />
+      </NotificationProvider>
+    </NavigationProvider>,
+  );
+  expect(await screen.findByText("Readable source")).toBeVisible();
+  gone = true;
+  act(() => Source.instances.at(-1)!.emit("sync", progress()));
+  expect(await screen.findByText("此内容暂不可用")).toBeVisible();
+  expect(screen.queryByText("Readable source")).not.toBeInTheDocument();
 });

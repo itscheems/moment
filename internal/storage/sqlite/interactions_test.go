@@ -569,3 +569,32 @@ func TestInteractionReactivatedAccountsDoNotReceiveOldMentionsFromUnrelatedEdits
 		t.Fatal("a newly added mention failed to notify")
 	}
 }
+
+func TestInteractionPublicationDoesNotDeferInactiveMentions(t *testing.T) {
+	f := newInteractionFixture(t)
+	cedar := f.member(t, "cedar")
+	private := f.post(t, "Private @cedar", domain.VisibilityOnlyMe)
+	if _, err := f.accounts.SetStatus(activityContext(f.owner), cedar.ID, domain.AccountSuspended); err != nil {
+		t.Fatal(err)
+	}
+	public := domain.VisibilityEveryone
+	if _, err := f.posts.Update(activityContext(f.owner), app.UpdatePostInput{ID: private.Entry.ID, PreserveContent: true, Visibility: &public}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.accounts.SetStatus(activityContext(f.owner), cedar.ID, domain.AccountActive); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.posts.Update(activityContext(f.owner), app.UpdatePostInput{ID: private.Entry.ID, ContentMD: "Unrelated edit @cedar"}); err != nil {
+		t.Fatal(err)
+	}
+	if len(f.page(t, cedar, "all").Items) != 0 {
+		t.Fatal("publication while inactive was incorrectly deferred to an unrelated edit")
+	}
+	fresh := f.post(t, "Another private @cedar", domain.VisibilityOnlyMe)
+	if _, err := f.posts.Update(activityContext(f.owner), app.UpdatePostInput{ID: fresh.Entry.ID, PreserveContent: true, Visibility: &public}); err != nil {
+		t.Fatal(err)
+	}
+	if len(f.page(t, cedar, "all").Items) != 1 {
+		t.Fatal("normal first publication failed to notify an eligible account")
+	}
+}

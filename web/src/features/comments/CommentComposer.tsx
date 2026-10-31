@@ -340,7 +340,7 @@ export function CommentForm({
     ids: string[];
   }>({ key: selectionKey, ids: [] });
   const excludedReplyUserIds =
-    replySelection.key === selectionKey ? replySelection.ids : [];
+    replySelection.key === selectionKey ? [...replySelection.ids].sort() : [];
   const inlineTopLevel = topLevelTargetUsername !== undefined;
   const displayReauth =
     authExpired || (auth.state === "expired" && !auth.session);
