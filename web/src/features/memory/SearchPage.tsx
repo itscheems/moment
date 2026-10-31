@@ -1,4 +1,5 @@
 import { useTranslation } from "react-i18next";
+import { BackControl } from "../../components/BackControl";
 import {
   type ReactNode,
   useCallback,
@@ -29,7 +30,6 @@ import {
   validateCursorPage,
 } from "../timeline/cursorContinuity";
 import { parseSearchLocation, searchHref } from "./memoryState";
-import { Icon } from "../../components/icons";
 import { SearchBox } from "./RailSearch";
 import { PeopleSearchResults } from "./PeopleSearchResults";
 import styles from "./Memory.module.css";
@@ -398,14 +398,14 @@ export function SearchPage(props: {
       <header className={styles.searchTop}>
         <h1 className={styles.searchTitle}>{t("搜索")}</h1>
         <div className={styles.searchHeading}>
-          <button
-            aria-label={t("返回时间流")}
-            className={styles.searchBack}
-            type="button"
-            onClick={() => location.goBack("/")}
-          >
-            <Icon name="arrow-left" />
-          </button>
+          <BackControl>
+            <button
+              aria-label={t("返回时间流")}
+              className={styles.searchBack}
+              type="button"
+              onClick={() => location.goBack("/")}
+            />
+          </BackControl>
           <SearchBox
             api={props.api}
             scope={props.recentScope ?? null}

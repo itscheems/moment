@@ -3,7 +3,7 @@
 import { t } from "../../../../../../../../../i18n";
 
 // --- UI Primitives ---
-import { Button } from "@notion/components/primitives/button";
+import { BackControl } from "../../../../../../../../../components/BackControl";
 import { Spacer } from "@notion/components/primitives/spacer";
 import {
   ToolbarGroup,
@@ -32,7 +32,6 @@ import { UndoRedoButton } from "@notion/components/ui/undo-redo-button";
 import { SearchAndReplaceButton } from "@notion/components/ui/search-and-replace";
 
 // --- Icons ---
-import { ArrowLeftIcon } from "@notion/components/icons/arrow-left-icon";
 import { HighlighterIcon } from "@notion/components/icons/highlighter-icon";
 import { LinkIcon } from "@notion/components/icons/link-icon";
 
@@ -135,14 +134,14 @@ export const MobileToolbarContent = ({
 }) => (
   <>
     <ToolbarGroup>
-      <Button variant="ghost" aria-label={t("返回格式工具")} onClick={onBack}>
-        <ArrowLeftIcon className="tiptap-button-icon" />
-        {type === "highlighter" ? (
-          <HighlighterIcon className="tiptap-button-icon" />
-        ) : (
-          <LinkIcon className="tiptap-button-icon" />
-        )}
-      </Button>
+      <BackControl>
+        <button type="button" aria-label={t("返回格式工具")} onClick={onBack} />
+      </BackControl>
+      {type === "highlighter" ? (
+        <HighlighterIcon className="tiptap-button-icon" />
+      ) : (
+        <LinkIcon className="tiptap-button-icon" />
+      )}
     </ToolbarGroup>
 
     <ToolbarSeparator />

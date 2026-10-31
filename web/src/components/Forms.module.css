@@ -1167,7 +1167,6 @@
 
 .locationClose,
 .locationRemove,
-.locationBack,
 .locationFooter button {
   border: 0;
   color: var(--text-primary);
@@ -1352,20 +1351,6 @@
   gap: var(--space-4);
   border-block-start: 1px solid var(--border-subtle);
   padding: var(--space-4);
-}
-
-.locationBack {
-  inline-size: fit-content;
-  display: flex;
-  align-items: center;
-  gap: var(--space-1);
-  padding: 0;
-  color: var(--accent);
-}
-
-.locationBack svg {
-  inline-size: 1rem;
-  block-size: 1rem;
 }
 
 .locationManual label,

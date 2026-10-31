@@ -332,25 +332,7 @@
 }
 
 .backLink {
-  inline-size: 2.75rem;
-  block-size: 2.75rem;
-  display: grid;
-  flex: 0 0 auto;
-  place-items: center;
-  border-radius: 50%;
-  margin-inline-start: calc(var(--space-2) * -1);
-  color: var(--text-primary);
-  transition: background var(--motion-fast) var(--ease-out);
-}
-
-.backLink:focus-visible {
-  background: var(--surface-hover);
-}
-
-@media (hover: hover) {
-  .backLink:hover {
-    background: var(--surface-hover);
-  }
+  margin-inline: -8px 16px;
 }
 
 .mobileAvatar,
@@ -882,12 +864,6 @@
   }
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .backLink {
-    transition: none;
-  }
-}
-
 .shell.workspaceShell {
   grid-template-columns: var(--shell-rail-width) minmax(0, 1fr);
 }
@@ -931,25 +907,7 @@
 }
 
 .profileHeader > .backLink {
-  inline-size: 36px;
-  block-size: 36px;
-  flex: none;
   margin-inline: -8px 28px;
-}
-
-.backLink svg {
-  inline-size: 20px;
-  block-size: 20px;
-}
-
-.profileHeader > .backLink:focus-visible {
-  background: color-mix(in srgb, var(--text-primary) 10%, transparent);
-}
-
-@media (hover: hover) {
-  .profileHeader > .backLink:hover {
-    background: color-mix(in srgb, var(--text-primary) 10%, transparent);
-  }
 }
 
 .profileTitle {

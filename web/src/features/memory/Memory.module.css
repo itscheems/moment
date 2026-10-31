@@ -988,27 +988,7 @@
   align-items: flex-end;
 }
 .searchBack {
-  flex: none;
-  display: grid;
-  place-items: center;
-  inline-size: 44px;
-  block-size: 44px;
-  margin-inline: 4px;
-  padding: 0;
-  border: 0;
-  border-radius: 50%;
-  color: var(--text-primary);
-  background: transparent;
-  cursor: pointer;
-}
-.searchBack svg {
-  inline-size: 20px;
-  block-size: 20px;
-}
-@media (hover: hover) {
-  .searchBack:hover {
-    background: var(--surface-hover);
-  }
+  margin-inline: 8px;
 }
 
 .searchTitle {

@@ -1,4 +1,5 @@
 import { useTranslation } from "react-i18next";
+import { BackControl } from "../../components/BackControl";
 import { Dialog } from "../../components/Dialog";
 import { Tabs } from "@base-ui/react/tabs";
 import { useCallback, useEffect, useId, useRef, useState } from "react";
@@ -283,13 +284,9 @@ export function MediaDescriptionEditor({
             ref={popupRef}
           >
             <header className={styles.header}>
-              <Dialog.Close
-                className={styles.back}
-                aria-label={t("Back")}
-                disabled={locked}
-              >
-                <Icon name="arrow-left" />
-              </Dialog.Close>
+              <BackControl inset>
+                <Dialog.Close aria-label={t("Back")} disabled={locked} />
+              </BackControl>
               <Dialog.Title>
                 {currentTab === "crop"
                   ? t("Crop media")

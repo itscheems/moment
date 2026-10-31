@@ -1,5 +1,6 @@
 import { t } from "../../i18n";
 import { useTranslation } from "react-i18next";
+import { BackControl } from "../../components/BackControl";
 import { type LocationInput } from "../../api/client";
 import { Dialog } from "../../components/Dialog";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -404,13 +405,13 @@ export function LocationPicker({
                   addManual();
                 }}
               >
-                <button
-                  className={styles.locationBack}
-                  onClick={() => setManual(false)}
-                  type="button"
-                >
-                  <Icon name="back" /> {t("返回搜索")}
-                </button>
+                <BackControl>
+                  <button
+                    aria-label={t("返回搜索")}
+                    onClick={() => setManual(false)}
+                    type="button"
+                  />
+                </BackControl>
                 <label>
                   <span>{t("地点名称")}</span>
                   <input

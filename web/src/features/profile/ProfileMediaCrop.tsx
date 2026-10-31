@@ -1,10 +1,10 @@
 import { useTranslation } from "react-i18next";
+import { BackControl } from "../../components/BackControl";
 import { Dialog } from "../../components/Dialog";
 import { Slider } from "@base-ui/react/slider";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import Cropper, { type Area, type MediaSize } from "react-easy-crop";
 import "react-easy-crop/react-easy-crop.css";
-import { Icon } from "../../components/icons";
 import { mediaApi } from "../../api/media";
 import { createMediaCrop, type MediaCropSource } from "../media/mediaCrop";
 import styles from "./ProfileMediaCrop.module.css";
@@ -168,14 +168,9 @@ export function ProfileMediaCrop({
             className={`${styles.popup} ${isCover ? styles.coverMode : ""}`}
           >
             <header className={styles.header}>
-              <button
-                aria-label={t("返回")}
-                className={styles.back}
-                onClick={cancel}
-                type="button"
-              >
-                <Icon name="arrow-left" />
-              </button>
+              <BackControl inset>
+                <button aria-label={t("返回")} onClick={cancel} type="button" />
+              </BackControl>
               <Dialog.Title className={styles.title}>
                 {t("编辑媒体")}
               </Dialog.Title>

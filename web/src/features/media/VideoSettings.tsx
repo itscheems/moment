@@ -1,4 +1,5 @@
 import { useTranslation } from "react-i18next";
+import { BackControl } from "../../components/BackControl";
 import { useState } from "react";
 import { Popover } from "@base-ui/react/popover";
 import { Radio } from "@base-ui/react/radio";
@@ -104,17 +105,19 @@ export function VideoSettings({
               </>
             ) : (
               <>
-                <button
-                  className={styles.settingsTitle}
-                  type="button"
-                  role="menuitem"
-                  onClick={() => setPage("root")}
-                >
-                  <VideoControlIcon name="back" />
+                <div className={styles.settingsTitle}>
+                  <BackControl inset container={container}>
+                    <button
+                      type="button"
+                      role="menuitem"
+                      aria-label={t("Back")}
+                      onClick={() => setPage("root")}
+                    />
+                  </BackControl>
                   <strong>
                     {page === "speed" ? t("播放速度") : t("视频质量")}
                   </strong>
-                </button>
+                </div>
                 <RadioGroup
                   className={styles.options}
                   aria-label={page === "speed" ? t("播放速度") : t("视频质量")}

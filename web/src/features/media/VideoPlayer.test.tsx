@@ -193,6 +193,8 @@ describe("video player interactions", () => {
     v.currentTime = 9;
     fireEvent.click(screen.getByRole("button", { name: "视频设置" }));
     fireEvent.click(await screen.findByRole("menuitem", { name: /视频质量/ }));
+    fireEvent.click(await screen.findByRole("menuitem", { name: "返回" }));
+    fireEvent.click(await screen.findByRole("menuitem", { name: /视频质量/ }));
     fireEvent.click(await screen.findByRole("radio", { name: "原画质" }));
     expect(v).toHaveAttribute("src", "/original.mov");
     expect(HTMLMediaElement.prototype.play).not.toHaveBeenCalled();

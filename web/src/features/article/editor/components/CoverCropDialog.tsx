@@ -4,7 +4,7 @@ import { Slider } from "@base-ui/react/slider";
 import { useEffect, useMemo, useRef, useState } from "react";
 import Cropper, { type Area, type MediaSize } from "react-easy-crop";
 import "react-easy-crop/react-easy-crop.css";
-import { Icon } from "../../../../components/icons";
+import { BackControl } from "../../../../components/BackControl";
 import { ARTICLE_COVER_ASPECT, createCoverCrop } from "./coverCrop";
 import styles from "./CoverCropDialog.module.css";
 
@@ -138,14 +138,9 @@ export function CoverCropDialog({
         <Dialog.Viewport className={styles.viewport}>
           <Dialog.Popup className={styles.popup}>
             <header className={styles.header}>
-              <button
-                aria-label={t("返回")}
-                className={styles.back}
-                onClick={cancel}
-                type="button"
-              >
-                <Icon name="back" />
-              </button>
+              <BackControl inset>
+                <button aria-label={t("返回")} onClick={cancel} type="button" />
+              </BackControl>
               <Dialog.Title className={styles.title}>
                 {t("编辑媒体")}
               </Dialog.Title>
