@@ -1695,8 +1695,8 @@
   "点赞状态暂时无法读取，请重试": "Like status is temporarily unavailable. Try again.",
   "正在同步查看进度…": "Syncing your viewing progress…",
   "通知内容暂时无法加载": "Notification content could not be loaded",
-  "{{value1}}和{{value2}}": "{{value1}} and {{value2}}",
-  "{{value1}} {{value2}}和{{value3}}": "{{value1}} {{value2}} and {{value3}}",
-  "{{value1}} {{value2}} 和其他 {{value3}} 人": "{{value1}} {{value2}} and {{value3}} others",
+  "{{value1}}和{{value2}}": "<0>{{value1}}</0> and <1>{{value2}}</1>",
+  "{{value1}} {{value2}}和{{value3}}": "<0>{{value1}}</0> <1>{{value2}}</1> and <2>{{value3}}</2>",
+  "{{value1}} {{value2}} 和其他 {{value3}} 人": "<0>{{value1}}</0> <1>{{value2}}</1><2> and {{value3}} others</2>",
   "账号通过审核后即可转发": "You can repost once your account is approved"
 }

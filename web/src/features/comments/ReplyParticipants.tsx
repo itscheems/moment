@@ -1,11 +1,33 @@
-import { useEffect, useState } from "react";
-import { useTranslation } from "react-i18next";
+import { useEffect, useState, type ReactNode } from "react";
+import { Trans, useTranslation } from "react-i18next";
 import {
   interactionsApi,
   type ReplyParticipant,
   type SubjectKind,
 } from "../../api/interactions";
+import { InternalLink } from "../../app/navigation";
+import { AccountIdentityPreview } from "../../components/AccountIdentityPreview";
 import styles from "./Comments.module.css";
+
+function ParticipantName({
+  participant,
+  children,
+}: {
+  participant?: ReplyParticipant;
+  children?: ReactNode;
+}) {
+  if (!participant?.username) return children;
+  return (
+    <AccountIdentityPreview author={participant}>
+      <InternalLink
+        className={styles.replyParticipant}
+        href={`/${participant.username}`}
+      >
+        {children}
+      </InternalLink>
+    </AccountIdentityPreview>
+  );
+}
 
 export function ReplyParticipants({
   kind,
@@ -62,20 +84,39 @@ export function ReplyParticipants({
   if (!names.length) return null;
   // Summarize longer participant sets without changing server-derived delivery.
   const values = { value1: names[0], value2: names[1], value3: names[2] };
-  const summary =
+  const summaryKey =
     names.length > 3
-      ? t("{{value1}} {{value2}} 和其他 {{value3}} 人", {
-          ...values,
-          value3: names.length - 2,
-        })
+      ? "{{value1}} {{value2}} 和其他 {{value3}} 人"
       : names.length === 3
-        ? t("{{value1}} {{value2}}和{{value3}}", values)
-        : names.length === 2
-          ? t("{{value1}}和{{value2}}", values)
-          : names[0];
+        ? "{{value1}} {{value2}}和{{value3}}"
+        : "{{value1}}和{{value2}}";
   return (
     <p className={styles.replyTarget}>
-      {t("正在回复")} <span title={names.join(", ")}>{summary}</span>
+      {t("正在回复")}{" "}
+      <span>
+        {names.length === 1 ? (
+          <ParticipantName participant={participants?.[0]}>
+            {names[0]}
+          </ParticipantName>
+        ) : (
+          <Trans
+            i18nKey={summaryKey}
+            values={{
+              ...values,
+              value3: names.length > 3 ? names.length - 2 : values.value3,
+            }}
+            components={[
+              <ParticipantName key="first" participant={participants?.[0]} />,
+              <ParticipantName key="second" participant={participants?.[1]} />,
+              names.length > 3 ? (
+                <span key="others" title={names.join(", ")} />
+              ) : (
+                <ParticipantName key="third" participant={participants?.[2]} />
+              ),
+            ]}
+          />
+        )}
+      </span>
     </p>
   );
 }
