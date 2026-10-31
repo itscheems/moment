@@ -71,6 +71,14 @@
   opacity: 1;
 }
 
+@media (max-width: 719px), (pointer: coarse) {
+  .input {
+    /* Keep iOS from zooming the viewport when the search field gains focus. */
+    font-size: 16px;
+    line-height: 20px;
+  }
+}
+
 .clearInput,
 .remove,
 .clearAll {
