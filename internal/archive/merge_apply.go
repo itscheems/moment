@@ -80,6 +80,13 @@ func ResolvePortableMerge(plan MergePlan, selection MergeSelection, local, incom
 			usedIDs[id] = struct{}{}
 		}
 	}
+	for _, rows := range [][]sqlitestore.ArchiveInteraction{local.Interactions, incoming.Interactions} {
+		for _, row := range rows {
+			if row.Notification != nil {
+				usedIDs[row.Notification.ID.String()] = struct{}{}
+			}
+		}
+	}
 	newID := func() (string, error) {
 		for attempt := 0; attempt < 32; attempt++ {
 			value, err := domain.NewID(options.Clock().UTC(), options.Entropy)
@@ -319,6 +326,10 @@ func ResolvePortableMerge(plan MergePlan, selection MergeSelection, local, incom
 	}
 
 	result.Authority.Media = sortedMedia(result.Authority.Media)
+	result.Authority.Interactions, err = mergeInteractions(local, incoming, result, itemChoices, newID)
+	if err != nil {
+		return ResolvedMerge{}, err
+	}
 	return result, nil
 }
 
@@ -786,10 +797,16 @@ func rebuildResolvedMergeGeneration(ctx context.Context, parent *runtimefs.Runti
 	if err := importer.SetSite(ctx, resolved.Authority.Site); err != nil {
 		return err
 	}
+	for _, record := range resolved.Authority.Interactions {
+		if err := importer.InsertInteraction(ctx, record); err != nil {
+			return err
+		}
+	}
 	expected := sqlitestore.ArchiveCounts{
 		Entries: int64(len(resolved.Authority.Entries)), Comments: int64(len(resolved.Authority.Comments)),
 		Media: int64(len(resolved.Authority.Media)), Users: int64(len(resolved.Authority.Users)),
-		Identities: int64(len(resolved.Authority.Identities)),
+		Identities:   int64(len(resolved.Authority.Identities)),
+		Interactions: int64(len(resolved.Authority.Interactions)),
 	}
 	if err := importer.Commit(ctx, expected); err != nil {
 		return err

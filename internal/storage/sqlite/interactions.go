@@ -51,6 +51,17 @@ type interactionStore struct {
 	generation string
 }
 
+func snapshotSQLValues(snapshot *domain.ActivityIdentitySnapshot) (any, any, any) {
+	if snapshot == nil {
+		return nil, nil, nil
+	}
+	var username any
+	if snapshot.Username != "" {
+		username = snapshot.Username
+	}
+	return snapshot.OriginKey, snapshot.DisplayName, username
+}
+
 var _ app.InteractionTransactions = (*InteractionRepository)(nil)
 var _ app.InteractionStore = interactionStore{}
 
@@ -190,7 +201,7 @@ func (store activityStore) MentionBindings(ctx context.Context, ref domain.Conte
 	if err != nil {
 		return nil, err
 	}
-	rows, err := store.queries.QueryContext(ctx, "SELECT handle,user_id,notified FROM "+table+" WHERE "+column+"=? ORDER BY handle", ref.ID.String())
+	rows, err := store.queries.QueryContext(ctx, "SELECT handle,user_id,notified,snapshot_key,snapshot_name,snapshot_username FROM "+table+" WHERE "+column+"=? ORDER BY handle", ref.ID.String())
 	if err != nil {
 		return nil, err
 	}
@@ -199,12 +210,16 @@ func (store activityStore) MentionBindings(ctx context.Context, ref domain.Conte
 	for rows.Next() {
 		var b domain.MentionBinding
 		var id sql.NullString
-		if err := rows.Scan(&b.Handle, &id, &b.Notified); err != nil {
+		var key, name, username sql.NullString
+		if err := rows.Scan(&b.Handle, &id, &b.Notified, &key, &name, &username); err != nil {
 			return nil, err
 		}
 		if id.Valid {
 			value := id.String
 			b.UserID = &value
+		}
+		if key.Valid {
+			b.Snapshot = &domain.ActivityIdentitySnapshot{OriginKey: key.String, DisplayName: name.String, Username: username.String}
 		}
 		result = append(result, b)
 	}
@@ -220,7 +235,8 @@ func (store activityStore) ReplaceMentionBindings(ctx context.Context, ref domai
 		return err
 	}
 	for _, b := range bindings {
-		if _, err := store.queries.ExecContext(ctx, "INSERT INTO "+table+" ("+column+",handle,user_id,notified) VALUES (?,?,?,?)", ref.ID.String(), b.Handle, nullableString(b.UserID), b.Notified); err != nil {
+		key, name, username := snapshotSQLValues(b.Snapshot)
+		if _, err := store.queries.ExecContext(ctx, "INSERT INTO "+table+" ("+column+",handle,user_id,notified,snapshot_key,snapshot_name,snapshot_username) VALUES (?,?,?,?,?,?,?)", ref.ID.String(), b.Handle, nullableString(b.UserID), b.Notified, key, name, username); err != nil {
 			return err
 		}
 	}
@@ -228,7 +244,7 @@ func (store activityStore) ReplaceMentionBindings(ctx context.Context, ref domai
 }
 
 func (store activityStore) ReplyRecipientIDs(ctx context.Context, id domain.ID) ([]string, error) {
-	rows, err := store.queries.QueryContext(ctx, "SELECT user_id FROM comment_reply_recipients WHERE comment_id=? ORDER BY user_id", id.String())
+	rows, err := store.queries.QueryContext(ctx, "SELECT user_id FROM comment_reply_recipients WHERE comment_id=? AND user_id IS NOT NULL ORDER BY user_id", id.String())
 	if err != nil {
 		return nil, err
 	}
@@ -329,7 +345,7 @@ func (store activityStore) LikeStates(ctx context.Context, kind string, ids []do
 	return result, nil
 }
 
-const notificationColumns = `sequence,id,recipient_id,actor_id,actor_name,event_type,subject_kind,subject_id,post_id,post_kind,reply_to_comment_id,reasons,occurred_at_ms`
+const notificationColumns = `sequence,id,recipient_id,actor_id,actor_name,event_type,subject_kind,subject_id,post_id,post_kind,reply_to_comment_id,reasons,occurred_at_ms,historical,force_unavailable`
 
 func scanNotification(row interface{ Scan(...any) error }) (domain.Notification, error) {
 	var n domain.Notification
@@ -337,7 +353,7 @@ func scanNotification(row interface{ Scan(...any) error }) (domain.Notification,
 	var identifier, subject, post, kind string
 	var reason int
 	var occurred int64
-	if err := row.Scan(&n.Sequence, &identifier, &n.RecipientID, &actor, &n.ActorName, &n.EventType, &n.Subject.Kind, &subject, &post, &kind, &reply, &reason, &occurred); err != nil {
+	if err := row.Scan(&n.Sequence, &identifier, &n.RecipientID, &actor, &n.ActorName, &n.EventType, &n.Subject.Kind, &subject, &post, &kind, &reply, &reason, &occurred, &n.Historical, &n.ForceUnavailable); err != nil {
 		return n, err
 	}
 	if actor.Valid {
@@ -361,16 +377,16 @@ func (store interactionStore) Notifications(ctx context.Context, q app.Notificat
 	query := "SELECT " + notificationColumns + " FROM notifications WHERE recipient_id=? AND (reasons & ?) != 0"
 	args := []any{q.RecipientID, int(q.Mask)}
 	if q.Newer {
-		query += " AND sequence>?"
+		query += " AND historical=0 AND sequence>?"
 		args = append(args, q.Sequence)
 	} else if q.Sequence > 0 {
-		query += " AND sequence<?"
-		args = append(args, q.Sequence)
+		query += " AND (occurred_at_ms<? OR (occurred_at_ms=? AND sequence<?))"
+		args = append(args, q.OccurredAtMS, q.OccurredAtMS, q.Sequence)
 	}
 	if q.Newer {
 		query += " ORDER BY sequence ASC"
 	} else {
-		query += " ORDER BY sequence DESC"
+		query += " ORDER BY occurred_at_ms DESC,sequence DESC"
 	}
 	query += " LIMIT ?"
 	args = append(args, q.Limit)
@@ -405,7 +421,7 @@ func (store interactionStore) NotificationProgress(ctx context.Context, recipien
 	}
 	err := store.queries.QueryRowContext(ctx, `SELECT count(*),coalesce(sum(CASE WHEN (n.reasons & 7)!=0 THEN 1 ELSE 0 END),0)
 FROM notifications n JOIN entries e ON e.id=n.post_id LEFT JOIN comments c ON n.subject_kind='comment' AND c.id=n.subject_id AND c.entry_id=e.id
-WHERE n.recipient_id=? AND e.publication_state='published' AND (e.visibility='everyone' OR (e.visibility='only_me' AND e.author_user_id=?))
+WHERE n.recipient_id=? AND n.historical=0 AND n.force_unavailable=0 AND e.publication_state='published' AND (e.visibility='everyone' OR (e.visibility='only_me' AND e.author_user_id=?))
 AND ((n.subject_kind='post' AND n.subject_id=e.id) OR (n.subject_kind='comment' AND c.id IS NOT NULL))
 AND n.sequence>? AND ((n.reasons & 7)=0 OR n.sequence>?)`, recipient, recipient, progress.AllSeen, progress.MentionsSeen).Scan(&progress.NewCount, &progress.MentionsNewCount)
 	return progress, err

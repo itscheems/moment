@@ -20,10 +20,10 @@ import (
 )
 
 // AccountFormatVersion identifies the restorable personal portability contract.
-const AccountFormatVersion = 3
+const AccountFormatVersion = 4
 
 // AccountFormatHeaderValue distinguishes personal portability from site recovery.
-const AccountFormatHeaderValue = "moment-account-export-v3"
+const AccountFormatHeaderValue = "moment-account-export-v4"
 const accountFormatName = "moment-account-export"
 
 type accountManifest struct {
@@ -264,6 +264,26 @@ func (exporter *Exporter) ExportAccount(ctx context.Context, destination io.Writ
 	if mediaCount != int64(len(selected)) || len(resolvedSHAs) != len(selectedSHAs) {
 		return Summary{}, archiveInvalid("account references missing media", nil)
 	}
+	interactionCount, err := protocol.jsonLines(interactionMember, func(write func(any) error) error {
+		var count int64
+		return snapshot.Interactions(ctx, func(record sqlitestore.ArchiveInteraction) error {
+			selected, keep := personalInteraction(record, accountID, runtimeState.Instance.ID, selectedEntries, selectedComments)
+			if !keep {
+				return nil
+			}
+			count++
+			if count > maxPortableInteractions {
+				return archiveInvalid("personal interaction count exceeds portable limits", nil)
+			}
+			if err := validateInteraction(selected); err != nil {
+				return err
+			}
+			return write(selected)
+		})
+	})
+	if err != nil {
+		return Summary{}, err
+	}
 	buffer := make([]byte, copyBufferSize)
 	err = snapshot.Media(ctx, func(value sqlitestore.ArchiveMedia) error {
 		if !selected[value.ID] {
@@ -304,7 +324,7 @@ func (exporter *Exporter) ExportAccount(ctx context.Context, destination io.Writ
 	if err != nil {
 		return Summary{}, err
 	}
-	manifest := accountManifest{Format: accountFormatName, FormatVersion: AccountFormatVersion, CreatedAt: now.Format(time.RFC3339Nano), AccountID: accountID, SourceInstanceID: runtimeState.Instance.ID, Counts: countManifest{Users: 1, Identities: identities, Entries: entries, Comments: comments, Media: mediaCount, Articles: articles, ArticleDrafts: drafts}}
+	manifest := accountManifest{Format: accountFormatName, FormatVersion: AccountFormatVersion, CreatedAt: now.Format(time.RFC3339Nano), AccountID: accountID, SourceInstanceID: runtimeState.Instance.ID, Counts: countManifest{Users: 1, Identities: identities, Entries: entries, Comments: comments, Media: mediaCount, Articles: articles, ArticleDrafts: drafts, Interactions: interactionCount}}
 	if err := protocol.jsonMember("manifest.json", manifest); err != nil {
 		return Summary{}, err
 	}
@@ -334,7 +354,7 @@ func ValidateAccountFileContext(ctx context.Context, name string) error {
 		return err
 	}
 	defer func() { _ = reader.Close() }()
-	if int64(len(reader.File)) > defaultMaxMedia+10 {
+	if int64(len(reader.File)) > defaultMaxMedia+11 {
 		return archiveInvalid("account archive member count exceeds the budget", nil)
 	}
 	files := map[string]*zip.File{}
@@ -359,7 +379,7 @@ func ValidateAccountFileContext(ctx context.Context, name string) error {
 		switch file.Name {
 		case "README.txt", "manifest.json", "checksums.sha256", "data/account.json", "data/entries.jsonl",
 			"data/entry_articles.jsonl", "data/article_drafts.jsonl", "data/comments.jsonl",
-			"data/identities.jsonl", "data/media.jsonl":
+			"data/identities.jsonl", "data/media.jsonl", interactionMember:
 		default:
 			if !strings.HasPrefix(file.Name, "media/") {
 				return archiveInvalid("unknown account archive member", nil)
@@ -384,8 +404,11 @@ func ValidateAccountFileContext(ctx context.Context, name string) error {
 	if err := json.Unmarshal(raw, &document); err != nil {
 		return err
 	}
-	if document.Format != accountFormatName || (document.FormatVersion != 1 && document.FormatVersion != 2 && document.FormatVersion != 3) || document.AccountID == "" {
+	if document.Format != accountFormatName || document.FormatVersion < 1 || document.FormatVersion > AccountFormatVersion || document.AccountID == "" {
 		return archiveInvalid("not a personal account export", nil)
+	}
+	if (files[interactionMember] != nil) != (document.FormatVersion >= 4) {
+		return archiveInvalid("personal interaction member does not match its format", nil)
 	}
 	sums, err := readChecksums(ctx, files["checksums.sha256"], len(files))
 	if err != nil {

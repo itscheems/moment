@@ -33,7 +33,7 @@ func TestCommentQuotesRoundTripWithMediaAndAccountExport(t *testing.T) {
 		t.Fatal("comment target omitted")
 	}
 	var account bytes.Buffer
-	if summary, err := fixture.exporter.ExportAccount(ctx, &account, fixtureAccountID); err != nil || summary.FormatVersion != 3 {
+	if summary, err := fixture.exporter.ExportAccount(ctx, &account, fixtureAccountID); err != nil || summary.FormatVersion != AccountFormatVersion {
 		t.Fatalf("account export=%+v %v", summary, err)
 	}
 	personal, _ := readArchive(t, account.Bytes())
@@ -72,7 +72,8 @@ func TestCommentQuoteFormatCompatibility(t *testing.T) {
 				}
 				manifest["format_version"] = version
 				members["manifest.json"] = append(mustMarshalTest(t, manifest), '\n')
-				members["README.txt"] = []byte(strings.Replace(readme, "v5", fmt.Sprintf("v%d", version), 1))
+				members["README.txt"] = []byte(strings.Replace(readme, fmt.Sprintf("v%d", FormatVersion), fmt.Sprintf("v%d", version), 1))
+				order = removeTestArchiveMember(members, order, interactionMember)
 				if quoted {
 					members["data/entries.jsonl"] = rewriteEntryLine(t, members["data/entries.jsonl"], entryID, func(line map[string]json.RawMessage) {
 						line["quoted_comment_id"] = json.RawMessage(`"` + rootCommentID + `"`)

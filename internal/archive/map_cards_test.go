@@ -119,7 +119,8 @@ func TestArchiveV2StillRestoresAndRejectsMaps(t *testing.T) {
 			}
 			manifest["format_version"] = 2
 			members["manifest.json"] = append(mustMarshalTest(t, manifest), '\n')
-			members["README.txt"] = []byte(strings.Replace(readme, "v5", "v2", 1))
+			members["README.txt"] = []byte(strings.Replace(readme, "v6", "v2", 1))
+			order = removeTestArchiveMember(members, order, interactionMember)
 			if withMap {
 				members["data/entries.jsonl"] = rewriteEntryLine(t, members["data/entries.jsonl"], entryID, func(line map[string]json.RawMessage) { line["map_card"] = json.RawMessage(archiveMapJSON) })
 			}

@@ -22,11 +22,12 @@ type NotificationProgress struct {
 
 // NotificationQuery is the repository's bounded keyset selection.
 type NotificationQuery struct {
-	RecipientID string
-	Mask        domain.NotificationReason
-	Sequence    int64
-	Newer       bool
-	Limit       int
+	RecipientID  string
+	Mask         domain.NotificationReason
+	Sequence     int64
+	OccurredAtMS int64
+	Newer        bool
+	Limit        int
 }
 
 // InteractionStore supplies interaction authority within one SQLite transaction.
@@ -182,38 +183,39 @@ type NotificationState struct {
 }
 
 type notificationCursor struct {
-	Version    int                       `json:"v"`
-	Generation string                    `json:"g"`
-	Account    string                    `json:"a"`
-	Scope      string                    `json:"s"`
-	Mask       domain.NotificationReason `json:"m"`
-	Sequence   int64                     `json:"q"`
+	Version      int                       `json:"v"`
+	Generation   string                    `json:"g"`
+	Account      string                    `json:"a"`
+	Scope        string                    `json:"s"`
+	Mask         domain.NotificationReason `json:"m"`
+	Sequence     int64                     `json:"q"`
+	OccurredAtMS int64                     `json:"t,omitempty"`
 }
 
-func encodeNotificationCursor(store InteractionStore, account, scope string, mask domain.NotificationReason, sequence int64) string {
-	data, _ := json.Marshal(notificationCursor{Version: 1, Generation: store.GenerationID(), Account: account, Scope: scope, Mask: mask, Sequence: sequence})
+func encodeNotificationCursor(store InteractionStore, account, scope string, mask domain.NotificationReason, sequence, occurredAtMS int64) string {
+	data, _ := json.Marshal(notificationCursor{Version: 1, Generation: store.GenerationID(), Account: account, Scope: scope, Mask: mask, Sequence: sequence, OccurredAtMS: occurredAtMS})
 	return base64.RawURLEncoding.EncodeToString(data)
 }
 
-func decodeNotificationCursor(value string, store InteractionStore, account, scope string, mask domain.NotificationReason) (int64, error) {
+func decodeNotificationCursor(value string, store InteractionStore, account, scope string, mask domain.NotificationReason) (notificationCursor, error) {
 	invalid := func() error {
 		return domain.NewError(domain.CodeInvalidArgument, "notification cursor is invalid for this account, view, or data generation", map[string]any{"field": "cursor"})
 	}
 	if len(value) > MaxCursorBytes {
-		return 0, invalid()
+		return notificationCursor{}, invalid()
 	}
 	data, err := base64.RawURLEncoding.DecodeString(value)
 	if err != nil {
-		return 0, invalid()
+		return notificationCursor{}, invalid()
 	}
 	var cursor notificationCursor
 	if err := json.Unmarshal(data, &cursor); err != nil {
-		return 0, invalid()
+		return notificationCursor{}, invalid()
 	}
 	if cursor.Version != 1 || cursor.Generation != store.GenerationID() || cursor.Account != account || cursor.Scope != scope || cursor.Mask != mask || cursor.Sequence < 0 {
-		return 0, invalid()
+		return notificationCursor{}, invalid()
 	}
-	return cursor.Sequence, nil
+	return cursor, nil
 }
 
 func notificationMask(scope, reason string) (domain.NotificationReason, error) {
@@ -264,13 +266,13 @@ func (service *InteractionService) Notifications(ctx context.Context, input Noti
 		if err != nil {
 			return err
 		}
-		var sequence int64
+		var position notificationCursor
 		cursor := input.Cursor
 		if input.After != "" {
 			cursor = input.After
 		}
 		if cursor != "" {
-			sequence, err = decodeNotificationCursor(cursor, store, actor.UserID, input.Scope, mask)
+			position, err = decodeNotificationCursor(cursor, store, actor.UserID, input.Scope, mask)
 			if err != nil {
 				return err
 			}
@@ -279,10 +281,13 @@ func (service *InteractionService) Notifications(ctx context.Context, input Noti
 		if err != nil {
 			return err
 		}
-		if sequence > progress.Latest {
+		if position.Sequence > progress.Latest {
 			return domain.NewError(domain.CodeInvalidArgument, "notification cursor is beyond this account's history", nil)
 		}
-		records, err := store.Notifications(ctx, NotificationQuery{RecipientID: actor.UserID, Mask: mask, Sequence: sequence, Newer: input.After != "", Limit: input.Limit + 1})
+		if input.Cursor != "" && position.OccurredAtMS <= 0 {
+			return domain.NewError(domain.CodeInvalidArgument, "history pagination requires the returned next cursor", nil)
+		}
+		records, err := store.Notifications(ctx, NotificationQuery{RecipientID: actor.UserID, Mask: mask, Sequence: position.Sequence, OccurredAtMS: position.OccurredAtMS, Newer: input.After != "", Limit: input.Limit + 1})
 		if err != nil {
 			return err
 		}
@@ -308,7 +313,7 @@ func (service *InteractionService) Notifications(ctx context.Context, input Noti
 		}
 		for _, record := range records {
 			item := projectNotification(record, progress, accounts)
-			if source, ok := sources[record.Subject]; ok && source.Entry.ID == record.PostID && AccountViewer(actor.UserID).CanReadEntry(source.Entry) {
+			if source, ok := sources[record.Subject]; ok && !record.ForceUnavailable && source.Entry.ID == record.PostID && AccountViewer(actor.UserID).CanReadEntry(source.Entry) {
 				item.Available = true
 				preview := source.BodyPreview
 				if !source.PreviewIsPlain {
@@ -326,9 +331,14 @@ func (service *InteractionService) Notifications(ctx context.Context, input Noti
 			page.Items = append(page.Items, item)
 		}
 		if more {
-			page.NextCursor = encodeNotificationCursor(store, actor.UserID, input.Scope, mask, records[len(records)-1].Sequence)
+			last := records[len(records)-1]
+			var at int64
+			if input.After == "" {
+				at = domain.TimeToMillis(last.OccurredAt)
+			}
+			page.NextCursor = encodeNotificationCursor(store, actor.UserID, input.Scope, mask, last.Sequence, at)
 		}
-		page.ThroughCursor = encodeNotificationCursor(store, actor.UserID, input.Scope, mask, progress.Latest)
+		page.ThroughCursor = encodeNotificationCursor(store, actor.UserID, input.Scope, mask, progress.Latest, 0)
 		page.NewCount = progress.NewCount
 		page.MentionsNewCount = progress.MentionsNewCount
 		return nil
@@ -345,6 +355,9 @@ func (service *InteractionService) Notification(ctx context.Context, id string) 
 	page, err := service.notificationItem(ctx, identifier)
 	if err != nil {
 		return NotificationItem{}, err
+	}
+	if page.Record.ForceUnavailable {
+		return page, nil
 	}
 	viewer := ViewerFromContext(ctx)
 	if page.Record.Subject.Kind == domain.SubjectPost {
@@ -410,7 +423,7 @@ func projectNotification(record domain.Notification, progress NotificationProgre
 	if record.Reasons&(domain.ReasonReply|domain.ReasonMention|domain.ReasonConversation) != 0 && progress.MentionsSeen > seen {
 		seen = progress.MentionsSeen
 	}
-	item := NotificationItem{Record: record, Seen: record.Sequence <= seen, Actor: NotificationActor{DisplayName: record.ActorName}}
+	item := NotificationItem{Record: record, Seen: record.Historical || record.Sequence <= seen, Actor: NotificationActor{DisplayName: record.ActorName}}
 	if record.ActorID != nil {
 		if account, ok := accounts[*record.ActorID]; ok && account.Active {
 			id, name, url := account.UserID, account.Username, domain.ProfileURL(account.Username)
@@ -433,7 +446,7 @@ func (service *InteractionService) NotificationState(ctx context.Context) (Notif
 			return err
 		}
 		mask, _ := domain.NotificationScopeMask(domain.NotificationAll)
-		result = NotificationState{NewCount: progress.NewCount, MentionsNewCount: progress.MentionsNewCount, ThroughCursor: encodeNotificationCursor(store, actor.UserID, domain.NotificationAll, mask, progress.Latest), AllSeen: progress.AllSeen, MentionsSeen: progress.MentionsSeen}
+		result = NotificationState{NewCount: progress.NewCount, MentionsNewCount: progress.MentionsNewCount, ThroughCursor: encodeNotificationCursor(store, actor.UserID, domain.NotificationAll, mask, progress.Latest, 0), AllSeen: progress.AllSeen, MentionsSeen: progress.MentionsSeen}
 		return nil
 	})
 	return result, err
@@ -450,7 +463,7 @@ func (service *InteractionService) SeeNotifications(ctx context.Context, scope, 
 		if err != nil {
 			return err
 		}
-		sequence, err := decodeNotificationCursor(cursor, store, actor.UserID, scope, mask)
+		position, err := decodeNotificationCursor(cursor, store, actor.UserID, scope, mask)
 		if err != nil {
 			return err
 		}
@@ -458,10 +471,10 @@ func (service *InteractionService) SeeNotifications(ctx context.Context, scope, 
 		if err != nil {
 			return err
 		}
-		if sequence > progress.Latest {
+		if position.Sequence > progress.Latest {
 			return domain.NewError(domain.CodeInvalidArgument, "cannot confirm unseen future notifications", nil)
 		}
-		return store.AdvanceNotificationSeen(ctx, actor.UserID, scope, sequence)
+		return store.AdvanceNotificationSeen(ctx, actor.UserID, scope, position.Sequence)
 	})
 	if err != nil {
 		return NotificationState{}, err

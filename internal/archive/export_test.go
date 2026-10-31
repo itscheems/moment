@@ -59,7 +59,7 @@ func TestExportV3FullDataChecksumsOrderingAndExclusions(t *testing.T) {
 	wantOrder := []string{
 		"README.txt", "data/site.json", "data/users.jsonl", "data/identities.jsonl",
 		"data/entries.jsonl", "data/entry_articles.jsonl", "data/article_drafts.jsonl",
-		"data/comments.jsonl", "data/media.jsonl",
+		"data/comments.jsonl", "data/media.jsonl", interactionMember,
 	}
 	blobs := []string{"media/" + fixture.mediaOneSHA + ".jpg", "media/" + fixture.mediaTwoSHA + ".png"}
 	sort.Strings(blobs)
@@ -154,7 +154,7 @@ func TestExportV2EmptyArchiveAndManifestFixedPointBoundaries(t *testing.T) {
 		t.Fatal(err)
 	}
 	members, order := readArchive(t, output.Bytes())
-	if len(order) != 11 || len(members["data/entries.jsonl"]) != 0 || len(members["data/comments.jsonl"]) != 0 ||
+	if len(order) != 12 || len(members["data/entries.jsonl"]) != 0 || len(members["data/comments.jsonl"]) != 0 ||
 		len(members["data/media.jsonl"]) != 0 || len(members["data/identities.jsonl"]) != 0 ||
 		len(members["data/entry_articles.jsonl"]) != 0 || len(members["data/article_drafts.jsonl"]) != 0 ||
 		len(nonemptyLines(members["data/users.jsonl"])) != 1 {

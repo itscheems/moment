@@ -18,7 +18,9 @@ const countKeys = [
   "articles",
   "article_drafts",
 ] as const;
-export type PersonalCounts = Record<(typeof countKeys)[number], number>;
+export type PersonalCounts = Record<(typeof countKeys)[number], number> & {
+  interactions?: number;
+};
 export interface PersonalImport {
   dryRun: boolean;
   archiveSHA256: string;
@@ -29,9 +31,17 @@ export interface PersonalImport {
 }
 function counts(value: unknown): PersonalCounts {
   const data = objectData(value);
-  if (!hasExactKeys(data, [...countKeys]))
+  if (
+    !hasExactKeys(data, [
+      ...countKeys,
+      ...(data.interactions === undefined ? [] : ["interactions"]),
+    ])
+  )
     throw invalidResponse("personal import counts are invalid");
   return {
+    ...(data.interactions === undefined
+      ? {}
+      : { interactions: nonNegativeIntegerField(data, "interactions") }),
     entries: nonNegativeIntegerField(data, "entries"),
     comments: nonNegativeIntegerField(data, "comments"),
     media: nonNegativeIntegerField(data, "media"),

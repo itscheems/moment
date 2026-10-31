@@ -36,12 +36,12 @@ import (
 
 const (
 	// FormatVersion is the import-facing Moment export protocol version.
-	FormatVersion           = 5
+	FormatVersion           = 6
 	formatName              = "moment-export"
 	copyBufferSize          = 128 << 10
 	manifestFixedPointLimit = 32
-	// FormatHeaderValue is the fail-closed HTTP/CLI negotiation token for v5.
-	FormatHeaderValue = "moment-export-v5"
+	// FormatHeaderValue is the fail-closed HTTP/CLI negotiation token for v6.
+	FormatHeaderValue = "moment-export-v6"
 )
 
 // ErrDestinationUnavailable classifies a safe output target that cannot be
@@ -49,7 +49,7 @@ const (
 var ErrDestinationUnavailable = errors.New("archive destination is unavailable")
 
 const readme = "Moment portable export\n\n" +
-	"Format: moment-export v5\n" +
+	"Format: moment-export v6\n" +
 	"Portable records are under data/ and immutable originals are under media/.\n" +
 	"checksums.sha256 uses: <sha256>\\t<uncompressed-bytes>\\t<path>.\n" +
 	"It lists every ZIP member except checksums.sha256 itself.\n"
@@ -182,6 +182,9 @@ func (exporter *Exporter) exportResolved(ctx context.Context, destination io.Wri
 		return Summary{}, err
 	}
 	defer func() { exportErr = errors.Join(exportErr, snapshot.Close()) }()
+	if snapshot.Counts().Interactions > maxPortableInteractions {
+		return Summary{}, archiveInvalid("source interaction count exceeds portable limits", nil)
+	}
 	if err := snapshot.ValidateIntegrity(ctx); err != nil {
 		return Summary{}, archiveInvalid("archive relationships are inconsistent", err)
 	}
@@ -340,6 +343,10 @@ func (exporter *Exporter) exportResolved(ctx context.Context, destination io.Wri
 		return Summary{}, archiveInvalid("media metadata could not be exported", err)
 	}
 
+	interactionCount, err := exportInteractions(ctx, protocol, snapshot)
+	if err != nil {
+		return Summary{}, archiveInvalid("interactions could not be exported", err)
+	}
 	buffer := make([]byte, copyBufferSize)
 	blobCount := int64(0)
 	err = snapshot.Media(ctx, func(value sqlitestore.ArchiveMedia) error {
@@ -407,7 +414,7 @@ func (exporter *Exporter) exportResolved(ctx context.Context, destination io.Wri
 	counts := snapshot.Counts()
 	if entryCount != counts.Entries || commentCount != counts.Comments || mediaCount != counts.Media || blobCount != counts.Media ||
 		userCount != counts.Users || identityCount != counts.Identities ||
-		articleCount != counts.Articles || draftCount != counts.ArticleDrafts {
+		articleCount != counts.Articles || draftCount != counts.ArticleDrafts || interactionCount != counts.Interactions {
 		return Summary{}, archiveInvalid("archive record counts changed inside one snapshot", nil)
 	}
 	manifestBytes, err := canonicalManifest(manifest{
@@ -417,6 +424,7 @@ func (exporter *Exporter) exportResolved(ctx context.Context, destination io.Wri
 			Entries: counts.Entries, Comments: counts.Comments, Media: counts.Media,
 			Users: counts.Users, Identities: counts.Identities,
 			Articles: counts.Articles, ArticleDrafts: counts.ArticleDrafts,
+			Interactions: counts.Interactions,
 		},
 	}, protocol.expandedBytes)
 	if err != nil {
@@ -550,11 +558,12 @@ type sourceManifest struct {
 }
 
 type countManifest struct {
-	Entries    int64 `json:"entries"`
-	Comments   int64 `json:"comments"`
-	Media      int64 `json:"media"`
-	Users      int64 `json:"users,omitempty"`
-	Identities int64 `json:"identities,omitempty"`
+	Interactions int64 `json:"interactions,omitempty"`
+	Entries      int64 `json:"entries"`
+	Comments     int64 `json:"comments"`
+	Media        int64 `json:"media"`
+	Users        int64 `json:"users,omitempty"`
+	Identities   int64 `json:"identities,omitempty"`
 	// Articles and ArticleDrafts are additive on the same terms. Articles
 	// counts bodies rather than article entries: the two are the same number
 	// in a consistent archive, so stating the bodies is what makes an envelope
@@ -1835,7 +1844,11 @@ func portableLeadingMembers(seen map[string]struct{}) ([]string, error) {
 			return nil, fmt.Errorf("required member %q is missing", required)
 		}
 	}
-	return articlePortableMembers, nil
+	leading := append([]string{}, articlePortableMembers...)
+	if _, exists := seen[interactionMember]; exists {
+		leading = append(leading, interactionMember)
+	}
+	return leading, nil
 }
 
 // archiveCarriesAccounts reports whether a ZIP holds the accounts members.
@@ -1938,11 +1951,11 @@ func ValidateFileContext(ctx context.Context, name string) error {
 	if err := requireObjectFields(manifestFields["limits"], []string{"expanded_bytes"}, []string{"expanded_bytes"}); err != nil {
 		return archiveInvalid("prepared ZIP manifest limits are invalid", err)
 	}
-	if value.Format != formatName || (value.FormatVersion != 2 && value.FormatVersion != 3 && value.FormatVersion != 4 && value.FormatVersion != FormatVersion) || validateAppVersion(value.Source.AppVersion) != nil ||
+	if value.Format != formatName || !supportedSiteFormat(value.FormatVersion) || validateAppVersion(value.Source.AppVersion) != nil ||
 		len(value.Source.InstanceID) != 32 || !isLowerHex(value.Source.InstanceID) || value.Counts.Entries < 0 || value.Counts.Comments < 0 || value.Counts.Media < 0 || value.Limits.ExpandedBytes < 1 {
 		return archiveInvalid("prepared ZIP manifest contract is invalid", nil)
 	}
-	if !bytes.Equal(readmeData, []byte(strings.Replace(readme, "v5", fmt.Sprintf("v%d", value.FormatVersion), 1))) {
+	if !bytes.Equal(readmeData, []byte(strings.Replace(readme, "v6", fmt.Sprintf("v%d", value.FormatVersion), 1))) {
 		return archiveInvalid("prepared ZIP README does not match its format version", nil)
 	}
 	_, err = parsePortableTimestamp(value.CreatedAt)
@@ -2104,6 +2117,7 @@ func validatePortableRecords(ctx context.Context, files map[string]*zip.File, me
 	}
 
 	entryIDs := make(map[string]struct{})
+	entryKinds := make(map[string]string)
 	quoteRefs := make(map[string]string)
 	commentQuoteRefs := make(map[string]string)
 	usageMediaIDs := make(map[string]struct{})
@@ -2220,6 +2234,7 @@ func validatePortableRecords(ctx context.Context, files map[string]*zip.File, me
 			return err
 		}
 		entryIDs[value.ID] = struct{}{}
+		entryKinds[value.ID] = value.Kind
 		if domain.EntryKind(value.Kind) == domain.KindArticle {
 			articleEntryUsages[value.ID] = usages
 		}
@@ -2450,6 +2465,13 @@ func validatePortableRecords(ctx context.Context, files map[string]*zip.File, me
 		if _, exists := mediaIDs[id]; !exists {
 			return errors.New("an article or draft picture refers to media absent from the archive")
 		}
+	}
+	commentPosts := make(map[string]string, len(commentIDs))
+	for id, ref := range commentIDs {
+		commentPosts[id] = ref.entryID
+	}
+	if err := validatePortableInteractions(ctx, files, document, entryKinds, commentPosts); err != nil {
+		return err
 	}
 	return validatePortableMediaGrants(ctx, files)
 }

@@ -74,23 +74,33 @@ type MentionBinding struct {
 	Handle   string
 	UserID   *string
 	Notified bool
+	Snapshot *ActivityIdentitySnapshot
+}
+
+// ActivityIdentitySnapshot preserves external display data without account authority.
+type ActivityIdentitySnapshot struct {
+	OriginKey   string `json:"origin_key"`
+	DisplayName string `json:"display_name"`
+	Username    string `json:"username,omitempty"`
 }
 
 // Notification is an immutable activity addressed to one account. Source IDs
 // remain historical references after content deletion; bodies are never stored here.
 type Notification struct {
-	ID               ID
-	Sequence         int64
-	RecipientID      string
-	ActorID          *string
-	ActorName        string
-	EventType        string
-	Subject          ContentRef
-	PostID           ID
-	PostKind         EntryKind
-	ReplyToCommentID *ID
-	Reasons          NotificationReason
-	OccurredAt       time.Time
+	ID               ID                 `json:"id"`
+	Sequence         int64              `json:"sequence"`
+	RecipientID      string             `json:"recipient_id"`
+	ActorID          *string            `json:"actor_id"`
+	ActorName        string             `json:"actor_name"`
+	EventType        string             `json:"event_type"`
+	Subject          ContentRef         `json:"subject"`
+	PostID           ID                 `json:"post_id"`
+	PostKind         EntryKind          `json:"post_kind"`
+	ReplyToCommentID *ID                `json:"reply_to_comment_id"`
+	Reasons          NotificationReason `json:"reason_mask"`
+	OccurredAt       time.Time          `json:"occurred_at"`
+	Historical       bool               `json:"historical"`
+	ForceUnavailable bool               `json:"force_unavailable"`
 }
 
 // LikeState combines the current relation count and the verified viewer's state.

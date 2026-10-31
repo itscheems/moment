@@ -74,12 +74,13 @@ const (
 // comparison. It intentionally excludes secrets, previews, FTS, idempotency
 // rows, and runtime state.
 type PortableAuthority struct {
-	Site       sqlitestore.ArchiveSite
-	Users      []sqlitestore.ArchiveUser
-	Identities []sqlitestore.ArchiveIdentity
-	Entries    []sqlitestore.ArchiveEntry
-	Comments   []sqlitestore.ArchiveComment
-	Media      []sqlitestore.ArchiveMedia
+	Interactions []sqlitestore.ArchiveInteraction
+	Site         sqlitestore.ArchiveSite
+	Users        []sqlitestore.ArchiveUser
+	Identities   []sqlitestore.ArchiveIdentity
+	Entries      []sqlitestore.ArchiveEntry
+	Comments     []sqlitestore.ArchiveComment
+	Media        []sqlitestore.ArchiveMedia
 }
 
 // MergeRef is a stable dependency or equivalence reference.
@@ -236,6 +237,12 @@ func ReadPortableAuthority(ctx context.Context, database archiveSnapshotDatabase
 	}
 	if err := snapshot.Media(ctx, func(value sqlitestore.ArchiveMedia) error {
 		authority.Media = append(authority.Media, value)
+		return nil
+	}); err != nil {
+		return PortableAuthority{}, err
+	}
+	if err := snapshot.Interactions(ctx, func(value sqlitestore.ArchiveInteraction) error {
+		authority.Interactions = append(authority.Interactions, value)
 		return nil
 	}); err != nil {
 		return PortableAuthority{}, err
@@ -468,13 +475,14 @@ func normalizeAuthority(authority PortableAuthority) any {
 		mediaValues[index].StoragePath = ""
 	}
 	return struct {
-		Site       sqlitestore.ArchiveSite       `json:"site"`
-		Users      []sqlitestore.ArchiveUser     `json:"users"`
-		Identities []sqlitestore.ArchiveIdentity `json:"identities"`
-		Entries    []sqlitestore.ArchiveEntry    `json:"entries"`
-		Comments   []sqlitestore.ArchiveComment  `json:"comments"`
-		Media      []sqlitestore.ArchiveMedia    `json:"media"`
-	}{authority.Site, sortedUsers(authority.Users), sortedIdentities(authority.Identities), entries, comments, mediaValues}
+		Site         sqlitestore.ArchiveSite          `json:"site"`
+		Users        []sqlitestore.ArchiveUser        `json:"users"`
+		Identities   []sqlitestore.ArchiveIdentity    `json:"identities"`
+		Entries      []sqlitestore.ArchiveEntry       `json:"entries"`
+		Comments     []sqlitestore.ArchiveComment     `json:"comments"`
+		Media        []sqlitestore.ArchiveMedia       `json:"media"`
+		Interactions []sqlitestore.ArchiveInteraction `json:"interactions"`
+	}{authority.Site, sortedUsers(authority.Users), sortedIdentities(authority.Identities), entries, comments, mediaValues, sortedInteractions(authority.Interactions)}
 }
 
 func compareSiteFields(local, incoming sqlitestore.ArchiveSite, localSHA, incomingSHA map[string]string) []MergeSiteField {

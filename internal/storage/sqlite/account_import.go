@@ -37,6 +37,7 @@ func (db *Database) AppendAccountSnapshot(ctx context.Context, source *ArchiveSn
 	entries := map[string]string{}
 	comments := map[string]string{}
 	drafts := map[string]string{}
+	notifications := map[string]string{}
 	fresh := map[string]bool{}
 	allocate := func(kind, table, id string, mapping map[string]string) error {
 		// Preserve portable identifiers when possible. Collisions use stable,
@@ -55,6 +56,9 @@ func (db *Database) AppendAccountSnapshot(ctx context.Context, source *ArchiveSn
 		if kind == "comment" {
 			query = `SELECT e.author_user_id FROM comments c JOIN entries e ON e.id=c.entry_id WHERE c.id=?`
 		}
+		if kind == "notification" {
+			query = `SELECT recipient_id FROM notifications WHERE id=?`
+		}
 		lookup := func(local string) (string, bool, error) {
 			var author string
 			err := writer.tx.QueryRowContext(ctx, query, local).Scan(&author)
@@ -72,6 +76,11 @@ func (db *Database) AppendAccountSnapshot(ctx context.Context, source *ArchiveSn
 				return domain.NewError(domain.CodeUnauthorized, "personal import identifier belongs to another account", nil)
 			}
 			mapping[id] = candidate
+			return nil
+		}
+		if kind == "notification" && sourceAccount != target {
+			mapping[id] = candidate
+			fresh[kind+":"+id] = true
 			return nil
 		}
 		author, exists, err = lookup(id)
@@ -98,6 +107,17 @@ func (db *Database) AppendAccountSnapshot(ctx context.Context, source *ArchiveSn
 		return result, err
 	}
 	if err = source.ArticleDrafts(ctx, func(v ArchiveArticleDraft) error { return allocate("draft", "article_drafts", v.ID, drafts) }); err != nil {
+		return result, err
+	}
+	if err = source.Interactions(ctx, func(v ArchiveInteraction) error {
+		if v.Notification == nil {
+			return nil
+		}
+		if v.Notification.RecipientID != sourceAccount {
+			return domain.NewError(domain.CodeUnauthorized, "personal notification belongs to another account", nil)
+		}
+		return allocate("notification", "notifications", v.Notification.ID.String(), notifications)
+	}); err != nil {
 		return result, err
 	}
 	if err = source.Media(ctx, func(v ArchiveMedia) error {
@@ -264,6 +284,12 @@ func (db *Database) AppendAccountSnapshot(ctx context.Context, source *ArchiveSn
 	if _, err = writer.tx.ExecContext(ctx, `UPDATE search_index_state SET revision=revision+1 WHERE id=1`); err != nil {
 		return result, err
 	}
+	added, skipped, err := writer.appendPersonalInteractions(ctx, source, personalInteractionTargets{sourceAccount: sourceAccount, account: target, entries: entries, comments: comments, notifications: notifications, fresh: fresh})
+	if err != nil {
+		return result, err
+	}
+	result.Added.Interactions = added
+	result.Skipped.Interactions = skipped
 	if err = writer.commit(ctx, result.Added, true); err != nil {
 		return result, err
 	}

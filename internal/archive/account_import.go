@@ -236,14 +236,14 @@ func prepareAccountRestore(ctx context.Context, source, destination, appVersion 
 	if _, err = decodePortableJSONObject(raw, &personal, []string{"format", "format_version", "account_id", "counts", "created_at"}); err != nil {
 		return document, personal, err
 	}
-	if personal.FormatVersion != 3 {
-		return document, personal, domain.NewError(domain.CodeExportVersionUnsupported, "only personal export format 3 supports restore; export again with a current version", nil)
+	if personal.FormatVersion < 3 || personal.FormatVersion > AccountFormatVersion {
+		return document, personal, domain.NewError(domain.CodeExportVersionUnsupported, "personal restore requires format 3 or 4; export again with a current version", nil)
 	}
 	if domain.ValidateUserID(personal.SourceInstanceID) != nil || domain.ValidateUserID(personal.AccountID) != nil {
 		return document, personal, importInvalid("personal archive source identity is invalid", nil)
 	}
 	c := personal.Counts
-	if c.Entries < 0 || c.Entries > defaultMaxEntries || c.Comments < 0 || c.Comments > defaultMaxComments || c.Media < 0 || c.Media > defaultMaxMedia || c.ArticleDrafts < 0 || c.ArticleDrafts > defaultMaxArticleDrafts || c.Articles < 0 || c.Articles > c.Entries {
+	if c.Entries < 0 || c.Entries > defaultMaxEntries || c.Comments < 0 || c.Comments > defaultMaxComments || c.Media < 0 || c.Media > defaultMaxMedia || c.ArticleDrafts < 0 || c.ArticleDrafts > defaultMaxArticleDrafts || c.Articles < 0 || c.Articles > c.Entries || c.Interactions < 0 || c.Interactions > maxPortableInteractions {
 		return document, personal, importInvalid("personal archive record counts exceed their budgets", nil)
 	}
 	raw, err = readSmallZIPMember(ctx, files["data/account.json"], 1<<20)
@@ -342,6 +342,11 @@ func prepareAccountRestore(ctx context.Context, source, destination, appVersion 
 		if err = protocol.finishMember(member); err != nil {
 			return document, personal, err
 		}
+		if file.Name == "data/media.jsonl" && files[interactionMember] == nil {
+			if _, err := protocol.jsonLines(interactionMember, func(func(any) error) error { return nil }); err != nil {
+				return document, personal, err
+			}
+		}
 	}
 	c.Users = 1
 	c.Identities = 0
@@ -365,5 +370,5 @@ func prepareAccountRestore(ctx context.Context, source, destination, appVersion 
 }
 
 func personalCounts(c sqlitestore.ArchiveCounts) ImportCounts {
-	return ImportCounts{Entries: c.Entries, Comments: c.Comments, Media: c.Media, Users: c.Users, Identities: c.Identities, Articles: c.Articles, ArticleDrafts: c.ArticleDrafts}
+	return ImportCounts{Entries: c.Entries, Comments: c.Comments, Media: c.Media, Users: c.Users, Identities: c.Identities, Articles: c.Articles, ArticleDrafts: c.ArticleDrafts, Interactions: c.Interactions}
 }
