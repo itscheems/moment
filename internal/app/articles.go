@@ -523,6 +523,9 @@ func (service *PostService) insertArticleEntry(ctx context.Context, store PostSt
 	if err := store.InsertArticle(ctx, id, article); err != nil {
 		return "", err
 	}
+	if err := syncPostActivity(ctx, store, entry, domain.ArticleMentions(article.Body), nil, "post.published", now); err != nil {
+		return "", err
+	}
 	return id, nil
 }
 
@@ -540,6 +543,17 @@ func (service *PostService) replaceArticleEntry(ctx context.Context, store PostS
 	if err := requireContentAuthor(ctx, store, entry.AuthorUserID); err != nil {
 		return err
 	}
+	previous, hadPrevious, err := store.ArticleByEntryID(ctx, entryID)
+	if err != nil {
+		return err
+	}
+	if !hadPrevious {
+		return storedEntryError(entryID)
+	}
+	previousMentions := domain.ArticleMentions(previous.Body)
+	if entry.PublicationState == "unpublished" {
+		previousMentions = nil
+	}
 	if err := store.ReplaceArticle(ctx, entryID, article); err != nil {
 		return err
 	}
@@ -556,6 +570,7 @@ func (service *PostService) replaceArticleEntry(ctx context.Context, store PostS
 			return err
 		}
 	}
+	entry.PublicationState = "published"
 	changed, err := store.UpdateArticleEntry(ctx, entry, contentText)
 	if err != nil {
 		return err
@@ -563,7 +578,7 @@ func (service *PostService) replaceArticleEntry(ctx context.Context, store PostS
 	if !changed {
 		return postNotFound(entryID)
 	}
-	return nil
+	return syncPostActivity(ctx, store, entry, domain.ArticleMentions(article.Body), previousMentions, "post.published", updated)
 }
 
 // loadArticlePost reads a published article back as the post a reader sees.

@@ -112,10 +112,11 @@ func (repository *CommentRepository) write(ctx context.Context, operation func(a
 type commentStore struct {
 	queries Queries
 	mediaReferenceStore
+	activityStore
 }
 
 func newCommentStore(queries Queries) commentStore {
-	return commentStore{queries: queries, mediaReferenceStore: newMediaReferenceStore(queries)}
+	return commentStore{queries: queries, mediaReferenceStore: newMediaReferenceStore(queries), activityStore: activityStore{queries: queries}}
 }
 
 var _ app.CommentStore = commentStore{}

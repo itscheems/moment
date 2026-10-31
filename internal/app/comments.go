@@ -34,6 +34,7 @@ func commentCreateIdempotencyScope(authorID string) string {
 // CommentStore is the complete comment authority available within one
 // repository transaction.
 type CommentStore interface {
+	ActivityStore
 	MediaReferenceReconciler
 	// EntryVisibility reports whether the post exists and who may read it.
 	// The caller decides what to do with that through a Viewer; the store
@@ -192,15 +193,16 @@ type CommentPin struct {
 // CreateCommentInput contains application identity, never network identity.
 // Adapters cannot use it to persist an IP address.
 type CreateCommentInput struct {
-	EntryID          domain.ID
-	ParentID         *domain.ID
-	ReplyToCommentID *domain.ID
-	AuthorName       string
-	Author           domain.User
-	ContentMD        string
-	Media            []domain.EntryMediaUsage
-	Location         *domain.Location
-	IdempotencyKey   string
+	ExcludedReplyUserIDs []string
+	EntryID              domain.ID
+	ParentID             *domain.ID
+	ReplyToCommentID     *domain.ID
+	AuthorName           string
+	Author               domain.User
+	ContentMD            string
+	Media                []domain.EntryMediaUsage
+	Location             *domain.Location
+	IdempotencyKey       string
 }
 
 // CreateCommentResult reports a safe idempotent retry.
@@ -322,6 +324,10 @@ func (service *CommentService) create(ctx context.Context, input CreateCommentIn
 		if err := input.Location.Validate(); err != nil {
 			return CreateCommentResult{}, err
 		}
+	}
+	input.ExcludedReplyUserIDs, err = normalizeReplyExclusions(input.ExcludedReplyUserIDs)
+	if err != nil {
+		return CreateCommentResult{}, err
 	}
 	requestHash := hashCreateComment(input)
 	idempotencyScope := commentCreateIdempotencyScope(input.Author.ID)
@@ -462,7 +468,7 @@ func (service *CommentService) create(ctx context.Context, input CreateCommentIn
 			return authorErr
 		}
 		result.Comment.ReplyTo = replyTargets[comment.ID]
-		return nil
+		return createCommentActivity(ctx, store, comment, input.ExcludedReplyUserIDs)
 	})
 	if err != nil {
 		return CreateCommentResult{}, normalizeCommentRepositoryError(err)
@@ -1148,6 +1154,12 @@ func hashCreateComment(input CreateCommentInput) string {
 		binary.BigEndian.PutUint64(length[:], uint64(len(value)))
 		_, _ = digest.Write(length[:])
 		_, _ = digest.Write([]byte(value))
+	}
+	if len(input.ExcludedReplyUserIDs) > 0 {
+		_, _ = digest.Write([]byte("\x00reply-exclusions-v1\x00"))
+		for _, id := range input.ExcludedReplyUserIDs {
+			_, _ = digest.Write([]byte(id))
+		}
 	}
 	return hex.EncodeToString(digest.Sum(nil))
 }

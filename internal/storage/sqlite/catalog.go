@@ -13,6 +13,17 @@ type expectedCatalogObject struct {
 }
 
 var requiredCatalogObjects = []expectedCatalogObject{
+	{name: "post_likes", kind: "table", table: "post_likes"},
+	{name: "post_likes_user", kind: "index", table: "post_likes"},
+	{name: "comment_likes", kind: "table", table: "comment_likes"},
+	{name: "comment_likes_user", kind: "index", table: "comment_likes"},
+	{name: "entry_mentions", kind: "table", table: "entry_mentions"},
+	{name: "comment_mentions", kind: "table", table: "comment_mentions"},
+	{name: "comment_reply_recipients", kind: "table", table: "comment_reply_recipients"},
+	{name: "notifications", kind: "table", table: "notifications"},
+	{name: "notifications_recipient_sequence", kind: "index", table: "notifications"},
+	{name: "notifications_subject", kind: "index", table: "notifications"},
+	{name: "notification_seen", kind: "table", table: "notification_seen"},
 	{name: "site_pin_insert_guard", kind: "trigger", table: "site_settings"},
 	{name: "site_pin_update_guard", kind: "trigger", table: "site_settings"},
 	{name: "entries_clear_unavailable_pin", kind: "trigger", table: "entries"},

@@ -33,6 +33,7 @@ type QuoteReadStore interface {
 // PostStore is the query and command surface available inside one repository
 // transaction. Implementations must not retain it after the callback returns.
 type PostStore interface {
+	ActivityStore
 	QuoteReadStore
 	EntryMediaReferenceStore
 	InsertEntry(context.Context, domain.Entry, string) error
@@ -527,6 +528,9 @@ func (service *PostService) Create(ctx context.Context, input CreatePostInput) (
 		}
 		result.Post.Quoted, err = loadEntryQuote(ctx, store, ViewerFromContext(ctx), entry.ID)
 		if err != nil {
+			return err
+		}
+		if err := syncPostActivity(ctx, store, entry, domain.MarkdownMentions(input.ContentMD), nil, "post.created", now); err != nil {
 			return err
 		}
 		return attachContentAuthor(ctx, store, &result.Post)
@@ -1126,6 +1130,7 @@ func (service *PostService) Update(ctx context.Context, input UpdatePostInput) (
 		mediaChanged := (len(currentMedia) != 0 || len(updatedMedia) != 0) && !reflect.DeepEqual(currentMedia, updatedMedia)
 		cardsChanged := (len(currentLinkCards) != 0 || len(nextLinkCards) != 0) && !reflect.DeepEqual(LinkCardsOf(currentLinkCards), nextLinkCards)
 		previousContent, _ := entry.Markdown()
+		wasPublic := entry.Visibility == domain.VisibilityEveryone && entry.PublicationState != "unpublished"
 		mapChanged := !reflect.DeepEqual(entry.MapCard, nextMap)
 		entry.MapCard = nextMap
 		contentChanged := mapChanged || content != previousContent || mediaChanged || cardsChanged || !reflect.DeepEqual(currentLocation, updatedLocation)
@@ -1180,6 +1185,13 @@ func (service *PostService) Update(ctx context.Context, input UpdatePostInput) (
 		authors, authorErr := readContentAuthors(ctx, store, []domain.Entry{entry})
 		if authorErr != nil {
 			return authorErr
+		}
+		previousMentions := domain.MarkdownMentions(previousContent)
+		if !wasPublic && entry.Visibility == domain.VisibilityEveryone {
+			previousMentions = nil
+		}
+		if err := syncPostActivity(ctx, store, entry, domain.MarkdownMentions(content), previousMentions, "post.updated", now); err != nil {
+			return err
 		}
 		resultAuthor = contentAuthor(authors, entry.AuthorUserID)
 		updated = entry

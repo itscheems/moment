@@ -128,10 +128,11 @@ func (repository *PostRepository) write(ctx context.Context, operation func(app.
 type postStore struct {
 	queries Queries
 	mediaReferenceStore
+	activityStore
 }
 
 func newPostStore(queries Queries) postStore {
-	return postStore{queries: queries, mediaReferenceStore: newMediaReferenceStore(queries)}
+	return postStore{queries: queries, mediaReferenceStore: newMediaReferenceStore(queries), activityStore: activityStore{queries: queries}}
 }
 
 var _ app.PostStore = postStore{}
