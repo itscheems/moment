@@ -481,3 +481,43 @@ func (service *InteractionService) SeeNotifications(ctx context.Context, scope, 
 	}
 	return service.NotificationState(ctx)
 }
+
+// LikeStatuses batches visible relations for a page without exposing hidden targets.
+func (service *InteractionService) LikeStatuses(ctx context.Context, kind string, ids []domain.ID, viewer Viewer) (map[domain.ID]domain.LikeState, error) {
+	if len(ids) == 0 || len(ids) > 100 {
+		return nil, domain.NewError(domain.CodeInvalidArgument, "like status requires between 1 and 100 targets", nil)
+	}
+	refs := make([]domain.ContentRef, 0, len(ids))
+	for _, id := range ids {
+		ref := domain.ContentRef{Kind: kind, ID: id}
+		if err := ref.Validate(); err != nil {
+			return nil, err
+		}
+		refs = append(refs, ref)
+	}
+	result := make(map[domain.ID]domain.LikeState)
+	err := service.transactions.Read(ctx, func(store InteractionStore) error {
+		sources, err := store.ActivitySources(ctx, refs)
+		if err != nil {
+			return err
+		}
+		visible := make([]domain.ID, 0, len(ids))
+		for _, ref := range refs {
+			if source, ok := sources[ref]; ok && viewer.CanReadEntry(source.Entry) {
+				visible = append(visible, ref.ID)
+			}
+		}
+		if len(visible) == 0 {
+			return nil
+		}
+		states, err := store.LikeStates(ctx, kind, visible, viewer.UserID())
+		if err != nil {
+			return err
+		}
+		for _, id := range visible {
+			result[id] = states[id]
+		}
+		return nil
+	})
+	return result, err
+}

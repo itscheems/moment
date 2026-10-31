@@ -19,11 +19,12 @@ type Switchboard struct {
 	handler     http.Handler
 	active      int
 	maintenance bool
+	streams     map[*http.Request]context.CancelFunc
 }
 
 // NewSwitchboard starts without a live bundle and therefore in maintenance.
 func NewSwitchboard() *Switchboard {
-	return &Switchboard{changed: make(chan struct{}), maintenance: true}
+	return &Switchboard{changed: make(chan struct{}), maintenance: true, streams: make(map[*http.Request]context.CancelFunc)}
 }
 
 // Swap atomically selects a fully built handler.
@@ -32,6 +33,9 @@ func (board *Switchboard) Swap(handler http.Handler) error {
 		return errors.New("live HTTP handler is required")
 	}
 	board.mu.Lock()
+	for _, cancel := range board.streams {
+		cancel()
+	}
 	board.handler = handler
 	board.signalLocked()
 	board.mu.Unlock()
@@ -47,6 +51,9 @@ func (board *Switchboard) BeginMaintenance(ctx context.Context) error {
 	board.mu.Lock()
 	previous := board.maintenance
 	board.maintenance = true
+	for _, cancel := range board.streams {
+		cancel()
+	}
 	board.signalLocked()
 	for board.active > 0 {
 		changed := board.changed
@@ -109,12 +116,21 @@ func (board *Switchboard) ServeHTTP(writer http.ResponseWriter, request *http.Re
 	}
 	if !bypass {
 		board.active++
+		if request.URL.Path == "/api/v1/account/notifications/stream" {
+			ctx, cancel := context.WithCancel(request.Context())
+			request = request.WithContext(ctx)
+			board.streams[request] = cancel
+		}
 	}
 	board.mu.Unlock()
 	if !bypass {
 		defer func() {
 			board.mu.Lock()
 			board.active--
+			if cancel, ok := board.streams[request]; ok {
+				cancel()
+				delete(board.streams, request)
+			}
 			board.signalLocked()
 			board.mu.Unlock()
 		}()

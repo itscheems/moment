@@ -69,6 +69,7 @@ func registerComments(application *Application) {
 		Example: "moment --as writer comment reply 01ARZ3NDEKTSV4RRFFQ69G5FAV 01ARZ3NDEKTSV4RRFFQ69G5FAW --data-dir ./moment-data --content 'thanks' --json",
 		Args:    cobra.ExactArgs(2), Capability: CapabilityBoth,
 		Flags: func(flags *pflag.FlagSet) {
+			flags.StringSlice("exclude-reply-user", nil, "optional reply participant account IDs to exclude (repeatable)")
 			flags.String("content", "", "authoritative UTF-8 Markdown content")
 			flags.String("reply-to", "", "ULID of the comment being answered; must be the parent or another reply under it")
 			flags.String("idempotency-key", "", "retry key forwarded unchanged to the application service")
@@ -124,6 +125,7 @@ func commentCreateSpec(verb, short, long, example string, run Handler) LeafSpec 
 		Errors:  "Content validation, disabled comments, missing posts, authentication, and idempotency conflicts use stable codes.",
 		Example: example, Args: cobra.ExactArgs(1), Capability: CapabilityBoth,
 		Flags: func(flags *pflag.FlagSet) {
+			flags.StringSlice("exclude-reply-user", nil, "optional reply participant account IDs to exclude (repeatable)")
 			flags.String("content", "", "authoritative UTF-8 Markdown content")
 			flags.String("idempotency-key", "", "retry key forwarded unchanged to the application service")
 			registerPostMediaFlags(flags)
@@ -320,6 +322,15 @@ func createCommentAsActor(ctx context.Context, invocation Invocation, input Comm
 	if err != nil {
 		return Result{}, commentCLIError(err)
 	}
+	exclusions, err := input.StringSlice("exclude-reply-user")
+	if err != nil {
+		return Result{}, err
+	}
+	for _, id := range exclusions {
+		if err := domain.ValidateUserID(id); err != nil {
+			return Result{}, commentCLIError(err)
+		}
+	}
 	var replyToID *domain.ID
 	if input.Changed("reply-to") {
 		raw, flagErr := input.String("reply-to")
@@ -373,7 +384,7 @@ func createCommentAsActor(ctx context.Context, invocation Invocation, input Comm
 		if err != nil {
 			return Result{}, err
 		}
-		result, err := direct.service.Create(ctx, app.CreateCommentInput{EntryID: postID, ParentID: parentID, ReplyToCommentID: replyToID, ContentMD: content, Media: usages, Location: locationInput.Location, IdempotencyKey: idempotencyKey, Author: author})
+		result, err := direct.service.Create(ctx, app.CreateCommentInput{EntryID: postID, ParentID: parentID, ReplyToCommentID: replyToID, ExcludedReplyUserIDs: exclusions, ContentMD: content, Media: usages, Location: locationInput.Location, IdempotencyKey: idempotencyKey, Author: author})
 		if err != nil {
 			return Result{}, commentCLIError(err)
 		}
@@ -387,6 +398,9 @@ func createCommentAsActor(ctx context.Context, invocation Invocation, input Comm
 			return Result{}, err
 		}
 		payload := map[string]any{"content_md": content, "media": postMediaDTOs(usages)}
+		if len(exclusions) > 0 {
+			payload["exclude_reply_user_ids"] = exclusions
+		}
 		if locationInput.Location != nil {
 			payload["location"] = locationdto.FromDomain(*locationInput.Location)
 		}

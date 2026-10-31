@@ -96,7 +96,12 @@ func newCommentHTTPFixture(t *testing.T, log LogFunc) commentHTTPFixture {
 	}
 	// Federated sign-in is wired in so a test can mint a real member account
 	// against this same engine; the provider is substituted, not reached.
-	engine, err := New(Config{Assets: testAssets(), SessionSigner: manager, Accounts: commentAccounts, SiteSettings: site, Posts: posts, Comments: comments, Media: mediaStore, OAuthProviders: oauth.NewRegistry(newStubProvider()), Log: log, RequestID: func() string { return "req_comments" }})
+	interactionRepository, _ := sqlitestore.NewInteractionRepository(database, runtimeState.Locks, runtimeState.Current.ID)
+	interactions, err := app.NewInteractionService(interactionRepository, posts, comments)
+	if err != nil {
+		t.Fatal(err)
+	}
+	engine, err := New(Config{Assets: testAssets(), SessionSigner: manager, Accounts: commentAccounts, SiteSettings: site, Posts: posts, Comments: comments, Interactions: interactions, Media: mediaStore, OAuthProviders: oauth.NewRegistry(newStubProvider()), Log: log, RequestID: func() string { return "req_comments" }})
 	if err != nil {
 		t.Fatal(err)
 	}

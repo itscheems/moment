@@ -1087,6 +1087,78 @@
       "parity_strategy": "byte_identical_data"
     },
     {
+      "command": "comment like",
+      "direct": {
+        "availability": "supported",
+        "auth": "local_account",
+        "locks": [
+          "import:shared",
+          "maintenance:shared"
+        ]
+      },
+      "api": {
+        "availability": "supported",
+        "auth": "account_token",
+        "locks": [
+          "server_managed"
+        ]
+      },
+      "destructive": {
+        "requires_yes": false,
+        "supports_dry_run": false
+      },
+      "output_schema": "like_state_v1",
+      "parity_strategy": "canonical_application_result",
+      "expected_exits": [
+        0,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10
+      ]
+    },
+    {
+      "command": "comment like-status",
+      "direct": {
+        "availability": "supported",
+        "auth": "local_account",
+        "locks": [
+          "import:shared",
+          "maintenance:shared"
+        ]
+      },
+      "api": {
+        "availability": "supported",
+        "auth": "account_token",
+        "locks": [
+          "server_managed"
+        ]
+      },
+      "destructive": {
+        "requires_yes": false,
+        "supports_dry_run": false
+      },
+      "output_schema": "like_state_v1",
+      "parity_strategy": "canonical_application_result",
+      "expected_exits": [
+        0,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10
+      ]
+    },
+    {
       "command": "comment list",
       "direct": {
         "availability": "supported",
@@ -1225,6 +1297,78 @@
         10
       ],
       "parity_strategy": "deterministic_fixture_or_idempotent_replay"
+    },
+    {
+      "command": "comment reply-context",
+      "direct": {
+        "availability": "supported",
+        "auth": "local_account",
+        "locks": [
+          "import:shared",
+          "maintenance:shared"
+        ]
+      },
+      "api": {
+        "availability": "supported",
+        "auth": "account_token",
+        "locks": [
+          "server_managed"
+        ]
+      },
+      "destructive": {
+        "requires_yes": false,
+        "supports_dry_run": false
+      },
+      "output_schema": "reply_context_v1",
+      "parity_strategy": "canonical_application_result",
+      "expected_exits": [
+        0,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10
+      ]
+    },
+    {
+      "command": "comment unlike",
+      "direct": {
+        "availability": "supported",
+        "auth": "local_account",
+        "locks": [
+          "import:shared",
+          "maintenance:shared"
+        ]
+      },
+      "api": {
+        "availability": "supported",
+        "auth": "account_token",
+        "locks": [
+          "server_managed"
+        ]
+      },
+      "destructive": {
+        "requires_yes": false,
+        "supports_dry_run": false
+      },
+      "output_schema": "like_state_v1",
+      "parity_strategy": "canonical_application_result",
+      "expected_exits": [
+        0,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10
+      ]
     },
     {
       "command": "comment unpin",
@@ -1781,6 +1925,150 @@
       "parity_strategy": "api_mode_unsupported"
     },
     {
+      "command": "notification get",
+      "direct": {
+        "availability": "supported",
+        "auth": "local_account",
+        "locks": [
+          "import:shared",
+          "maintenance:shared"
+        ]
+      },
+      "api": {
+        "availability": "supported",
+        "auth": "account_token",
+        "locks": [
+          "server_managed"
+        ]
+      },
+      "destructive": {
+        "requires_yes": false,
+        "supports_dry_run": false
+      },
+      "output_schema": "notification_get_v1",
+      "parity_strategy": "canonical_application_result",
+      "expected_exits": [
+        0,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10
+      ]
+    },
+    {
+      "command": "notification list",
+      "direct": {
+        "availability": "supported",
+        "auth": "local_account",
+        "locks": [
+          "import:shared",
+          "maintenance:shared"
+        ]
+      },
+      "api": {
+        "availability": "supported",
+        "auth": "account_token",
+        "locks": [
+          "server_managed"
+        ]
+      },
+      "destructive": {
+        "requires_yes": false,
+        "supports_dry_run": false
+      },
+      "output_schema": "notification_list_v1",
+      "parity_strategy": "canonical_application_result",
+      "expected_exits": [
+        0,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10
+      ]
+    },
+    {
+      "command": "notification seen",
+      "direct": {
+        "availability": "supported",
+        "auth": "local_account",
+        "locks": [
+          "import:shared",
+          "maintenance:shared"
+        ]
+      },
+      "api": {
+        "availability": "supported",
+        "auth": "account_token",
+        "locks": [
+          "server_managed"
+        ]
+      },
+      "destructive": {
+        "requires_yes": false,
+        "supports_dry_run": false
+      },
+      "output_schema": "notification_seen_v1",
+      "parity_strategy": "canonical_application_result",
+      "expected_exits": [
+        0,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10
+      ]
+    },
+    {
+      "command": "notification state",
+      "direct": {
+        "availability": "supported",
+        "auth": "local_account",
+        "locks": [
+          "import:shared",
+          "maintenance:shared"
+        ]
+      },
+      "api": {
+        "availability": "supported",
+        "auth": "account_token",
+        "locks": [
+          "server_managed"
+        ]
+      },
+      "destructive": {
+        "requires_yes": false,
+        "supports_dry_run": false
+      },
+      "output_schema": "notification_state_v1",
+      "parity_strategy": "canonical_application_result",
+      "expected_exits": [
+        0,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10
+      ]
+    },
+    {
       "command": "post create",
       "direct": {
         "availability": "supported",
@@ -1886,6 +2174,78 @@
       "parity_strategy": "byte_identical_data_and_error"
     },
     {
+      "command": "post like",
+      "direct": {
+        "availability": "supported",
+        "auth": "local_account",
+        "locks": [
+          "import:shared",
+          "maintenance:shared"
+        ]
+      },
+      "api": {
+        "availability": "supported",
+        "auth": "account_token",
+        "locks": [
+          "server_managed"
+        ]
+      },
+      "destructive": {
+        "requires_yes": false,
+        "supports_dry_run": false
+      },
+      "output_schema": "like_state_v1",
+      "parity_strategy": "canonical_application_result",
+      "expected_exits": [
+        0,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10
+      ]
+    },
+    {
+      "command": "post like-status",
+      "direct": {
+        "availability": "supported",
+        "auth": "local_account",
+        "locks": [
+          "import:shared",
+          "maintenance:shared"
+        ]
+      },
+      "api": {
+        "availability": "supported",
+        "auth": "account_token",
+        "locks": [
+          "server_managed"
+        ]
+      },
+      "destructive": {
+        "requires_yes": false,
+        "supports_dry_run": false
+      },
+      "output_schema": "like_state_v1",
+      "parity_strategy": "canonical_application_result",
+      "expected_exits": [
+        0,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10
+      ]
+    },
+    {
       "command": "post list",
       "direct": {
         "availability": "supported",
@@ -1954,6 +2314,42 @@
       "parity_strategy": "byte_identical_data_and_effect"
     },
     {
+      "command": "post reply-context",
+      "direct": {
+        "availability": "supported",
+        "auth": "local_account",
+        "locks": [
+          "import:shared",
+          "maintenance:shared"
+        ]
+      },
+      "api": {
+        "availability": "supported",
+        "auth": "account_token",
+        "locks": [
+          "server_managed"
+        ]
+      },
+      "destructive": {
+        "requires_yes": false,
+        "supports_dry_run": false
+      },
+      "output_schema": "reply_context_v1",
+      "parity_strategy": "canonical_application_result",
+      "expected_exits": [
+        0,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10
+      ]
+    },
+    {
       "command": "post repost",
       "direct": {
         "availability": "supported",
@@ -1987,6 +2383,42 @@
         10
       ],
       "parity_strategy": "byte_identical_data_and_effect"
+    },
+    {
+      "command": "post unlike",
+      "direct": {
+        "availability": "supported",
+        "auth": "local_account",
+        "locks": [
+          "import:shared",
+          "maintenance:shared"
+        ]
+      },
+      "api": {
+        "availability": "supported",
+        "auth": "account_token",
+        "locks": [
+          "server_managed"
+        ]
+      },
+      "destructive": {
+        "requires_yes": false,
+        "supports_dry_run": false
+      },
+      "output_schema": "like_state_v1",
+      "parity_strategy": "canonical_application_result",
+      "expected_exits": [
+        0,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10
+      ]
     },
     {
       "command": "post unpin",

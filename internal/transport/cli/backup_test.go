@@ -1048,7 +1048,7 @@ func TestDecodeImportInspectionAPIAcceptsServerEncodedCounts(t *testing.T) {
 	now := time.Date(2026, 8, 11, 1, 30, 0, 0, time.UTC)
 	envelope := validImportInspectionAPIEnvelope(11, now.Add(importInspectionTokenTTL))
 	data := envelope["data"].(map[string]any)
-	incoming, err := json.Marshal(archive.ImportCounts{Entries: 1, Comments: 2, Media: 3, Users: 4, Identities: 5})
+	incoming, err := json.Marshal(archive.ImportCounts{Entries: 1, Comments: 2, Media: 3, Users: 4, Identities: 5, Interactions: 7})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1066,7 +1066,7 @@ func TestDecodeImportInspectionAPIAcceptsServerEncodedCounts(t *testing.T) {
 	if err != nil {
 		t.Fatalf("server-encoded counts were rejected: %v", err)
 	}
-	if inspection.Counts != (archive.ImportCounts{Entries: 1, Comments: 2, Media: 3, Users: 4, Identities: 5}) ||
+	if inspection.Counts != (archive.ImportCounts{Entries: 1, Comments: 2, Media: 3, Users: 4, Identities: 5, Interactions: 7}) ||
 		inspection.Replacement.Counts != (archive.ImportCounts{Users: 1}) {
 		t.Fatalf("decoded counts = %#v / %#v", inspection.Counts, inspection.Replacement.Counts)
 	}

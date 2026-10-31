@@ -656,7 +656,7 @@ func decodeImportPlanAPI(body []byte, expectedArchiveBytes int64) (archive.Impor
 	if err != nil {
 		return archive.ImportPlan{}, nil, err
 	}
-	if _, err := decodeExactJSONObject(data["counts"], importCountsFields...); err != nil {
+	if _, err := decodeJSONObjectWithOptional(data["counts"], importCountsFields, []string{"interactions"}); err != nil {
 		return archive.ImportPlan{}, nil, err
 	}
 	timeRange, err := decodeImportTimeRangeObject(data["time_range"])
@@ -673,7 +673,7 @@ func decodeImportPlanAPI(body []byte, expectedArchiveBytes int64) (archive.Impor
 	if err != nil {
 		return archive.ImportPlan{}, nil, err
 	}
-	if _, err := decodeExactJSONObject(replacement["counts"], importCountsFields...); err != nil {
+	if _, err := decodeJSONObjectWithOptional(replacement["counts"], importCountsFields, []string{"interactions"}); err != nil {
 		return archive.ImportPlan{}, nil, err
 	}
 	metadata, err := decodeExactJSONObject(envelope["meta"], "request_id")
@@ -928,7 +928,7 @@ func decodeImportInspectionAPI(body []byte, expectedArchiveBytes int64, observed
 	if err != nil {
 		return archive.Inspection{}, nil, err
 	}
-	if _, err := decodeExactJSONObject(data["counts"], importCountsFields...); err != nil {
+	if _, err := decodeJSONObjectWithOptional(data["counts"], importCountsFields, []string{"interactions"}); err != nil {
 		return archive.Inspection{}, nil, err
 	}
 	timeRange, err := decodeImportTimeRangeObject(data["time_range"])
@@ -945,7 +945,7 @@ func decodeImportInspectionAPI(body []byte, expectedArchiveBytes int64, observed
 	if err != nil {
 		return archive.Inspection{}, nil, err
 	}
-	if _, err := decodeExactJSONObject(replacement["counts"], importCountsFields...); err != nil {
+	if _, err := decodeJSONObjectWithOptional(replacement["counts"], importCountsFields, []string{"interactions"}); err != nil {
 		return archive.Inspection{}, nil, err
 	}
 	metadata, err := decodeExactJSONObject(envelope["meta"], "request_id")
@@ -1149,7 +1149,7 @@ func validImportGenerationID(value string) bool {
 }
 
 func validImportCounts(value archive.ImportCounts, enforcePortableLimits bool) bool {
-	if value.Entries < 0 || value.Comments < 0 || value.Media < 0 || value.Users < 0 || value.Identities < 0 {
+	if value.Interactions < 0 || value.Entries < 0 || value.Comments < 0 || value.Media < 0 || value.Users < 0 || value.Identities < 0 {
 		return false
 	}
 	// Every authority has an account, so an incoming archive that claims no
@@ -1158,7 +1158,7 @@ func validImportCounts(value archive.ImportCounts, enforcePortableLimits bool) b
 		return false
 	}
 	return !enforcePortableLimits || value.Entries <= 100_000 && value.Comments <= 500_000 && value.Media <= 100_000 &&
-		value.Users <= 100_000 && value.Identities <= 500_000
+		value.Users <= 100_000 && value.Identities <= 500_000 && value.Interactions <= 2_000_000
 }
 
 func decodeCanonicalUTCTime(raw json.RawMessage) (time.Time, error) {
