@@ -4,16 +4,84 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"testing/iotest"
 	"time"
 
 	"github.com/moment/moment/internal/app"
 	"github.com/moment/moment/internal/domain"
 	sqlitestore "github.com/moment/moment/internal/storage/sqlite"
 )
+
+func TestInteractionHTTPStreamedEmptyLikeRequests(t *testing.T) {
+	f := newCommentHTTPFixture(t, nil)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.ContentLength != -1 || len(r.TransferEncoding) != 1 || r.TransferEncoding[0] != "chunked" {
+			t.Errorf("expected unknown-length chunked request, got length=%d encoding=%v", r.ContentLength, r.TransferEncoding)
+		}
+		f.engine.ServeHTTP(w, r)
+	}))
+	defer server.Close()
+	path := "/api/v1/posts/" + f.postID.String() + "/like"
+	for _, tc := range []struct {
+		name, method, query, body string
+		status                    int
+		liked                     bool
+	}{
+		{"like", "PUT", "", "", 200, true},
+		{"unlike", "DELETE", "", "", 200, false},
+		{"whitespace body", "PUT", "", " ", 400, false},
+		{"JSON body", "PUT", "", "{}", 400, false},
+		{"query", "PUT", "?extra=1", "", 400, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			// A streaming body forces real HTTP chunked framing, including at EOF.
+			request, err := http.NewRequest(tc.method, server.URL+path+tc.query, io.NopCloser(strings.NewReader(tc.body)))
+			if err != nil {
+				t.Fatal(err)
+			}
+			request.ContentLength = -1
+			request.TransferEncoding = []string{"chunked"}
+			request.Header.Set("Authorization", "Bearer "+f.token)
+			response, err := server.Client().Do(request)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer func() { _ = response.Body.Close() }()
+			body, err := io.ReadAll(response.Body)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if response.StatusCode != tc.status {
+				t.Fatalf("status=%d want=%d body=%s", response.StatusCode, tc.status, body)
+			}
+			state := decodeDataMap(t, performRequest(f.engine, authenticatedCommentRequest(f, "GET", path, "")))
+			if state["liked_by_me"] != tc.liked {
+				t.Fatalf("like state=%v", state)
+			}
+		})
+	}
+}
+
+func TestInteractionHTTPRejectsUnreadableLikeBody(t *testing.T) {
+	f := newCommentHTTPFixture(t, nil)
+	path := "/api/v1/posts/" + f.postID.String() + "/like"
+	request := authenticatedCommentRequest(f, "PUT", path, "")
+	request.Body = io.NopCloser(iotest.ErrReader(io.ErrUnexpectedEOF))
+	request.ContentLength = -1
+	response := performRequest(f.engine, request)
+	if response.Code != 400 {
+		t.Fatalf("unreadable body: %d %s", response.Code, response.Body.String())
+	}
+	state := decodeDataMap(t, performRequest(f.engine, authenticatedCommentRequest(f, "GET", path, "")))
+	if state["liked_by_me"] != false || state["like_count"] != float64(0) {
+		t.Fatalf("unreadable request changed like state: %v", state)
+	}
+}
 
 func TestInteractionHTTPAccountViewsLatestBodyAndPermissionRedaction(t *testing.T) {
 	f := newCommentHTTPFixture(t, nil)
