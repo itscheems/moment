@@ -28,6 +28,18 @@
 }
 .page {
   min-block-size: calc(100dvh - 53px);
+  --notification-unread-background: rgb(29 155 240 / 10%);
+}
+:global(:root[data-theme="dim"]) .page,
+:global(:root[data-theme="lights-out"]) .page {
+  --notification-unread-background: rgb(29 155 240 / 14%);
+}
+.row[data-unseen] {
+  background: var(--notification-unread-background);
+}
+.content[data-unseen] {
+  --post-background: var(--notification-unread-background);
+  --post-hover-background: var(--notification-unread-background);
 }
 .tabs {
   box-sizing: content-box;
@@ -219,7 +231,7 @@
   fill: currentColor;
 }
 @media (hover: hover) {
-  .row:hover {
+  .row:hover:not([data-unseen]) {
     background: rgb(0 0 0 / 1%);
   }
   .tabs > a:hover {
@@ -244,8 +256,8 @@
 }
 
 @media (hover: hover) {
-  :global([data-theme="dim"]) .row:hover,
-  :global([data-theme="lights-out"]) .row:hover {
+  :global([data-theme="dim"]) .row:hover:not([data-unseen]),
+  :global([data-theme="lights-out"]) .row:hover:not([data-unseen]) {
     background: color-mix(in srgb, var(--text-primary) 1%, transparent);
   }
 }

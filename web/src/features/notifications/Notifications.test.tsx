@@ -300,6 +300,7 @@ it("reads the current source before acknowledging a content notification", async
     link_cards: [],
   };
   let resolveBody!: (value: Response) => void;
+  let deferBody = true;
   const writes: RequestInit[] = [];
   vi.stubGlobal("IntersectionObserver", undefined);
   vi.stubGlobal(
@@ -307,10 +308,12 @@ it("reads the current source before acknowledging a content notification", async
     vi.fn<typeof fetch>((...args) => {
       const url = String(args[0]),
         init = args[1] ?? {};
-      if (url.endsWith("/" + id))
+      if (url.endsWith("/" + id)) {
+        if (!deferBody) return Promise.resolve(json({ ...event, post }));
         return new Promise((resolve) => {
           resolveBody = resolve;
         });
+      }
       if (url.endsWith("/seen")) {
         writes.push(init);
         return Promise.resolve(
@@ -328,7 +331,7 @@ it("reads the current source before acknowledging a content notification", async
       );
     }),
   );
-  render(
+  const view = render(
     <NavigationProvider>
       <NotificationsPage scope="mentions" site={makeSiteIdentity()} />
     </NavigationProvider>,
@@ -341,6 +344,23 @@ it("reads the current source before acknowledging a content notification", async
   expect(JSON.parse(String(writes[0].body)).through_cursor).toBe(
     "body-boundary",
   );
+  expect(
+    view.container.querySelector(`[data-notification-id="${id}"]`),
+  ).toHaveAttribute("data-unseen", "true");
+  // Acknowledging the badge leaves the current view's unread context visible.
+  // Reopening reads the authoritative seen state instead of replaying a flash.
+  view.unmount();
+  event.seen = true;
+  deferBody = false;
+  const reopened = render(
+    <NavigationProvider>
+      <NotificationsPage scope="mentions" site={makeSiteIdentity()} />
+    </NavigationProvider>,
+  );
+  expect(await screen.findByText("Current body")).toBeVisible();
+  expect(
+    reopened.container.querySelector(`[data-notification-id="${id}"]`),
+  ).not.toHaveAttribute("data-unseen");
 });
 
 it("removes cached source content after an authoritative access failure", async () => {

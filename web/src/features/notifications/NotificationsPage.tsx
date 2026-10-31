@@ -219,6 +219,8 @@ function NotificationContent({
   return (
     <div
       ref={target}
+      className={styles.content}
+      data-unseen={!item.seen || undefined}
       data-notification-id={item.id}
       data-event-type={item.eventType}
     >

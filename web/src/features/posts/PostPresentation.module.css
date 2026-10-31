@@ -8,7 +8,7 @@
   row-gap: 0.2rem;
   border-block-end: 1px solid var(--border-subtle);
   padding: 0.75rem var(--space-4);
-  background: var(--surface);
+  background: var(--post-background, var(--surface));
   transition: background var(--motion-fast) var(--ease-out);
 }
 
@@ -47,14 +47,14 @@
 
 @media (hover: hover) {
   .post:not(.detail):not([data-embedded]):hover {
-    background: #f7f7f7;
+    background: var(--post-hover-background, #f7f7f7);
   }
 
   :global(:root[data-theme="dim"])
     .post:not(.detail):not([data-embedded]):hover,
   :global(:root[data-theme="lights-out"])
     .post:not(.detail):not([data-embedded]):hover {
-    background: var(--surface-hover);
+    background: var(--post-hover-background, var(--surface-hover));
   }
 }
 
