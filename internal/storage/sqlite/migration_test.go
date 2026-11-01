@@ -231,3 +231,56 @@ func TestInteractionHistoryUpgradePreservesLiveRelationships(t *testing.T) {
 		t.Fatal("upgrade removed live like uniqueness")
 	}
 }
+
+func TestBrowserCredentialUpgradeInvalidatesCollectionsOnceAndPreservesSessions(t *testing.T) {
+	pool := openRawMigrationPool(t)
+	ctx := testAccountContext()
+	migrations, err := embeddedMigrations()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := applyMigrations(ctx, pool, migrations[:10], time.Unix(1, 0)); err != nil {
+		t.Fatal(err)
+	}
+	_, err = pool.ExecContext(ctx, `
+INSERT INTO users(id,username,display_name,role,status,created_at_ms,updated_at_ms) VALUES ('11111111111111111111111111111111','upgrade_member','Upgrade Member','admin','active',1,1);
+INSERT INTO sessions(id,user_id,issued_at_ms,expires_at_ms,last_seen_at_ms,surface) VALUES ('22222222222222222222222222222222','11111111111111111111111111111111',1,9999999999999,1,'web');
+INSERT INTO browser_account_sets(id,credential_hash,csrf_token,session_epoch,expires_at_ms,revoked_at_ms) VALUES ('legacy',zeroblob(32),'legacy-csrf',1,9999999999999,NULL),('revoked',randomblob(32),'revoked-csrf',1,9999999999999,7);
+INSERT INTO browser_account_members(set_id,user_id,session_id,last_used_at_ms) VALUES ('legacy','11111111111111111111111111111111','22222222222222222222222222222222',1);`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	broken := append(append([]migration(nil), migrations...), migration{version: len(migrations) + 1, name: "failure", sql: "INSERT INTO missing_upgrade_table VALUES (1)", checksum: strings.Repeat("d", 64)})
+	if err := applyMigrations(ctx, pool, broken, time.Unix(2, 0)); err == nil {
+		t.Fatal("expected a failed upgrade to roll back")
+	}
+	var revoked sql.NullInt64
+	if err := pool.QueryRowContext(ctx, `SELECT revoked_at_ms FROM browser_account_sets WHERE id='legacy'`).Scan(&revoked); err != nil || revoked.Valid {
+		t.Fatalf("failed upgrade invalidated collection: %v, %v", revoked, err)
+	}
+	if err := applyMigrations(ctx, pool, migrations, time.Unix(3, 0)); err != nil {
+		t.Fatal(err)
+	}
+	if err := pool.QueryRowContext(ctx, `SELECT revoked_at_ms FROM browser_account_sets WHERE id='legacy'`).Scan(&revoked); err != nil || !revoked.Valid || revoked.Int64 <= 0 {
+		t.Fatalf("legacy collection remained usable after upgrade: %v, %v", revoked, err)
+	}
+	for query, want := range map[string]int{
+		`SELECT count(*) FROM sessions WHERE revoked_at_ms IS NULL`:                        1,
+		`SELECT count(*) FROM browser_account_members`:                                     1,
+		`SELECT count(*) FROM browser_account_sets WHERE id='revoked' AND revoked_at_ms=7`: 1,
+	} {
+		var got int
+		if err := pool.QueryRowContext(ctx, query).Scan(&got); err != nil || got != want {
+			t.Fatalf("upgrade changed retained data: count=%d, want=%d, err=%v", got, want, err)
+		}
+	}
+	if _, err := pool.ExecContext(ctx, `INSERT INTO browser_account_sets(id,credential_hash,csrf_token,session_epoch,expires_at_ms) VALUES ('fresh',randomblob(32),'fresh-csrf',1,9999999999999)`); err != nil {
+		t.Fatal(err)
+	}
+	if err := applyMigrations(ctx, pool, migrations, time.Unix(4, 0)); err != nil {
+		t.Fatal(err)
+	}
+	if err := pool.QueryRowContext(ctx, `SELECT revoked_at_ms FROM browser_account_sets WHERE id='fresh'`).Scan(&revoked); err != nil || revoked.Valid {
+		t.Fatalf("reopening invalidated a post-upgrade collection: %v, %v", revoked, err)
+	}
+}
