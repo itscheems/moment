@@ -34,8 +34,8 @@ export const settingsCategories: Array<{
   },
   {
     id: "site",
-    title: "站点设置",
-    description: "管理站点的评论设置。",
+    title: "隐私与安全",
+    description: "管理你在 Moment 上的内容与互动设置。",
     admin: true,
   },
   {
@@ -120,7 +120,7 @@ export const settingsItems: SettingsItem[] = [
     id: "comments",
     category: "site",
     title: "评论",
-    description: "决定是否允许新的评论。",
+    description: "管理是否允许所有成员新增评论。",
     icon: "reply",
   },
   {

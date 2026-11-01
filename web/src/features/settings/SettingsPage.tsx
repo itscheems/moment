@@ -76,7 +76,7 @@ function SiteComments({
         instanceId: site.instanceId,
         instanceInitializedAt: site.instanceInitializedAt,
       });
-      setNotice("站点设置已保存。");
+      setNotice("已保存");
     } catch (next) {
       if (!expireIfInvalidSession(next))
         setError(
@@ -110,7 +110,7 @@ function SiteComments({
           disabled={!session || pending}
           type="submit"
         >
-          {pending ? t("正在保存…") : t("保存站点设置")}
+          {pending ? t("正在保存…") : t("保存")}
         </button>
       </form>
       {error ? (
@@ -600,6 +600,11 @@ export function SettingsPage({
               <p className={styles.categoryDescription}>
                 {t(category.description)}
               </p>
+              {category.id === "site" ? (
+                <h2 className={styles.activityHeading}>
+                  {t("Your Moment activity")}
+                </h2>
+              ) : null}
               {availableItems
                 .filter((entry) => entry.category === category.id)
                 .map((entry) => (

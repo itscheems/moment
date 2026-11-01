@@ -195,22 +195,24 @@ it("reports a failed comments save without referring to removed fields", async (
       ? json({}, 503)
       : undefined,
   );
-  render(<App />);
-  fireEvent.click(await screen.findByRole("checkbox", { name: "允许新评论" }));
-  fireEvent.click(screen.getByRole("button", { name: "保存站点设置" }));
-  expect(await screen.findByRole("alert")).toHaveTextContent(
-    "评论设置没有保存，请稍后重试。",
-  );
-  expect(screen.getByRole("button", { name: "保存站点设置" })).toBeEnabled();
-  const checkbox = screen.getByRole("checkbox", { name: "允许新评论" });
-  const alert = screen.getByRole("alert");
+  window.localStorage.setItem("moment.ui-locale", "en");
   await act(() => i18n.changeLanguage("en"));
-  expect(alert).toHaveTextContent(
+  render(<App />);
+  fireEvent.click(
+    await screen.findByRole("checkbox", { name: "Allow new comments" }),
+  );
+  fireEvent.click(screen.getByRole("button", { name: "Save" }));
+  expect(await screen.findByRole("alert")).toHaveTextContent(
     "Comment settings were not saved. Try again later.",
   );
-  expect(screen.getByRole("checkbox", { name: "Allow new comments" })).toBe(
-    checkbox,
+  expect(screen.getByRole("button", { name: "Save" })).toBeEnabled();
+  const checkbox = screen.getByRole("checkbox", { name: "Allow new comments" });
+  const alert = screen.getByRole("alert");
+  await act(() => i18n.changeLanguage("zh-CN"));
+  expect(alert).not.toHaveTextContent(
+    "Comment settings were not saved. Try again later.",
   );
+  expect(screen.getByRole("checkbox")).toBe(checkbox);
   expect(checkbox).not.toBeChecked();
 });
 
@@ -300,41 +302,51 @@ it("navigates to a site child and saves only the fields on that page", async () 
       return json({ ...site, comments_enabled: false });
     }
   });
+  window.localStorage.setItem("moment.ui-locale", "en");
+  await act(() => i18n.changeLanguage("en"));
   render(<App />);
-  await screen.findByRole("heading", { name: "你的账号" });
-  const nav = screen.getByRole("navigation", { name: "设置分类" });
-  fireEvent.click(within(nav).getByRole("tab", { name: "站点设置" }));
+  await screen.findByRole("heading", { name: "Your Account" });
+  const nav = screen.getByRole("navigation", { name: "Settings categories" });
+  fireEvent.click(within(nav).getByRole("tab", { name: "Privacy and safety" }));
   expect(window.location.pathname).toBe("/settings/site");
-  fireEvent.click(await screen.findByRole("link", { name: /^评论/ }));
+  expect(
+    await screen.findByRole("heading", { name: "Your Moment activity" }),
+  ).toBeVisible();
+  fireEvent.click(await screen.findByRole("link", { name: /^Comments/ }));
   expect(window.location.pathname).toBe("/settings/site/comments");
-  fireEvent.click(await screen.findByRole("checkbox", { name: "允许新评论" }));
+  fireEvent.click(
+    await screen.findByRole("checkbox", { name: "Allow new comments" }),
+  );
   await waitFor(() =>
-    expect(screen.getByRole("button", { name: "保存站点设置" })).toBeEnabled(),
+    expect(screen.getByRole("button", { name: "Save" })).toBeEnabled(),
   );
-  fireEvent.click(screen.getByRole("button", { name: "保存站点设置" }));
-  await screen.findByText("站点设置已保存。");
+  fireEvent.click(screen.getByRole("button", { name: "Save" }));
+  await screen.findByText("Saved");
   expect(requests).toEqual([{ comments_enabled: false }]);
-  expect(within(nav).getByRole("tab", { name: "站点设置" })).toHaveAttribute(
-    "aria-selected",
-    "true",
-  );
+  expect(
+    within(nav).getByRole("tab", { name: "Privacy and safety" }),
+  ).toHaveAttribute("aria-selected", "true");
 });
 
 it("preserves an unsaved token label across categories and child pages", async () => {
   window.history.replaceState({}, "", "/settings/security/tokens");
   installApi("admin");
+  window.localStorage.setItem("moment.ui-locale", "en");
+  await act(() => i18n.changeLanguage("en"));
   render(<App />);
-  const field = await screen.findByLabelText("令牌名称");
-  fireEvent.change(field, { target: { value: "尚未创建的令牌" } });
-  const nav = screen.getByRole("navigation", { name: "设置分类" });
-  fireEvent.click(within(nav).getByRole("tab", { name: "站点设置" }));
+  const field = await screen.findByLabelText("Token name");
+  fireEvent.change(field, { target: { value: "Pending device token" } });
+  const nav = screen.getByRole("navigation", { name: "Settings categories" });
+  fireEvent.click(within(nav).getByRole("tab", { name: "Privacy and safety" }));
   expect(field).not.toBeVisible();
-  expect(field).toHaveValue("尚未创建的令牌");
-  fireEvent.click(within(nav).getByRole("tab", { name: "安全和账号访问" }));
-  fireEvent.click(await screen.findByRole("link", { name: /^API 令牌/ }));
-  expect(screen.getByLabelText("令牌名称")).toBe(field);
+  expect(field).toHaveValue("Pending device token");
+  fireEvent.click(
+    within(nav).getByRole("tab", { name: "Security and account access" }),
+  );
+  fireEvent.click(await screen.findByRole("link", { name: /^API token/ }));
+  expect(screen.getByLabelText("Token name")).toBe(field);
   expect(field).toBeVisible();
-  expect(field).toHaveValue("尚未创建的令牌");
+  expect(field).toHaveValue("Pending device token");
 });
 
 it("keeps password settings usable when the separate token list cannot be loaded", async () => {

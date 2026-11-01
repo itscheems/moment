@@ -1745,5 +1745,9 @@
   "找到 {{count}} 项设置_one": "找到 {{count}} 项设置",
   "找到 {{count}} 项设置_other": "找到 {{count}} 项设置",
   "{{count}} 位待审核_one": "{{count}} 位待审核",
-  "{{count}} 位待审核_other": "{{count}} 位待审核"
+  "{{count}} 位待审核_other": "{{count}} 位待审核",
+  "隐私与安全": "隐私与安全",
+  "管理你在 Moment 上的内容与互动设置。": "管理你在 Moment 上的内容与互动设置。",
+  "Your Moment activity": "你的 Moment 活动",
+  "管理是否允许所有成员新增评论。": "管理是否允许所有成员新增评论。"
 }

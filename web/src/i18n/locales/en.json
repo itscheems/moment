@@ -1745,5 +1745,9 @@
   "找到 {{count}} 项设置_one": "{{count}} setting found",
   "找到 {{count}} 项设置_other": "{{count}} settings found",
   "{{count}} 位待审核_one": "{{count}} pending member",
-  "{{count}} 位待审核_other": "{{count}} pending members"
+  "{{count}} 位待审核_other": "{{count}} pending members",
+  "隐私与安全": "Privacy and safety",
+  "管理你在 Moment 上的内容与互动设置。": "Manage your content and interactions on Moment.",
+  "Your Moment activity": "Your Moment activity",
+  "管理是否允许所有成员新增评论。": "Manage whether all members can add new comments."
 }
