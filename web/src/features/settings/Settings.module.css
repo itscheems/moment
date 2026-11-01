@@ -141,7 +141,7 @@
 .selectionIndicator {
   position: absolute;
   inset: 0;
-  border-inline-end: 2px solid var(--accent);
+  border-inline-end: 2px solid #1d9bf0;
   pointer-events: none;
 }
 .navBadge {
