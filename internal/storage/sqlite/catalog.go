@@ -13,6 +13,9 @@ type expectedCatalogObject struct {
 }
 
 var requiredCatalogObjects = []expectedCatalogObject{
+	{name: "browser_account_sets", kind: "table", table: "browser_account_sets"},
+	{name: "browser_account_members", kind: "table", table: "browser_account_members"},
+	{name: "browser_account_members_session", kind: "index", table: "browser_account_members"},
 	{name: "post_likes", kind: "table", table: "post_likes"},
 	{name: "post_likes_user", kind: "index", table: "post_likes"},
 	{name: "post_likes_account", kind: "index", table: "post_likes"},

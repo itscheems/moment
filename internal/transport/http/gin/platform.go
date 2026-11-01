@@ -166,6 +166,7 @@ func New(config Config) (*gin.Engine, error) {
 			Log:      surfaceLog,
 		}
 		RegisterAuthenticationRoutes(engine, gate, CookieOptions{Secure: config.SecureCookies})
+		RegisterBrowserAccountRoutes(engine, gate, CookieOptions{Secure: config.SecureCookies}, config.Interactions)
 		RegisterRegistrationRoutes(engine, gate, CookieOptions{Secure: config.SecureCookies})
 		// The account group carries the provider configuration because adding a
 		// way to sign in to your own account is something you do to your own

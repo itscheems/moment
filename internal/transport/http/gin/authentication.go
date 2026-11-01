@@ -118,6 +118,16 @@ func exchangeSession(gate *Gate, cookies CookieOptions) gin.HandlerFunc {
 			writeAccountError(ctx, err)
 			return
 		}
+		if secret, adding := ctx.Get(browserAccountsContextKey); adding {
+			epoch, _ := ctx.Get(browserAccountsContextKey + ".epoch")
+			set, err := gate.accounts.AddBrowserAccount(ctx.Request.Context(), secret.(string), epoch.(uint64), sessionID)
+			if err != nil {
+				_ = gate.accounts.EndSession(ctx.Request.Context(), sessionID)
+				writeAccountError(ctx, err)
+				return
+			}
+			setBrowserAccountsCookie(ctx, secret.(string), set.ExpiresAtMS, cookies)
+		}
 		setSessionCookie(ctx, value, session.ExpiresAt, cookies)
 		Success(ctx, http.StatusOK, sessionResponse{ExpiresAt: session.ExpiresAt, CSRFToken: session.CSRFToken}, nil)
 	}
@@ -254,6 +264,31 @@ func unauthorized(ctx *gin.Context) {
 func logoutSession(gate *Gate, cookies CookieOptions) gin.HandlerFunc {
 	return func(ctx *gin.Context) {
 		if session, ok := CurrentSession(ctx); ok {
+			if secret, err := ctx.Cookie(browserAccountsCookieName); err == nil {
+				if status, err := gate.manager.Status(); err == nil {
+					if _, entries, err := gate.accounts.BrowserAccounts(ctx.Request.Context(), secret, status.SessionEpoch); err == nil {
+						for _, entry := range entries {
+							if entry.Member.SessionID != session.ID {
+								continue
+							}
+							next, empty, err := gate.accounts.RemoveBrowserAccounts(ctx.Request.Context(), secret, status.SessionEpoch, session.UserID, session.UserID)
+							if err != nil {
+								writeAccountError(ctx, err)
+								return
+							}
+							clearSessionCookie(ctx, cookies)
+							if next != nil && !resumeBrowserMember(ctx, gate, *next, status.SessionEpoch, cookies) {
+								return
+							}
+							if empty {
+								clearBrowserAccountsCookie(ctx, cookies)
+							}
+							Success(ctx, http.StatusOK, map[string]bool{"logged_out": true}, nil)
+							return
+						}
+					}
+				}
+			}
 			if err := gate.accounts.EndSession(ctx.Request.Context(), session.ID); err != nil {
 				Failure(ctx, http.StatusInternalServerError, "INTERNAL", "session could not be ended", nil)
 				return

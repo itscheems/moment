@@ -43,6 +43,7 @@ const (
 // deleting it on arrival makes it single-use -- which is the whole job of the
 // state parameter.
 type oauthFlow struct {
+	BrowserSetID string `json:"browser_set,omitempty"`
 	Provider     string `json:"p"`
 	State        string `json:"s"`
 	Verifier     string `json:"v"`
@@ -91,6 +92,15 @@ func RegisterOAuthRoutes(engine *gin.Engine, gate *Gate, config OAuthConfig) {
 	group := engine.Group(oauthCookiePath)
 	group.GET("/providers", listProviders(config.Registry))
 	group.GET("/:provider/start", startOAuth(gate, config))
+	group.POST("/:provider/add", func(ctx *gin.Context) {
+		secret, epoch, ok := authorizeBrowserAccounts(ctx, gate, true)
+		if !ok {
+			return
+		}
+		ctx.Set(browserAccountsContextKey, secret)
+		ctx.Set(browserAccountsContextKey+".epoch", epoch)
+		startOAuth(gate, config)(ctx)
+	})
 	group.GET("/:provider/callback", completeOAuth(gate, config))
 	registerAssertionRoute(group, gate, config)
 }
@@ -147,7 +157,15 @@ func startOAuth(gate *Gate, config OAuthConfig) gin.HandlerFunc {
 		// account reaches nobody else, which is the same reason RequireAccount
 		// admits pending accounts to everything else they do to themselves; a
 		// suspended one never gets this far, because the gate refuses it.
-		if account, signedIn := gate.VerifiedAccount(ctx); signedIn {
+		if secret, adding := ctx.Get(browserAccountsContextKey); adding {
+			epoch, _ := ctx.Get(browserAccountsContextKey + ".epoch")
+			set, _, err := gate.accounts.BrowserAccounts(ctx.Request.Context(), secret.(string), epoch.(uint64))
+			if err != nil {
+				writeAccountError(ctx, err)
+				return
+			}
+			flow.BrowserSetID = set.ID
+		} else if account, signedIn := gate.VerifiedAccount(ctx); signedIn {
 			flow.Confirmation = ctx.Query("confirm") == "1"
 			if !flow.Confirmation && !gate.requireReauthentication(ctx) {
 				return
@@ -167,6 +185,10 @@ func startOAuth(gate *Gate, config OAuthConfig) gin.HandlerFunc {
 			return
 		}
 		setOAuthCookie(ctx, sealed, config.Cookies)
+		if flow.BrowserSetID != "" {
+			Success(ctx, http.StatusOK, map[string]string{"authorization_url": provider.AuthCodeURL(state, verifier, nonce)}, nil)
+			return
+		}
 		redirect(ctx, provider.AuthCodeURL(state, verifier, nonce))
 	}
 }
@@ -191,6 +213,9 @@ func completeOAuth(gate *Gate, config OAuthConfig) gin.HandlerFunc {
 		if err := json.Unmarshal(payload, &flow); err != nil {
 			redirectToSignIn(ctx, domain.CodeOAuthStateInvalid)
 			return
+		}
+		if flow.BrowserSetID != "" {
+			ctx.Set("moment.oauth.add", true)
 		}
 
 		// Four checks, none redundant: the flow has not expired, it belongs to
@@ -261,7 +286,23 @@ func completeOAuth(gate *Gate, config OAuthConfig) gin.HandlerFunc {
 			return
 		}
 
-		outcome, err := gate.accounts.SignIn(ctx.Request.Context(), external)
+		var outcome app.SignInOutcome
+		if flow.BrowserSetID != "" {
+			secret, epoch, ok := authorizeBrowserAccounts(ctx, gate, false)
+			if !ok {
+				return
+			}
+			set, _, checkErr := gate.accounts.BrowserAccounts(ctx.Request.Context(), secret, epoch)
+			if checkErr != nil || set.ID != flow.BrowserSetID {
+				redirectToSignIn(ctx, domain.CodeUnauthorized)
+				return
+			}
+			ctx.Set(browserAccountsContextKey, secret)
+			ctx.Set(browserAccountsContextKey+".epoch", epoch)
+			outcome, err = gate.accounts.SignInExisting(ctx.Request.Context(), external)
+		} else {
+			outcome, err = gate.accounts.SignIn(ctx.Request.Context(), external)
+		}
 		if err != nil {
 			config.record(ctx, "warn", "auth_login_failed", map[string]any{
 				"provider": flow.Provider, "reason": string(oauthFailureCode(err)),
@@ -306,6 +347,15 @@ func issueSessionFor(ctx *gin.Context, gate *Gate, user domain.User, cookies Coo
 	if _, err := gate.accounts.StartSession(ctx.Request.Context(), user.ID, sessionID,
 		string(requestSurface(ctx)), session.ExpiresAt.UnixMilli()); err != nil {
 		return err
+	}
+	if secret, adding := ctx.Get(browserAccountsContextKey); adding {
+		epoch, _ := ctx.Get(browserAccountsContextKey + ".epoch")
+		set, err := gate.accounts.AddBrowserAccount(ctx.Request.Context(), secret.(string), epoch.(uint64), sessionID)
+		if err != nil {
+			_ = gate.accounts.EndSession(ctx.Request.Context(), sessionID)
+			return err
+		}
+		setBrowserAccountsCookie(ctx, secret.(string), set.ExpiresAtMS, cookies)
 	}
 	setSessionCookie(ctx, value, session.ExpiresAt, cookies)
 	return nil
@@ -358,6 +408,10 @@ func redirect(ctx *gin.Context, location string) {
 }
 
 func redirectToSignIn(ctx *gin.Context, code domain.Code) {
+	if adding, _ := ctx.Get("moment.oauth.add"); adding == true {
+		redirect(ctx, "/account/add?auth_error="+url.QueryEscape(string(code)))
+		return
+	}
 	redirect(ctx, signInPath+"?auth_error="+url.QueryEscape(string(code)))
 }
 

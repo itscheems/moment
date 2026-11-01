@@ -431,6 +431,22 @@ func (manager *Manager) IssueSessionForVerifiedSubject(subject Subject) (string,
 }
 
 func (manager *Manager) issueSession(current *snapshot, subject Subject) (string, Session, error) {
+	return manager.signSession(current, subject, manager.now().UTC().Add(manager.sessionTTL))
+}
+
+// ResumeSession signs a live persisted session without renewing its original lifetime.
+// The caller must resolve account authority and browser membership first.
+func (manager *Manager) ResumeSession(subject Subject, expiresAt time.Time, epoch uint64) (string, Session, error) {
+	manager.mutationMu.Lock()
+	defer manager.mutationMu.Unlock()
+	current := manager.current.Load()
+	if current == nil || current.sessionEpoch != epoch || !expiresAt.After(manager.now()) {
+		return "", Session{}, ErrUnauthorized
+	}
+	return manager.signSession(current, subject, expiresAt)
+}
+
+func (manager *Manager) signSession(current *snapshot, subject Subject, expiresAt time.Time) (string, Session, error) {
 	if !subject.Valid() {
 		return "", Session{}, ErrUnauthorized
 	}
@@ -438,7 +454,6 @@ func (manager *Manager) issueSession(current *snapshot, subject Subject) (string
 	if err != nil {
 		return "", Session{}, fmt.Errorf("generate CSRF token: %w", err)
 	}
-	expiresAt := manager.now().UTC().Add(manager.sessionTTL)
 	payload := sessionPayload{
 		UserID:      subject.UserID,
 		SessionID:   subject.SessionID,
