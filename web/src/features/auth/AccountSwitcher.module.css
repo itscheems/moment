@@ -204,7 +204,7 @@
   overflow-y: auto;
   overscroll-behavior: contain;
   min-block-size: 0;
-  padding-block: 0 12px;
+  padding-block: 0;
 }
 .manageRow {
   position: relative;
