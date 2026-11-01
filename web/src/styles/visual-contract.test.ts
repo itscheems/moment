@@ -464,11 +464,9 @@ describe("visual foundation contract", () => {
   });
 
   it("uses contrast-safe state tokens on publish and selected-date actions", () => {
-    // Writing dialogs use the theme-aware neutral action palette.
-    expect(formsCss).toContain("--button-primary: var(--ink-button)");
-    expect(formsCss).toContain(
-      "--button-primary-contrast: var(--ink-button-contrast)",
-    );
+    // Publishing actions inherit the selected accent in every writing surface.
+    expect(formsCss.match(/--button-primary(?:-[\w-]+)?\s*:/)).toBeNull();
+    expect(commentsCss.match(/--button-primary(?:-[\w-]+)?\s*:/)).toBeNull();
     expect(formsCss).toMatch(
       /\._composerPublishButton_[\w-]+\s*\{[^}]*color: var\(--button-primary-contrast\);[^}]*background: var\(--button-primary\);[^}]*opacity var\(--motion-fast\)/s,
     );

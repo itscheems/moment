@@ -63,19 +63,6 @@
   block-size: 1.25rem;
 }
 
-.submit {
-  display: inline-flex;
-}
-
-/* Preserve the two compositing layers used by disabled writing actions. */
-.popup .submit {
-  --button-primary-disabled-opacity: 0.5;
-}
-
-.popup .submit:has(> button:disabled) {
-  opacity: 0.5;
-}
-
 .close:focus-visible {
   background: var(--icon-button-hover);
 }

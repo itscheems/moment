@@ -267,12 +267,6 @@
 }
 
 .pageComposer {
-  --button-primary: var(--ink-button);
-  --button-primary-hover: var(--ink-button-hover);
-  --button-primary-pressed: var(--ink-button-pressed);
-  --button-primary-disabled: var(--ink-button);
-  --button-primary-disabled-opacity: 0.25;
-  --button-primary-contrast: var(--ink-button-contrast);
   --composer-media-margin-start: 2px;
   --reply-audience-margin-start: -14px;
   min-block-size: 0;

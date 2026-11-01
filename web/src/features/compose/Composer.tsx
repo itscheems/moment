@@ -1,4 +1,4 @@
-import writingDialog from "../../components/WritingDialog.module.css";
+import { SaveDraftDialog } from "../../components/SaveDraftDialog";
 import { getLocale } from "../../i18n";
 import { t } from "../../i18n";
 import { useTranslation } from "react-i18next";
@@ -1515,6 +1515,13 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
           window.setTimeout(() => {
             if (!mountedRef.current || section.contains(document.activeElement))
               return;
+            // A modal is covering this editor, rather than ending its edit.
+            // Base UI restores the original control when the modal closes.
+            if (
+              variant === "inline" &&
+              document.activeElement?.closest('[role="dialog"]')
+            )
+              return;
             setFocusWithin(false);
           }, 0);
         }}
@@ -1936,21 +1943,19 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
                       </span>
                     </ActionTooltip>
                   )}
-                  <span className={writingDialog.submit}>
-                    <button
-                      className={`${styles.primaryButton} ${styles.composerPublishButton}`}
-                      disabled={!valid || pending || !session}
-                      type="submit"
-                    >
-                      {pending
-                        ? post
-                          ? t("正在保存…")
-                          : t("正在发布…")
-                        : post
-                          ? t("保存更改")
-                          : t("发布")}
-                    </button>
-                  </span>
+                  <button
+                    className={`${styles.primaryButton} ${styles.composerPublishButton}`}
+                    disabled={!valid || pending || !session}
+                    type="submit"
+                  >
+                    {pending
+                      ? post
+                        ? t("正在保存…")
+                        : t("正在发布…")
+                      : post
+                        ? t("保存更改")
+                        : t("发布")}
+                  </button>
                 </div>
               }
               items={mediaItems}
@@ -2081,54 +2086,51 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
           </form>
           {!session ? <LoginLink>{t("重新登录")}</LoginLink> : null}
         </div>
-        <Dialog.Root
-          onOpenChange={(open) => {
-            setLeavePromptOpen(open);
-            if (!open) pendingNavigationRef.current = null;
-          }}
-          open={leavePromptOpen}
-        >
-          <Dialog.Portal>
-            <Dialog.Backdrop className={styles.dialogBackdrop} />
-            <Dialog.Viewport className={styles.dialogViewport}>
-              <Dialog.Popup className={styles.dialogPopup}>
-                <Dialog.Title className={styles.dialogTitle}>
-                  {variant === "edit"
-                    ? t("放弃未保存的更改？")
-                    : t("退出发布？")}
-                </Dialog.Title>
-                <Dialog.Description className={styles.dialogDescription}>
-                  {variant === "edit"
-                    ? t("离开后，本次编辑不会保存。")
-                    : t(
-                        "文字可以保留为这台浏览器里的草稿；已添加的图片不会保存。",
-                      )}
-                </Dialog.Description>
-                <div className={styles.dialogActions}>
-                  <Dialog.Close className={styles.secondaryButton}>
-                    {t("继续编辑")}
-                  </Dialog.Close>
-                  {variant !== "edit" ? (
+        {variant !== "edit" ? (
+          <SaveDraftDialog
+            open={leavePromptOpen}
+            onOpenChange={(open) => {
+              setLeavePromptOpen(open);
+              if (!open) pendingNavigationRef.current = null;
+            }}
+            onSave={() => finishPendingNavigation(false)}
+            onDiscard={() => finishPendingNavigation(true)}
+          />
+        ) : (
+          <Dialog.Root
+            onOpenChange={(open) => {
+              setLeavePromptOpen(open);
+              if (!open) pendingNavigationRef.current = null;
+            }}
+            open={leavePromptOpen}
+          >
+            <Dialog.Portal>
+              <Dialog.Backdrop className={styles.dialogBackdrop} />
+              <Dialog.Viewport className={styles.dialogViewport}>
+                <Dialog.Popup className={styles.dialogPopup}>
+                  <Dialog.Title className={styles.dialogTitle}>
+                    {t("放弃未保存的更改？")}
+                  </Dialog.Title>
+                  <Dialog.Description className={styles.dialogDescription}>
+                    {t("离开后，本次编辑不会保存。")}
+                  </Dialog.Description>
+                  <div className={styles.dialogActions}>
+                    <Dialog.Close className={styles.secondaryButton}>
+                      {t("继续编辑")}
+                    </Dialog.Close>
                     <button
-                      className={styles.secondaryButton}
-                      onClick={() => finishPendingNavigation(false)}
+                      className={styles.dangerButton}
+                      onClick={() => finishPendingNavigation(true)}
                       type="button"
                     >
-                      {t("保留草稿并退出")}
+                      {t("放弃更改并离开")}
                     </button>
-                  ) : null}
-                  <button
-                    className={styles.dangerButton}
-                    onClick={() => finishPendingNavigation(true)}
-                    type="button"
-                  >
-                    {variant === "edit" ? t("放弃更改并离开") : t("丢弃并退出")}
-                  </button>
-                </div>
-              </Dialog.Popup>
-            </Dialog.Viewport>
-          </Dialog.Portal>
-        </Dialog.Root>
+                  </div>
+                </Dialog.Popup>
+              </Dialog.Viewport>
+            </Dialog.Portal>
+          </Dialog.Root>
+        )}
       </section>
     );
   },

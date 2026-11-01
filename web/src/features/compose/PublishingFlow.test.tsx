@@ -340,7 +340,7 @@ async function openMomentActions(trigger?: HTMLElement) {
 }
 
 async function keepDraftAndResumeNavigation() {
-  const dialog = await screen.findByRole("dialog", { name: "退出发布？" });
+  const dialog = await screen.findByRole("dialog", { name: "保存草稿？" });
   fireEvent.click(
     within(dialog).getByRole("button", { name: "保留草稿并退出" }),
   );
@@ -1535,6 +1535,46 @@ describe("owner composing flow", () => {
     ).toBeInTheDocument();
   });
 
+  it("preserves the expanded home composer behind the shell compose dialog", async () => {
+    preauthenticate();
+    vi.mocked(window.matchMedia).mockImplementation((query) => ({
+      matches: query === "(min-width: 720px)",
+      media: query,
+      onchange: null,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      addListener: vi.fn(),
+      removeListener: vi.fn(),
+      dispatchEvent: vi.fn(),
+    }));
+    installApi();
+    render(<App />);
+    const inline = await screen.findByLabelText("此刻想到什么？");
+    const section = inline.closest("section")!;
+    act(() => inline.focus());
+    expect(section).toHaveAttribute("data-expanded", "true");
+
+    const launch = screen.getByRole("link", { name: "发帖" });
+    if (fireEvent.mouseDown(launch)) act(() => launch.focus());
+    fireEvent.mouseUp(launch);
+    fireEvent.click(launch);
+    const dialog = await screen.findByRole("dialog", { name: "发布 Moment" });
+    await waitFor(() =>
+      expect(within(dialog).getByRole("textbox")).toHaveFocus(),
+    );
+    await act(() => new Promise((resolve) => window.setTimeout(resolve, 0)));
+    expect(section).toHaveAttribute("data-expanded", "true");
+
+    fireEvent.click(within(dialog).getByRole("button", { name: "关闭发布" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    await waitFor(() => expect(inline).toHaveFocus());
+    expect(section).toHaveAttribute("data-expanded", "true");
+    act(() => screen.getByRole("link", { name: "主页" }).focus());
+    await waitFor(() =>
+      expect(section).toHaveAttribute("data-expanded", "false"),
+    );
+  });
+
   it("opens the inline composer on focus with the audience pill and publishes the chosen audience", async () => {
     preauthenticate();
     const fetcher = installApi((url, init) => {
@@ -1852,12 +1892,13 @@ describe("owner composing flow", () => {
       screen.getAllByRole("link", { name: "乔乔的 Moment首页" })[0],
     );
     expect(window.location.pathname).toBe("/compose");
-    const dialog = await screen.findByRole("dialog", { name: "退出发布？" });
+    const dialog = await screen.findByRole("dialog", { name: "保存草稿？" });
     expect(document.documentElement.style.overflow).toBe("hidden");
     expect(document.body.style.position).toBe("");
     expect(document.body.style.top).toBe("");
     expect(window.confirm).not.toHaveBeenCalled();
-    fireEvent.click(within(dialog).getByRole("button", { name: "继续编辑" }));
+    expect(within(dialog).getAllByRole("button")).toHaveLength(2);
+    fireEvent.keyDown(dialog, { key: "Escape" });
     expect(window.location.pathname).toBe("/compose");
     expect(document.documentElement.style.overflow).toBe("");
     expect(document.body.style.position).toBe("");
@@ -1891,7 +1932,7 @@ describe("owner composing flow", () => {
     fireEvent.keyDown(screen.getByRole("combobox"), { key: "Escape" });
     fireEvent.click(screen.getAllByRole("link", { name: "归档" })[0]);
     await waitFor(() => expect(window.location.pathname).toBe("/archive"));
-    expect(screen.queryByRole("dialog", { name: "退出发布？" })).toBeNull();
+    expect(screen.queryByRole("dialog", { name: "保存草稿？" })).toBeNull();
     expect(window.confirm).not.toHaveBeenCalled();
   });
 
@@ -1923,7 +1964,7 @@ describe("owner composing flow", () => {
     fireEvent.keyDown(composer, { key: "Escape" });
 
     expect(
-      await screen.findByRole("dialog", { name: "退出发布？" }),
+      await screen.findByRole("dialog", { name: "保存草稿？" }),
     ).toBeInTheDocument();
     expect(window.confirm).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole("button", { name: "丢弃并退出" }));
@@ -2295,7 +2336,7 @@ describe("owner composing flow", () => {
     fireEvent.click(screen.getAllByRole("link", { name: "搜索" })[0]);
     expect(window.location.pathname).toBe("/");
     expect(
-      await screen.findByRole("dialog", { name: "退出发布？" }),
+      await screen.findByRole("dialog", { name: "保存草稿？" }),
     ).toBeInTheDocument();
     expect(window.confirm).not.toHaveBeenCalled();
     const beforeUnload = new Event("beforeunload", { cancelable: true });
@@ -2469,7 +2510,7 @@ describe("owner composing flow", () => {
     });
     fireEvent.click(screen.getAllByRole("link", { name: "搜索" })[0]);
     await waitFor(() => expect(window.location.pathname).toBe("/search"));
-    expect(screen.queryByRole("dialog", { name: "退出发布？" })).toBeNull();
+    expect(screen.queryByRole("dialog", { name: "保存草稿？" })).toBeNull();
   });
 
   it("re-saves a dirty draft when another document removes its projection", async () => {
@@ -2503,7 +2544,7 @@ describe("owner composing flow", () => {
     fireEvent.click(screen.getAllByRole("link", { name: "搜索" })[0]);
     expect(window.location.pathname).toBe("/");
     expect(
-      await screen.findByRole("dialog", { name: "退出发布？" }),
+      await screen.findByRole("dialog", { name: "保存草稿？" }),
     ).toBeInTheDocument();
     expect(window.confirm).not.toHaveBeenCalled();
   });
@@ -2819,7 +2860,7 @@ describe("owner composing flow", () => {
     fireEvent.click(screen.getAllByRole("link", { name: "搜索" })[0]);
     expect(window.location.pathname).toBe("/");
     expect(
-      await screen.findByRole("dialog", { name: "退出发布？" }),
+      await screen.findByRole("dialog", { name: "保存草稿？" }),
     ).toBeInTheDocument();
     expect(window.confirm).not.toHaveBeenCalled();
     const beforeUnload = new Event("beforeunload", { cancelable: true });
@@ -2902,7 +2943,7 @@ describe("owner composing flow", () => {
     fireEvent.click(screen.getAllByRole("link", { name: "搜索" })[0]);
     expect(window.location.pathname).toBe("/");
     expect(
-      await screen.findByRole("dialog", { name: "退出发布？" }),
+      await screen.findByRole("dialog", { name: "保存草稿？" }),
     ).toBeInTheDocument();
     expect(window.confirm).not.toHaveBeenCalled();
     const beforeUnload = new Event("beforeunload", { cancelable: true });

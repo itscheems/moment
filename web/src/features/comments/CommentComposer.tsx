@@ -1,4 +1,3 @@
-import writingDialog from "../../components/WritingDialog.module.css";
 import { t } from "../../i18n";
 import { useTranslation } from "react-i18next";
 import { locationsApi } from "../../api/locations";
@@ -821,26 +820,24 @@ export function CommentForm({
                           {t("取消")}
                         </button>
                       ) : null}
-                      <span className={writingDialog.submit}>
-                        <button
-                          aria-busy={pending || undefined}
-                          aria-label={t("发表回复")}
-                          className={styles.primaryAction}
-                          data-pending={pending ? "true" : undefined}
-                          disabled={
-                            pending ||
-                            !validContent ||
-                            !commentsEnabled ||
-                            !auth.session ||
-                            mediaError !== null
-                          }
-                          type="submit"
-                        >
-                          <span aria-hidden="true">
-                            {pending ? t("正在发表…") : t("回复")}
-                          </span>
-                        </button>
-                      </span>
+                      <button
+                        aria-busy={pending || undefined}
+                        aria-label={t("发表回复")}
+                        className={styles.primaryAction}
+                        data-pending={pending ? "true" : undefined}
+                        disabled={
+                          pending ||
+                          !validContent ||
+                          !commentsEnabled ||
+                          !auth.session ||
+                          mediaError !== null
+                        }
+                        type="submit"
+                      >
+                        <span aria-hidden="true">
+                          {pending ? t("正在发表…") : t("回复")}
+                        </span>
+                      </button>
                     </div>
                   </div>
                 }

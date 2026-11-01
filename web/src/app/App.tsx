@@ -8,6 +8,7 @@ import { useTranslation } from "react-i18next";
 import { LanguageProvider } from "../i18n/LanguageProvider";
 import { accountCacheScope } from "../features/auth/accountScope";
 import { Dialog } from "../components/Dialog";
+import { SaveDraftDialog } from "../components/SaveDraftDialog";
 import writingDialog from "../components/WritingDialog.module.css";
 import {
   Suspense,
@@ -945,46 +946,20 @@ function PublicApp() {
           onSiteChanged={setSite}
         />
       ) : null}
-      <Dialog.Root onOpenChange={setComposeExitOpen} open={composeExitOpen}>
-        <Dialog.Portal>
-          <Dialog.Backdrop className={styles.exitBackdrop} />
-          <Dialog.Viewport className={styles.exitViewport}>
-            <Dialog.Popup className={styles.exitDialog}>
-              <Dialog.Title>{t("退出发布？")}</Dialog.Title>
-              <Dialog.Description>
-                {t("文字可以保留为这台浏览器里的草稿；已添加的图片不会保存。")}
-              </Dialog.Description>
-              <div className={styles.exitActions}>
-                <Dialog.Close className={styles.exitSecondary}>
-                  {t("继续编辑")}
-                </Dialog.Close>
-                <button
-                  className={styles.exitSecondary}
-                  onClick={() => {
-                    overlayComposer.current?.leaveAndKeepDraft();
-                    setComposeExitOpen(false);
-                    closeOverlayComposer();
-                  }}
-                  type="button"
-                >
-                  {t("保留草稿并退出")}
-                </button>
-                <button
-                  className={styles.exitDanger}
-                  onClick={() => {
-                    overlayComposer.current?.leaveAndDiscard();
-                    setComposeExitOpen(false);
-                    closeOverlayComposer();
-                  }}
-                  type="button"
-                >
-                  {t("丢弃并退出")}
-                </button>
-              </div>
-            </Dialog.Popup>
-          </Dialog.Viewport>
-        </Dialog.Portal>
-      </Dialog.Root>
+      <SaveDraftDialog
+        open={composeExitOpen}
+        onOpenChange={setComposeExitOpen}
+        onSave={() => {
+          overlayComposer.current?.leaveAndKeepDraft();
+          setComposeExitOpen(false);
+          closeOverlayComposer();
+        }}
+        onDiscard={() => {
+          overlayComposer.current?.leaveAndDiscard();
+          setComposeExitOpen(false);
+          closeOverlayComposer();
+        }}
+      />
     </MentionProvider>
   );
 
