@@ -258,7 +258,7 @@ describe("App shell and public routes", () => {
     ]);
     expect(
       within(desktopNavigation).getByRole("link", { name: "设置" }),
-    ).toHaveAttribute("href", "/settings/account");
+    ).toHaveAttribute("href", "/settings");
     const notifications = within(desktopNavigation).getByRole("link", {
       name: "通知",
     });
@@ -511,7 +511,7 @@ describe("App shell and public routes", () => {
     ).toHaveAttribute("href", "/compose");
     expect(
       mobileNavigation?.querySelector('a[aria-label="账号"]'),
-    ).toHaveAttribute("href", "/settings/account");
+    ).toHaveAttribute("href", "/settings");
     expect(
       mobileNavigation?.querySelector('a[aria-label="个人资料"]'),
     ).toBeNull();

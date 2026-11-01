@@ -18,6 +18,7 @@ interface LocationSnapshot {
 }
 
 interface NavigationLocation extends LocationSnapshot {
+  previousHref: string | null;
   overlayFrom: LocationSnapshot | null;
   panel: {
     key: string;
@@ -64,6 +65,7 @@ interface NavigationContextValue extends NavigationLocation {
 export type NavigationBlocker = (resume: () => void) => boolean;
 
 interface MomentHistoryState {
+  momentPreviousHref?: string;
   momentArchiveAnchor?: { key: string; top: number };
   momentFocusKey?: string;
   /** Navigated to and not yet shown; cleared by the first restoration. */
@@ -104,6 +106,10 @@ function locationSnapshot(
   const panel = history?.momentPanel;
   return {
     ...currentLocation(),
+    previousHref:
+      typeof history?.momentPreviousHref === "string"
+        ? history.momentPreviousHref
+        : null,
     panel:
       includeOverlay &&
       typeof panel?.key === "string" &&
@@ -211,6 +217,7 @@ export function NavigationProvider({ children }: { children: ReactNode }) {
         {
           momentFresh: !preserveScroll,
           momentInternal: true,
+          momentPreviousHref: window.location.pathname + window.location.search,
           momentOverlayFrom: overlayFrom ?? undefined,
           momentPanel: panel ?? undefined,
           momentScrollY: preserveScroll ? window.scrollY : 0,
@@ -263,6 +270,7 @@ export function NavigationProvider({ children }: { children: ReactNode }) {
         {
           momentFresh: true,
           momentInternal: historyState().momentInternal,
+          momentPreviousHref: historyState().momentPreviousHref,
           momentScrollY: 0,
           ...(overlayFrom ? { momentOverlayFrom: overlayFrom } : {}),
         },

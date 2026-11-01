@@ -25,7 +25,7 @@ import { oauthStartUrl, PROVIDER_ICONS, providerLabel } from "./providers";
 import styles from "../settings/Settings.module.css";
 import tooltipStyles from "../../components/Tooltip.module.css";
 
-const RETURN_PATH = "/settings/account";
+const RETURN_PATH = "/settings/security/identities";
 
 // `surface` is the server's own vocabulary for where a request came from. It
 // reads as a category name rather than as a device, which is what a person
@@ -127,10 +127,12 @@ export function AccountAccess({
   timezone,
   instanceId,
   onSignedOut,
+  panel,
 }: {
   timezone: string;
   instanceId: string | null;
   onSignedOut: () => void;
+  panel?: "identities" | "sessions";
 }) {
   const { t } = useTranslation();
 
@@ -319,7 +321,7 @@ export function AccountAccess({
 
   return (
     <>
-      <div className={styles.accountBlock}>
+      <div className={styles.accountBlock} hidden={panel === "sessions"}>
         <div className={styles.accountBlockHeader}>
           <strong>{t("已关联的登录方式")}</strong>
           <p>{t("用这些账号可以直接登录，不需要记住密码。")}</p>
@@ -421,7 +423,7 @@ export function AccountAccess({
         ) : null}
       </div>
 
-      <div className={styles.accountBlock}>
+      <div className={styles.accountBlock} hidden={panel === "identities"}>
         <div className={styles.accountBlockHeader}>
           <strong>{t("活跃会话")}</strong>
           <p>

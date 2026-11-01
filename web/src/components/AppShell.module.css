@@ -960,3 +960,13 @@
     block-size: 1.5rem;
   }
 }
+
+/* Settings owns the complete content area; its detail is never a rail slot. */
+.settingsColumns {
+  display: block;
+}
+.settingsMain {
+  max-inline-size: none;
+  min-block-size: 0;
+  border: 0;
+}

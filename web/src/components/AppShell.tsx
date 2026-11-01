@@ -162,7 +162,7 @@ function accountNav(
 ): NavItem {
   return {
     label: t("账号"),
-    href: settingsAvailable ? "/settings/account" : loginDestination,
+    href: settingsAvailable ? "/settings" : loginDestination,
     icon: "account",
     active: ["login", "settings", "edit"],
   };
@@ -418,7 +418,7 @@ function LeftRail({
             <NavLink
               item={{
                 label: t("设置"),
-                href: "/settings/account",
+                href: "/settings",
                 icon: "settings",
                 active: ["settings"],
               }}
@@ -654,11 +654,18 @@ export function AppShell({
                 site={site}
               />
             ) : null}
-            <div className={styles.contentColumns}>
-              <main className={styles.timeline} id="main-content">
+            <div
+              className={`${styles.contentColumns} ${route.id === "settings" ? styles.settingsColumns : ""}`}
+            >
+              <main
+                className={`${styles.timeline} ${route.id === "settings" ? styles.settingsMain : ""}`}
+                id="main-content"
+              >
                 <header
                   style={
-                    route.id === "search" ? { display: "none" } : undefined
+                    route.id === "search" || route.id === "settings"
+                      ? { display: "none" }
+                      : undefined
                   }
                   className={`${styles.timelineHeader} ${route.id === "notifications" ? styles.notificationsHeader : ""} ${
                     route.id === "home" ? styles.homeHeader : ""
@@ -784,7 +791,7 @@ export function AppShell({
                   {children ?? <ShellState route={route} state={state} />}
                 </ProfileHeaderContext.Provider>
               </main>
-              {!focusReading && !workspace ? (
+              {!focusReading && !workspace && route.id !== "settings" ? (
                 <MemoryRail
                   key={recentSearchScope(
                     site.instanceId,

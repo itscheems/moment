@@ -1,9 +1,17 @@
-import { LanguageSettings } from "./LanguageSettings";
-import { t } from "../../i18n";
+import { SettingsTextField } from "./SettingsTextField";
+import { Autocomplete } from "@base-ui/react/autocomplete";
+import { Tabs } from "@base-ui/react/tabs";
 import { useTranslation } from "react-i18next";
 import { useLoginNavigation } from "../auth/loginNavigation";
 import { CredentialConfirmation } from "./CredentialConfirmation";
-import { useEffect, useState, type FormEvent } from "react";
+import {
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type FormEvent,
+  type ReactNode,
+} from "react";
 import { accountsApi } from "../../api/accounts";
 import { selectSiteProfile, siteApi } from "../../api/site";
 import {
@@ -18,36 +26,37 @@ import { AccountSecurity } from "./AccountSecurity";
 import { MembersSection } from "./MembersSection";
 import { PersonalData } from "./PersonalData";
 import { BackupRestore } from "./BackupRestore";
+import { useNavigation, InternalLink } from "../../app/navigation";
+import { BackControl } from "../../components/BackControl";
+import { Icon } from "../../components/icons";
+import { AppearanceSettings } from "../../components/ThemeMenu";
+import { LanguageDialog } from "../../components/LanguageDialog";
 import {
-  useSettingsSections,
-  type SettingsSection,
-} from "./useSettingsSections";
+  useMediaQuery,
+  RAIL_VIEWPORT_QUERY,
+} from "../../components/useMediaQuery";
+import {
+  settingsCategories,
+  settingsItems,
+  settingsItemPath,
+  settingsLocation,
+  type SettingsItem,
+} from "./settingsNavigation";
 import forms from "../../components/Forms.module.css";
 import styles from "./Settings.module.css";
 
-const titles: Record<SettingsSection, string> = {
-  get account() {
-    return t("账号");
-  },
-  get site() {
-    return t("站点");
-  },
-  get members() {
-    return t("成员");
-  },
-  get backups() {
-    return t("备份");
-  },
-};
+type SitePanel = "information" | "comments" | "profile";
 
 function SiteConfiguration({
   site,
   onSaved,
   active,
+  panel,
 }: {
   site: SiteIdentity;
   onSaved: (site: SiteIdentity) => void;
   active: boolean;
+  panel: SitePanel;
 }) {
   const { t } = useTranslation();
 
@@ -59,8 +68,18 @@ function SiteConfiguration({
   const [profile, setProfile] = useState(site.profileUserId);
   const [roster, setRoster] = useState<Account[]>([]);
   const [pending, setPending] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
+  const [errors, setErrors] = useState<
+    Partial<Record<SitePanel, string | null>>
+  >({});
+  const [notices, setNotices] = useState<
+    Partial<Record<SitePanel, string | null>>
+  >({});
+  const error = errors[panel];
+  const notice = notices[panel];
+  const setError = (value: string | null) =>
+    setErrors((current) => ({ ...current, [panel]: value }));
+  const setNotice = (value: string | null) =>
+    setNotices((current) => ({ ...current, [panel]: value }));
   useEffect(() => {
     if (!active) return;
     const controller = new AbortController();
@@ -82,12 +101,12 @@ function SiteConfiguration({
     setError(null);
     setNotice(null);
     try {
-      const saved = await siteApi.updateSite(session.csrfToken, {
-        title,
-        timezone,
-        publicBaseUrl: url.trim() || null,
-        commentsEnabled: comments,
-      });
+      const saved = await siteApi.updateSite(
+        session.csrfToken,
+        panel === "comments"
+          ? { commentsEnabled: comments }
+          : { title, timezone, publicBaseUrl: url.trim() || null },
+      );
       onSaved({
         ...saved,
         instanceId: site.instanceId,
@@ -138,39 +157,39 @@ function SiteConfiguration({
       </header>
       <form
         className={styles.settingsForm}
+        hidden={panel === "profile"}
         onSubmit={(event) => void save(event)}
       >
-        <label>
-          {t("站点标题")}
-          <input
+        <fieldset
+          className={styles.settingsFields}
+          hidden={panel !== "information"}
+          disabled={pending || panel !== "information"}
+          aria-label={t("基本信息")}
+        >
+          <SettingsTextField
+            label={t("站点标题")}
             disabled={pending}
             maxLength={120}
             onChange={(event) => setTitle(event.target.value)}
             required
             value={title}
           />
-        </label>
-        <label>
-          {t("时区")}
-          <input
+          <SettingsTextField
+            label={t("时区")}
             disabled={pending}
             onChange={(event) => setTimezone(event.target.value)}
-            placeholder={t("Asia/Shanghai")}
             required
             value={timezone}
           />
-        </label>
-        <label>
-          {t("公开网址")}
-          <input
+          <SettingsTextField
+            label={t("公开网址")}
             disabled={pending}
             onChange={(event) => setUrl(event.target.value)}
-            placeholder={t("https://example.com")}
             type="url"
             value={url}
           />
-        </label>
-        <label className={styles.toggleField}>
+        </fieldset>
+        <label className={styles.toggleField} hidden={panel !== "comments"}>
           <input
             checked={comments}
             disabled={pending}
@@ -187,7 +206,7 @@ function SiteConfiguration({
           {pending ? t("正在保存…") : t("保存站点设置")}
         </button>
       </form>
-      <div className={styles.siteProfile}>
+      <div className={styles.siteProfile} hidden={panel !== "profile"}>
         <h3>{t("首页展示账号")}</h3>
         <p>
           {t(
@@ -229,6 +248,42 @@ function SiteConfiguration({
   );
 }
 
+function SettingsRowContent({
+  item,
+  breadcrumb,
+}: {
+  item: SettingsItem;
+  breadcrumb?: string;
+}) {
+  const { t } = useTranslation();
+  return (
+    <div className={styles.rowInner}>
+      <div className={styles.rowIcon}>
+        <Icon name={item.icon} />
+      </div>
+      <div className={styles.rowText}>
+        <span className={styles.rowTitle}>{t(item.title)}</span>
+        <span className={styles.rowDescription}>
+          {breadcrumb ? `${breadcrumb} · ` : ""}
+          {t(item.description)}
+        </span>
+      </div>
+      <Icon name="chevron-right" className={styles.rowChevron} />
+    </div>
+  );
+}
+function SettingsRow({ item }: { item: SettingsItem }) {
+  return (
+    <InternalLink
+      className={styles.settingsRow}
+      href={settingsItemPath(item)}
+      data-focus-key={settingsItemPath(item)}
+    >
+      <SettingsRowContent item={item} />
+    </InternalLink>
+  );
+}
+
 export function SettingsPage({
   site,
   onSaved,
@@ -237,17 +292,101 @@ export function SettingsPage({
   onSaved: (site: SiteIdentity) => void;
 }) {
   const { t } = useTranslation();
-
+  const navigation = useNavigation();
   const { requestLogin } = useLoginNavigation();
   const { account, applyAccount } = useSession();
-  const [restoreBusy, setRestoreBusy] = useState(false);
-  const [waiting, setWaiting] = useState(0);
   const admin = isAdministrator(account);
-  const { section, navRef, contentRef, goToSection } =
-    useSettingsSections(admin);
-  const sections: SettingsSection[] = admin
-    ? ["account", "site", "members", "backups"]
-    : ["account"];
+  const pathname = navigation.panel?.from.pathname ?? navigation.pathname;
+  const { root, category, item } = settingsLocation(pathname);
+  const wide = useMediaQuery(RAIL_VIEWPORT_QUERY);
+  const [query, setQuery] = useState("");
+  const [searching, setSearching] = useState(false);
+  const searchInput = useRef<HTMLInputElement>(null);
+  const categoryNavigation = useRef<HTMLElement>(null);
+  const restoreCategoryFocus = useRef(false);
+  const [waiting, setWaiting] = useState(0);
+  const detailScroll = useRef<HTMLDivElement>(null);
+  const detailHeading = useRef<HTMLHeadingElement>(null);
+  const parentHeading = useRef<HTMLHeadingElement>(null);
+  const scrollPositions = useRef(new Map<string, number>());
+  const shownPath = useRef(pathname);
+  const categories = settingsCategories.filter(
+    (entry) => admin || !entry.admin,
+  );
+  const allowed = !category.admin || admin;
+  const availableItems = settingsItems.filter((entry) =>
+    categories.some((category) => category.id === entry.category),
+  );
+  const search = query.trim().toLocaleLowerCase();
+  const searchScore = (entry: SettingsItem) => {
+    const title = t(entry.title).toLocaleLowerCase();
+    if (title === search) return 0;
+    if (title.startsWith(search)) return 1;
+    if (title.includes(search)) return 2;
+    const parent = settingsCategories.find(
+      (category) => category.id === entry.category,
+    )!;
+    if (t(parent.title).toLocaleLowerCase().includes(search)) return 3;
+    return t(entry.description).toLocaleLowerCase().includes(search)
+      ? 4
+      : Infinity;
+  };
+  const results = search
+    ? availableItems
+        .map((entry) => ({ entry, score: searchScore(entry) }))
+        .filter(({ score }) => Number.isFinite(score))
+        .sort((left, right) => left.score - right.score)
+        .map(({ entry }) => entry)
+    : [];
+  const categoryHref = `/settings/${category.id}`;
+  const upHref = item ? categoryHref : "/settings";
+
+  useLayoutEffect(() => {
+    const changed = shownPath.current !== pathname;
+    if (changed && detailScroll.current)
+      detailScroll.current.scrollTop =
+        scrollPositions.current.get(pathname) ?? 0;
+    shownPath.current = pathname;
+    // History restores focus to the link that opened a page. Fresh destinations
+    // instead announce their heading, without stealing focus on a resize.
+    if (changed && window.history.state?.momentFresh && (!wide || item)) {
+      (root ? parentHeading : detailHeading).current?.focus({
+        preventScroll: true,
+      });
+    }
+    if (!wide && document.activeElement instanceof HTMLElement) {
+      const hiddenPanel = root
+        ? "[data-settings-detail]"
+        : "[data-settings-categories]";
+      if (document.activeElement.closest(hiddenPanel)) {
+        (root ? parentHeading : detailHeading).current?.focus({
+          preventScroll: true,
+        });
+      }
+    }
+  }, [pathname, wide, root, item]);
+
+  useLayoutEffect(() => {
+    if (!searching && restoreCategoryFocus.current) {
+      restoreCategoryFocus.current = false;
+      const nav = categoryNavigation.current;
+      const tab =
+        nav?.querySelector<HTMLElement>('[role="tab"][aria-selected="true"]') ??
+        nav?.querySelector<HTMLElement>('[role="tab"]');
+      tab?.focus({ preventScroll: true });
+    }
+  }, [searching]);
+
+  function closeSearch() {
+    restoreCategoryFocus.current = true;
+    setSearching(false);
+    setQuery("");
+    searchInput.current?.blur();
+  }
+  function goUp() {
+    if (navigation.previousHref === upHref) navigation.goBack(upHref);
+    else navigation.replace(upHref);
+  }
   function adopt(saved: Account) {
     applyAccount(saved);
     if (site.profileUserId === saved.userId)
@@ -260,87 +399,325 @@ export function SettingsPage({
         coverMediaId: saved.coverMediaId,
       });
   }
+  const visible = (categoryId: string, itemIds: string[]) =>
+    allowed && item?.category === categoryId && itemIds.includes(item.id);
+  const surface = (show: boolean, children: ReactNode) => (
+    <div className={styles.settingsSurface} hidden={!show}>
+      {children}
+    </div>
+  );
   return (
-    <div className={styles.settingsPage}>
-      <nav
+    <div
+      className={styles.settingsPage}
+      data-settings-root={root}
+      data-settings-page={item ? `${item.category}/${item.id}` : category.id}
+    >
+      <section
+        className={styles.categoryPanel}
         aria-label={t("设置分类")}
-        className={styles.settingsNav}
-        ref={navRef}
+        data-settings-categories
       >
-        {sections.map((item) => (
-          <a
-            aria-current={section === item ? "location" : undefined}
-            href={`/settings/${item}`}
-            key={item}
-            onClick={(event) => goToSection(event, item)}
-          >
-            {titles[item]}
-            {item === "members" && waiting > 0 ? (
-              <span aria-hidden="true" className={styles.navBadge}>
-                {waiting}
-              </span>
-            ) : null}
-          </a>
-        ))}
-      </nav>
-      {account ? <CredentialConfirmation key={account.userId} /> : null}
-      <div className={styles.settingsContent} ref={contentRef}>
-        {section !== "account" && !admin ? (
-          <p role="alert">{t("此设置需要管理员权限。")}</p>
-        ) : null}
-        {account ? (
-          <div className={styles.settingsGroup} id="settings-account">
-            <section aria-label={t("个人资料")}>
-              <header className={styles.sectionHeader}>
-                <h2>{t("个人资料")}</h2>
-              </header>
-              <p>
-                {account.displayName} @{account.username}
-              </p>
-              <ProfileEditor account={account} onSaved={adopt} />
-            </section>
-            <LanguageSettings />
-            <PersonalData key={account.userId} />
-            <AccountSecurity instanceId={site.instanceId} />
-            <section aria-label={t("登录方式与会话")}>
-              <header className={styles.sectionHeader}>
-                <h2>{t("登录方式与会话")}</h2>
-              </header>
-              <AccountAccess
-                timezone={site.timezone}
-                instanceId={site.instanceId}
-                onSignedOut={() => requestLogin()}
+        <header className={styles.panelHeader}>
+          <span className={styles.rootBack}>
+            <BackControl>
+              <button
+                type="button"
+                aria-label={t("返回上一页")}
+                onClick={() => navigation.goBack("/")}
               />
-            </section>
+            </BackControl>
+          </span>
+          <h2 ref={parentHeading} tabIndex={-1}>
+            {t("设置")}
+          </h2>
+        </header>
+        <Autocomplete.Root
+          items={results}
+          filter={null}
+          inline
+          open={searching}
+          mode="none"
+          autoHighlight="always"
+          value={query}
+          onValueChange={setQuery}
+          itemToStringValue={(entry) => t(entry.title)}
+        >
+          <div className={styles.categoryScroll}>
+            <div className={styles.settingsSearch}>
+              {searching ? (
+                <BackControl>
+                  <button
+                    type="button"
+                    aria-label={t("退出设置搜索")}
+                    onClick={closeSearch}
+                  />
+                </BackControl>
+              ) : null}
+              <Autocomplete.InputGroup className={styles.searchInput}>
+                {!searching ? (
+                  <Icon name="search" variant="navigation" />
+                ) : null}
+                <Autocomplete.Input
+                  ref={searchInput}
+                  data-focus-key="settings:search"
+                  aria-label={t("搜索设置")}
+                  placeholder={t("搜索设置")}
+                  autoComplete="off"
+                  spellCheck={false}
+                  onFocus={() => setSearching(true)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Escape") closeSearch();
+                  }}
+                />
+                <Autocomplete.Clear aria-label={t("清除设置搜索")}>
+                  <Icon name="close" />
+                </Autocomplete.Clear>
+              </Autocomplete.InputGroup>
+            </div>
+            {searching ? (
+              <div>
+                <p className={styles.searchSummary} role="status">
+                  {!search
+                    ? t("尝试搜索账号、显示或备份等设置。")
+                    : results.length
+                      ? t("找到 {{count}} 项设置", { count: results.length })
+                      : t("没有找到匹配的设置")}
+                </p>
+                <Autocomplete.List aria-label={t("设置搜索结果")}>
+                  {(entry: SettingsItem) => (
+                    <Autocomplete.Item
+                      key={settingsItemPath(entry)}
+                      value={entry}
+                      className={styles.settingsRow}
+                      render={
+                        <InternalLink
+                          href={settingsItemPath(entry)}
+                          data-focus-key={`settings-search:${settingsItemPath(entry)}`}
+                        />
+                      }
+                    >
+                      <SettingsRowContent
+                        item={entry}
+                        breadcrumb={t(
+                          settingsCategories.find(
+                            (category) => category.id === entry.category,
+                          )!.title,
+                        )}
+                      />
+                    </Autocomplete.Item>
+                  )}
+                </Autocomplete.List>
+              </div>
+            ) : (
+              <nav ref={categoryNavigation} aria-label={t("设置分类")}>
+                <Tabs.Root
+                  orientation="vertical"
+                  value={wide || !root ? category.id : null}
+                >
+                  <Tabs.List aria-label={t("设置分类")}>
+                    {categories.map((entry) => (
+                      <div
+                        className={styles.categoryRow}
+                        key={entry.id}
+                        data-selected={
+                          entry.id === category.id && (wide || !root)
+                        }
+                      >
+                        <Tabs.Tab
+                          value={entry.id}
+                          nativeButton={false}
+                          render={
+                            <InternalLink
+                              href={`/settings/${entry.id}`}
+                              data-focus-key={`/settings/${entry.id}`}
+                              onClick={(event) => {
+                                if (pathname === `/settings/${entry.id}`)
+                                  event.preventDefault();
+                              }}
+                            />
+                          }
+                        >
+                          <div className={styles.categoryInner}>
+                            <span>
+                              {t(entry.title)}
+                              {entry.id === "members" && waiting > 0 ? (
+                                <span
+                                  className={styles.navBadge}
+                                  aria-label={t("{{count}} 位待审核", {
+                                    count: waiting,
+                                  })}
+                                >
+                                  {waiting}
+                                </span>
+                              ) : null}
+                            </span>
+                            <Icon
+                              name="chevron-right"
+                              className={styles.rowChevron}
+                            />
+                          </div>
+                        </Tabs.Tab>
+                        {entry.id === category.id && (wide || !root) ? (
+                          <div
+                            aria-hidden="true"
+                            className={styles.selectionIndicator}
+                          />
+                        ) : null}
+                      </div>
+                    ))}
+                  </Tabs.List>
+                </Tabs.Root>
+              </nav>
+            )}
           </div>
-        ) : null}
-        {admin ? (
-          <div className={styles.settingsGroup} id="settings-site">
-            <SiteConfiguration
-              site={site}
-              onSaved={onSaved}
-              active={section === "site"}
-            />
-          </div>
-        ) : null}
-        {admin ? (
-          <div className={styles.settingsGroup} id="settings-members">
-            <MembersSection onWaitingChange={setWaiting} />
-          </div>
-        ) : null}
-        {admin ? (
-          <div className={styles.settingsGroup} id="settings-backups">
-            <BackupRestore
-              instanceId={site.instanceId}
-              settingsBlocked={false}
-              onRestoreBusyChange={setRestoreBusy}
-            />
-          </div>
-        ) : null}
-        {restoreBusy && section === "backups" ? (
-          <p aria-live="polite">{t("正在检查备份状态…")}</p>
-        ) : null}
-      </div>
+        </Autocomplete.Root>
+      </section>
+      <section
+        className={styles.detailPanel}
+        data-settings-detail
+        aria-label={
+          item ? t(item.title) : t(category.title, { context: "heading" })
+        }
+      >
+        <header className={styles.panelHeader}>
+          <span className={item ? styles.detailBack : styles.categoryBack}>
+            <BackControl>
+              <button
+                type="button"
+                aria-label={t("返回上一级")}
+                onClick={goUp}
+              />
+            </BackControl>
+          </span>
+          <h2 ref={detailHeading} tabIndex={-1}>
+            {item ? t(item.title) : t(category.title, { context: "heading" })}
+          </h2>
+        </header>
+        <div
+          ref={detailScroll}
+          className={styles.detailScroll}
+          onScroll={(event) =>
+            scrollPositions.current.set(
+              shownPath.current,
+              event.currentTarget.scrollTop,
+            )
+          }
+        >
+          {!allowed ? (
+            <p className={styles.categoryDescription} role="alert">
+              {t("此设置需要管理员权限。")}
+            </p>
+          ) : !item ? (
+            <>
+              <p className={styles.categoryDescription}>
+                {t(category.description)}
+              </p>
+              {availableItems
+                .filter((entry) => entry.category === category.id)
+                .map((entry) => (
+                  <SettingsRow key={settingsItemPath(entry)} item={entry} />
+                ))}
+            </>
+          ) : null}
+          {account ? <CredentialConfirmation key={account.userId} /> : null}
+          {account ? (
+            <>
+              {surface(
+                visible("account", ["profile"]),
+                <section aria-label={t("个人资料")}>
+                  <p className={styles.profileSummary}>
+                    {account.displayName} <span>@{account.username}</span>
+                  </p>
+                  <ProfileEditor account={account} onSaved={adopt} />
+                </section>,
+              )}
+              {surface(
+                visible("account", ["password"]) ||
+                  visible("security", ["tokens"]),
+                <AccountSecurity
+                  instanceId={site.instanceId}
+                  panel={item?.id === "password" ? "password" : "tokens"}
+                />,
+              )}
+              {surface(
+                visible("account", ["export", "import"]),
+                <PersonalData
+                  key={account.userId}
+                  panel={item?.id === "export" ? "export" : "import"}
+                />,
+              )}
+              {surface(
+                visible("security", ["identities", "sessions"]),
+                <AccountAccess
+                  timezone={site.timezone}
+                  instanceId={site.instanceId}
+                  panel={item?.id === "sessions" ? "sessions" : "identities"}
+                  onSignedOut={() => requestLogin()}
+                />,
+              )}
+              {surface(
+                visible("display", ["appearance"]),
+                <>
+                  <p className={styles.leafDescription}>
+                    {t("这些设置只保存在当前浏览器，会立即应用到所有页面。")}
+                  </p>
+                  <AppearanceSettings account={account} site={site} />
+                </>,
+              )}
+              {surface(
+                visible("display", ["language"]),
+                <LanguageDialog
+                  inline
+                  onClose={() => {
+                    if (item?.category === "display" && item.id === "language")
+                      goUp();
+                  }}
+                />,
+              )}
+            </>
+          ) : null}
+          {admin ? (
+            <>
+              {surface(
+                visible("site", ["information", "comments", "profile"]),
+                <SiteConfiguration
+                  site={site}
+                  onSaved={onSaved}
+                  active={visible("site", ["profile"])}
+                  panel={
+                    item?.id === "comments"
+                      ? "comments"
+                      : item?.id === "profile"
+                        ? "profile"
+                        : "information"
+                  }
+                />,
+              )}
+              {surface(
+                visible("members", ["roster", "registration"]),
+                <MembersSection
+                  onWaitingChange={setWaiting}
+                  panel={
+                    item?.id === "registration" ? "registration" : "roster"
+                  }
+                />,
+              )}
+              {surface(
+                visible("backups", ["export", "restore"]),
+                <BackupRestore
+                  instanceId={site.instanceId}
+                  settingsBlocked={false}
+                  panel={
+                    item?.category === "backups" && item.id === "export"
+                      ? "export"
+                      : "restore"
+                  }
+                />,
+              )}
+            </>
+          ) : null}
+        </div>
+      </section>
     </div>
   );
 }

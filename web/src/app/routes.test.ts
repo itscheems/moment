@@ -223,6 +223,13 @@ describe("retired identity routes", () => {
 
 describe("central session requirements", () => {
   it.each([
+    "/settings",
+    "/settings/account/password",
+    "/settings/security/tokens",
+    "/settings/display/language",
+    "/settings/site/comments",
+    "/settings/members/registration",
+    "/settings/backups/restore",
     "/settings/account",
     "/settings/site",
     "/settings/members",

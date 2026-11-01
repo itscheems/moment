@@ -26,7 +26,7 @@ function importError(error: unknown, committing: boolean): string {
     : t("文件检查未完成，现有内容没有改变。请重新选择文件或重试。");
 }
 
-export function PersonalData() {
+export function PersonalData({ panel }: { panel?: "export" | "import" } = {}) {
   const { t } = useTranslation();
 
   const { account, session, expireIfInvalidSession } = useSession();
@@ -77,7 +77,10 @@ export function PersonalData() {
         operation.current = null;
         setBusy(false);
         if (commit || controller.signal.aborted)
-          requestAnimationFrame(() => checkButton.current?.focus());
+          requestAnimationFrame(() => {
+            if (!checkButton.current?.closest("[hidden]"))
+              checkButton.current?.focus();
+          });
       }
     }
   }
@@ -101,7 +104,7 @@ export function PersonalData() {
       <header className={styles.sectionHeader}>
         <h2>{t("个人数据")}</h2>
       </header>
-      <div className={styles.portableStep}>
+      <div className={styles.portableStep} hidden={panel === "import"}>
         <div>
           <h3>{t("导出我的数据")}</h3>
           <p>
@@ -119,7 +122,7 @@ export function PersonalData() {
           </button>
         </div>
       </div>
-      <div className={styles.portableStep}>
+      <div className={styles.portableStep} hidden={panel === "export"}>
         <div>
           <h3>{t("导入个人数据")}</h3>
           <p>

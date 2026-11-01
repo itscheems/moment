@@ -759,7 +759,11 @@ function PublicApp() {
           // Any signed-in account may open this page. What it shows them is the
           // page's own decision, section by section.
           signedIn ? (
-            <SettingsPage onSaved={setSite} site={site} />
+            <SettingsPage
+              key={auth.account?.userId}
+              onSaved={setSite}
+              site={site}
+            />
           ) : (
             <AccountAccessNotice />
           )

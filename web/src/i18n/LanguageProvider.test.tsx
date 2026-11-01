@@ -77,6 +77,9 @@ describe("language selection", () => {
     const input = screen.getByRole("textbox", { name: "editing content" });
     fireEvent.change(input, { target: { value: "Keep this draft" } });
     fireEvent.click(screen.getByRole("button", { name: "语言" }));
+    expect(await screen.findByRole("dialog")).toHaveAccessibleDescription(
+      "选择 Moment 的显示语言，保存在当前浏览器中。",
+    );
     fireEvent.click(screen.getByRole("radio", { name: /English/ }));
     fireEvent.click(screen.getByRole("button", { name: "取消" }));
     expect(screen.getByTestId("language")).toHaveTextContent("zh-CN");

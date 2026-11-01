@@ -483,7 +483,7 @@ function installFetch(
 
 async function renderSettings(waitForPicker = true) {
   render(<App />);
-  await screen.findByRole("heading", { name: "备份与恢复" });
+  await screen.findByRole("heading", { name: "从备份恢复" });
   if (waitForPicker) {
     await waitFor(() =>
       expect(
@@ -506,7 +506,7 @@ async function createReview(file: File) {
 
 describe("owner backup and restore", () => {
   beforeEach(() => {
-    window.history.replaceState({}, "", "/settings/backups");
+    window.history.replaceState({}, "", "/settings/backups/restore");
     window.sessionStorage.clear();
     window.localStorage.clear();
     installSession();
@@ -704,7 +704,7 @@ describe("owner backup and restore", () => {
           : undefined,
     );
     const view = render(<App />);
-    await screen.findByRole("heading", { name: "备份与恢复" });
+    await screen.findByRole("heading", { name: "从备份恢复" });
     await waitFor(() =>
       expect(
         screen.getByRole("button", { name: "选择备份文件" }),
@@ -734,7 +734,7 @@ describe("owner backup and restore", () => {
     );
 
     render(<App />);
-    await screen.findByRole("heading", { name: "备份与恢复" });
+    await screen.findByRole("heading", { name: "从备份恢复" });
     await waitFor(() =>
       expect(
         screen.getByRole("button", { name: "选择备份文件" }),
@@ -803,14 +803,16 @@ describe("owner backup and restore", () => {
     vi.useRealTimers();
   });
 
-  it("keeps the initial view focused on status, export, and file entry", async () => {
+  it("keeps the restore page focused on status and file entry", async () => {
     installFetch();
     await renderSettings();
 
     expect(
       screen.getByRole("heading", { name: "当前没有进行中的恢复" }),
     ).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "下载整站备份" })).toBeEnabled();
+    expect(
+      screen.queryByRole("button", { name: "下载整站备份" }),
+    ).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "选择备份文件" })).toBeEnabled();
     expect(
       screen.queryByRole("heading", { name: "恢复前影响清单" }),
@@ -827,7 +829,7 @@ describe("owner backup and restore", () => {
         }),
     );
     render(<App />);
-    await screen.findByRole("heading", { name: "备份与恢复" });
+    await screen.findByRole("heading", { name: "从备份恢复" });
     await waitFor(() => expect(resolveInitial).toBeTypeOf("function"));
     expect(screen.getByRole("button", { name: "选择备份文件" })).toBeDisabled();
     await act(async () => {
@@ -853,7 +855,9 @@ describe("owner backup and restore", () => {
     });
     await renderSettings();
 
-    const button = screen.getByRole("button", { name: "下载整站备份" });
+    fireEvent.click(screen.getByRole("button", { name: "返回上一级" }));
+    fireEvent.click(await screen.findByRole("link", { name: /^导出整站备份/ }));
+    const button = await screen.findByRole("button", { name: "下载整站备份" });
     fireEvent.click(button);
     fireEvent.click(button);
     await waitFor(() =>
@@ -883,11 +887,15 @@ describe("owner backup and restore", () => {
       clicks.push(this.getAttribute("href") ?? "");
     });
     render(<App />);
-    await screen.findByRole("heading", { name: "备份与恢复" });
+    await screen.findByRole("heading", { name: "从备份恢复" });
     await screen.findByRole("button", { name: "立即重试状态" });
     expect(screen.getByRole("button", { name: "选择备份文件" })).toBeDisabled();
     expect(screen.getByRole("button", { name: "选择备份文件" })).toBeDisabled();
+    fireEvent.click(screen.getByRole("button", { name: "返回上一级" }));
+    fireEvent.click(await screen.findByRole("link", { name: /^导出整站备份/ }));
     fireEvent.click(screen.getByRole("button", { name: "下载整站备份" }));
+    fireEvent.click(screen.getByRole("button", { name: "返回上一级" }));
+    fireEvent.click(await screen.findByRole("link", { name: /^从备份恢复/ }));
     fireEvent.click(
       await screen.findByRole("button", { name: "立即重试状态" }),
     );
@@ -899,6 +907,8 @@ describe("owner backup and restore", () => {
     await act(async () => {
       await vi.advanceTimersByTimeAsync(1_000);
     });
+    fireEvent.click(screen.getByRole("button", { name: "返回上一级" }));
+    fireEvent.click(await screen.findByRole("link", { name: /^导出整站备份/ }));
     fireEvent.click(screen.getByRole("button", { name: "下载整站备份" }));
     await waitFor(() =>
       expect(clicks).toEqual([

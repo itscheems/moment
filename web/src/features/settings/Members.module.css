@@ -436,3 +436,66 @@
     padding-inline: var(--space-3);
   }
 }
+
+.membersSection[data-settings-panel="registration"]
+  > :not([data-members-registration]):not(header) {
+  display: none;
+}
+
+.membersSection[data-settings-panel="registration"] .policyTrigger {
+  display: none;
+}
+
+.membersSection[data-settings-panel="registration"] .policyPanel {
+  border: 0;
+  border-radius: 0;
+}
+.membersSection[data-settings-panel="registration"] .policySummary {
+  display: none;
+}
+.membersSection[data-settings-panel="registration"] .policyDetails {
+  border: 0;
+  padding: 0;
+}
+.membersSection[data-settings-panel="registration"] .registrationModes > div {
+  border: 0;
+  border-radius: 0;
+  overflow: visible;
+}
+.membersSection[data-settings-panel="registration"] .registrationModes > p {
+  font-size: 13px;
+  line-height: 16px;
+}
+.membersSection[data-settings-panel="registration"] .registrationMode {
+  border: 0;
+  padding: 12px 0;
+  min-block-size: 72px;
+  background: transparent;
+}
+.membersSection[data-settings-panel="registration"] .registrationMode > input {
+  order: 2;
+  margin-inline-start: auto;
+  inline-size: 20px;
+  block-size: 20px;
+}
+.membersSection[data-settings-panel="registration"] .registrationMode > span {
+  flex: 1;
+}
+.membersSection[data-settings-panel="registration"] .registrationMode strong {
+  font-size: 15px;
+  line-height: 20px;
+  font-weight: 400;
+}
+.membersSection[data-settings-panel="registration"] .registrationMode small {
+  font-size: 13px;
+  line-height: 16px;
+}
+.membersSection[data-settings-panel="registration"] .registrationMode > svg {
+  display: none;
+}
+@media (hover: hover) {
+  .membersSection[data-settings-panel="registration"]
+    .registrationMode:hover:not(:has(input:disabled)) {
+    background: var(--surface-hover);
+  }
+}
