@@ -1,4 +1,9 @@
 import { NotificationBadge } from "../features/notifications/NotificationBadge";
+import {
+  AccountMenuAccounts,
+  AccountMenuActions,
+} from "../features/auth/AccountSwitcher";
+import { useBrowserAccounts } from "../features/auth/BrowserAccountsProvider";
 import { BackControl } from "./BackControl";
 import { t } from "../i18n";
 import { useTranslation } from "react-i18next";
@@ -180,6 +185,7 @@ function AccountRail({
   settingsAvailable: boolean;
 }) {
   const { t } = useTranslation();
+  const browser = useBrowserAccounts();
 
   const { navigate } = useNavigation();
   const { href: loginDestination } = useLoginNavigation();
@@ -202,13 +208,14 @@ function AccountRail({
     coverMediaId: account.coverMediaId,
   };
   return (
-    <Menu.Root>
+    <Menu.Root onOpenChange={(open) => browser?.setMenuOpen(open)}>
       <SidebarTooltip label={t("账户")}>
         <Menu.Trigger
           aria-label={t("{{value1}} 的账户菜单", {
             value1: account.displayName,
           })}
           className={styles.accountRail}
+          data-account-menu-trigger
         >
           <span className={styles.accountRailAvatar}>
             <SiteAvatar site={face} />
@@ -221,7 +228,18 @@ function AccountRail({
               @{account.username}
             </span>
           </span>
-          <Icon name="ellipsis" />
+          <span className={styles.accountRailMore}>
+            <Icon name="ellipsis" />
+            {browser &&
+            Object.entries(browser.counts).some(
+              ([id, count]) => id !== account.userId && count > 0,
+            ) ? (
+              <span
+                className={styles.accountRailUnread}
+                aria-label={t("其他账户有新通知")}
+              />
+            ) : null}
+          </span>
         </Menu.Trigger>
       </SidebarTooltip>
       <Menu.Portal>
@@ -237,6 +255,7 @@ function AccountRail({
             aria-label={t("账户")}
             className={`${styles.mobileAccountPopup} ${styles.accountRailPopup}`}
           >
+            {browser ? <AccountMenuAccounts /> : null}
             {/* No profile entry: the rail already carries one, and a menu that
                 repeats the row above it is a longer way to the same page. */}
             <Menu.Item
@@ -246,13 +265,20 @@ function AccountRail({
               <Icon name="article" />
               <span>{t("文章")}</span>
             </Menu.Item>
-            <Menu.Item className={styles.mobileAccountItem} onClick={onSignOut}>
-              <Icon name="close" />
-              <span>
-                {t("退出 @")}
-                {account.username}
-              </span>
-            </Menu.Item>
+            {browser ? (
+              <AccountMenuActions className={styles.mobileAccountItem} />
+            ) : (
+              <Menu.Item
+                className={styles.mobileAccountItem}
+                onClick={onSignOut}
+              >
+                <Icon name="close" />
+                <span>
+                  {t("退出 @")}
+                  {account.username}
+                </span>
+              </Menu.Item>
+            )}
           </Menu.Popup>
         </Menu.Positioner>
       </Menu.Portal>
@@ -513,16 +539,18 @@ function MobileAccountMenu({
   profileHref: string;
 }) {
   const { t } = useTranslation();
+  const browser = useBrowserAccounts();
 
   const { navigate } = useNavigation();
   const { href: loginDestination } = useLoginNavigation();
   const accountItem = accountNav(accountSettingsAvailable, loginDestination);
 
   return (
-    <Menu.Root>
+    <Menu.Root onOpenChange={(open) => browser?.setMenuOpen(open)}>
       <Menu.Trigger
         aria-label={t("打开账户菜单")}
         className={styles.mobileAvatar}
+        data-account-menu-trigger
       >
         {account ? (
           <SiteAvatar eager site={account} />
@@ -543,6 +571,7 @@ function MobileAccountMenu({
             aria-label={t("账户")}
             className={styles.mobileAccountPopup}
           >
+            {browser && account ? <AccountMenuAccounts /> : null}
             <Menu.Item
               className={styles.mobileAccountItem}
               onClick={() => navigate(profileHref)}
@@ -566,6 +595,9 @@ function MobileAccountMenu({
                 {accountSettingsAvailable ? t("账号设置") : t("账号登录")}
               </span>
             </Menu.Item>
+            {browser && account ? (
+              <AccountMenuActions className={styles.mobileAccountItem} />
+            ) : null}
           </Menu.Popup>
         </Menu.Positioner>
       </Menu.Portal>

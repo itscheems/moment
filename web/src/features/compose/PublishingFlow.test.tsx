@@ -3174,6 +3174,7 @@ describe("owner composing flow", () => {
     fireEvent.click(
       await screen.findByRole("menuitem", { name: "退出 @owner" }),
     );
+    fireEvent.click(await screen.findByRole("button", { name: "退出登录" }));
     await waitFor(() =>
       expect(window.sessionStorage.getItem(sessionKey)).toBeNull(),
     );

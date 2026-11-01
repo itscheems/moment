@@ -21,7 +21,9 @@ const LanguageContext = createContext<LanguageContextValue | null>(null);
 export function LanguageProvider({ children }: { children: ReactNode }) {
   const { account, session, preferences, applyPreferences } = useSession();
   const [visitor, setVisitor] = useState(visitorLocale);
-  const locale = account ? (preferences?.uiLocale ?? visitor) : visitor;
+  // Keep the known language while a cookie transition resolves its new account.
+  // Guest transitions explicitly clear preferences in the session provider.
+  const locale = preferences?.uiLocale ?? visitor;
 
   useLayoutEffect(() => {
     void i18n.changeLanguage(locale);

@@ -27,6 +27,8 @@ interface NavigationLocation extends LocationSnapshot {
 }
 
 interface NavigationContextValue extends NavigationLocation {
+  /** Runs an identity change through the same unsaved-work checks as navigation. */
+  runAfterLeave: (action: () => void) => void;
   archiveAnchor?: { key: string; top: number };
   navigate: (href: string, options?: { preserveScroll?: boolean }) => void;
   navigateAuth: (href: string) => void;
@@ -179,6 +181,16 @@ export function NavigationProvider({ children }: { children: ReactNode }) {
     const blockers = Array.from(navigationBlockers.current.values()).reverse();
     return blockers.every((blocker) => blocker(resume));
   }, []);
+
+  const runAfterLeave = useCallback(
+    (action: () => void) => {
+      const resume = () => {
+        if (canLeave(resume)) action();
+      };
+      resume();
+    },
+    [canLeave],
+  );
 
   const setNavigationBlocker = useCallback(
     (canPublish: symbol, blocker: NavigationBlocker | null) => {
@@ -468,6 +480,7 @@ export function NavigationProvider({ children }: { children: ReactNode }) {
   const value = useMemo(
     () => ({
       ...location,
+      runAfterLeave,
       archiveAnchor: historyState().momentArchiveAnchor,
       navigate,
       navigateAuth,
@@ -484,6 +497,7 @@ export function NavigationProvider({ children }: { children: ReactNode }) {
     }),
     [
       location,
+      runAfterLeave,
       navigate,
       navigateAuth,
       replace,

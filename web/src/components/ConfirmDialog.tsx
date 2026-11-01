@@ -36,15 +36,20 @@ export function ConfirmDialog({
   const { t } = useTranslation();
 
   const [localOpen, setLocalOpen] = useState(false);
+  const [confirming, setConfirming] = useState(false);
+  const [failure, setFailure] = useState(false);
+  const waiting = pending || confirming;
   const open = controlledOpen ?? localOpen;
   const setOpen = (next: boolean) => {
+    if (!next && waiting) return;
+    if (next) setFailure(false);
     if (controlledOpen === undefined) setLocalOpen(next);
     onOpenChange?.(next);
   };
   useDocumentScrollLock(open);
 
   return (
-    <Dialog.Root onOpenChange={setOpen} open={open}>
+    <Dialog.Root modal="trap-focus" onOpenChange={setOpen} open={open}>
       {trigger && (
         <Dialog.Trigger
           className={styles.dialogTrigger}
@@ -60,25 +65,41 @@ export function ConfirmDialog({
             <Dialog.Description className={styles.dialogDescription}>
               {description}
             </Dialog.Description>
+            {failure ? (
+              <p className={styles.dialogError} role="alert">
+                {t("操作未完成，请重试。")}
+              </p>
+            ) : null}
             {/* The reference stacks these full width with the answer on
                 top, which is the order they are read in: what you came to
                 do, then the way out of it. */}
             <div className={styles.dialogActions}>
               <button
                 className={danger ? styles.dangerButton : styles.primaryButton}
-                disabled={pending}
+                disabled={waiting}
                 onClick={() => {
-                  void Promise.resolve(onConfirm()).finally(() =>
-                    setOpen(false),
-                  );
+                  if (waiting) return;
+                  setConfirming(true);
+                  setFailure(false);
+                  void (async () => {
+                    try {
+                      await onConfirm();
+                      if (controlledOpen === undefined) setLocalOpen(false);
+                      onOpenChange?.(false);
+                    } catch {
+                      setFailure(true);
+                    } finally {
+                      setConfirming(false);
+                    }
+                  })();
                 }}
                 type="button"
               >
-                {pending ? t("正在处理…") : confirmLabel}
+                {waiting ? t("正在处理…") : confirmLabel}
               </button>
               <Dialog.Close
                 className={styles.secondaryButton}
-                disabled={pending}
+                disabled={waiting}
               >
                 {cancelLabel}
               </Dialog.Close>

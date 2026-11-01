@@ -48,13 +48,18 @@ const loginFormBoundary = {
     schema: [],
     messages: {
       standalone:
-        "Render credential forms only on LoginPage; use loginNavigation for account-entry actions.",
+        "Render credential forms only in the authentication page or account switcher; use loginNavigation for other account-entry actions.",
     },
   },
   create(context) {
     if (
       context.filename ===
         path.join(import.meta.dirname, "src/features/auth/LoginPage.tsx") ||
+      context.filename ===
+        path.join(
+          import.meta.dirname,
+          "src/features/auth/AccountSwitcher.tsx",
+        ) ||
       /\.test\.tsx?$/.test(context.filename)
     )
       return {};

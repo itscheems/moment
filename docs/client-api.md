@@ -71,9 +71,31 @@ API clients send the current password as unpadded base64url UTF-8 in `X-Moment-P
 
 Normal logout ends one session. API-token sign-ins retain their source credential: revoking that token also ends its derived browser sessions, while independently issued tokens remain valid. The session-provenance migration signs out existing browser sessions once because their source credentials cannot be established retrospectively; signing keys, API tokens, passwords and content are retained. Older binaries reject the upgraded schema, so back up the database before upgrading and restore that backup before a downgrade.
 
-Browser credential forms are owned by the standalone `/login` page. Registered routes explicitly classify `requiresSession`; account-entry links and actions share `LoginLink` and `useLoginNavigation`, including return-path validation. Business components do not embed password or token forms; an ESLint boundary enforces the credential-form import rule. Session recovery retains in-progress editing while the login page is visible.
+Browser credential forms are owned by the standalone `/login` page and the retained-account dialog. Registered routes explicitly classify `requiresSession`; ordinary account-entry links and actions share `LoginLink` and `useLoginNavigation`, including return-path validation. Business components do not embed password or token forms; an ESLint boundary enforces these entry points. Session recovery retains in-progress editing while the login page is visible.
 
 Sensitive browser drafts and reader caches are separated by instance and account. A changed or unresolved account cannot inherit another account's private editing state.
+
+### Retained browser sign-ins
+
+Browser clients may retain independently authenticated account sessions in a server-side collection. Its HttpOnly cookie is separate from the current account cookie. Membership does not bypass session expiry, credential revocation or account status checks, and selecting a retained session does not renew its original expiry. Fresh authentication replaces an older session for the same account in that browser collection.
+
+All paths below use the `/api/v1` prefix:
+
+| Method and path | Behavior |
+| --- | --- |
+| `POST /browser/accounts/bootstrap` | Adopt the current cookie session, authenticated with its account CSRF token. Existing memberships are preserved. |
+| `GET /browser/accounts` | Read retained public identities, availability and the collection's `csrf_token`. |
+| `POST /browser/accounts` | Authenticate with the password/token payload accepted by `/login/session`, retain that account and select it. |
+| `POST /browser/accounts/:id/activate` | Select an authorized member and issue a current-account cookie with fresh CSRF and the original expiry. |
+| `DELETE /browser/accounts/:id` | End that retained session. Removing the current member selects a remaining valid session when available. |
+| `DELETE /browser/accounts` | End all member sessions and revoke this browser collection. Other independently issued device sessions remain valid. |
+| `GET /browser/accounts/notification-counts` | Read member notification counts without acknowledging notifications or returning their contents. |
+
+Collection mutations require its cookie and `X-CSRF-Token` from the collection response, even when the selected account has expired. Normal content operations continue to require the selected account's own CSRF token. After an account transition, read `/account/session` rather than treating cached identity metadata as authority. Ordinary `DELETE /login/session` also updates retained membership; `active_account: true` indicates a remaining session was selected.
+
+`POST /login/oauth/:provider/add` starts a distinct, collection-authenticated provider flow and returns `authorization_url`. It accepts only an existing linked identity and never treats adding an account as linking a provider to the current account. The callback returns to `/account/add` on failure so the retained-account dialog can display the result.
+
+The collection migration preserves existing account sessions. Portable exports do not carry browser collection credentials. Older executables reject the newer database schema; a compatible rollback build must retain schema support rather than deleting migration records.
 
 ## Media transfers and cleanup
 

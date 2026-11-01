@@ -896,6 +896,7 @@ describe("App shell and public routes", () => {
       fireEvent.click(
         await screen.findByRole("menuitem", { name: "Log out @cheemschen" }),
       );
+      fireEvent.click(await screen.findByRole("button", { name: "Log out" }));
 
       await waitFor(() =>
         expect(

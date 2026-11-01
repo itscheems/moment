@@ -366,7 +366,7 @@ export class AuthApi extends ApiClient {
     };
   }
 
-  async logout(csrfToken: string): Promise<void> {
+  async logout(csrfToken: string): Promise<boolean> {
     const response = await this.fetcher(
       "/api/v1/login/session",
       requestInit("DELETE", csrfToken),
@@ -376,6 +376,7 @@ export class AuthApi extends ApiClient {
     if (record.logged_out !== true) {
       throw invalidResponse("logout response was not confirmed");
     }
+    return record.active_account === true;
   }
 }
 

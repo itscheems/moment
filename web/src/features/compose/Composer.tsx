@@ -1224,7 +1224,17 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
         event.returnValue = "";
       };
       window.addEventListener("beforeunload", beforeUnload);
+      const preserveAccountDraft = () => {
+        const currentDraft = activeDraftRef.current;
+        if (variant !== "edit" && currentDraft)
+          saveComposeDraft(draftScope, currentDraft);
+      };
+      window.addEventListener("moment:account-changing", preserveAccountDraft);
       return () => {
+        window.removeEventListener(
+          "moment:account-changing",
+          preserveAccountDraft,
+        );
         window.removeEventListener("beforeunload", beforeUnload);
         setNavigationBlocker(navigationBlockerId.current, null);
       };
@@ -2098,6 +2108,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
           />
         ) : (
           <Dialog.Root
+            modal="trap-focus"
             onOpenChange={(open) => {
               setLeavePromptOpen(open);
               if (!open) pendingNavigationRef.current = null;
