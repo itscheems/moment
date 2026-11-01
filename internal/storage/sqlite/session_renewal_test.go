@@ -58,7 +58,7 @@ func TestSessionRenewalSlidingAndAbsoluteDeadlines(t *testing.T) {
 }
 
 func TestSessionRenewalNeverRevivesUnavailableCredentials(t *testing.T) {
-	for _, reason := range []string{"idle", "logout", "all-sessions", "suspended", "source-token", "password"} {
+	for _, reason := range []string{"idle", "logout", "all-sessions", "suspended", "suspended-reactivated", "source-token", "password"} {
 		t.Run(reason, func(t *testing.T) {
 			repo, initial := newAccountFixture(t)
 			user := activeCredentialAccount(t, initial, "renewblocked")
@@ -86,6 +86,11 @@ func TestSessionRenewalNeverRevivesUnavailableCredentials(t *testing.T) {
 				_, err = service.EndAllSessions(ctx, user.ID)
 			case "suspended":
 				_, err = service.SetStatus(ctx, user.ID, domain.AccountSuspended)
+			case "suspended-reactivated":
+				_, err = service.SetStatus(ctx, user.ID, domain.AccountSuspended)
+				if err == nil {
+					_, err = service.SetStatus(ctx, user.ID, domain.AccountActive)
+				}
 			case "source-token":
 				err = service.RevokeAPIToken(ctx, user.ID, token.Token.ID)
 			case "password":
