@@ -83,60 +83,8 @@
   padding: 8px;
 }
 .searchInput {
-  padding: 1px;
   flex: 1;
-  display: flex;
-  align-items: center;
   min-inline-size: 0;
-  block-size: 44px;
-  border: 1px solid var(--border-strong);
-  border-radius: 999px;
-  color: var(--text-secondary);
-}
-.searchInput > svg {
-  box-sizing: content-box;
-  flex: 0 0 auto;
-  inline-size: 16px;
-  block-size: 16px;
-  padding-inline-start: 12px;
-}
-.searchInput input {
-  inline-size: 100%;
-  min-inline-size: 0;
-  block-size: 100%;
-  border: 0;
-  padding: 0 16px 0 4px;
-  border-radius: inherit;
-  outline: none;
-  color: var(--text-primary);
-  background: transparent;
-  font: 400 14px/16px var(--font-sans);
-}
-.searchInput input::-webkit-search-cancel-button {
-  display: none;
-}
-.searchInput:focus-within {
-  border-color: var(--accent);
-  box-shadow: inset 0 0 0 1px var(--accent);
-  color: var(--accent);
-}
-.searchInput button {
-  display: grid;
-  place-items: center;
-  flex: 0 0 28px;
-  inline-size: 28px;
-  block-size: 28px;
-  border: 0;
-  margin-inline-end: 8px;
-  padding: 5px;
-  border-radius: 50%;
-  color: var(--surface);
-  background: var(--accent);
-  cursor: pointer;
-}
-.searchInput button svg {
-  inline-size: 16px;
-  block-size: 16px;
 }
 .categoryRow {
   position: relative;
@@ -292,9 +240,6 @@
   .settingsRow:hover,
   .categoryRow > a:hover {
     background: var(--surface-hover);
-  }
-  .searchInput button:hover {
-    filter: brightness(0.9);
   }
 }
 @media (max-width: 1384px) {

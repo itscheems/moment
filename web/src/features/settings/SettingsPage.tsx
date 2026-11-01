@@ -1,3 +1,4 @@
+import { SearchField } from "../memory/SearchField";
 import { SettingsTextField } from "./SettingsTextField";
 import { Autocomplete } from "@base-ui/react/autocomplete";
 import { Tabs } from "@base-ui/react/tabs";
@@ -509,26 +510,20 @@ export function SettingsPage({
                   />
                 </BackControl>
               ) : null}
-              <Autocomplete.InputGroup className={styles.searchInput}>
-                {!searching ? (
-                  <Icon name="search" variant="navigation" />
-                ) : null}
-                <Autocomplete.Input
-                  ref={searchInput}
-                  data-focus-key="settings:search"
-                  aria-label={t("搜索设置")}
-                  placeholder={t("搜索设置")}
-                  autoComplete="off"
-                  spellCheck={false}
-                  onFocus={() => setSearching(true)}
-                  onKeyDown={(event) => {
-                    if (event.key === "Escape") closeSearch();
-                  }}
-                />
-                <Autocomplete.Clear aria-label={t("清除设置搜索")}>
-                  <Icon name="close" />
-                </Autocomplete.Clear>
-              </Autocomplete.InputGroup>
+              <SearchField
+                className={styles.searchInput}
+                inputRef={searchInput}
+                data-focus-key="settings:search"
+                aria-label={t("搜索设置")}
+                placeholder={t("搜索设置")}
+                autoComplete="off"
+                spellCheck={false}
+                clearLabel={t("清除设置搜索")}
+                onFocus={() => setSearching(true)}
+                onKeyDown={(event) => {
+                  if (event.key === "Escape") closeSearch();
+                }}
+              />
             </div>
             {searching ? (
               <div>
