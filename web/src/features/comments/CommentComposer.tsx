@@ -1,3 +1,4 @@
+import writingDialog from "../../components/WritingDialog.module.css";
 import { t } from "../../i18n";
 import { useTranslation } from "react-i18next";
 import { locationsApi } from "../../api/locations";
@@ -61,6 +62,7 @@ function CommentProgress({ count }: { count: number }) {
     <span
       aria-hidden="true"
       className={styles.commentProgress}
+      data-empty={count === 0 ? "true" : undefined}
       data-invalid={count > MAX_COMMENT ? "true" : undefined}
     >
       <svg viewBox="0 0 24 24">
@@ -819,24 +821,26 @@ export function CommentForm({
                           {t("取消")}
                         </button>
                       ) : null}
-                      <button
-                        aria-busy={pending || undefined}
-                        aria-label={t("发表回复")}
-                        className={styles.primaryAction}
-                        data-pending={pending ? "true" : undefined}
-                        disabled={
-                          pending ||
-                          !validContent ||
-                          !commentsEnabled ||
-                          !auth.session ||
-                          mediaError !== null
-                        }
-                        type="submit"
-                      >
-                        <span aria-hidden="true">
-                          {pending ? t("正在发表…") : t("回复")}
-                        </span>
-                      </button>
+                      <span className={writingDialog.submit}>
+                        <button
+                          aria-busy={pending || undefined}
+                          aria-label={t("发表回复")}
+                          className={styles.primaryAction}
+                          data-pending={pending ? "true" : undefined}
+                          disabled={
+                            pending ||
+                            !validContent ||
+                            !commentsEnabled ||
+                            !auth.session ||
+                            mediaError !== null
+                          }
+                          type="submit"
+                        >
+                          <span aria-hidden="true">
+                            {pending ? t("正在发表…") : t("回复")}
+                          </span>
+                        </button>
+                      </span>
                     </div>
                   </div>
                 }

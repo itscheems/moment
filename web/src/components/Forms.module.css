@@ -267,7 +267,16 @@
 }
 
 .pageComposer {
+  --button-primary: var(--ink-button);
+  --button-primary-hover: var(--ink-button-hover);
+  --button-primary-pressed: var(--ink-button-pressed);
+  --button-primary-disabled: var(--ink-button);
+  --button-primary-disabled-opacity: 0.25;
+  --button-primary-contrast: var(--ink-button-contrast);
+  --composer-media-margin-start: 2px;
+  --reply-audience-margin-start: -14px;
   min-block-size: 0;
+  border-block-end: 0;
   gap: 10px;
   padding-block: 16px 8px;
   font-family: var(--font-sans);
@@ -276,6 +285,7 @@
   letter-spacing: normal;
   text-rendering: auto;
   --audience-label-size: 14px;
+  --audience-chevron-offset: 0.25px;
   --audience-label-stroke: 0px;
   --composer-tool-transform: none;
   --composer-tool-filter: none;
@@ -580,7 +590,7 @@
 
 .pageComposer
   :is(.composerHighlight, .composerMentionMeasure, .composerEditor textarea) {
-  padding-block: 12px;
+  padding-block: 14px 10px;
   line-height: 24px;
 }
 .pageComposer .composerForm textarea {
@@ -592,12 +602,11 @@
 .pageReplyAudienceRow {
   position: relative;
   margin-block: 0;
-  margin-inline-start: -50px;
   padding-block: 12px;
   border-block-end: 1px solid transparent;
 }
 .pageReplyAudienceRow > div {
-  padding-inline-start: 2px;
+  padding-inline-start: 0;
 }
 .pageReplyAudienceRow.replyAudienceRowCollapsed {
   padding-block: 0;

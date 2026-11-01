@@ -77,6 +77,8 @@
 }
 
 .triggerChevron {
+  position: relative;
+  inset-block-start: var(--audience-chevron-offset, 0px);
   flex-shrink: 0;
   inline-size: 16px;
   block-size: 16px;

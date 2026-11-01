@@ -37,51 +37,11 @@
   z-index: 1;
 }
 
-.composeBackdrop {
-  position: fixed;
-  z-index: 90;
-  inset: 0;
-  background: var(--compose-scrim);
-  transition: opacity var(--motion-dialog) var(--ease-out);
-}
-
-.composeViewport {
-  position: fixed;
-  z-index: 91;
-  inset: 0;
-  display: grid;
-  place-items: start center;
-  padding: 5vh var(--space-4) var(--space-4);
-  overscroll-behavior: none;
-}
-
 .composeDialog {
-  inline-size: min(37.5rem, 100%);
-  /* Turning the dialog over must not resize it. Measured: the compose face
-     rests at 295px, the 草稿 list at 239px and the same list in edit mode at
-     292px, so the dialog jumped twice on the way there and back. */
   min-block-size: 18.5rem;
-  max-block-size: calc(100dvh - 10vh);
-  overflow-y: auto;
-  overscroll-behavior: none;
-  border-radius: 1rem;
-  color: var(--text-primary);
-  background: var(--surface);
-  box-shadow: var(--shadow-popover);
-  transform-origin: center top;
   transition:
     opacity var(--motion-dialog) var(--ease-out),
     transform var(--motion-dialog) var(--ease-out);
-}
-
-.composeBackdrop[data-starting-style],
-.composeBackdrop[data-ending-style],
-/* The popup itself is never a control the reader aimed at -- it takes
-   focus only so the dialog can hold it -- and a ring around the whole
-   dialog reads as an error state. */
-.composeDialog:focus,
-.composeDialog:focus-visible {
-  outline: none;
 }
 
 .composeDialog[data-starting-style],
@@ -199,59 +159,6 @@
   }
 }
 
-/* Keep the exit and drafts actions at opposite sides of the compose header.
-   Show the dialog title when the drafts list is open. */
-.composeDialogHeader {
-  position: sticky;
-  z-index: 1;
-  inset-block-start: 0;
-  min-block-size: 3.3125rem;
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  background: var(--surface);
-  padding: var(--space-1) var(--space-4);
-}
-
-/* 34px, and pulled 8px back into the header's padding, which lands
-   the glyph's centre 25px in from the dialog's edge while
-   the button still reaches the padding. */
-.composeDialogIcon {
-  inline-size: 2.125rem;
-  block-size: 2.125rem;
-  display: grid;
-  place-items: center;
-  border: 0;
-  border-radius: 50%;
-  margin-inline-start: calc(0px - var(--space-2));
-  padding: 0;
-  color: var(--text-primary);
-  background: transparent;
-  cursor: pointer;
-  /* Darkening under the press, the way the audience pill does it, over the
-     same 0.2s. A scale-down reads as a different kind of control. */
-  transition: background-color 0.2s;
-}
-
-.composeDialogIcon:focus-visible {
-  background: var(--icon-button-hover);
-}
-
-@media (hover: hover) {
-  .composeDialogIcon:hover {
-    background: var(--icon-button-hover);
-  }
-}
-
-.composeDialogIcon:active {
-  background: var(--icon-button-pressed);
-}
-
-.composeDialogIcon svg {
-  inline-size: 1.25rem;
-  block-size: 1.25rem;
-}
-
 /* `margin-inline-start: auto` rather than a grid track: the title is
    visually hidden on the compose face, and an absolutely positioned grid
    child leaves the grid, which pulled 草稿 back against the ✕. Its right
@@ -265,12 +172,14 @@
   display: inline-flex;
   align-items: center;
   gap: var(--space-2);
-  border: 0;
+  border: 1px solid transparent;
   border-radius: 999px;
   padding-inline: var(--space-4);
   color: var(--accent);
   background: transparent;
+  font-size: 14px;
   font-weight: 700;
+  line-height: 16px;
   white-space: nowrap;
   cursor: pointer;
   transition: background-color 0.2s;
@@ -360,7 +269,6 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .composeBackdrop,
   .composeDialog,
   .exitBackdrop,
   .exitDialog {

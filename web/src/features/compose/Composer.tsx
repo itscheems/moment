@@ -1,3 +1,4 @@
+import writingDialog from "../../components/WritingDialog.module.css";
 import { getLocale } from "../../i18n";
 import { t } from "../../i18n";
 import { useTranslation } from "react-i18next";
@@ -1935,19 +1936,21 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
                       </span>
                     </ActionTooltip>
                   )}
-                  <button
-                    className={`${styles.primaryButton} ${styles.composerPublishButton}`}
-                    disabled={!valid || pending || !session}
-                    type="submit"
-                  >
-                    {pending
-                      ? post
-                        ? t("正在保存…")
-                        : t("正在发布…")
-                      : post
-                        ? t("保存更改")
-                        : t("发布")}
-                  </button>
+                  <span className={writingDialog.submit}>
+                    <button
+                      className={`${styles.primaryButton} ${styles.composerPublishButton}`}
+                      disabled={!valid || pending || !session}
+                      type="submit"
+                    >
+                      {pending
+                        ? post
+                          ? t("正在保存…")
+                          : t("正在发布…")
+                        : post
+                          ? t("保存更改")
+                          : t("发布")}
+                    </button>
+                  </span>
                 </div>
               }
               items={mediaItems}
