@@ -102,6 +102,27 @@ export function commentShareCard(
   };
 }
 
+/** Quote projections omit link cards; resolve them only when exporting. */
+export async function loadPostShareCard(
+  api: Pick<PublicApi, "post">,
+  post: PublicPost,
+  site: SiteIdentity,
+  signal?: AbortSignal,
+): Promise<ShareCardInput> {
+  const input = postShareCard(post, site);
+  const quoted = post.quotedPost;
+  if (
+    quoted &&
+    !quoted.unavailable &&
+    !quoted.commentPostId &&
+    quoted.kind === "moment"
+  ) {
+    const original = await api.post(quoted.id, signal);
+    input.quote = postShareCard({ ...original, quotedPost: null }, site);
+  }
+  return input;
+}
+
 export async function loadCommentShareCard(
   api: PublicApi,
   original: PublicPost,

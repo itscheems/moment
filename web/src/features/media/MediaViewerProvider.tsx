@@ -38,7 +38,7 @@ import {
 import {
   commentAsPost,
   loadCommentShareCard,
-  postShareCard,
+  loadPostShareCard,
 } from "../share/shareCardInput";
 import { PostPresentation } from "../posts/PostPresentation";
 import { RepostAction } from "../posts/RepostAction";
@@ -298,7 +298,8 @@ export function MediaViewerProvider({
                                   site,
                                   signal,
                                 )
-                            : async () => postShareCard(shown, site)
+                            : (signal) =>
+                                loadPostShareCard(api, shown, site, signal)
                         }
                         trigger={
                           <button

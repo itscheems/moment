@@ -18,6 +18,7 @@ import {
 
 import {
   isArticlePost,
+  PublicApi,
   type PublicPost,
   type SiteIdentity,
 } from "../../api/public";
@@ -40,7 +41,7 @@ import { PostActions } from "./PostActions";
 import { RepostAction } from "./RepostAction";
 import { ArticleCard, QuotedArticle } from "../article/ArticleCard";
 import { LinkCard } from "../links/LinkCard";
-import { postShareCard } from "../share/shareCardInput";
+import { loadPostShareCard } from "../share/shareCardInput";
 import type { ShareCardSource } from "../share/shareCard";
 import { ImageGrid } from "../media/ImageGrid";
 import styles from "./PostPresentation.module.css";
@@ -416,8 +417,13 @@ export function PostPresentation({
       baseUrl={site.publicBaseUrl}
       card={
         shareCard ??
-        (async () => {
-          const input = postShareCard(post, site);
+        (async (signal) => {
+          const input = await loadPostShareCard(
+            new PublicApi(),
+            post,
+            site,
+            signal,
+          );
           if (post.mapCard)
             input.mapViewport = mapViews.current.get(
               mapViewKey(post.id, post.mapCard),
