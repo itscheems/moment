@@ -35,12 +35,16 @@ export function PersonalData({ panel }: { panel?: "export" | "import" } = {}) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [feedbackPanel, setFeedbackPanel] = useState<"export" | "import">(
+    "import",
+  );
   const operation = useRef<AbortController | null>(null);
   const checkButton = useRef<HTMLButtonElement>(null);
   const fileInput = useRef<HTMLInputElement>(null);
   useEffect(() => () => operation.current?.abort(), []);
   async function run(commit: boolean) {
     if (!file || !session || !account || busy || (commit && !plan)) return;
+    setFeedbackPanel("import");
     const controller = new AbortController();
     operation.current = controller;
     setBusy(true);
@@ -85,6 +89,7 @@ export function PersonalData({ panel }: { panel?: "export" | "import" } = {}) {
     }
   }
   function download() {
+    setFeedbackPanel("export");
     setNotice(null);
     setError(null);
     const link = document.createElement("a");
@@ -212,12 +217,12 @@ export function PersonalData({ panel }: { panel?: "export" | "import" } = {}) {
           ) : null}
         </div>
       </div>
-      {error ? (
+      {(!panel || panel === feedbackPanel) && error ? (
         <p className={styles.dataError} role="alert">
           {error}
         </p>
       ) : null}
-      {notice ? (
+      {(!panel || panel === feedbackPanel) && notice ? (
         <p className={styles.dataNotice} role="status">
           {notice}
         </p>

@@ -518,3 +518,35 @@ it("lets a member preview and append personal data through account endpoints", a
     ),
   ).toBe(false);
 });
+
+it("keeps personal import feedback on the import child page", async () => {
+  window.history.replaceState({}, "", "/settings/account/import");
+  installApi("member", (url) =>
+    url.startsWith("/api/v1/account/import/")
+      ? new Response(
+          JSON.stringify({
+            error: {
+              code: "IMPORT_INVALID",
+              message: "Invalid archive",
+              details: {},
+              request_id: "test",
+            },
+          }),
+          { status: 400, headers: { "Content-Type": "application/json" } },
+        )
+      : undefined,
+  );
+  render(<App />);
+  fireEvent.change(await screen.findByLabelText("个人导出文件"), {
+    target: { files: [new File(["invalid archive"], "archive.zip")] },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "检查文件" }));
+  const failure = "文件不完整或校验失败。请重新导出并选择原始 ZIP 文件。";
+  expect(await screen.findByText(failure)).toBeVisible();
+  fireEvent.click(screen.getByRole("button", { name: "返回上一级" }));
+  fireEvent.click(await screen.findByRole("link", { name: /^导出个人数据/ }));
+  expect(screen.queryByText(failure)).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "返回上一级" }));
+  fireEvent.click(await screen.findByRole("link", { name: /^导入个人数据/ }));
+  expect(screen.getByText(failure)).toBeVisible();
+});
