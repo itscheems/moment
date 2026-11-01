@@ -58,14 +58,12 @@ export function SearchBox({
   initialValue = "",
   tab = "latest",
   main = false,
-  autoFocus = false,
 }: {
   api: PublicApi;
   scope: string | null;
   initialValue?: string;
   tab?: SearchTab;
   main?: boolean;
-  autoFocus?: boolean;
 }) {
   const { t } = useTranslation();
   const { navigate } = useNavigation();
@@ -199,7 +197,6 @@ export function SearchBox({
           <SearchField
             aria-label={t("搜索内容或用户")}
             autoComplete="off"
-            autoFocus={autoFocus}
             data-focus-key={main ? "search:query" : "shell:search"}
             id={main ? "moment-search-input" : undefined}
             aria-keyshortcuts={main ? "/" : undefined}

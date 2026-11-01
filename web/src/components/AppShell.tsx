@@ -495,10 +495,9 @@ function MemoryRail({
 }) {
   const { t } = useTranslation();
 
-  if (route.id === "search") return null;
   return (
     <aside aria-label={t("记忆导航")} className={styles.rightRail}>
-      <RailSearch scope={scope} />
+      {route.id !== "search" ? <RailSearch scope={scope} /> : null}
       <div className={styles.railSlot} ref={slotRef} />
     </aside>
   );
