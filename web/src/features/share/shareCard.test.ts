@@ -278,6 +278,27 @@ describe("drawing the card", () => {
     expect(recording.text()).toContain("Quoted");
   });
 
+  it.each(["post", "quote"])(
+    "preserves every character when wrapping a long URL in a %s",
+    async (placement) => {
+      const url = "https://example.test/" + "long_path_".repeat(24);
+      const body = input({ blocks: [{ kind: "text", text: url }] });
+      await renderShareCard(
+        placement === "post" ? body : input({ blocks: [], quote: body }),
+      );
+      const lines = recording
+        .of("fillText")
+        .map((call) => String(call.args[0]));
+      const start = lines.findIndex((line) => line.startsWith("https://"));
+      let joined = "";
+      let count = 0;
+      while (joined.length < url.length && start + count < lines.length)
+        joined += lines[start + count++];
+      expect(joined).toBe(url);
+      expect(count).toBeGreaterThan(1);
+    },
+  );
+
   it("draws the parent in the same font family at 15/20 and the current post at 20/24", async () => {
     const parent = input({
       displayName: "Parent",

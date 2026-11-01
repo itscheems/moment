@@ -327,7 +327,8 @@ function wrap(
   const lines: string[] = [];
   let line = "";
   const pieces = breakPieces(text, preserveWhitespace).flatMap((piece) =>
-    preserveWhitespace && ctx.measureText(piece).width > maxWidth
+    ctx.measureText(preserveWhitespace ? piece : piece.trimEnd()).width >
+    maxWidth
       ? Array.from(
           new Intl.Segmenter(undefined, { granularity: "grapheme" }).segment(
             piece,
