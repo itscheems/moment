@@ -210,14 +210,16 @@ it("does not let an invalid hidden site draft block the comments form", async ()
   expect(title).toHaveValue("");
 });
 
-it("discards an inline language choice when canceled without changing the account", async () => {
+it("discards a modal language choice when canceled without changing the account", async () => {
   window.history.replaceState({}, "", "/settings/display/language");
   const calls = installApi("member");
   render(<App />);
   const english = await screen.findByRole("radio", { name: /English/ });
   fireEvent.click(english);
   fireEvent.click(screen.getByRole("button", { name: "取消" }));
-  expect(window.location.pathname).toBe("/settings/display");
+  await waitFor(() =>
+    expect(window.location.pathname).toBe("/settings/display"),
+  );
   fireEvent.click(await screen.findByRole("link", { name: /^语言/ }));
   expect(screen.getByRole("radio", { name: /简体中文/ })).toBeChecked();
   expect(
@@ -227,6 +229,38 @@ it("discards an inline language choice when canceled without changing the accoun
         init?.method === "PATCH",
     ),
   ).toBe(false);
+});
+
+it("opens display and profile rows directly as dialogs over their category", async () => {
+  window.history.replaceState({}, "", "/settings/display");
+  installApi("member");
+  render(<App />);
+  fireEvent.click(await screen.findByRole("link", { name: /^显示选择背景/ }));
+  const appearance = await screen.findByRole("dialog", { name: "自定义显示" });
+  await waitFor(() => expect(appearance).toBeVisible());
+  fireEvent.click(within(appearance).getByRole("button", { name: "完成" }));
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  await waitFor(() =>
+    expect(window.location.pathname).toBe("/settings/display"),
+  );
+  fireEvent.click(
+    within(screen.getByRole("navigation", { name: "设置分类" })).getByRole(
+      "tab",
+      { name: "你的账号" },
+    ),
+  );
+  fireEvent.click(
+    await screen.findByRole("link", { name: /^个人资料编辑名字/ }),
+  );
+  await waitFor(() =>
+    expect(screen.getByRole("dialog", { name: "编辑资料" })).toBeVisible(),
+  );
+  expect(window.location.pathname).toBe("/settings/profile");
+  fireEvent.click(screen.getByRole("button", { name: "关闭编辑资料" }));
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  await waitFor(() =>
+    expect(window.location.pathname).toBe("/settings/account"),
+  );
 });
 
 it("opens the personal categories for members without administrative settings", async () => {

@@ -11,6 +11,7 @@ import {
   useState,
   type FormEvent,
   type ReactNode,
+  type MouseEvent,
 } from "react";
 import { accountsApi } from "../../api/accounts";
 import { selectSiteProfile, siteApi } from "../../api/site";
@@ -26,10 +27,11 @@ import { AccountSecurity } from "./AccountSecurity";
 import { MembersSection } from "./MembersSection";
 import { PersonalData } from "./PersonalData";
 import { BackupRestore } from "./BackupRestore";
+import { PROFILE_EDIT_PATH } from "../../app/routes";
 import { useNavigation, InternalLink } from "../../app/navigation";
 import { BackControl } from "../../components/BackControl";
 import { Icon } from "../../components/icons";
-import { AppearanceSettings } from "../../components/ThemeMenu";
+import { AppearanceDialog } from "../../components/ThemeMenu";
 import { LanguageDialog } from "../../components/LanguageDialog";
 import {
   useMediaQuery,
@@ -272,12 +274,22 @@ function SettingsRowContent({
     </div>
   );
 }
-function SettingsRow({ item }: { item: SettingsItem }) {
+function SettingsRow({
+  item,
+  onActivate,
+}: {
+  item: SettingsItem;
+  onActivate: (
+    event: MouseEvent<HTMLAnchorElement>,
+    item: SettingsItem,
+  ) => void;
+}) {
   return (
     <InternalLink
       className={styles.settingsRow}
       href={settingsItemPath(item)}
       data-focus-key={settingsItemPath(item)}
+      onClick={(event) => onActivate(event, item)}
     >
       <SettingsRowContent item={item} />
     </InternalLink>
@@ -305,6 +317,7 @@ export function SettingsPage({
   const categoryNavigation = useRef<HTMLElement>(null);
   const restoreCategoryFocus = useRef(false);
   const [waiting, setWaiting] = useState(0);
+  const modalReturnFocus = useRef<HTMLElement>(null);
   const detailScroll = useRef<HTMLDivElement>(null);
   const detailHeading = useRef<HTMLHeadingElement>(null);
   const parentHeading = useRef<HTMLHeadingElement>(null);
@@ -376,6 +389,49 @@ export function SettingsPage({
       tab?.focus({ preventScroll: true });
     }
   }, [searching]);
+
+  const modalItem = settingsItems.find(
+    (entry) => settingsItemPath(entry) === navigation.pathname,
+  );
+  const preferenceModal =
+    navigation.panel?.key === "settings-dialog" ? modalItem?.id : undefined;
+  function isDialogItem(entry: SettingsItem) {
+    return (
+      entry.category === "display" ||
+      (entry.category === "account" && entry.id === "profile")
+    );
+  }
+  function activateDialog(entry: SettingsItem) {
+    navigation.openPanel(
+      entry.category === "account"
+        ? PROFILE_EDIT_PATH
+        : settingsItemPath(entry),
+      entry.category === "account" ? "profile-editor" : "settings-dialog",
+    );
+  }
+  function openItem(event: MouseEvent<HTMLAnchorElement>, entry: SettingsItem) {
+    if (
+      !isDialogItem(entry) ||
+      event.button !== 0 ||
+      event.metaKey ||
+      event.ctrlKey ||
+      event.shiftKey ||
+      event.altKey
+    )
+      return;
+    event.preventDefault();
+    modalReturnFocus.current = event.currentTarget;
+    activateDialog(entry);
+  }
+  useEffect(() => {
+    if (item && isDialogItem(item) && !navigation.panel) {
+      navigation.replace(`/settings/${item.category}`);
+      activateDialog(item);
+    }
+  }, [item, navigation.panel]);
+  function closePreferenceDialog() {
+    navigation.closePanel("settings-dialog");
+  }
 
   function closeSearch() {
     restoreCategoryFocus.current = true;
@@ -492,6 +548,7 @@ export function SettingsPage({
                       render={
                         <InternalLink
                           href={settingsItemPath(entry)}
+                          onClick={(event) => openItem(event, entry)}
                           data-focus-key={`settings-search:${settingsItemPath(entry)}`}
                         />
                       }
@@ -615,22 +672,17 @@ export function SettingsPage({
               {availableItems
                 .filter((entry) => entry.category === category.id)
                 .map((entry) => (
-                  <SettingsRow key={settingsItemPath(entry)} item={entry} />
+                  <SettingsRow
+                    key={settingsItemPath(entry)}
+                    item={entry}
+                    onActivate={openItem}
+                  />
                 ))}
             </>
           ) : null}
           {account ? <CredentialConfirmation key={account.userId} /> : null}
           {account ? (
             <>
-              {surface(
-                visible("account", ["profile"]),
-                <section aria-label={t("个人资料")}>
-                  <p className={styles.profileSummary}>
-                    {account.displayName} <span>@{account.username}</span>
-                  </p>
-                  <ProfileEditor account={account} onSaved={adopt} />
-                </section>,
-              )}
               {surface(
                 visible("account", ["password"]) ||
                   visible("security", ["tokens"]),
@@ -653,25 +705,6 @@ export function SettingsPage({
                   instanceId={site.instanceId}
                   panel={item?.id === "sessions" ? "sessions" : "identities"}
                   onSignedOut={() => requestLogin()}
-                />,
-              )}
-              {surface(
-                visible("display", ["appearance"]),
-                <>
-                  <p className={styles.leafDescription}>
-                    {t("这些设置只保存在当前浏览器，会立即应用到所有页面。")}
-                  </p>
-                  <AppearanceSettings account={account} site={site} />
-                </>,
-              )}
-              {surface(
-                visible("display", ["language"]),
-                <LanguageDialog
-                  inline
-                  onClose={() => {
-                    if (item?.category === "display" && item.id === "language")
-                      goUp();
-                  }}
                 />,
               )}
             </>
@@ -718,6 +751,25 @@ export function SettingsPage({
           ) : null}
         </div>
       </section>
+      {account ? (
+        <ProfileEditor
+          hideTrigger
+          account={account}
+          onSaved={adopt}
+          finalFocus={modalReturnFocus}
+        />
+      ) : null}
+      <AppearanceDialog
+        open={preferenceModal === "appearance"}
+        onOpenChange={(open) => {
+          if (!open) closePreferenceDialog();
+        }}
+        account={account}
+        site={site}
+      />
+      {preferenceModal === "language" ? (
+        <LanguageDialog onClose={closePreferenceDialog} />
+      ) : null}
     </div>
   );
 }

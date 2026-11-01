@@ -2217,7 +2217,7 @@
   color: var(--accent);
 }
 .settingsForm .floatingField:focus-within > span,
-.settingsForm .floatingField:has(input:not(:placeholder-shown)) > span {
+.settingsForm .floatingField[data-filled="true"] > span {
   inset-block-start: 8px;
   font-size: 13px;
   line-height: 16px;

@@ -8,7 +8,10 @@ export function SettingsTextField({
   label: string;
 }) {
   return (
-    <label className={styles.floatingField}>
+    <label
+      className={styles.floatingField}
+      data-filled={String(input.value ?? input.defaultValue ?? "").length > 0}
+    >
       <span>{label}</span>
       <input {...input} placeholder=" " />
     </label>

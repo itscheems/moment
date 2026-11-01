@@ -166,30 +166,52 @@ export function ThemeMenu({
       {languageOpen ? (
         <LanguageDialog onClose={() => setLanguageOpen(false)} />
       ) : null}
-      <Dialog.Root onOpenChange={setAppearanceOpen} open={appearanceOpen}>
-        <Dialog.Portal>
-          <Dialog.Backdrop className={styles.backdrop} />
-          <Dialog.Viewport className={styles.viewport}>
-            <Dialog.Popup className={styles.appearanceDialog}>
-              <div className={styles.dialogHeader}>
-                <Dialog.Close aria-label={t("关闭显示设置")}>×</Dialog.Close>
-                <Dialog.Title>{t("自定义显示")}</Dialog.Title>
-                <span />
-              </div>
-              <Dialog.Description className={styles.description}>
-                {t("这些设置只保存在当前浏览器，会立即应用到所有页面。")}
-              </Dialog.Description>
-
-              <AppearanceSettings account={account} site={site} />
-
-              <Dialog.Close className={styles.doneButton}>
-                {t("完成")}
-              </Dialog.Close>
-            </Dialog.Popup>
-          </Dialog.Viewport>
-        </Dialog.Portal>
-      </Dialog.Root>
+      <AppearanceDialog
+        open={appearanceOpen}
+        onOpenChange={setAppearanceOpen}
+        account={account}
+        site={site}
+      />
     </>
+  );
+}
+
+export function AppearanceDialog({
+  open,
+  onOpenChange,
+  account = null,
+  site,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  account?: PublicAccount | null;
+  site: SiteIdentity;
+}) {
+  const { t } = useTranslation();
+  return (
+    <Dialog.Root onOpenChange={onOpenChange} open={open}>
+      <Dialog.Portal>
+        <Dialog.Backdrop className={styles.backdrop} />
+        <Dialog.Viewport className={styles.viewport}>
+          <Dialog.Popup className={styles.appearanceDialog}>
+            <div className={styles.dialogHeader}>
+              <Dialog.Close aria-label={t("关闭显示设置")}>×</Dialog.Close>
+              <Dialog.Title>{t("自定义显示")}</Dialog.Title>
+              <span />
+            </div>
+            <Dialog.Description className={styles.description}>
+              {t("这些设置只保存在当前浏览器，会立即应用到所有页面。")}
+            </Dialog.Description>
+
+            <AppearanceSettings account={account} site={site} />
+
+            <Dialog.Close className={styles.doneButton}>
+              {t("完成")}
+            </Dialog.Close>
+          </Dialog.Popup>
+        </Dialog.Viewport>
+      </Dialog.Portal>
+    </Dialog.Root>
   );
 }
 

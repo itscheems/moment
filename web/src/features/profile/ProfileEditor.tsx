@@ -7,6 +7,7 @@ import { Dialog } from "../../components/Dialog";
 import { Menu } from "@base-ui/react/menu";
 import {
   type ChangeEvent,
+  type RefObject,
   useEffect,
   useEffectEvent,
   useRef,
@@ -62,6 +63,8 @@ type ProfileEditorProps = {
   account: PublicAccount;
   onSaved: (account: Account) => void;
   triggerClassName?: string;
+  hideTrigger?: boolean;
+  finalFocus?: RefObject<HTMLElement | null>;
 };
 
 function mediaURL(id: string | null): string | null {
@@ -397,11 +400,13 @@ export function ProfileEditor(props: ProfileEditorProps) {
       }}
       open={open && session !== null}
     >
-      <Dialog.Trigger
-        className={`${styles.trigger} ${props.triggerClassName ?? ""}`}
-      >
-        {t("编辑资料")}
-      </Dialog.Trigger>
+      {!props.hideTrigger ? (
+        <Dialog.Trigger
+          className={`${styles.trigger} ${props.triggerClassName ?? ""}`}
+        >
+          {t("编辑资料")}
+        </Dialog.Trigger>
+      ) : null}
       <Dialog.Portal keepMounted={open}>
         <Dialog.Backdrop
           className={styles.backdrop}
@@ -414,6 +419,7 @@ export function ProfileEditor(props: ProfileEditorProps) {
           <Dialog.Popup
             className={styles.popup}
             initialFocus={displayNameInput}
+            finalFocus={props.finalFocus}
           >
             <form
               className={styles.form}
