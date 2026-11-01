@@ -10,7 +10,7 @@
 .composerMedia {
   position: relative;
   min-inline-size: 0;
-  margin-block-start: var(--space-2);
+  margin-block-start: var(--composer-media-margin-start, var(--space-2));
 }
 
 .composerMedia > input[type="file"] {
@@ -1280,9 +1280,13 @@
   padding-block-start: 8px;
   border-block-start: 0;
 }
+.dialogComposer {
+  --composer-map-icon-size: 23.25px;
+}
+
 .dialogComposer .mediaToolbar {
-  gap: 0;
-  margin-inline-start: -8px;
+  gap: 4px;
+  margin-inline-start: -6px;
 }
 @media (max-width: 719px) {
   .dialogComposer .mediaControls {
@@ -1293,7 +1297,7 @@
 .dialogComposer .mediaControls::before {
   content: "";
   position: absolute;
-  inset: -1px 16px auto -16px;
+  inset: -1px 0 auto;
   height: 1px;
   background: var(--border-subtle);
 }

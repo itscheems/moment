@@ -3,6 +3,7 @@ import { AccountName } from "../../components/AccountName";
 import { useSession } from "../auth/SessionProvider";
 import { useLoginNavigation } from "../auth/loginNavigation";
 import { Dialog } from "../../components/Dialog";
+import writingDialog from "../../components/WritingDialog.module.css";
 import {
   type RefObject,
   useCallback,
@@ -86,19 +87,19 @@ export function PostReplyDialog({
       open={open && auth.session !== null}
     >
       <Dialog.Portal keepMounted={keepMounted}>
-        <Dialog.Backdrop className={styles.dialogBackdrop} />
-        <Dialog.Viewport className={styles.dialogViewport}>
+        <Dialog.Backdrop className={writingDialog.backdrop} />
+        <Dialog.Viewport className={writingDialog.viewport}>
           <Dialog.Popup
-            className={styles.replyDialogPopup}
+            className={`${writingDialog.popup} ${styles.replyDialogPopup}`}
             finalFocus={() => triggerRef?.current ?? true}
             initialFocus={canCompose ? initialFocus : undefined}
           >
-            <header className={styles.replyDialogHeader}>
+            <header className={writingDialog.header}>
               <Dialog.Close
                 aria-label={t("关闭回复窗口")}
-                className={styles.replyDialogClose}
+                className={writingDialog.close}
               >
-                <Icon name="close" />
+                <Icon name="media-remove" />
               </Dialog.Close>
               <Dialog.Title className={styles.srOnly}>
                 {t("回复这条 Moment")}

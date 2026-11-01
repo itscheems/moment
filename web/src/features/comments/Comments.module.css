@@ -921,21 +921,17 @@
 }
 
 .replyDialogPopup {
-  inline-size: min(100%, 39rem);
-  max-block-size: min(90dvh, 48rem);
-  display: grid;
-  grid-template-rows: auto auto auto;
-  overflow-y: auto;
-  overscroll-behavior: contain;
-  border: 1px solid var(--border-subtle);
-  border-radius: 1.25rem;
-  color: var(--text-primary);
-  background: var(--surface-elevated);
-  box-shadow: var(--shadow-popover);
-  transform-origin: center;
+  --button-primary: var(--ink-button);
+  --button-primary-hover: var(--ink-button-hover);
+  --button-primary-pressed: var(--ink-button-pressed);
+  --button-primary-disabled: var(--ink-button);
+  --button-primary-disabled-opacity: 0.25;
+  --button-primary-contrast: var(--ink-button-contrast);
+  --composer-tool-transform: none;
+  --composer-tool-filter: none;
   transition:
-    opacity var(--motion-content) var(--ease-out),
-    transform var(--motion-content) var(--ease-out);
+    opacity var(--motion-dialog) var(--ease-out),
+    transform var(--motion-dialog) var(--ease-out);
 }
 
 .replyDialogPopup[data-starting-style],
@@ -948,59 +944,29 @@
   transition-duration: var(--motion-dialog);
 }
 
-.replyDialogHeader {
-  min-block-size: 3.5rem;
-  display: flex;
-  align-items: center;
-  padding-inline: var(--space-3);
-  border-block-end: 0;
-}
-
-.replyDialogClose {
-  inline-size: var(--target-size);
-  block-size: var(--target-size);
-  display: grid;
-  place-items: center;
-  border: 0;
-  border-radius: 50%;
-  color: var(--text-primary);
-  background: transparent;
-  cursor: pointer;
-}
-
-.replyDialogClose:focus-visible {
-  background: var(--surface-hover);
-}
-
-@media (hover: hover) {
-  .replyDialogClose:hover {
-    background: var(--surface-hover);
-  }
-}
-
 .replyContext {
   position: relative;
   display: grid;
-  grid-template-columns: var(--target-size) minmax(0, 1fr);
-  gap: var(--space-3);
-  padding: 0 var(--space-4) var(--space-3);
+  grid-template-columns: 2.5rem minmax(0, 1fr);
+  gap: 10px;
+  padding: 16px var(--space-4) 4px;
 }
 
 .replyContext::after {
   content: "";
   position: absolute;
-  inset-block-start: calc(var(--target-size) + var(--space-2));
-  inset-block-end: 0;
-  inset-inline-start: calc(var(--space-4) + (var(--target-size) / 2) - 1px);
+  inset-block-start: 60px;
+  inset-block-end: -40px;
+  inset-inline-start: calc(var(--space-4) + 19px);
   inline-size: 2px;
   background: var(--border-subtle);
 }
 
 .replyContextAvatar {
-  inline-size: var(--target-size);
-  block-size: var(--target-size);
+  inline-size: 2.5rem;
+  block-size: 2.5rem;
   overflow: hidden;
-  border: 1px solid var(--border-subtle);
+  border: 0;
   border-radius: 50%;
 }
 
@@ -1016,7 +982,8 @@
   gap: var(--space-1);
   margin: 0;
   color: var(--text-secondary);
-  font-size: var(--text-sm);
+  font-size: 15px;
+  line-height: 20px;
 }
 
 .replyContextByline strong {
@@ -1024,13 +991,10 @@
 }
 
 .replyContextContent {
-  max-block-size: 7.5rem;
-  overflow: hidden;
-  margin-block-start: var(--space-1);
+  margin-block-start: 0;
   color: var(--text-primary);
-  line-height: 1.45;
-  -webkit-mask-image: linear-gradient(to bottom, #000 75%, transparent);
-  mask-image: linear-gradient(to bottom, #000 75%, transparent);
+  font-size: 15px;
+  line-height: 20px;
 }
 
 .replyContextContent > :first-child {
@@ -1052,9 +1016,73 @@
   color: var(--accent);
 }
 
+.replyDialogPopup .commentComposerLayout {
+  grid-template-columns: 2.5rem minmax(0, 1fr);
+  gap: 10px;
+}
+
+.replyDialogPopup .composerAvatar {
+  inline-size: 2.5rem;
+  block-size: 2.5rem;
+  border: 0;
+  margin-block-start: 52px;
+}
+
+.replyDialogPopup .replyTargetRow {
+  min-block-size: 40px;
+  margin: 0 0 6px -2px;
+  padding-block: 4px 16px;
+}
+
+.replyDialogPopup .replyTarget {
+  margin: 0;
+  font-size: 15px;
+  line-height: 20px;
+}
+
+.replyDialogPopup .commentForm textarea {
+  min-block-size: 120px;
+  padding-block: 12px;
+}
+
+.replyDialogPopup .commentMediaComposer > div {
+  min-block-size: 48px;
+  margin-inline-start: -50px;
+  padding-block-start: 8px;
+}
+
+.replyDialogPopup .commentMediaComposer > div > div:first-child {
+  gap: 4px;
+  margin-inline-start: -6px;
+}
+
+.replyDialogPopup .commentProgress[data-empty="true"] {
+  display: none;
+}
+
+.replyDialogPopup .primaryAction {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-block-size: 36px;
+  border: 1px solid transparent;
+  padding-inline: 16px;
+  font-size: 15px;
+  line-height: 20px;
+}
+
+.replyDialogPopup .primaryAction:disabled {
+  opacity: var(--button-primary-disabled-opacity);
+}
+
+.replyDialogPopup .primaryAction:active:not(:disabled) {
+  background: var(--button-primary-pressed);
+  transform: none;
+}
+
 .replyDialogPopup > .formSurface {
   border-block-end: 0;
-  padding-block-start: var(--space-2);
+  padding-block: 0 8px;
 }
 
 @keyframes comment-reveal-target {
@@ -1246,9 +1274,6 @@
   position: relative;
 }
 
-.dialogBackdrop[data-closed]:not([data-ending-style]),
-.dialogViewport:has(.replyDialogPopup[data-closed]):not(
-    :has([data-ending-style])
-  ) {
+.dialogBackdrop[data-closed]:not([data-ending-style]) {
   display: none;
 }

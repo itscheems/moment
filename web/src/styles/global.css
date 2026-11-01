@@ -105,10 +105,8 @@
     var(--surface)
   );
   --brand-hover: var(--navigation-hover);
-  /* The compose dialog's scrim. The reference reads #d9d9da over a white
-     page, which is this app's own ink at 16%; the dark themes lift the page
-     with the blue-grey instead, where a black scrim would be invisible. */
-  --compose-scrim: rgb(15 20 25 / 16%);
+  /* Neutral scrim for writing dialogs; dark surfaces use a blue-grey tint. */
+  --compose-scrim: rgb(180 180 182 / 50%);
   /* The ink pill -- the reference's 编辑 / 完成 button. Black on light, and
      the page's own ink everywhere else. */
   --ink-button: #0f1419;

@@ -1636,9 +1636,9 @@ describe("public comment thread", () => {
     ).toBeVisible();
   });
 
-  it("keeps the reply dialog avatars on one mobile alignment rail", () => {
+  it("declares the reply context inset and mobile form padding", () => {
     expect(commentsCss).toMatch(
-      /\._replyContext_[\w-]+::after\s*\{[^}]*inset-inline-start: calc\(\s*var\(--space-4\) \+ \(var\(--target-size\) \/ 2\) - 1px\s*\)/,
+      /\._replyContext_[\w-]+::after\s*\{[^}]*inset-inline-start: calc\(\s*var\(--space-4\) \+ 19px\s*\)/,
     );
     expect(commentsCss).toMatch(
       /@media \(max-width: 719px\)[\s\S]*\._replyDialogPopup_[\w-]+ > \._formSurface_[\w-]+[^{}]*\{[^}]*padding-inline: var\(--space-4\)/,

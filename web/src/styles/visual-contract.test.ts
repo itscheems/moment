@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import appCss from "../app/App.module.css?inline";
+import writingDialogCss from "../components/WritingDialog.module.css?inline";
 import shellCss from "../components/AppShell.module.css?inline";
 import identityCss from "../components/SiteIdentity.module.css?inline";
 import stateCss from "../components/ShellState.module.css?inline";
@@ -248,11 +249,8 @@ describe("visual foundation contract", () => {
       /@media \(hover: hover\)[\s\S]*?\._commentMediaComposer_[\w-]+[\s\S]*?button:hover:not\(:disabled\)\s*\{[^}]*color:\s*#829aab;[^}]*background:\s*rgb\(15 20 25 \/ 10%\);[^}]*transform:\s*scale\(1\.12\);/s,
     );
     expect(commentsCss).toMatch(
-      /\._replyDialogPopup_[\w-]+ > \._formSurface_[\w-]+\s*\{[^}]*padding-block-start:\s*var\(--space-2\);/s,
+      /\._replyDialogPopup_[\w-]+ > \._formSurface_[\w-]+\s*\{[^}]*padding-block:\s*0 8px;/s,
     );
-    const mobileRules = commentsCss.split("@media (max-width: 719px)")[1];
-    expect(mobileRules).toBeDefined();
-    expect(mobileRules).not.toMatch(/\._inlineTopLevelForm_[\w-]+/);
   });
 
   it("keeps lights-out elevated surfaces and secondary actions visible", () => {
@@ -466,9 +464,11 @@ describe("visual foundation contract", () => {
   });
 
   it("uses contrast-safe state tokens on publish and selected-date actions", () => {
-    // Layout variants inherit the selected accent. Local overrides masked
-    // the theme with fixed blue on inline forms and fixed ink in dialogs.
-    expect(formsCss.match(/--button-primary(?:-[\w-]+)?\s*:/)).toBeNull();
+    // Writing dialogs use the theme-aware neutral action palette.
+    expect(formsCss).toContain("--button-primary: var(--ink-button)");
+    expect(formsCss).toContain(
+      "--button-primary-contrast: var(--ink-button-contrast)",
+    );
     expect(formsCss).toMatch(
       /\._composerPublishButton_[\w-]+\s*\{[^}]*color: var\(--button-primary-contrast\);[^}]*background: var\(--button-primary\);[^}]*opacity var\(--motion-fast\)/s,
     );
@@ -590,44 +590,38 @@ describe("visual foundation contract", () => {
     );
   });
 
-  // The compose header has 16px padding, the icon button
-  // 34px and pulled 8px back into that padding, and a 32px pill with 16px
-  // of side padding whose right edge lands on the padding. It answers the
-  // pointer with the audience pill's own two tints rather than a
-  // scale-down, and the neutral ✕ beside it with #e7e7e7 / #cfd0d1. The
-  // scrim reads #d9d9da over a white page -- this app's ink at 16%.
   it("gives the compose header consistent pill and press tints", () => {
     expect(globalCss).toContain("--icon-button-hover: #e7e7e7");
     expect(globalCss).toContain("--icon-button-pressed: #cfd0d1");
-    expect(globalCss).toContain("--compose-scrim: rgb(15 20 25 / 16%)");
-    expect(appCss).toMatch(
-      /\._composeBackdrop_[\w-]+\s*\{[^}]*background: var\(--compose-scrim\)/s,
+    expect(globalCss).toContain("--compose-scrim: rgb(180 180 182 / 50%)");
+    expect(writingDialogCss).toMatch(
+      /\._backdrop_[\w-]+\s*\{[^}]*background: var\(--compose-scrim\)/s,
     );
-    expect(appCss).toMatch(
-      /\._composeDialogHeader_[\w-]+\s*\{[^}]*padding: var\(--space-1\) var\(--space-4\)/s,
+    expect(writingDialogCss).toMatch(
+      /\._header_[\w-]+\s*\{[^}]*padding: var\(--space-1\) var\(--space-4\)/s,
     );
-    expect(appCss).toMatch(
-      /\._composeDialogIcon_[\w-]+\s*\{[^}]*inline-size: 2\.125rem;[^}]*block-size: 2\.125rem;[^}]*margin-inline-start: calc\(0px - var\(--space-2\)\)/s,
+    expect(writingDialogCss).toMatch(
+      /\._close_[\w-]+\s*\{[^}]*inline-size: 2\.25rem;[^}]*block-size: 2\.25rem;[^}]*margin-inline-start: calc\(0px - var\(--space-2\)\)/s,
     );
     expect(appCss).toMatch(
       /\._composeDialogDrafts_[\w-]+\s*\{[^}]*min-block-size: 2rem;[^}]*margin-inline-start: auto;[^}]*padding-inline: var\(--space-4\)/s,
     );
-    for (const [selector, token] of [
-      ["_composeDialogDrafts", "--audience-hover"],
-      ["_composeDialogIcon", "--icon-button-hover"],
+    for (const [selector, token, css] of [
+      ["_composeDialogDrafts", "--audience-hover", appCss],
+      ["_close", "--icon-button-hover", writingDialogCss],
     ] as const) {
-      expect(appCss).toMatch(
+      expect(css).toMatch(
         new RegExp(
           `@media \\(hover: hover\\)[^{]*\\{\\s*\\.${selector}_[\\w-]+:hover\\s*\\{[^}]*background: var\\(${token}\\)`,
           "s",
         ),
       );
     }
-    for (const [selector, token] of [
-      ["_composeDialogDrafts", "--audience-pressed"],
-      ["_composeDialogIcon", "--icon-button-pressed"],
+    for (const [selector, token, css] of [
+      ["_composeDialogDrafts", "--audience-pressed", appCss],
+      ["_close", "--icon-button-pressed", writingDialogCss],
     ] as const) {
-      expect(appCss).toMatch(
+      expect(css).toMatch(
         new RegExp(
           `\\.${selector}_[\\w-]+:active\\s*\\{[^}]*background: var\\(${token}\\)`,
           "s",

@@ -8,6 +8,7 @@ import { useTranslation } from "react-i18next";
 import { LanguageProvider } from "../i18n/LanguageProvider";
 import { accountCacheScope } from "../features/auth/accountScope";
 import { Dialog } from "../components/Dialog";
+import writingDialog from "../components/WritingDialog.module.css";
 import {
   Suspense,
   useCallback,
@@ -800,15 +801,15 @@ function PublicApp() {
         >
           <Dialog.Portal keepMounted>
             <Dialog.Backdrop
-              className={styles.composeBackdrop}
+              className={writingDialog.backdrop}
               style={authRoute ? { display: "none" } : undefined}
             />
             <Dialog.Viewport
-              className={styles.composeViewport}
+              className={writingDialog.viewport}
               style={authRoute ? { display: "none" } : undefined}
             >
               <Dialog.Popup
-                className={styles.composeDialog}
+                className={`${writingDialog.popup} ${styles.composeDialog}`}
                 onKeyDown={(event) => {
                   // Sorting arrows belong to dnd-kit's document listener.
                   if (
@@ -826,7 +827,9 @@ function PublicApp() {
                 ref={composeDialogRef}
               >
                 {publishingAvailable ? (
-                  <header className={styles.composeDialogHeader}>
+                  <header
+                    className={`${writingDialog.header} ${styles.composeDialogHeader}`}
+                  >
                     {/* Keyed, so turning the dialog over replaces these
                         buttons rather than reusing one node and swapping its
                         class. Reuse let `transition: background-color` run
@@ -846,12 +849,12 @@ function PublicApp() {
                     ) : (
                       <button
                         aria-label={t("关闭发布")}
-                        className={styles.composeDialogIcon}
+                        className={writingDialog.close}
                         key="compose-close"
                         onClick={requestOverlayComposerClose}
                         type="button"
                       >
-                        <Icon name="close" />
+                        <Icon name="media-remove" />
                       </button>
                     )}
                     {/* Show the title in the drafts list and retain an

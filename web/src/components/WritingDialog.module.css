@@ -1,0 +1,127 @@
+/* Shared frame for post, quote, and reply composers. */
+.backdrop {
+  position: fixed;
+  z-index: max(90, var(--layer-popover));
+  inset: 0;
+  background: var(--compose-scrim);
+  transition: opacity var(--motion-dialog) var(--ease-out);
+}
+
+.viewport {
+  position: fixed;
+  z-index: max(91, calc(var(--layer-popover) + 1));
+  inset: 0;
+  display: grid;
+  place-items: start center;
+  padding: 5vh var(--space-4) var(--space-4);
+  overscroll-behavior: none;
+}
+
+.popup {
+  inline-size: min(37.5rem, 100%);
+  max-block-size: 90dvh;
+  overflow-y: auto;
+  overscroll-behavior: none;
+  border: 0;
+  border-radius: 1rem;
+  color: var(--text-primary);
+  background: var(--surface);
+  box-shadow: none;
+  transform-origin: center top;
+}
+
+.header {
+  position: sticky;
+  z-index: 1;
+  inset-block-start: 0;
+  min-block-size: 3.3125rem;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-4);
+  background: var(--surface);
+}
+
+.close {
+  inline-size: 2.25rem;
+  block-size: 2.25rem;
+  flex: none;
+  display: grid;
+  place-items: center;
+  border: 1px solid transparent;
+  border-radius: 50%;
+  margin-inline-start: calc(0px - var(--space-2));
+  padding: 0;
+  color: var(--text-primary);
+  background: transparent;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.close svg {
+  inline-size: 1.25rem;
+  block-size: 1.25rem;
+}
+
+.submit {
+  display: inline-flex;
+}
+
+/* Preserve the two compositing layers used by disabled writing actions. */
+.popup .submit {
+  --button-primary-disabled-opacity: 0.5;
+}
+
+.popup .submit:has(> button:disabled) {
+  opacity: 0.5;
+}
+
+.close:focus-visible {
+  background: var(--icon-button-hover);
+}
+
+@media (hover: hover) {
+  .close:hover {
+    background: var(--icon-button-hover);
+  }
+}
+
+.close:active {
+  background: var(--icon-button-pressed);
+}
+
+.backdrop[data-starting-style],
+.backdrop[data-ending-style] {
+  opacity: 0;
+}
+
+.backdrop[data-closed]:not([data-ending-style]),
+.viewport:has(.popup[data-closed]):not(:has([data-ending-style])) {
+  display: none;
+}
+
+.popup:focus,
+.popup:focus-visible {
+  outline: none;
+}
+
+@media (max-width: 719px) {
+  .viewport {
+    padding: 0;
+  }
+
+  .popup {
+    inline-size: 100%;
+    block-size: 100dvh;
+    max-block-size: 100dvh;
+    border-radius: 0;
+    padding-block-end: env(safe-area-inset-bottom);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .backdrop,
+  .close {
+    transition: none;
+  }
+}
