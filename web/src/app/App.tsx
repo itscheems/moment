@@ -582,13 +582,18 @@ function PublicApp() {
             <span>{t("站点资料暂时无法获取。")}</span>
           </div>
         ) : null}
+        <SuggestedPeople
+          api={api}
+          kind="home"
+          active={
+            siteIdentityReady &&
+            (route.id === "home" ||
+              route.id === "search" ||
+              route.id === "notifications")
+          }
+        />
         {hasTimeline ? (
           <div hidden={route.id !== "home"}>
-            <SuggestedPeople
-              api={api}
-              kind="home"
-              active={siteIdentityReady && route.id === "home"}
-            />
             {siteIdentityReady && publishingAvailable ? (
               <div className={styles.homeComposer} hidden={mobileViewport}>
                 <Composer

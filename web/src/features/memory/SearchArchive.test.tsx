@@ -143,6 +143,77 @@ describe("search and archive memory layer", () => {
     expect(window.location.pathname).toBe("/search");
   });
 
+  it.each(["/search", "/search?f=user", "/search?q=river"])(
+    "keeps the input unfocused on entry and tab changes at %s",
+    async (path) => {
+      window.history.replaceState({}, "", path);
+      install(() =>
+        json({
+          data: { items: [], year_counts: [], next_offset: null },
+          meta: { next_cursor: null },
+        }),
+      );
+      render(<App />);
+      const input = await screen.findByRole("combobox");
+      expect(input).not.toHaveFocus();
+      expect(input).toHaveAttribute("aria-expanded", "false");
+      for (const name of ["用户", "最新", "用户", "最新"]) {
+        fireEvent.click(screen.getByRole("link", { name }));
+        const nextInput = await screen.findByRole("combobox");
+        expect(nextInput).not.toHaveFocus();
+        expect(nextInput).toHaveAttribute("aria-expanded", "false");
+      }
+    },
+  );
+
+  it.each([
+    "/search",
+    "/search?f=user",
+    "/account/notifications",
+    "/account/notifications/mentions",
+  ])("shows the shared recommendations in the rail at %s", async (path) => {
+    window.history.replaceState({}, "", path);
+    vi.mocked(window.matchMedia).mockImplementation((query) => ({
+      matches: query === "(min-width: 988px)",
+      media: query,
+      onchange: null,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      addListener: vi.fn(),
+      removeListener: vi.fn(),
+      dispatchEvent: vi.fn(),
+    }));
+    install(
+      (url) => {
+        if (url.startsWith("/api/v1/users/")) {
+          const username = url.split("/").at(-1)!;
+          return json({
+            data: {
+              user_id:
+                username === "itscheems" ? "2".repeat(32) : "3".repeat(32),
+              username,
+              display_name: "Recommended account",
+              bio: "",
+              avatar_media_id: null,
+              cover_media_id: null,
+              profile_url: `/${username}`,
+            },
+            meta: {},
+          });
+        }
+        return json({}, 404);
+      },
+      { signedIn: path.startsWith("/account/") },
+    );
+    render(<App />);
+    const rail = await screen.findByRole("complementary", { name: "记忆导航" });
+    const card = await within(rail).findByRole("region", { name: "推荐关注" });
+    expect(within(card).getAllByRole("listitem")).toHaveLength(2);
+    expect(within(rail).queryByRole("combobox") !== null).toBe(
+      path.startsWith("/account/"),
+    );
+  });
+
   it("clears the draft while retaining committed results and opens recent searches", async () => {
     window.history.replaceState({}, "", "/search?q=%E9%9B%A8");
     install(() =>
@@ -279,6 +350,7 @@ describe("search and archive memory layer", () => {
     install(() => json({}, 404));
     render(<App />);
     const input = await screen.findByRole("combobox");
+    act(() => input.focus());
     fireEvent.change(input, { target: { value: "暂存搜索" } });
     fireEvent.keyDown(input, { key: "Escape" });
     expect(input).toHaveValue("暂存搜索");

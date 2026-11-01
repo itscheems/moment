@@ -412,7 +412,6 @@ export function SearchPage(props: {
             initialValue={query}
             tab={state.tab}
             main
-            autoFocus={!state.error && !query}
           />
         </div>
         <nav className={styles.searchTabs} aria-label={t("搜索类型")}>
