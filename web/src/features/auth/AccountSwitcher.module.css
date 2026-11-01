@@ -220,7 +220,7 @@
 }
 .remove {
   position: absolute;
-  inset-inline-end: 8px;
+  inset-inline-end: 11.375px;
   display: grid;
   place-items: center;
   inline-size: 44px;
@@ -337,7 +337,7 @@
     color: var(--text-primary);
   }
   .remove:hover:not(:disabled)::before {
-    background: var(--surface-hover);
+    background: #e7e7e7;
   }
 }
 @media (max-width: 719px) {
