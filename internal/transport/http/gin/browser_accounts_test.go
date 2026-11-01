@@ -238,3 +238,40 @@ func TestOAuthAddOnlyUsesExistingIdentity(t *testing.T) {
 		t.Fatal("OAuth add linked the current account")
 	}
 }
+
+func TestStandaloneSignInReplacesRetainedSessionBeforeLogout(t *testing.T) {
+	f := newAuthenticationTestFixture(t, false)
+	first, data := exchangeAccountSession(t, f, f.token)
+	group, _ := browserBootstrap(t, f, first, data["csrf_token"].(string))
+	old, _ := f.manager.ValidateSession(first.Value)
+	request := jsonRequest("POST", "/api/v1/login/session", string(mustJSON(t, map[string]string{"token": f.token})))
+	request.AddCookie(group)
+	response := performRequest(f.engine, request)
+	if response.Code != 200 {
+		t.Fatal(response.Body)
+	}
+	var fresh *http.Cookie
+	for _, c := range response.Result().Cookies() {
+		if c.Name == SessionCookieName {
+			fresh = c
+		}
+	}
+	if fresh == nil {
+		t.Fatal("missing fresh session")
+	}
+	if _, err := f.accounts.ResolveSession(context.Background(), old.SessionID); err == nil {
+		t.Fatal("superseded browser session remained valid")
+	}
+	logout := jsonRequest("DELETE", "/api/v1/login/session", "")
+	logout.AddCookie(fresh)
+	logout.AddCookie(group)
+	logout.Header.Set(CSRFHeaderName, decodeDataMap(t, response)["csrf_token"].(string))
+	if r := performRequest(f.engine, logout); r.Code != 200 {
+		t.Fatal(r.Body)
+	}
+	list := jsonRequest("GET", "/api/v1/browser/accounts", "")
+	list.AddCookie(group)
+	if r := performRequest(f.engine, list); r.Code != 401 {
+		t.Fatal("explicitly exited account could be restored from old membership")
+	}
+}

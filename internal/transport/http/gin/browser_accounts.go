@@ -7,10 +7,43 @@ import (
 	gin "github.com/gin-gonic/gin"
 	"github.com/moment/moment/internal/app"
 	"github.com/moment/moment/internal/auth"
+	"github.com/moment/moment/internal/domain"
 )
 
 const browserAccountsCookieName = "moment_browser_accounts"
 const browserAccountsContextKey = "moment.browser_accounts"
+
+// retainBrowserSession is shared by credential, provider and registration
+// sign-ins. A fresh proof must replace this browser's older member session,
+// including when authentication entered through a standalone page.
+func retainBrowserSession(ctx *gin.Context, gate *Gate, cookies CookieOptions, sessionID string) error {
+	secret, explicit := ctx.Get(browserAccountsContextKey)
+	status, err := gate.manager.Status()
+	if err != nil {
+		return err
+	}
+	if !explicit {
+		value, err := ctx.Cookie(browserAccountsCookieName)
+		if err != nil {
+			return nil
+		}
+		secret = value
+		if _, _, err := gate.accounts.BrowserAccounts(ctx.Request.Context(), value, status.SessionEpoch); err != nil {
+			if domain.HasCode(err, domain.CodeUnauthorized) {
+				return nil
+			}
+			return err
+		}
+	} else if epoch, _ := ctx.Get(browserAccountsContextKey + ".epoch"); epoch != status.SessionEpoch {
+		return domain.NewError(domain.CodeUnauthorized, "browser authorization changed during sign-in", nil)
+	}
+	set, err := gate.accounts.AddBrowserAccount(ctx.Request.Context(), secret.(string), status.SessionEpoch, sessionID)
+	if err != nil {
+		return err
+	}
+	setBrowserAccountsCookie(ctx, secret.(string), set.ExpiresAtMS, cookies)
+	return nil
+}
 
 type browserAccountView struct {
 	Account   accountView `json:"account"`

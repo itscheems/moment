@@ -118,15 +118,10 @@ func exchangeSession(gate *Gate, cookies CookieOptions) gin.HandlerFunc {
 			writeAccountError(ctx, err)
 			return
 		}
-		if secret, adding := ctx.Get(browserAccountsContextKey); adding {
-			epoch, _ := ctx.Get(browserAccountsContextKey + ".epoch")
-			set, err := gate.accounts.AddBrowserAccount(ctx.Request.Context(), secret.(string), epoch.(uint64), sessionID)
-			if err != nil {
-				_ = gate.accounts.EndSession(ctx.Request.Context(), sessionID)
-				writeAccountError(ctx, err)
-				return
-			}
-			setBrowserAccountsCookie(ctx, secret.(string), set.ExpiresAtMS, cookies)
+		if err := retainBrowserSession(ctx, gate, cookies, sessionID); err != nil {
+			_ = gate.accounts.EndSession(ctx.Request.Context(), sessionID)
+			writeAccountError(ctx, err)
+			return
 		}
 		setSessionCookie(ctx, value, session.ExpiresAt, cookies)
 		Success(ctx, http.StatusOK, sessionResponse{ExpiresAt: session.ExpiresAt, CSRFToken: session.CSRFToken}, nil)
@@ -283,7 +278,7 @@ func logoutSession(gate *Gate, cookies CookieOptions) gin.HandlerFunc {
 							if empty {
 								clearBrowserAccountsCookie(ctx, cookies)
 							}
-							Success(ctx, http.StatusOK, map[string]bool{"logged_out": true}, nil)
+							Success(ctx, http.StatusOK, map[string]bool{"logged_out": true, "active_account": next != nil}, nil)
 							return
 						}
 					}

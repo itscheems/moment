@@ -348,14 +348,9 @@ func issueSessionFor(ctx *gin.Context, gate *Gate, user domain.User, cookies Coo
 		string(requestSurface(ctx)), session.ExpiresAt.UnixMilli()); err != nil {
 		return err
 	}
-	if secret, adding := ctx.Get(browserAccountsContextKey); adding {
-		epoch, _ := ctx.Get(browserAccountsContextKey + ".epoch")
-		set, err := gate.accounts.AddBrowserAccount(ctx.Request.Context(), secret.(string), epoch.(uint64), sessionID)
-		if err != nil {
-			_ = gate.accounts.EndSession(ctx.Request.Context(), sessionID)
-			return err
-		}
-		setBrowserAccountsCookie(ctx, secret.(string), set.ExpiresAtMS, cookies)
+	if err := retainBrowserSession(ctx, gate, cookies, sessionID); err != nil {
+		_ = gate.accounts.EndSession(ctx.Request.Context(), sessionID)
+		return err
 	}
 	setSessionCookie(ctx, value, session.ExpiresAt, cookies)
 	return nil
