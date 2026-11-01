@@ -2227,3 +2227,57 @@
   white-space: normal;
   overflow-wrap: anywhere;
 }
+
+/* Token controls share a single vertical rhythm at every panel width. */
+.tokensPanel > p {
+  margin: 0 0 20px;
+  color: var(--text-secondary);
+  font: 400 13px/20px var(--font-sans);
+}
+.settingsSurface .tokensPanel .tokenForm {
+  grid-template-columns: minmax(0, 1fr);
+  align-items: stretch;
+  gap: 12px;
+  margin: 0 0 24px;
+}
+.tokensPanel .credentialList {
+  margin: 0;
+}
+.tokensPanel .credentialList li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 88px;
+  align-items: center;
+  gap: 16px;
+  min-block-size: 76px;
+  padding: 16px 0;
+}
+.tokensPanel .credentialInfo {
+  gap: 4px;
+  font: 700 15px/20px var(--font-sans);
+}
+.tokensPanel .credentialInfo small {
+  font: 400 13px/18px var(--font-sans);
+}
+.tokensPanel .revokeToken,
+.tokensPanel .revokedToken {
+  justify-self: end;
+  font: 400 13px/18px var(--font-sans);
+}
+.tokensPanel .revokeToken {
+  padding-inline: 8px;
+}
+.rowDetails[role="tooltip"] {
+  max-inline-size: min(360px, calc(100vw - 24px));
+  border-radius: 4px;
+  padding: 10px 12px;
+  background: #202327;
+  font: 400 13px/18px var(--font-sans);
+  white-space: normal;
+}
+.rowDetails[role="tooltip"] dl {
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 4px 16px;
+}
+.rowDetails[role="tooltip"] dd {
+  font-variant-numeric: tabular-nums;
+}

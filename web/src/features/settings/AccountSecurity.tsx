@@ -228,7 +228,7 @@ export function AccountSecurity({
           </button>
         </form>
       </div>
-      <div hidden={panel === "password"}>
+      <div className={styles.tokensPanel} hidden={panel === "password"}>
         <h3 className={styles.securityHeading}>{t("API 令牌")}</h3>
         <p>
           {t(
