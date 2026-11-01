@@ -1,4 +1,10 @@
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
+
+import i18n from "../i18n";
+
+beforeEach(async () => {
+  await i18n.changeLanguage("en");
+});
 
 import {
   ARTICLE_COMPOSE_PATH,
@@ -115,7 +121,7 @@ describe("published article focus addresses", () => {
     expect(href).toBe("/owner/article/01K2ABC");
     expect(resolveRoute(href)).toMatchObject({
       id: "article-focus",
-      title: "文章",
+      title: "Articles",
       href: "/m/01K2ABC",
     });
     expect(resolveRoute(href).activeAccountOnly).not.toBe(true);

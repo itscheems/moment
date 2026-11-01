@@ -10,6 +10,7 @@ import {
 } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import i18n from "../i18n";
 import { App } from "./App";
 import { makeAccountLimits } from "../test/accountFixtures";
 
@@ -58,9 +59,9 @@ const siteEnvelope = {
   data: {
     profile_user_id: "00000000000000000000000000000000",
     username: "owner",
-    display_name: "乔乔",
-    title: "乔乔的 Moment",
-    bio: "沿着日常留下坐标",
+    display_name: "Jojo",
+    title: "Jojo’s Moment",
+    bio: "Notes from daily life",
     timezone: "Asia/Shanghai",
     public_base_url: null,
     avatar_media_id: null,
@@ -81,7 +82,7 @@ function post(id: string, content: string, html = `<p>${content}</p>`) {
     author: {
       user_id: "0".repeat(32),
       username: "owner",
-      display_name: "乔乔",
+      display_name: "Jojo",
       avatar_media_id: null,
       profile_url: "/owner",
     },
@@ -136,7 +137,7 @@ function accountSessionEnvelope(username = "owner") {
       account: {
         user_id: "00000000000000000000000000000000",
         username,
-        display_name: "乔乔",
+        display_name: "Jojo",
         bio: "",
         avatar_media_id: null,
         cover_media_id: null,
@@ -184,10 +185,16 @@ function installApi(
   return fetcher;
 }
 
+beforeEach(async () => {
+  window.localStorage.setItem("moment.ui-locale", "en");
+  await i18n.changeLanguage("en");
+});
+
 describe("App shell and public routes", () => {
   beforeEach(() => {
     window.history.replaceState({}, "", "/");
     window.localStorage.clear();
+    window.localStorage.setItem("moment.ui-locale", "en");
     window.sessionStorage.clear();
     vi.stubGlobal(
       "matchMedia",
@@ -212,55 +219,63 @@ describe("App shell and public routes", () => {
 
     expect(screen.getByRole("main")).toHaveAttribute("id", "main-content");
     expect(
-      screen.getByRole("navigation", { name: "主要导航" }),
+      screen.getByRole("navigation", { name: "Main navigation" }),
     ).toBeInTheDocument();
     const mobileNavigation = container.querySelector<HTMLElement>(
-      'nav[aria-label="移动导航"]',
+      'nav[aria-label="Mobile navigation"]',
     );
     expect(mobileNavigation).toBeInTheDocument();
-    expect(document.querySelector("main h1")).toHaveTextContent("时间流");
+    expect(document.querySelector("main h1")).toHaveTextContent("Timeline");
     expect(
-      mobileNavigation?.querySelector('a[aria-label="发布"]'),
+      mobileNavigation?.querySelector('a[aria-label="Post"]'),
     ).toHaveAttribute("href", "/compose");
-    expect(screen.getByRole("link", { name: "发帖" })).toHaveAttribute(
+    expect(screen.getByRole("link", { name: "Post" })).toHaveAttribute(
       "href",
       "/compose",
     );
     expect(
       screen
-        .getByRole("link", { name: "发帖" })
+        .getByRole("link", { name: "Post" })
         .querySelector('svg[data-icon="sidebar-publish"]'),
     ).toBeInTheDocument();
     const desktopNavigation = screen.getByRole("navigation", {
-      name: "主要导航",
+      name: "Main navigation",
     });
-    const more = screen.getAllByRole("button", { name: "更多" })[0]!;
-    const publish = screen.getByRole("link", { name: "发帖" });
+    const more = screen.getAllByRole("button", { name: "More" })[0]!;
+    const publish = screen.getByRole("link", { name: "Post" });
     expect(desktopNavigation).toContainElement(more);
     expect(
       Array.from(desktopNavigation.querySelectorAll("a"), (link) =>
         link.getAttribute("aria-label"),
       ),
-    ).toEqual(["主页", "搜索", "通知", "归档", "个人资料", "文章", "设置"]);
+    ).toEqual([
+      "Home",
+      "Search",
+      "Notifications",
+      "Archive",
+      "Profile",
+      "Articles",
+      "Settings",
+    ]);
     expect(
       Array.from(desktopNavigation.children, (item) =>
         item.getAttribute("aria-label"),
       ),
     ).toEqual([
-      "主页",
-      "搜索",
-      "通知",
-      "归档",
-      "个人资料",
-      "文章",
-      "设置",
-      "更多",
+      "Home",
+      "Search",
+      "Notifications",
+      "Archive",
+      "Profile",
+      "Articles",
+      "Settings",
+      "More",
     ]);
     expect(
-      within(desktopNavigation).getByRole("link", { name: "设置" }),
+      within(desktopNavigation).getByRole("link", { name: "Settings" }),
     ).toHaveAttribute("href", "/settings");
     const notifications = within(desktopNavigation).getByRole("link", {
-      name: "通知",
+      name: "Notifications",
     });
     expect(notifications).toHaveAttribute("href", "/account/notifications");
     expect(notifications).not.toHaveAttribute("aria-current");
@@ -268,30 +283,35 @@ describe("App shell and public routes", () => {
       more.compareDocumentPosition(publish) & Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
     expect(
-      await screen.findByRole("heading", { name: "还没有 Moment" }),
+      await screen.findByRole("heading", { name: "No Moments yet" }),
     ).toBeInTheDocument();
-    expect(screen.getAllByText("乔乔的 Moment").length).toBeGreaterThan(0);
-    await waitFor(() => expect(document.title).toBe("乔乔的 Moment"));
+    expect(screen.getAllByText("Jojo’s Moment").length).toBeGreaterThan(0);
+    await waitFor(() => expect(document.title).toBe("Jojo’s Moment"));
   });
 
   it.each([{ ctrlKey: true }, { metaKey: true }])(
     "leaves modified publish clicks to the browser (%j)",
     async (modifier) => {
       render(<App />);
-      await screen.findByRole("heading", { name: "还没有 Moment" });
+      await screen.findByRole("heading", { name: "No Moments yet" });
       const pushState = vi.spyOn(window.history, "pushState");
       const publish = within(
-        screen.getByRole("complementary", { name: "站点导航" }),
-      ).getByRole("link", { name: "发帖" });
+        screen.getByRole("complementary", { name: "Site navigation" }),
+      ).getByRole("link", { name: "Post" });
       expect(fireEvent.click(publish, modifier)).toBe(true);
       expect(pushState).not.toHaveBeenCalled();
       expect(window.location.pathname).toBe("/");
-      expect(screen.queryByRole("dialog", { name: "发布 Moment" })).toBeNull();
+      expect(
+        screen.queryByRole("dialog", { name: "Post a Moment" }),
+      ).toBeNull();
     },
   );
 
   it("starts the timeline while site identity is still pending and does not refetch after identity arrives", async () => {
-    const item = post("01K2ABCDEF0123456789ABCDE0", "身份之前已经可读");
+    const item = post(
+      "01K2ABCDEF0123456789ABCDE0",
+      "Content readable before identity",
+    );
     let resolveSite: ((response: Response) => void) | null = null;
     let siteSettled = false;
     let timelineRequests = 0;
@@ -313,10 +333,12 @@ describe("App shell and public routes", () => {
 
     render(<App />);
     await waitFor(() =>
-      expect(screen.getByText("身份之前已经可读")).toBeInTheDocument(),
+      expect(
+        screen.getByText("Content readable before identity"),
+      ).toBeInTheDocument(),
     );
     expect(
-      document.querySelector('section[aria-label="发布 Moment"]'),
+      document.querySelector('section[aria-label="Post a Moment"]'),
     ).not.toBeInTheDocument();
     expect(resolveSite).not.toBeNull();
     expect(siteSettled).toBe(false);
@@ -328,17 +350,19 @@ describe("App shell and public routes", () => {
       resolveSite?.(json(siteEnvelope));
       await delayedSite;
     });
-    await waitFor(() => expect(document.title).toBe("乔乔的 Moment"));
+    await waitFor(() => expect(document.title).toBe("Jojo’s Moment"));
     await waitFor(() =>
       expect(
-        document.querySelector('section[aria-label="发布 Moment"]'),
+        document.querySelector('section[aria-label="Post a Moment"]'),
       ).toBeInTheDocument(),
     );
-    expect(screen.getByText("身份之前已经可读")).toBeInTheDocument();
+    expect(
+      screen.getByText("Content readable before identity"),
+    ).toBeInTheDocument();
     expect(timelineRequests).toBe(requestsBeforeSite);
   });
 
-  it.each(["时间流", "乔乔的 Moment首页"])(
+  it.each(["Timeline", "Jojo’s Moment home"])(
     "animates %s to the top without navigating",
     async (name) => {
       const frames = new Map<number, FrameRequestCallback>();
@@ -358,7 +382,7 @@ describe("App shell and public routes", () => {
       vi.spyOn(window, "scrollY", "get").mockReturnValue(800);
 
       render(<App />);
-      await screen.findByRole("heading", { name: "还没有 Moment" });
+      await screen.findByRole("heading", { name: "No Moments yet" });
       frames.clear();
       nextFrame = 0;
       vi.mocked(window.scrollTo).mockClear();
@@ -390,7 +414,10 @@ describe("App shell and public routes", () => {
   );
 
   it("keeps independently loaded content readable while identity retry repairs the shell", async () => {
-    const item = post("01K2ABCDEF0123456789ABCDE0", "资料失败也能阅读");
+    const item = post(
+      "01K2ABCDEF0123456789ABCDE0",
+      "Content readable without profile",
+    );
     let siteRequests = 0;
     let timelineRequests = 0;
     preauthenticate();
@@ -412,33 +439,37 @@ describe("App shell and public routes", () => {
 
     render(<App />);
     await waitFor(() =>
-      expect(screen.getByText("资料失败也能阅读")).toBeInTheDocument(),
-    );
-    expect(
-      await screen.findByText("正在自动重新获取站点资料…"),
-    ).toBeInTheDocument();
-    expect(
-      document.querySelector('section[aria-label="发布 Moment"]'),
-    ).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "重试资料" })).toBeNull();
-
-    await waitFor(() => expect(document.title).toBe("乔乔的 Moment"));
-    await waitFor(() =>
       expect(
-        document.querySelector('section[aria-label="发布 Moment"]'),
+        screen.getByText("Content readable without profile"),
       ).toBeInTheDocument(),
     );
-    expect(screen.getByText("资料失败也能阅读")).toBeInTheDocument();
+    expect(
+      await screen.findByText("Restoring site details…"),
+    ).toBeInTheDocument();
+    expect(
+      document.querySelector('section[aria-label="Post a Moment"]'),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Retry profile" })).toBeNull();
+
+    await waitFor(() => expect(document.title).toBe("Jojo’s Moment"));
+    await waitFor(() =>
+      expect(
+        document.querySelector('section[aria-label="Post a Moment"]'),
+      ).toBeInTheDocument(),
+    );
+    expect(
+      screen.getByText("Content readable without profile"),
+    ).toBeInTheDocument();
     expect(siteRequests).toBe(2);
     expect(timelineRequests).toBeGreaterThan(0);
   });
 
-  it.each(["账号登录", "文章"])(
+  it.each(["Log in", "Articles"])(
     "keeps %s access in the mobile account menu and restores trigger focus",
     async (destination) => {
       render(<App />);
       const trigger = document.querySelector<HTMLButtonElement>(
-        'button[aria-label="打开账户菜单"]',
+        'button[aria-label="Open account menu"]',
       );
       expect(trigger).not.toBeNull();
 
@@ -446,13 +477,13 @@ describe("App shell and public routes", () => {
       fireEvent.click(trigger!);
       const menu = await screen.findByRole("menu", { hidden: true });
       expect(
-        screen.getByRole("menuitem", { name: "个人资料" }),
+        screen.getByRole("menuitem", { name: "Profile" }),
       ).toBeInTheDocument();
       expect(
-        screen.getByRole("menuitem", { name: "账号登录" }),
+        screen.getByRole("menuitem", { name: "Log in" }),
       ).toBeInTheDocument();
       expect(
-        screen.getByRole("menuitem", { name: "文章" }),
+        screen.getByRole("menuitem", { name: "Articles" }),
       ).toBeInTheDocument();
 
       fireEvent.keyDown(menu, { key: "Escape" });
@@ -463,7 +494,7 @@ describe("App shell and public routes", () => {
         await screen.findByRole("menuitem", { name: destination }),
       );
       await waitFor(() => expect(window.location.pathname).toBe("/login"));
-      if (destination === "文章") {
+      if (destination === "Articles") {
         expect(new URLSearchParams(window.location.search).get("return")).toBe(
           "/compose/articles",
         );
@@ -472,7 +503,7 @@ describe("App shell and public routes", () => {
   );
 
   it("uses six distinct mobile destinations and hides the inline owner composer", async () => {
-    const item = post("01K2ABCDEF0123456789ABCDE0", "手机首屏的第一条");
+    const item = post("01K2ABCDEF0123456789ABCDE0", "First mobile entry");
     preauthenticate();
     vi.mocked(window.matchMedia).mockImplementation((query) =>
       mediaQuery(query === "(max-width: 719px)", query),
@@ -489,31 +520,38 @@ describe("App shell and public routes", () => {
     });
 
     const { container } = render(<App />);
-    await screen.findByText("手机首屏的第一条");
+    await screen.findByText("First mobile entry");
     const article = container.querySelector(
       `article[data-post-id="${item.id}"]`,
     );
     const mobileNavigation = container.querySelector<HTMLElement>(
-      'nav[aria-label="移动导航"]',
+      'nav[aria-label="Mobile navigation"]',
     );
 
     expect(article).not.toBeNull();
     expect(
-      container.querySelector('section[aria-label="发布 Moment"]'),
+      container.querySelector('section[aria-label="Post a Moment"]'),
     ).not.toBeVisible();
     expect(
       Array.from(mobileNavigation?.querySelectorAll("a") ?? [], (link) =>
         link.getAttribute("aria-label"),
       ),
-    ).toEqual(["首页", "搜索", "通知", "归档", "发布", "账号"]);
+    ).toEqual([
+      "Home",
+      "Search",
+      "Notifications",
+      "Archive",
+      "Post",
+      "Account",
+    ]);
     expect(
-      mobileNavigation?.querySelector('a[aria-label="发布"]'),
+      mobileNavigation?.querySelector('a[aria-label="Post"]'),
     ).toHaveAttribute("href", "/compose");
     expect(
-      mobileNavigation?.querySelector('a[aria-label="账号"]'),
+      mobileNavigation?.querySelector('a[aria-label="Account"]'),
     ).toHaveAttribute("href", "/settings");
     expect(
-      mobileNavigation?.querySelector('a[aria-label="个人资料"]'),
+      mobileNavigation?.querySelector('a[aria-label="Profile"]'),
     ).toBeNull();
   });
 
@@ -527,11 +565,10 @@ describe("App shell and public routes", () => {
     });
 
     render(<App />);
-    expect(await screen.findByRole("link", { name: "文章" })).toHaveAttribute(
-      "href",
-      "/compose/articles",
-    );
-    expect(screen.queryByRole("link", { name: "写文章" })).toBeNull();
+    expect(
+      await screen.findByRole("link", { name: "Articles" }),
+    ).toHaveAttribute("href", "/compose/articles");
+    expect(screen.queryByRole("link", { name: "Write an article" })).toBeNull();
   });
 
   it("hides the mobile bar on deterministic visual-viewport contraction without moving composer focus", async () => {
@@ -552,9 +589,9 @@ describe("App shell and public routes", () => {
     });
 
     const { container } = render(<App />);
-    const editor = await screen.findByLabelText("此刻想到什么？");
+    const editor = await screen.findByLabelText("What's on your mind?");
     const mobileNavigation = container.querySelector<HTMLElement>(
-      'nav[aria-label="移动导航"]',
+      'nav[aria-label="Mobile navigation"]',
     );
     editor.focus();
     expect(editor).toHaveFocus();
@@ -589,7 +626,7 @@ describe("App shell and public routes", () => {
       dispatchEvent: vi.fn(),
     }));
     render(<App />);
-    const publish = screen.getByRole("link", { name: "发帖" });
+    const publish = screen.getByRole("link", { name: "Post" });
     vi.spyOn(window, "scrollX", "get").mockReturnValue(12);
     vi.spyOn(window, "scrollY", "get").mockReturnValue(640);
 
@@ -597,16 +634,16 @@ describe("App shell and public routes", () => {
     fireEvent.click(publish);
     expect(window.location.pathname).toBe("/compose");
     expect(
-      await screen.findByRole("dialog", { name: "发布 Moment" }),
+      await screen.findByRole("dialog", { name: "Post a Moment" }),
     ).toBeInTheDocument();
-    expect(document.querySelector("main h1")).toHaveTextContent("时间流");
+    expect(document.querySelector("main h1")).toHaveTextContent("Timeline");
     expect(document.documentElement.style.overflow).toBe("hidden");
     expect(document.documentElement.style.overscrollBehavior).toBe("none");
     expect(document.body.style.position).toBe("");
     expect(document.body.style.top).toBe("");
     expect(document.body.style.left).toBe("");
 
-    fireEvent.keyDown(screen.getByRole("dialog", { name: "发布 Moment" }), {
+    fireEvent.keyDown(screen.getByRole("dialog", { name: "Post a Moment" }), {
       key: "Escape",
     });
     await waitFor(() => expect(window.location.pathname).toBe("/"));
@@ -623,8 +660,8 @@ describe("App shell and public routes", () => {
   // Posting needs a session, and the place to get one is the sign-in page --
   // not a login form folded into the compose dialog.
   it.each([
-    ["发帖", "/compose"],
-    ["文章", "/compose/articles"],
+    ["Post", "/compose"],
+    ["Articles", "/compose/articles"],
   ])(
     "sends a visitor from %s to sign-in rather than a dialog",
     async (label, destination) => {
@@ -645,33 +682,39 @@ describe("App shell and public routes", () => {
       expect(new URLSearchParams(window.location.search).get("return")).toBe(
         destination,
       );
-      expect(screen.queryByRole("dialog", { name: "发布 Moment" })).toBeNull();
+      expect(
+        screen.queryByRole("dialog", { name: "Post a Moment" }),
+      ).toBeNull();
     },
   );
 
   it("replaces discovery placeholders with recoverable URL-state errors", async () => {
     window.history.replaceState({}, "", "/search?state=loading");
     const { unmount } = render(<App />);
-    expect(screen.getByRole("heading", { name: "搜索" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Search" })).toBeInTheDocument();
     expect(
-      await screen.findByRole("heading", { name: "搜索链接无效" }),
+      await screen.findByRole("heading", { name: "Invalid search link" }),
     ).toBeInTheDocument();
 
     unmount();
     preauthenticate();
     window.history.replaceState({}, "", "/archive?state=error");
     render(<App />);
-    expect(await screen.findByRole("alert")).toHaveTextContent("归档链接无效");
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Invalid archive link",
+    );
   });
 
   it("opens display controls from More and persists color and background", async () => {
     render(<App />);
-    const triggers = screen.getAllByRole("button", { name: "更多" });
+    const triggers = screen.getAllByRole("button", { name: "More" });
     fireEvent.click(triggers[0]);
 
-    fireEvent.click(await screen.findByRole("menuitem", { name: /显示/ }));
-    fireEvent.click(await screen.findByRole("button", { name: "粉色" }));
-    fireEvent.click(await screen.findByRole("button", { name: /^纯黑$/ }));
+    fireEvent.click(await screen.findByRole("menuitem", { name: /Display/ }));
+    fireEvent.click(await screen.findByRole("button", { name: "Pink" }));
+    fireEvent.click(
+      await screen.findByRole("button", { name: /^Lights out$/ }),
+    );
     await waitFor(() =>
       expect(document.documentElement).toHaveAttribute(
         "data-theme",
@@ -687,8 +730,8 @@ describe("App shell and public routes", () => {
     preauthenticate();
     window.history.replaceState({}, "", "/archive");
     render(<App />);
-    const archiveLink = screen.getAllByRole("link", { name: "归档" })[0]!;
-    const homeLink = screen.getByRole("link", { name: "主页" });
+    const archiveLink = screen.getAllByRole("link", { name: "Archive" })[0]!;
+    const homeLink = screen.getByRole("link", { name: "Home" });
     expect(archiveLink).toHaveAttribute("aria-current", "page");
     expect(
       archiveLink.querySelector('svg[data-icon="archive"] use'),
@@ -731,55 +774,57 @@ describe("App shell and public routes", () => {
       async (avatar) => {
         memberApi(avatar);
         render(<App />);
-        await screen.findByRole("button", { name: "Reader 的账户菜单" });
+        await screen.findByRole("button", { name: "Account menu for Reader" });
         const mobile = document.querySelector<HTMLButtonElement>(
-          'button[aria-label="打开账户菜单"]',
+          'button[aria-label="Open account menu"]',
         )!;
-        const rail = screen.getByRole("button", { name: "Reader 的账户菜单" });
+        const rail = screen.getByRole("button", {
+          name: "Account menu for Reader",
+        });
         expect(mobile.querySelector("img")).toHaveAttribute(
           "src",
           rail.querySelector("img")!.getAttribute("src"),
         );
         expect(
-          screen.getByRole("link", { name: "Moment首页" }),
+          screen.getByRole("link", { name: "Moment home" }),
         ).toHaveTextContent("Moment");
         await waitFor(() => expect(document.title).toBe("Moment"));
         // Public content keeps its real author even when another account signs in.
         expect(
           (await screen.findByText("Public post")).closest("article"),
-        ).toHaveTextContent("乔乔");
+        ).toHaveTextContent("Jojo");
         fireEvent.click(mobile);
         fireEvent.click(
-          await screen.findByRole("menuitem", { name: "账号设置" }),
+          await screen.findByRole("menuitem", { name: "Account settings" }),
         );
-        await waitFor(() => expect(document.title).toBe("设置 · Moment"));
+        await waitFor(() => expect(document.title).toBe("Settings · Moment"));
       },
     );
 
     it("does not borrow the display account for a signed-out account control", async () => {
       render(<App />);
-      await screen.findByRole("heading", { name: "还没有 Moment" });
+      await screen.findByRole("heading", { name: "No Moments yet" });
       expect(
-        document.querySelector('button[aria-label="打开账户菜单"] img'),
+        document.querySelector('button[aria-label="Open account menu"] img'),
       ).toBeNull();
-      await waitFor(() => expect(document.title).toBe("乔乔的 Moment"));
+      await waitFor(() => expect(document.title).toBe("Jojo’s Moment"));
     });
 
     it("keeps a pending member profile header neutral", async () => {
       memberApi(null);
       window.history.replaceState({}, "", "/reader");
       render(<App />);
-      await screen.findByRole("button", { name: "Reader 的账户菜单" });
+      await screen.findByRole("button", { name: "Account menu for Reader" });
       expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent(
-        "个人资料",
+        "Profile",
       );
       expect(screen.getByRole("heading", { level: 1 })).not.toHaveTextContent(
-        "乔乔",
+        "Jojo",
       );
     });
   });
 
-  // The foot of the rail used to read "账号", which names a rank rather than a
+  // The foot of the rail used to read "Account", which names a rank rather than a
   // person and said the same thing to whoever was looking at it. What belongs
   // in the corner of a signed-in app is who you are.
   describe("the account at the foot of the rail", () => {
@@ -806,11 +851,11 @@ describe("App shell and public routes", () => {
       render(<App />);
 
       const trigger = await screen.findByRole("button", {
-        name: "乔乔 的账户菜单",
+        name: "Account menu for Jojo",
       });
-      expect(trigger).toHaveTextContent("乔乔");
+      expect(trigger).toHaveTextContent("Jojo");
       expect(trigger).toHaveTextContent("@cheemschen");
-      expect(screen.queryByRole("link", { name: "账号" })).toBeNull();
+      expect(screen.queryByRole("link", { name: "Account" })).toBeNull();
     });
 
     // The menu is the container everything else about the account hangs from.
@@ -819,20 +864,20 @@ describe("App shell and public routes", () => {
       render(<App />);
 
       const trigger = await screen.findByRole("button", {
-        name: "乔乔 的账户菜单",
+        name: "Account menu for Jojo",
       });
       await waitFor(() => expect(trigger).toBeEnabled());
       trigger.focus();
       fireEvent.keyDown(trigger, { key: "ArrowDown" });
       await screen.findByRole("menu", { hidden: true });
-      for (const name of ["文章", "退出 @cheemschen"]) {
+      for (const name of ["Articles", "Log out @cheemschen"]) {
         expect(screen.getByRole("menuitem", { name })).toBeInTheDocument();
       }
       // Not the profile: the rail carries that row already, and a menu that
       // repeats the row above it is a longer way to the same page.
-      expect(screen.queryByRole("menuitem", { name: "个人资料" })).toBeNull();
-      expect(screen.queryByRole("menuitem", { name: "设置" })).toBeNull();
-      expect(screen.getByRole("link", { name: "个人资料" })).toHaveAttribute(
+      expect(screen.queryByRole("menuitem", { name: "Profile" })).toBeNull();
+      expect(screen.queryByRole("menuitem", { name: "Settings" })).toBeNull();
+      expect(screen.getByRole("link", { name: "Profile" })).toHaveAttribute(
         "href",
         "/cheemschen",
       );
@@ -843,13 +888,13 @@ describe("App shell and public routes", () => {
       render(<App />);
 
       const trigger = await screen.findByRole("button", {
-        name: "乔乔 的账户菜单",
+        name: "Account menu for Jojo",
       });
       await waitFor(() => expect(trigger).toBeEnabled());
       fireEvent.click(trigger);
       await screen.findByRole("menu", { hidden: true });
       fireEvent.click(
-        await screen.findByRole("menuitem", { name: "退出 @cheemschen" }),
+        await screen.findByRole("menuitem", { name: "Log out @cheemschen" }),
       );
 
       await waitFor(() =>
@@ -864,10 +909,9 @@ describe("App shell and public routes", () => {
     it("offers sign-in when there is no account to show", async () => {
       render(<App />);
 
-      expect(await screen.findByRole("link", { name: "账号" })).toHaveAttribute(
-        "href",
-        "/login?return=%2F",
-      );
+      expect(
+        await screen.findByRole("link", { name: "Account" }),
+      ).toHaveAttribute("href", "/login?return=%2F");
     });
   });
 
@@ -898,7 +942,7 @@ describe("App shell and public routes", () => {
     // fallback is on screen first and the assertion has to be about where the
     // link settles rather than where it starts.
     await waitFor(() => {
-      expect(screen.getByRole("link", { name: "个人资料" })).toHaveAttribute(
+      expect(screen.getByRole("link", { name: "Profile" })).toHaveAttribute(
         "href",
         "/cheemschen",
       );
@@ -908,7 +952,7 @@ describe("App shell and public routes", () => {
   it("falls back to the handle-free entry point for a visitor with no session", async () => {
     render(<App />);
 
-    const profileLink = await screen.findByRole("link", { name: "个人资料" });
+    const profileLink = await screen.findByRole("link", { name: "Profile" });
     expect(profileLink).toHaveAttribute("href", "/profile");
   });
 
@@ -937,14 +981,18 @@ describe("App shell and public routes", () => {
     render(<App />);
 
     expect(
-      await screen.findByLabelText(/^(邮箱或)?用户名$/),
+      await screen.findByLabelText(/^(Email or )?[Uu]sername$/),
     ).toBeInTheDocument();
-    expect(screen.getByLabelText("密码")).toBeInTheDocument();
+    expect(screen.getByLabelText("Password")).toBeInTheDocument();
     expect(
-      screen.queryByRole("complementary", { name: "站点导航" }),
+      screen.queryByRole("complementary", { name: "Site navigation" }),
     ).toBeNull();
-    expect(screen.queryByRole("navigation", { name: "主要导航" })).toBeNull();
-    expect(screen.queryByRole("navigation", { name: "移动导航" })).toBeNull();
+    expect(
+      screen.queryByRole("navigation", { name: "Main navigation" }),
+    ).toBeNull();
+    expect(
+      screen.queryByRole("navigation", { name: "Mobile navigation" }),
+    ).toBeNull();
     // The product's line, not the instance's name. A visitor arrives here
     // before knowing whose instance they are on, and the site title above a
     // sign-in form read as a greeting to somebody who had not said who they
@@ -952,13 +1000,13 @@ describe("App shell and public routes", () => {
     expect(
       screen.getByRole("heading", { level: 1, name: "Happening now" }),
     ).toBeInTheDocument();
-    expect(screen.queryByText("乔乔的 Moment")).toBeNull();
+    expect(screen.queryByText("Jojo’s Moment")).toBeNull();
     // The way out is an arrow in the corner, as on every other page, not a
     // strip of text under the form.
-    expect(screen.queryByText("返回时间流")).toBeNull();
-    const back = screen.getByRole("link", { name: "返回时间流" });
+    expect(screen.queryByText("Back to timeline")).toBeNull();
+    const back = screen.getByRole("link", { name: "Back to timeline" });
     expect(back.querySelector("svg")).not.toBeNull();
-    expect(screen.getByRole("link", { name: "立即注册" })).toHaveAttribute(
+    expect(screen.getByRole("link", { name: "Sign up" })).toHaveAttribute(
       "href",
       "/register",
     );
@@ -987,14 +1035,16 @@ describe("App shell and public routes", () => {
     render(<App />);
 
     expect(
-      await screen.findByLabelText(/^(邮箱或)?用户名$/),
+      await screen.findByLabelText(/^(Email or )?[Uu]sername$/),
     ).toBeInTheDocument();
-    expect(screen.getByLabelText("确认密码")).toBeInTheDocument();
+    expect(screen.getByLabelText("Confirm password")).toBeInTheDocument();
     expect(
       screen.getByRole("heading", { name: "Join Moment" }),
     ).toBeInTheDocument();
-    expect(screen.queryByRole("navigation", { name: "主要导航" })).toBeNull();
-    expect(screen.getByRole("link", { name: "立即登录" })).toHaveAttribute(
+    expect(
+      screen.queryByRole("navigation", { name: "Main navigation" }),
+    ).toBeNull();
+    expect(screen.getByRole("link", { name: "Log in" })).toHaveAttribute(
       "href",
       "/login?return=%2Farchive",
     );
@@ -1023,20 +1073,20 @@ describe("App shell and public routes", () => {
 
     await waitFor(() => expect(window.location.pathname).toBe("/login"));
     expect(
-      await screen.findByLabelText(/^(邮箱或)?用户名$/),
+      await screen.findByLabelText(/^(Email or )?[Uu]sername$/),
     ).toBeInTheDocument();
     // Sent in place, not pushed: the /profile entry that would only send the
     // visitor here again is gone, and the arrow leads to the timeline.
     expect(window.history.length).toBe(entries);
-    expect(screen.queryByRole("heading", { name: "乔乔" })).toBeNull();
-    fireEvent.click(screen.getByRole("link", { name: "返回时间流" }));
+    expect(screen.queryByRole("heading", { name: "Jojo" })).toBeNull();
+    fireEvent.click(screen.getByRole("link", { name: "Back to timeline" }));
     await waitFor(() => expect(window.location.pathname).toBe("/"));
     expect(
-      await screen.findByRole("navigation", { name: "主要导航" }),
+      await screen.findByRole("navigation", { name: "Main navigation" }),
     ).toBeInTheDocument();
   });
 
-  // The route a visitor takes from the shell: 个人资料 in the rail, the sign-in
+  // The route a visitor takes from the shell: Profile in the rail, the sign-in
   // page, the arrow in its corner. Measured before the fix, the arrow and the
   // browser's own back both landed on /profile, which sent the visitor to
   // sign in again -- the page could not be left, and the shell flashed on
@@ -1059,22 +1109,22 @@ describe("App shell and public routes", () => {
       return json(timelineEnvelope());
     });
     render(<App />);
-    await screen.findByRole("navigation", { name: "主要导航" });
+    await screen.findByRole("navigation", { name: "Main navigation" });
     const entries = window.history.length;
 
-    fireEvent.click(screen.getAllByRole("link", { name: "个人资料" })[0]!);
+    fireEvent.click(screen.getAllByRole("link", { name: "Profile" })[0]!);
     await waitFor(() => expect(window.location.pathname).toBe("/login"));
     expect(window.location.search).toBe("?return=%2Fprofile");
     expect(
-      await screen.findByLabelText(/^(邮箱或)?用户名$/),
+      await screen.findByLabelText(/^(Email or )?[Uu]sername$/),
     ).toBeInTheDocument();
     // One entry for the sign-in page, standing where /profile was.
     expect(window.history.length).toBe(entries + 1);
 
-    fireEvent.click(screen.getByRole("link", { name: "返回时间流" }));
+    fireEvent.click(screen.getByRole("link", { name: "Back to timeline" }));
     await waitFor(() => expect(window.location.pathname).toBe("/"));
     expect(
-      await screen.findByRole("navigation", { name: "主要导航" }),
+      await screen.findByRole("navigation", { name: "Main navigation" }),
     ).toBeInTheDocument();
     // And it stays there: nothing sends the visitor to sign in again.
     await act(() => new Promise((resolve) => setTimeout(resolve, 50)));
@@ -1083,7 +1133,7 @@ describe("App shell and public routes", () => {
     act(() => window.history.forward());
     await waitFor(() => expect(window.location.pathname).toBe("/login"));
     expect(
-      await screen.findByLabelText(/^(邮箱或)?用户名$/),
+      await screen.findByLabelText(/^(Email or )?[Uu]sername$/),
     ).toBeInTheDocument();
   });
 
@@ -1176,10 +1226,12 @@ describe("App shell and public routes", () => {
     installApi();
     render(<App />);
     expect(
-      await screen.findByRole("dialog", { name: "编辑资料" }),
+      await screen.findByRole("dialog", { name: "Edit profile" }),
     ).toBeInTheDocument();
     expect(window.location.pathname).toBe("/settings/profile");
-    fireEvent.click(screen.getByRole("button", { name: "关闭编辑资料" }));
+    fireEvent.click(
+      screen.getByRole("button", { name: "Close profile editor" }),
+    );
     await waitFor(() => expect(window.location.pathname).toBe("/owner"));
   });
 
@@ -1194,7 +1246,7 @@ describe("App shell and public routes", () => {
   });
 
   it("renders the public profile as a first-class route", async () => {
-    const item = post("01K2ABCDEF0123456789ABCDE0", "个人资料里的 Moment");
+    const item = post("01K2ABCDEF0123456789ABCDE0", "Profile entry");
     // The handle, not `/profile`: a public page has a public address, and
     // `/profile` now means "mine" and needs a session to mean anything.
     window.history.replaceState({}, "", "/owner");
@@ -1210,26 +1262,27 @@ describe("App shell and public routes", () => {
 
     expect(
       await screen.findByRole("region", {
-        name: "乔乔 的个人资料",
+        name: "Jojo's profile",
       }),
     ).toBeInTheDocument();
     expect(
-      screen.getByRole("heading", { level: 1, name: "乔乔" }),
+      screen.getByRole("heading", { level: 1, name: "Jojo" }),
     ).toBeInTheDocument();
-    expect(await screen.findByText("个人资料里的 Moment")).toBeInTheDocument();
+    expect(await screen.findByText("Profile entry")).toBeInTheDocument();
     expect(
-      screen.getByRole("heading", { level: 2, name: "乔乔" }),
+      screen.getByRole("heading", { level: 2, name: "Jojo" }),
     ).toBeInTheDocument();
-    expect(
-      screen.getAllByRole("link", { name: "个人资料" })[0],
-    ).toHaveAttribute("aria-current", "page");
-    expect(screen.queryByText("私人的公开时间流")).not.toBeInTheDocument();
+    expect(screen.getAllByRole("link", { name: "Profile" })[0]).toHaveAttribute(
+      "aria-current",
+      "page",
+    );
+    expect(screen.queryByText("Private public feed")).not.toBeInTheDocument();
   });
 
   it.each([
-    ["/owner/all", "全部"],
-    ["/owner/posts", "帖子"],
-    ["/owner/articles", "文章"],
+    ["/owner/all", "All"],
+    ["/owner/posts", "Posts"],
+    ["/owner/articles", "Articles"],
   ])(
     "opens %s as the site profile rather than an alias or member lookup",
     async (path, label) => {
@@ -1241,7 +1294,7 @@ describe("App shell and public routes", () => {
       });
       render(<App />);
       expect(
-        await screen.findByRole("region", { name: "乔乔 的个人资料" }),
+        await screen.findByRole("region", { name: "Jojo's profile" }),
       ).toBeInTheDocument();
       expect(screen.getByRole("tab", { name: label })).toHaveAttribute(
         "aria-selected",
@@ -1252,7 +1305,7 @@ describe("App shell and public routes", () => {
   );
 
   it("returns to the timeline from the profile header", async () => {
-    const item = post("01K2ABCDEF0123456789ABCDE0", "个人资料里的 Moment");
+    const item = post("01K2ABCDEF0123456789ABCDE0", "Profile entry");
     window.history.replaceState({}, "", "/owner");
     installApi(async (url) => {
       if (url === "/api/v1/site") return json(siteEnvelope);
@@ -1265,20 +1318,22 @@ describe("App shell and public routes", () => {
     render(<App />);
 
     expect(
-      await screen.findByRole("heading", { level: 1, name: "乔乔" }),
+      await screen.findByRole("heading", { level: 1, name: "Jojo" }),
     ).toBeInTheDocument();
     expect(
-      document.querySelector('button[aria-label="打开账户菜单"]'),
+      document.querySelector('button[aria-label="Open account menu"]'),
     ).toBeNull();
 
-    fireEvent.click(screen.getByRole("link", { name: "返回时间流" }));
+    fireEvent.click(screen.getByRole("link", { name: "Back to timeline" }));
 
     await waitFor(() => expect(window.location.pathname).toBe("/"));
-    expect(screen.getByRole("heading", { name: "时间流" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { name: "Timeline" }),
+    ).toBeInTheDocument();
   });
 
   it("opens detail and returns to the preserved timeline without refetching it", async () => {
-    const item = post("01K2ABCDEF0123456789ABCDE0", "可返回的 Moment");
+    const item = post("01K2ABCDEF0123456789ABCDE0", "Returnable entry");
     let timelineRequests = 0;
     const fetcher = installApi(async (url) => {
       if (url === "/api/v1/site") return json(siteEnvelope);
@@ -1292,11 +1347,11 @@ describe("App shell and public routes", () => {
       return json({}, 404);
     });
     render(<App />);
-    await screen.findByText("可返回的 Moment");
+    await screen.findByText("Returnable entry");
     vi.spyOn(window, "scrollY", "get").mockReturnValue(640);
 
     const openLink = screen.getByRole("link", {
-      name: "打开这条 Moment 详情",
+      name: "Open Moment details",
     });
     openLink.focus();
     fireEvent.click(openLink);
@@ -1304,12 +1359,14 @@ describe("App shell and public routes", () => {
       await screen.findByRole("heading", { name: "Moment" }),
     ).toBeInTheDocument();
     expect(window.location.pathname).toBe(`/m/${item.id}`);
-    const backLink = screen.getByRole("link", { name: "返回时间流" });
+    const backLink = screen.getByRole("link", { name: "Back to timeline" });
     backLink.focus();
     fireEvent.click(backLink);
 
     await waitFor(() => expect(window.location.pathname).toBe("/"));
-    expect(screen.getByRole("heading", { name: "时间流" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { name: "Timeline" }),
+    ).toBeInTheDocument();
     expect(timelineRequests).toBeGreaterThan(0);
     await new Promise<void>((resolve) =>
       window.requestAnimationFrame(() => resolve()),
@@ -1328,8 +1385,8 @@ describe("App shell and public routes", () => {
   });
 
   it("returns to the exact trigger on a previously loaded page", async () => {
-    const first = post("01K2ABCDEF0123456789ABCDE0", "最近的一段");
-    const second = post("01K2ABCDEF0123456789ABCDE1", "第二页的一段");
+    const first = post("01K2ABCDEF0123456789ABCDE0", "Recent entry");
+    const second = post("01K2ABCDEF0123456789ABCDE1", "Next-page entry");
     let timelineRequests = 0;
     installApi(async (url) => {
       if (url === "/api/v1/site") return json(siteEnvelope);
@@ -1348,14 +1405,16 @@ describe("App shell and public routes", () => {
       return json({}, 404);
     });
     render(<App />);
-    await screen.findByText("最近的一段");
-    fireEvent.click(screen.getByRole("button", { name: "加载更早的 Moment" }));
-    await screen.findByText("第二页的一段");
+    await screen.findByText("Recent entry");
+    fireEvent.click(
+      screen.getByRole("button", { name: "Load earlier Moments" }),
+    );
+    await screen.findByText("Next-page entry");
     expect(window.location.search).toContain("loaded_through=cursor-one");
 
     vi.spyOn(window, "scrollY", "get").mockReturnValue(920);
     const secondPost = screen
-      .getByText("第二页的一段")
+      .getByText("Next-page entry")
       .closest<HTMLElement>("[data-post-id]");
     const trigger = secondPost?.querySelector<HTMLAnchorElement>(
       '[data-focus-key$=":surface-link"]',
@@ -1367,7 +1426,7 @@ describe("App shell and public routes", () => {
       await screen.findByRole("heading", { name: "Moment" }),
     ).toBeInTheDocument();
 
-    const backLink = screen.getByRole("link", { name: "返回时间流" });
+    const backLink = screen.getByRole("link", { name: "Back to timeline" });
     backLink.focus();
     fireEvent.click(backLink);
     await waitFor(() => expect(window.location.pathname).toBe("/"));
@@ -1395,15 +1454,15 @@ describe("App shell and public routes", () => {
             author: {
               user_id: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
               username: authorUsername,
-              display_name: "文章作者",
+              display_name: "Article author",
               avatar_media_id: null,
               profile_url: `/${authorUsername}`,
             },
           }
         : {}),
       article: {
-        title: "专注阅读的文章",
-        excerpt: "同一份正文",
+        title: "Focused reading article",
+        excerpt: "Shared content",
         cover: null,
         body_schema_version: 1,
         body: {
@@ -1413,11 +1472,11 @@ describe("App shell and public routes", () => {
             {
               type: "heading",
               attrs: { level: 1 },
-              content: [{ type: "text", text: "文章章节" }],
+              content: [{ type: "text", text: "Article section" }],
             },
             {
               type: "paragraph",
-              content: [{ type: "text", text: "同一份文章正文" }],
+              content: [{ type: "text", text: "Shared article content" }],
             },
           ],
         },
@@ -1441,7 +1500,9 @@ describe("App shell and public routes", () => {
     const { id, fetcher } = installArticleApi();
     window.history.replaceState({}, "", `/m/${id}`);
     render(<App />);
-    const trigger = await screen.findByRole("link", { name: "全屏阅读" });
+    const trigger = await screen.findByRole("link", {
+      name: "Fullscreen reading",
+    });
     expect(trigger).toHaveAttribute("href", `/owner/article/${id}`);
     expect(trigger.closest("header")).not.toBeNull();
     await waitFor(() =>
@@ -1450,7 +1511,7 @@ describe("App shell and public routes", () => {
         "false",
       ),
     );
-    expect(screen.queryByRole("button", { name: "查找" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Search" })).toBeNull();
     expect(
       fireEvent.keyDown(document.body, {
         key: "f",
@@ -1459,7 +1520,9 @@ describe("App shell and public routes", () => {
       }),
     ).toBe(false);
     fireEvent.keyUp(document.body, { key: "f", code: "KeyF", metaKey: true });
-    expect(await screen.findByRole("textbox", { name: "查找" })).toBeVisible();
+    expect(
+      await screen.findByRole("textbox", { name: "Search" }),
+    ).toBeVisible();
     fireEvent.keyDown(document.body, { key: "Escape" });
     const article = screen.getByRole("article");
     trigger.focus();
@@ -1467,15 +1530,21 @@ describe("App shell and public routes", () => {
     fireEvent.click(trigger);
     expect(window.location.pathname).toBe(`/owner/article/${id}`);
     expect(screen.getByRole("article")).toBe(article);
-    expect(screen.queryByRole("region", { name: "回复" })).toBeNull();
-    expect(screen.queryByRole("button", { name: /回复这篇文章/ })).toBeNull();
-    expect(screen.getByLabelText("文章作者")).toBeInTheDocument();
-    expect(screen.queryByRole("navigation", { name: "主要导航" })).toBeNull();
-    expect(screen.queryByRole("navigation", { name: "移动导航" })).toBeNull();
+    expect(screen.queryByRole("region", { name: "Reply" })).toBeNull();
     expect(
-      screen.queryByRole("complementary", { name: "记忆导航" }),
+      screen.queryByRole("button", { name: /Reply to this article/ }),
     ).toBeNull();
-    expect(await screen.findByRole("button", { name: "查找" })).toBeVisible();
+    expect(screen.getByLabelText("Article author")).toBeInTheDocument();
+    expect(
+      screen.queryByRole("navigation", { name: "Main navigation" }),
+    ).toBeNull();
+    expect(
+      screen.queryByRole("navigation", { name: "Mobile navigation" }),
+    ).toBeNull();
+    expect(
+      screen.queryByRole("complementary", { name: "Memory navigation" }),
+    ).toBeNull();
+    expect(await screen.findByRole("button", { name: "Search" })).toBeVisible();
     expect(
       fireEvent.keyDown(document.body, {
         key: "f",
@@ -1484,19 +1553,25 @@ describe("App shell and public routes", () => {
       }),
     ).toBe(false);
     fireEvent.keyUp(document.body, { key: "f", code: "KeyF", metaKey: true });
-    expect(screen.getByRole("dialog", { name: "查找" })).toBeVisible();
-    fireEvent.click(await screen.findByRole("link", { name: "文章章节" }));
+    expect(screen.getByRole("dialog", { name: "Search" })).toBeVisible();
+    fireEvent.click(
+      await screen.findByRole("link", { name: "Article section" }),
+    );
     expect(window.location.hash).toBe("#article-heading-1");
     expect(window.history.state).toMatchObject({ momentInternal: true });
-    fireEvent.click(screen.getByRole("link", { name: "退出全屏阅读" }));
+    fireEvent.click(
+      screen.getByRole("link", { name: "Exit fullscreen reading" }),
+    );
     await waitFor(() => expect(window.location.pathname).toBe(`/m/${id}`));
     expect(screen.getByRole("article")).toBe(article);
-    expect(screen.getByRole("region", { name: "回复" })).toBeInTheDocument();
-    expect(screen.queryByLabelText("文章作者")).toBeNull();
-    expect(screen.queryByRole("button", { name: "查找" })).toBeNull();
-    expect(screen.queryByRole("dialog", { name: "查找" })).toBeNull();
+    expect(screen.getByRole("region", { name: "Reply" })).toBeInTheDocument();
+    expect(screen.queryByLabelText("Article author")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Search" })).toBeNull();
+    expect(screen.queryByRole("dialog", { name: "Search" })).toBeNull();
     await waitFor(() =>
-      expect(screen.getByRole("link", { name: "全屏阅读" })).toHaveFocus(),
+      expect(
+        screen.getByRole("link", { name: "Fullscreen reading" }),
+      ).toHaveFocus(),
     );
     expect(window.scrollTo).toHaveBeenCalledWith({
       top: 860,
@@ -1510,7 +1585,9 @@ describe("App shell and public routes", () => {
       }),
     ).toBe(false);
     fireEvent.keyUp(document.body, { key: "f", code: "KeyF", metaKey: true });
-    expect(await screen.findByRole("textbox", { name: "查找" })).toBeVisible();
+    expect(
+      await screen.findByRole("textbox", { name: "Search" }),
+    ).toBeVisible();
     fireEvent.keyDown(document.body, { key: "Escape" });
     expect(
       fetcher.mock.calls.filter(
@@ -1528,11 +1605,11 @@ describe("App shell and public routes", () => {
         "contenteditable",
         "false",
       );
-      expect(screen.getByText("同一份文章正文")).toBeInTheDocument();
-      expect(screen.getByRole("button", { name: "查找" })).toBeVisible();
+      expect(screen.getByText("Shared article content")).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Search" })).toBeVisible();
     });
-    const back = screen.getByRole("link", { name: "退出全屏阅读" });
-    expect(screen.queryByRole("region", { name: "回复" })).toBeNull();
+    const back = screen.getByRole("link", { name: "Exit fullscreen reading" });
+    expect(screen.queryByRole("region", { name: "Reply" })).toBeNull();
     expect(
       fetcher.mock.calls.filter(([url]) => String(url).includes("/comments")),
     ).toHaveLength(0);
@@ -1548,7 +1625,7 @@ describe("App shell and public routes", () => {
     fireEvent.click(back);
     expect(window.location.pathname).toBe(`/m/${id}`);
     expect(
-      screen.getByRole("navigation", { name: "主要导航" }),
+      screen.getByRole("navigation", { name: "Main navigation" }),
     ).toBeInTheDocument();
   });
 
@@ -1556,11 +1633,13 @@ describe("App shell and public routes", () => {
     const { id } = installArticleApi("alice");
     window.history.replaceState({}, "", `/m/${id}`);
     render(<App />);
-    const trigger = await screen.findByRole("link", { name: "全屏阅读" });
+    const trigger = await screen.findByRole("link", {
+      name: "Fullscreen reading",
+    });
     expect(trigger).toHaveAttribute("href", `/alice/article/${id}`);
     fireEvent.click(trigger);
     expect(window.location.pathname).toBe(`/alice/article/${id}`);
-    const footer = screen.getByLabelText("文章作者");
+    const footer = screen.getByLabelText("Article author");
     expect(within(footer).getByRole("link")).toHaveAttribute("href", "/alice");
   });
 
@@ -1584,16 +1663,18 @@ describe("App shell and public routes", () => {
               404,
             )
           : json({
-              data: post(id, "普通帖子正文"),
+              data: post(id, "Regular post content"),
               meta: { request_id: "moment" },
             });
       });
       render(<App />);
       expect(await screen.findByRole("alert")).toHaveTextContent(
-        "这个 Moment 不在这里",
+        "This Moment is unavailable",
       );
-      expect(screen.queryByText("普通帖子正文")).toBeNull();
-      expect(screen.queryByRole("link", { name: "全屏阅读" })).toBeNull();
+      expect(screen.queryByText("Regular post content")).toBeNull();
+      expect(
+        screen.queryByRole("link", { name: "Fullscreen reading" }),
+      ).toBeNull();
     },
   );
 
@@ -1615,12 +1696,12 @@ describe("App shell and public routes", () => {
     });
     render(<App />);
     expect(await screen.findByRole("alert")).toHaveTextContent(
-      "这个 Moment 不在这里",
+      "This Moment is unavailable",
     );
   });
 
   it("recovers a temporary detail failure without requiring navigation or retry", async () => {
-    const item = post("01K2ABCDEF0123456789ABCDE0", "自动取回的正文");
+    const item = post("01K2ABCDEF0123456789ABCDE0", "Recovered content");
     window.history.replaceState({}, "", `/m/${item.id}`);
     let reads = 0;
     installApi(async (url) => {
@@ -1633,9 +1714,9 @@ describe("App shell and public routes", () => {
       return json({}, 404);
     });
     render(<App />);
-    await screen.findByText("正在重新获取内容…");
-    expect(screen.queryByRole("button", { name: "重试" })).toBeNull();
-    expect(await screen.findByText("自动取回的正文")).toBeInTheDocument();
+    await screen.findByText("Reloading content…");
+    expect(screen.queryByRole("button", { name: "Try again" })).toBeNull();
+    expect(await screen.findByText("Recovered content")).toBeInTheDocument();
     expect(reads).toBe(2);
     expect(window.location.pathname).toBe(`/m/${item.id}`);
   });
@@ -1643,8 +1724,8 @@ describe("App shell and public routes", () => {
   it("recovers a directly opened detail route and rejects malformed post data", async () => {
     const item = post(
       "01K2ABCDEF0123456789ABCDE0",
-      "直接打开的正文",
-      "<p>直接打开的正文</p>",
+      "Direct entry content",
+      "<p>Direct entry content</p>",
     );
     window.history.replaceState({}, "", `/m/${item.id}`);
     installApi(async (url) => {
@@ -1652,7 +1733,7 @@ describe("App shell and public routes", () => {
       return json({ data: item, meta: { request_id: "req_post" } });
     });
     const { unmount } = render(<App />);
-    expect(await screen.findByText("直接打开的正文")).toBeInTheDocument();
+    expect(await screen.findByText("Direct entry content")).toBeInTheDocument();
 
     unmount();
     window.history.replaceState({}, "", `/m/${item.id}`);
@@ -1663,8 +1744,8 @@ describe("App shell and public routes", () => {
       return json({ data: malformed, meta: { request_id: "req_bad" } });
     });
     render(<App />);
-    expect(await screen.findByText("正在重新获取内容…")).toBeInTheDocument();
-    expect(screen.queryByText("直接打开的正文")).toBeNull();
+    expect(await screen.findByText("Reloading content…")).toBeInTheDocument();
+    expect(screen.queryByText("Direct entry content")).toBeNull();
   });
 });
 
@@ -1723,8 +1804,12 @@ describe("central account-required routing", () => {
       );
       expect(window.history.length).toBe(length);
       expect(await screen.findByText("Happening now")).toBeInTheDocument();
-      expect(screen.queryByRole("navigation", { name: "主要导航" })).toBeNull();
-      expect(screen.getAllByLabelText(/^(邮箱或)?用户名$/)).toHaveLength(1);
+      expect(
+        screen.queryByRole("navigation", { name: "Main navigation" }),
+      ).toBeNull();
+      expect(
+        screen.getAllByLabelText(/^(Email or )?[Uu]sername$/),
+      ).toHaveLength(1);
     },
   );
   it("waits for a real session answer and offers recovery on an unavailable server", async () => {
@@ -1742,9 +1827,9 @@ describe("central account-required routing", () => {
       }),
     );
     render(<App />);
-    await screen.findByText("正在确认登录状态…");
+    await screen.findByText("Checking sign-in status…");
     expect(window.location.pathname).toBe("/settings/account");
-    expect(screen.queryByLabelText("密码")).toBeNull();
+    expect(screen.queryByLabelText("Password")).toBeNull();
     await act(async () =>
       resolveSession(
         json(
@@ -1761,9 +1846,9 @@ describe("central account-required routing", () => {
       ),
     );
     expect(
-      await screen.findByRole("button", { name: "重试检查" }),
+      await screen.findByRole("button", { name: "Check again" }),
     ).toBeInTheDocument();
     expect(window.location.pathname).toBe("/settings/account");
-    expect(screen.queryByLabelText("用户名")).toBeNull();
+    expect(screen.queryByLabelText("Username")).toBeNull();
   });
 });

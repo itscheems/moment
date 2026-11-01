@@ -10,6 +10,7 @@ import {
 } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import i18n from "../../i18n";
 import { App } from "../../app/App";
 import {
   makeImportCounts,
@@ -52,9 +53,9 @@ function siteEnvelope() {
     data: {
       profile_user_id: "00000000000000000000000000000000",
       username: "owner",
-      display_name: "乔乔",
-      title: "乔乔的 Moment",
-      bio: "沿着日常留下坐标",
+      display_name: "Jojo",
+      title: "Jojo’s Moment",
+      bio: "Notes from daily life",
       timezone: "Asia/Shanghai",
       public_base_url: "https://moment.example.com",
       avatar_media_id: null,
@@ -159,8 +160,8 @@ function mergePlanData() {
         {
           field: "title",
           classification: "conflict",
-          local_value: "当前标题",
-          incoming_value: "备份标题",
+          local_value: "Current title",
+          incoming_value: "Archive title",
           dependencies: [],
         },
       ],
@@ -178,7 +179,7 @@ function mergePlanData() {
             changed_fields: [],
             incoming: {
               id: "post-new",
-              content_md: "备份里新增的 Moment 正文",
+              content_md: "Entry added by the archive",
               created_at: "2026-08-10T08:00:00Z",
               published_at: "2026-08-10T08:00:00Z",
               media: [],
@@ -204,17 +205,17 @@ function mergePlanData() {
             changed_fields: [],
             local: {
               id: "post-after-export",
-              content_md: "导出备份后新发布的 Moment",
+              content_md: "Entry published after export",
               created_at: "2026-08-11T08:00:00Z",
               published_at: "2026-08-11T08:00:00Z",
               location: {
-                name: "陆悦天地",
-                display_name: "中科路1600号",
+                name: "City Plaza",
+                display_name: "1600 Market Street",
                 country_code: "CN",
-                country: "中国",
-                region: "上海市",
-                city: "上海市",
-                district: "浦东新区",
+                country: "Example Country",
+                region: "Metro City",
+                city: "Metro City",
+                district: "Riverside",
                 category: "mall",
                 provider: "manual",
                 provider_place_id: "",
@@ -237,7 +238,7 @@ function mergePlanData() {
             classification: "conflict",
             changed_fields: ["display_name"],
             local: makeReviewUser(),
-            incoming: makeReviewUser({ display_name: "林林（备份）" }),
+            incoming: makeReviewUser({ display_name: "Morgan (archive)" }),
           },
           {
             kind: "entry",
@@ -246,14 +247,14 @@ function mergePlanData() {
             changed_fields: ["content"],
             local: {
               id: "post-conflict",
-              content_md: "当前站点修改后的正文",
+              content_md: "Locally updated entry",
               created_at: "2026-08-09T08:00:00Z",
               published_at: "2026-08-09T08:00:00Z",
               media: [],
             },
             incoming: {
               id: "post-conflict",
-              content_md: "备份文件中的旧正文",
+              content_md: "Earlier archived entry",
               created_at: "2026-08-09T08:00:00Z",
               published_at: "2026-08-09T08:00:00Z",
               media: [],
@@ -265,8 +266,8 @@ function mergePlanData() {
         {
           field: "title",
           classification: "conflict",
-          local_value: "当前标题",
-          incoming_value: "备份标题",
+          local_value: "Current title",
+          incoming_value: "Archive title",
         },
       ],
     },
@@ -422,7 +423,7 @@ function accountSessionEnvelope() {
       account: {
         user_id: "00000000000000000000000000000000",
         username: "owner",
-        display_name: "乔乔",
+        display_name: "Jojo",
         bio: "",
         avatar_media_id: null,
         cover_media_id: null,
@@ -483,32 +484,34 @@ function installFetch(
 
 async function renderSettings(waitForPicker = true) {
   render(<App />);
-  await screen.findByRole("heading", { name: "从备份恢复" });
+  await screen.findByRole("heading", { name: "Restore from a backup" });
   if (waitForPicker) {
     await waitFor(() =>
       expect(
-        screen.getByRole("button", { name: "选择备份文件" }),
+        screen.getByRole("button", { name: "Choose backup file" }),
       ).toBeEnabled(),
     );
   }
 }
 
 async function createReview(file: File) {
-  fireEvent.change(screen.getByLabelText("选择 Moment 备份 ZIP"), {
+  fireEvent.change(screen.getByLabelText("Choose a Moment backup ZIP"), {
     target: { files: [file] },
   });
-  fireEvent.click(screen.getByRole("button", { name: "检查备份" }));
+  fireEvent.click(screen.getByRole("button", { name: "Inspect backup" }));
   const request = ArchiveRequest.requests.at(-1)!;
   expect(request.url).toBe("/api/v1/backups/import/review");
   request.respond(mergePlanData(), 201);
-  await screen.findByRole("heading", { name: "审阅并合并" });
+  await screen.findByRole("heading", { name: "Review and merge" });
 }
 
 describe("owner backup and restore", () => {
-  beforeEach(() => {
+  beforeEach(async () => {
     window.history.replaceState({}, "", "/settings/backups/restore");
     window.sessionStorage.clear();
     window.localStorage.clear();
+    window.localStorage.setItem("moment.ui-locale", "en");
+    await i18n.changeLanguage("en");
     installSession();
     ArchiveRequest.requests = [];
     vi.stubGlobal("XMLHttpRequest", ArchiveRequest);
@@ -549,63 +552,69 @@ describe("owner backup and restore", () => {
     const file = new File(["merge"], "merge.zip", {
       type: "application/zip",
     });
-    fireEvent.change(screen.getByLabelText("选择 Moment 备份 ZIP"), {
+    fireEvent.change(screen.getByLabelText("Choose a Moment backup ZIP"), {
       target: { files: [file] },
     });
-    fireEvent.click(screen.getByRole("button", { name: "检查备份" }));
+    fireEvent.click(screen.getByRole("button", { name: "Inspect backup" }));
     const request = ArchiveRequest.requests.at(-1)!;
     expect(request.url).toBe("/api/v1/backups/import/review");
     request.respond(mergePlanData(), 201);
 
-    await screen.findByRole("heading", { name: "审阅并合并" });
-    expect(screen.getByText("导出备份后新发布的 Moment")).toBeInTheDocument();
-    expect(screen.getByText("当前站点修改后的正文")).toBeInTheDocument();
-    expect(screen.getByText("备份文件中的旧正文")).toBeInTheDocument();
+    await screen.findByRole("heading", { name: "Review and merge" });
+    expect(
+      screen.getByText("Entry published after export"),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Locally updated entry")).toBeInTheDocument();
+    expect(screen.getByText("Earlier archived entry")).toBeInTheDocument();
 
     // Accounts are reported, never chosen. They get their own section with the
     // reason stated, rather than a row of controls the server would refuse or
     // -- worse -- a silent omission of the people a restore brings with it.
-    const accounts = screen.getByRole("region", { name: "账户与登录方式" });
+    const accounts = screen.getByRole("region", {
+      name: "Accounts and login methods",
+    });
     // Both sides of the conflict are shown, so the handle appears twice.
     expect(within(accounts).getAllByText("@linlin")).toHaveLength(2);
-    expect(within(accounts).getAllByText("成员").length).toBeGreaterThan(0);
-    expect(within(accounts).getAllByText("已启用").length).toBeGreaterThan(0);
-    expect(within(accounts).getByText("林林（备份）")).toBeInTheDocument();
+    expect(within(accounts).getAllByText("Member").length).toBeGreaterThan(0);
+    expect(within(accounts).getAllByText("Active").length).toBeGreaterThan(0);
+    expect(within(accounts).getByText("Morgan (archive)")).toBeInTheDocument();
     expect(within(accounts).getByText("GitHub")).toBeInTheDocument();
     expect(
       within(accounts).getByText("linlin@example.com"),
     ).toBeInTheDocument();
     expect(
-      within(accounts).getByText("两侧都有 · 以当前站点为准"),
+      within(accounts).getByText("Both · Current site wins"),
     ).toBeInTheDocument();
     expect(
-      within(accounts).getByText("备份独有 · 会被加入"),
+      within(accounts).getByText("Backup only · Will be added"),
     ).toBeInTheDocument();
     expect(
-      within(accounts).getByText(/“两者都保留”会把同一个人拆成两个/),
+      within(accounts).getByText(
+        /Keeping both would split that person into two accounts/,
+      ),
     ).toBeInTheDocument();
     expect(within(accounts).queryAllByRole("radio")).toHaveLength(0);
     expect(within(accounts).queryAllByRole("radiogroup")).toHaveLength(0);
     // And they stay out of the lists that do carry controls.
     expect(
-      screen.queryByRole("radiogroup", { name: /账户/ }),
+      screen.queryByRole("radiogroup", { name: /Account/ }),
     ).not.toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("radio", { name: "两者都保留" }));
-    fireEvent.click(screen.getByRole("radio", { name: "使用备份值" }));
+    fireEvent.click(screen.getByRole("radio", { name: "Keep both" }));
+    fireEvent.click(screen.getByRole("radio", { name: "Use backup value" }));
     expect(
-      screen.queryByRole("combobox", { name: /冲突处理/ }),
+      screen.queryByRole("combobox", { name: /Conflict handling/ }),
     ).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "提交合并" }));
+    fireEvent.click(screen.getByRole("button", { name: "Submit merge" }));
     expect(
       await screen.findByRole("heading", {
-        name: "按当前选择合并这份备份？",
+        name: "Merge this backup with these choices?",
       }),
     ).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "确认并合并" }));
+    fireEvent.click(screen.getByRole("button", { name: "Confirm and merge" }));
 
     expect(
-      await screen.findByText("备份已合并并通过就绪检查"),
+      await screen.findByText("Backup merged and readiness verified"),
     ).toBeInTheDocument();
     const commitCall = fetcher.mock.calls.find(
       ([input]) => String(input) === "/api/v1/backups/import/merge/commit",
@@ -642,38 +651,38 @@ describe("owner backup and restore", () => {
   it("counts the rows each merge section actually shows", async () => {
     installFetch(async () => failure("IMPORT_STAGING_INVALID", 409));
     await renderSettings();
-    fireEvent.change(screen.getByLabelText("选择 Moment 备份 ZIP"), {
+    fireEvent.change(screen.getByLabelText("Choose a Moment backup ZIP"), {
       target: {
         files: [new File(["merge"], "merge.zip", { type: "application/zip" })],
       },
     });
-    fireEvent.click(screen.getByRole("button", { name: "检查备份" }));
+    fireEvent.click(screen.getByRole("button", { name: "Inspect backup" }));
     ArchiveRequest.requests.at(-1)!.respond(mergePlanData(), 201);
 
-    await screen.findByRole("heading", { name: "审阅并合并" });
+    await screen.findByRole("heading", { name: "Review and merge" });
 
     // The backup's incoming-only bucket holds two rows and one of them is a
     // credential, which this section does not render.
-    const incoming = screen.getByRole("heading", { name: "备份新增" });
-    expect(incoming.nextElementSibling).toHaveTextContent(/^1 项$/);
-    expect(screen.getByText("备份里新增的 Moment 正文")).toBeInTheDocument();
+    const incoming = screen.getByRole("heading", { name: "Added by backup" });
+    expect(incoming.nextElementSibling).toHaveTextContent(/^1 items$/);
+    expect(screen.getByText("Entry added by the archive")).toBeInTheDocument();
 
     // The current-only bucket carries no accounts, so nothing moved.
     const localOnly = screen.getByRole("heading", {
-      name: "当前独有 · 会保留",
+      name: "Local only · Will be kept",
     });
-    expect(localOnly.nextElementSibling).toHaveTextContent(/^1 项$/);
+    expect(localOnly.nextElementSibling).toHaveTextContent(/^1 items$/);
   });
 
   it("says which refusal blocked the merge", async () => {
     installFetch(async () => failure("IMPORT_STAGING_INVALID", 409));
     await renderSettings();
-    fireEvent.change(screen.getByLabelText("选择 Moment 备份 ZIP"), {
+    fireEvent.change(screen.getByLabelText("Choose a Moment backup ZIP"), {
       target: {
         files: [new File(["merge"], "merge.zip", { type: "application/zip" })],
       },
     });
-    fireEvent.click(screen.getByRole("button", { name: "检查备份" }));
+    fireEvent.click(screen.getByRole("button", { name: "Inspect backup" }));
     ArchiveRequest.requests.at(-1)!.respond(
       {
         ...mergePlanData(),
@@ -683,11 +692,13 @@ describe("owner backup and restore", () => {
       201,
     );
 
-    await screen.findByRole("heading", { name: "审阅覆盖恢复" });
+    await screen.findByRole("heading", { name: "Review replacement restore" });
     expect(
-      screen.getByText(/同一个用户名，合并无法决定该给谁改名/),
+      screen.getByText(
+        /A backup account and a different local account share a username/,
+      ),
     ).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "安全合并" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Safe merge" })).toBeDisabled();
   });
 
   it("discards an uncommitted merge plan when leaving settings so a later file can be inspected", async () => {
@@ -704,22 +715,22 @@ describe("owner backup and restore", () => {
           : undefined,
     );
     const view = render(<App />);
-    await screen.findByRole("heading", { name: "从备份恢复" });
+    await screen.findByRole("heading", { name: "Restore from a backup" });
     await waitFor(() =>
       expect(
-        screen.getByRole("button", { name: "选择备份文件" }),
+        screen.getByRole("button", { name: "Choose backup file" }),
       ).toBeEnabled(),
     );
 
     const first = new File(["merge-one"], "first.zip", {
       type: "application/zip",
     });
-    fireEvent.change(screen.getByLabelText("选择 Moment 备份 ZIP"), {
+    fireEvent.change(screen.getByLabelText("Choose a Moment backup ZIP"), {
       target: { files: [first] },
     });
-    fireEvent.click(screen.getByRole("button", { name: "检查备份" }));
+    fireEvent.click(screen.getByRole("button", { name: "Inspect backup" }));
     ArchiveRequest.requests.at(-1)!.respond(mergePlanData(), 201);
-    await screen.findByRole("heading", { name: "审阅并合并" });
+    await screen.findByRole("heading", { name: "Review and merge" });
 
     view.unmount();
     await waitFor(() =>
@@ -734,28 +745,28 @@ describe("owner backup and restore", () => {
     );
 
     render(<App />);
-    await screen.findByRole("heading", { name: "从备份恢复" });
+    await screen.findByRole("heading", { name: "Restore from a backup" });
     await waitFor(() =>
       expect(
-        screen.getByRole("button", { name: "选择备份文件" }),
+        screen.getByRole("button", { name: "Choose backup file" }),
       ).toBeEnabled(),
     );
     const second = new File(["merge-two"], "second.zip", {
       type: "application/zip",
     });
-    fireEvent.change(screen.getByLabelText("选择 Moment 备份 ZIP"), {
+    fireEvent.change(screen.getByLabelText("Choose a Moment backup ZIP"), {
       target: { files: [second] },
     });
-    fireEvent.click(screen.getByRole("button", { name: "检查备份" }));
+    fireEvent.click(screen.getByRole("button", { name: "Inspect backup" }));
     const nextRequest = ArchiveRequest.requests.at(-1)!;
     expect(nextRequest.url).toBe("/api/v1/backups/import/review");
     nextRequest.respond(mergePlanData(), 201);
     expect(
-      await screen.findByRole("heading", { name: "审阅并合并" }),
+      await screen.findByRole("heading", { name: "Review and merge" }),
     ).toBeInTheDocument();
     expect(
       screen.queryByText(
-        "另一个恢复或维护操作正在进行。请先查询当前状态，稍后再预检。",
+        "Another restore or maintenance operation is running. Check its status before inspecting again.",
       ),
     ).not.toBeInTheDocument();
   });
@@ -772,22 +783,22 @@ describe("owner backup and restore", () => {
     const file = new File(["merge"], "stale.zip", {
       type: "application/zip",
     });
-    fireEvent.change(screen.getByLabelText("选择 Moment 备份 ZIP"), {
+    fireEvent.change(screen.getByLabelText("Choose a Moment backup ZIP"), {
       target: { files: [file] },
     });
-    fireEvent.click(screen.getByRole("button", { name: "检查备份" }));
+    fireEvent.click(screen.getByRole("button", { name: "Inspect backup" }));
     ArchiveRequest.requests.at(-1)!.respond(mergePlanData(), 201);
-    await screen.findByRole("heading", { name: "审阅并合并" });
-    fireEvent.click(screen.getByRole("button", { name: "提交合并" }));
-    fireEvent.click(screen.getByRole("button", { name: "确认并合并" }));
+    await screen.findByRole("heading", { name: "Review and merge" });
+    fireEvent.click(screen.getByRole("button", { name: "Submit merge" }));
+    fireEvent.click(screen.getByRole("button", { name: "Confirm and merge" }));
 
     expect(
       await screen.findByText(
-        "合并计划已过期或当前站点已变化，请重新检查合并冲突。",
+        "The merge plan expired or the site changed. Check conflicts again.",
       ),
     ).toBeInTheDocument();
     expect(
-      screen.queryByRole("heading", { name: "审阅并合并" }),
+      screen.queryByRole("heading", { name: "Review and merge" }),
     ).not.toBeInTheDocument();
     expect(
       fetcher.mock.calls.filter(
@@ -808,16 +819,18 @@ describe("owner backup and restore", () => {
     await renderSettings();
 
     expect(
-      screen.getByRole("heading", { name: "当前没有进行中的恢复" }),
+      screen.getByRole("heading", { name: "No restore is running" }),
     ).toBeInTheDocument();
     expect(
-      screen.queryByRole("button", { name: "下载整站备份" }),
+      screen.queryByRole("button", { name: "Download site backup" }),
     ).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "选择备份文件" })).toBeEnabled();
     expect(
-      screen.queryByRole("heading", { name: "恢复前影响清单" }),
+      screen.getByRole("button", { name: "Choose backup file" }),
+    ).toBeEnabled();
+    expect(
+      screen.queryByRole("heading", { name: "Restore impact review" }),
     ).not.toBeInTheDocument();
-    expect(screen.queryByText("暂存重建")).not.toBeInTheDocument();
+    expect(screen.queryByText("Staged rebuild")).not.toBeInTheDocument();
   });
 
   it("keeps settings read-only until the initial restore status is known", async () => {
@@ -829,15 +842,17 @@ describe("owner backup and restore", () => {
         }),
     );
     render(<App />);
-    await screen.findByRole("heading", { name: "从备份恢复" });
+    await screen.findByRole("heading", { name: "Restore from a backup" });
     await waitFor(() => expect(resolveInitial).toBeTypeOf("function"));
-    expect(screen.getByRole("button", { name: "选择备份文件" })).toBeDisabled();
+    expect(
+      screen.getByRole("button", { name: "Choose backup file" }),
+    ).toBeDisabled();
     await act(async () => {
       resolveInitial(failure("IMPORT_STAGING_INVALID", 409));
     });
     await waitFor(() =>
       expect(
-        screen.getByRole("button", { name: "选择备份文件" }),
+        screen.getByRole("button", { name: "Choose backup file" }),
       ).toBeEnabled(),
     );
   });
@@ -855,9 +870,13 @@ describe("owner backup and restore", () => {
     });
     await renderSettings();
 
-    fireEvent.click(screen.getByRole("button", { name: "返回上一级" }));
-    fireEvent.click(await screen.findByRole("link", { name: /^导出整站备份/ }));
-    const button = await screen.findByRole("button", { name: "下载整站备份" });
+    fireEvent.click(screen.getByRole("button", { name: "Go back" }));
+    fireEvent.click(
+      await screen.findByRole("link", { name: /^Download a site backup/ }),
+    );
+    const button = await screen.findByRole("button", {
+      name: "Download site backup",
+    });
     fireEvent.click(button);
     fireEvent.click(button);
     await waitFor(() =>
@@ -865,7 +884,7 @@ describe("owner backup and restore", () => {
         { href: "/api/v1/backups/export", download: "moment-export.zip" },
       ]),
     );
-    expect(await screen.findByText(/已请求下载/)).toBeInTheDocument();
+    expect(await screen.findByText(/Download requested/)).toBeInTheDocument();
     expect(fetcher).not.toHaveBeenCalledWith(
       "/api/v1/backups/export",
       expect.anything(),
@@ -887,29 +906,43 @@ describe("owner backup and restore", () => {
       clicks.push(this.getAttribute("href") ?? "");
     });
     render(<App />);
-    await screen.findByRole("heading", { name: "从备份恢复" });
-    await screen.findByRole("button", { name: "立即重试状态" });
-    expect(screen.getByRole("button", { name: "选择备份文件" })).toBeDisabled();
-    expect(screen.getByRole("button", { name: "选择备份文件" })).toBeDisabled();
-    fireEvent.click(screen.getByRole("button", { name: "返回上一级" }));
-    fireEvent.click(await screen.findByRole("link", { name: /^导出整站备份/ }));
-    fireEvent.click(screen.getByRole("button", { name: "下载整站备份" }));
-    fireEvent.click(screen.getByRole("button", { name: "返回上一级" }));
-    fireEvent.click(await screen.findByRole("link", { name: /^从备份恢复/ }));
+    await screen.findByRole("heading", { name: "Restore from a backup" });
+    await screen.findByRole("button", { name: "Retry status now" });
+    expect(
+      screen.getByRole("button", { name: "Choose backup file" }),
+    ).toBeDisabled();
+    expect(
+      screen.getByRole("button", { name: "Choose backup file" }),
+    ).toBeDisabled();
+    fireEvent.click(screen.getByRole("button", { name: "Go back" }));
     fireEvent.click(
-      await screen.findByRole("button", { name: "立即重试状态" }),
+      await screen.findByRole("link", { name: /^Download a site backup/ }),
+    );
+    fireEvent.click(
+      screen.getByRole("button", { name: "Download site backup" }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Go back" }));
+    fireEvent.click(
+      await screen.findByRole("link", { name: /^Restore from a backup/ }),
+    );
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Retry status now" }),
     );
     await waitFor(() =>
       expect(
-        screen.getByRole("button", { name: "选择备份文件" }),
+        screen.getByRole("button", { name: "Choose backup file" }),
       ).toBeEnabled(),
     );
     await act(async () => {
       await vi.advanceTimersByTimeAsync(1_000);
     });
-    fireEvent.click(screen.getByRole("button", { name: "返回上一级" }));
-    fireEvent.click(await screen.findByRole("link", { name: /^导出整站备份/ }));
-    fireEvent.click(screen.getByRole("button", { name: "下载整站备份" }));
+    fireEvent.click(screen.getByRole("button", { name: "Go back" }));
+    fireEvent.click(
+      await screen.findByRole("link", { name: /^Download a site backup/ }),
+    );
+    fireEvent.click(
+      screen.getByRole("button", { name: "Download site backup" }),
+    );
     await waitFor(() =>
       expect(clicks).toEqual([
         "/api/v1/backups/export",
@@ -935,39 +968,49 @@ describe("owner backup and restore", () => {
     await renderSettings();
     await createReview(new File(["merge"], "backup.zip"));
 
-    fireEvent.click(screen.getByRole("button", { name: "完全替换" }));
+    fireEvent.click(screen.getByRole("button", { name: "Replace everything" }));
     expect(
-      await screen.findByRole("heading", { name: "审阅覆盖恢复" }),
+      await screen.findByRole("heading", {
+        name: "Review replacement restore",
+      }),
     ).toBeInTheDocument();
-    expect(screen.getAllByText("当前独有 · 将移除")).toHaveLength(2);
-    expect(screen.getByText("导出备份后新发布的 Moment")).toBeInTheDocument();
-    expect(screen.getByTitle("中科路1600号")).toHaveTextContent(
-      "陆悦天地 · 浦东新区",
+    expect(screen.getAllByText("Local only · Will be removed")).toHaveLength(2);
+    expect(
+      screen.getByText("Entry published after export"),
+    ).toBeInTheDocument();
+    expect(screen.getByTitle("1600 Market Street")).toHaveTextContent(
+      "City Plaza · Riverside",
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "确认完全替换" }));
+    fireEvent.click(
+      screen.getByRole("button", { name: "Confirm replacement" }),
+    );
     const dialog = await screen.findByRole("dialog", {
-      name: "完全替换当前站点？",
+      name: "Replace the entire site?",
     });
-    expect(within(dialog).getByText("1 项将移除")).toBeInTheDocument();
+    expect(
+      within(dialog).getByText("1 items will be removed"),
+    ).toBeInTheDocument();
     // A replacement takes the account graph with it, so the confirmation has
     // to say how many accounts arrive and how many stop existing. Reading
     // that number off the archive is the whole reason the server sends it.
     expect(
-      within(dialog).getByText("2 Moment · 0 评论 · 3 账户"),
+      within(dialog).getByText("2 Moment · 0 Comments · 3 Account"),
     ).toBeInTheDocument();
-    expect(within(dialog).getByText("2 个将被替换")).toBeInTheDocument();
+    expect(within(dialog).getByText("2 will be replaced")).toBeInTheDocument();
     expect(
-      within(dialog).getByRole("button", { name: "关闭覆盖恢复确认" }),
+      within(dialog).getByRole("button", {
+        name: "Close replacement confirmation",
+      }),
     ).toBeInTheDocument();
     expect(document.documentElement.style.overflow).toBe("hidden");
     expect(document.body.style.top).toBe("");
 
     fireEvent.click(
-      within(dialog).getByRole("button", { name: "确认完全替换" }),
+      within(dialog).getByRole("button", { name: "Confirm replacement" }),
     );
     expect(
-      await screen.findByText("备份已恢复并通过就绪检查"),
+      await screen.findByText("Backup restored and readiness verified"),
     ).toBeInTheDocument();
     expect(document.documentElement.style.overflow).toBe("");
     expect(document.documentElement.style.overflow).toBe("");
@@ -992,21 +1035,23 @@ describe("owner backup and restore", () => {
     );
     await renderSettings();
     await createReview(new File(["merge"], "backup.zip"));
-    fireEvent.click(screen.getByRole("button", { name: "完全替换" }));
-    fireEvent.click(screen.getByRole("button", { name: "确认完全替换" }));
+    fireEvent.click(screen.getByRole("button", { name: "Replace everything" }));
+    fireEvent.click(
+      screen.getByRole("button", { name: "Confirm replacement" }),
+    );
     fireEvent.click(
       within(await screen.findByRole("dialog")).getByRole("button", {
-        name: "确认完全替换",
+        name: "Confirm replacement",
       }),
     );
 
     expect(
       await screen.findByText(
-        "审阅后当前站点已经发生变化。为保护新内容，恢复已拒绝；请重新检查备份。",
+        "The site changed since your review. Restore was refused to protect new content. Inspect the backup again.",
       ),
     ).toBeInTheDocument();
     expect(
-      screen.queryByRole("heading", { name: "审阅覆盖恢复" }),
+      screen.queryByRole("heading", { name: "Review replacement restore" }),
     ).not.toBeInTheDocument();
     expect(
       fetcher.mock.calls.filter(
@@ -1018,17 +1063,17 @@ describe("owner backup and restore", () => {
   it("aborts an obsolete review when another file is selected", async () => {
     installFetch();
     await renderSettings();
-    fireEvent.change(screen.getByLabelText("选择 Moment 备份 ZIP"), {
+    fireEvent.change(screen.getByLabelText("Choose a Moment backup ZIP"), {
       target: { files: [new File(["first"], "first.zip")] },
     });
-    fireEvent.click(screen.getByRole("button", { name: "检查备份" }));
+    fireEvent.click(screen.getByRole("button", { name: "Inspect backup" }));
     const stale = ArchiveRequest.requests[0];
 
-    fireEvent.change(screen.getByLabelText("选择 Moment 备份 ZIP"), {
+    fireEvent.change(screen.getByLabelText("Choose a Moment backup ZIP"), {
       target: { files: [new File(["second"], "second.zip")] },
     });
     expect(stale.aborted).toBe(true);
-    fireEvent.click(screen.getByRole("button", { name: "检查备份" }));
+    fireEvent.click(screen.getByRole("button", { name: "Inspect backup" }));
     stale.respond(mergePlanData(), 201);
     ArchiveRequest.requests[1].respond(mergePlanData(), 201);
     expect(await screen.findByText(/second\.zip/)).toBeInTheDocument();
@@ -1036,9 +1081,9 @@ describe("owner backup and restore", () => {
   });
 
   it.each([
-    ["failed", "恢复在切换前停止"],
-    ["rolled_back", "已自动恢复原站点"],
-    ["needs_attention", "恢复状态需要人工处理"],
+    ["failed", "Restore stopped before switching data"],
+    ["rolled_back", "Original site restored automatically"],
+    ["needs_attention", "Restore requires manual action"],
   ] as const)("explains the %s terminal outcome", async (phase, title) => {
     installFetch(async () =>
       json({
@@ -1056,7 +1101,7 @@ describe("owner backup and restore", () => {
       expect(errorCode).toBeInTheDocument();
       expect(errorCode.closest("details")).toHaveAttribute("open");
       expect(
-        screen.getByRole("button", { name: "选择备份文件" }),
+        screen.getByRole("button", { name: "Choose backup file" }),
       ).toBeDisabled();
     }
   });

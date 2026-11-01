@@ -20,8 +20,8 @@ const tokenId = "3".repeat(32);
 const account = {
   user_id: accountId,
   username: "writer",
-  display_name: "写作者",
-  bio: "自己的简介",
+  display_name: "Writer",
+  bio: "Personal biography",
   avatar_media_id: null,
   cover_media_id: null,
   role: "admin",
@@ -33,16 +33,16 @@ const other = {
   ...account,
   user_id: otherId,
   username: "reader",
-  display_name: "另一位作者",
+  display_name: "Other writer",
   role: "member",
   profile_url: "/reader",
 };
 const site = {
   profile_user_id: accountId,
   username: "writer",
-  display_name: "写作者",
+  display_name: "Writer",
   title: "Moment",
-  bio: "自己的简介",
+  bio: "Personal biography",
   timezone: "UTC",
   public_base_url: null,
   avatar_media_id: null,
@@ -53,7 +53,7 @@ const site = {
 const token = {
   id: tokenId,
   user_id: accountId,
-  label: "工作电脑",
+  label: "Work computer",
   created_at_ms: 1785801600000,
   revoked_at_ms: null,
 };
@@ -111,7 +111,9 @@ function installApi(
   vi.stubGlobal("fetch", calls);
   return calls;
 }
-beforeEach(() => {
+beforeEach(async () => {
+  window.localStorage.setItem("moment.ui-locale", "en");
+  await i18n.changeLanguage("en");
   window.history.replaceState({}, "", "/settings/account");
   window.sessionStorage.clear();
   window.sessionStorage.setItem(
@@ -129,39 +131,47 @@ it("returns from a directly opened child to its category without leaving setting
   window.history.replaceState({}, "", "/settings/security/tokens");
   installApi("member");
   render(<App />);
-  await screen.findByRole("button", { name: "创建 API 令牌" });
-  fireEvent.click(screen.getByRole("button", { name: "返回上一级" }));
+  await screen.findByRole("button", { name: "Create API token" });
+  fireEvent.click(screen.getByRole("button", { name: "Go back" }));
   expect(window.location.pathname).toBe("/settings/security");
-  await screen.findByRole("heading", { name: "安全和账号访问" });
-  expect(await screen.findByRole("link", { name: /^登录方式/ })).toBeVisible();
+  await screen.findByRole("heading", { name: "Security and account access" });
+  expect(
+    await screen.findByRole("link", { name: /^Login methods/ }),
+  ).toBeVisible();
 });
 
 it("searches permitted settings and opens a child using the keyboard", async () => {
   window.history.replaceState({}, "", "/settings");
   installApi("member");
   render(<App />);
-  const input = await screen.findByRole("combobox", { name: "搜索设置" });
+  const input = await screen.findByRole("combobox", {
+    name: "Search Settings",
+  });
   act(() => input.focus());
-  fireEvent.change(input, { target: { value: "备份" } });
-  expect(await screen.findByText("没有找到匹配的设置")).toBeVisible();
+  fireEvent.change(input, { target: { value: "Backups" } });
+  expect(await screen.findByText("No matching settings found")).toBeVisible();
   expect(screen.queryByRole("option")).toBeNull();
-  fireEvent.change(input, { target: { value: "令牌" } });
-  await screen.findByRole("option", { name: /API 令牌/ });
+  fireEvent.change(input, { target: { value: "token" } });
+  await screen.findByRole("option", { name: /API token/ });
   fireEvent.keyDown(input, { key: "ArrowDown" });
   fireEvent.keyDown(input, { key: "Enter" });
   await waitFor(() =>
     expect(window.location.pathname).toBe("/settings/security/tokens"),
   );
   expect(
-    await screen.findByRole("button", { name: "创建 API 令牌" }),
+    await screen.findByRole("button", { name: "Create API token" }),
   ).toBeEnabled();
   fireEvent.keyDown(input, { key: "Escape" });
-  expect(screen.getByRole("navigation", { name: "设置分类" })).toBeVisible();
-  expect(screen.getByRole("tab", { name: "安全和账号访问" })).toHaveFocus();
+  expect(
+    screen.getByRole("navigation", { name: "Settings categories" }),
+  ).toBeVisible();
+  expect(
+    screen.getByRole("tab", { name: "Security and account access" }),
+  ).toHaveFocus();
   act(() => input.focus());
-  fireEvent.change(input, { target: { value: "语言" } });
+  fireEvent.change(input, { target: { value: "Language" } });
   const options = await screen.findAllByRole("option");
-  expect(options[0]).toHaveTextContent(/^语言/);
+  expect(options[0]).toHaveTextContent(/^Language/);
   fireEvent.keyDown(input, { key: "Enter" });
   await waitFor(() =>
     expect(window.location.pathname).toBe("/settings/display/language"),
@@ -172,19 +182,36 @@ it("keeps deployment configuration out of site navigation and settings search", 
   window.history.replaceState({}, "", "/settings/site");
   installApi("admin");
   render(<App />);
-  expect(await screen.findByRole("link", { name: /^评论/ })).toBeVisible();
-  expect(screen.queryByRole("link", { name: /^基本信息/ })).toBeNull();
-  expect(screen.queryByRole("link", { name: /^首页展示账号/ })).toBeNull();
-  expect(screen.queryByLabelText("站点标题")).toBeNull();
-  expect(screen.queryByLabelText("时区")).toBeNull();
-  expect(screen.queryByLabelText("公开网址")).toBeNull();
-  expect(screen.queryByLabelText("展示账号")).toBeNull();
-  const input = screen.getByRole("combobox", { name: "搜索设置" });
+  expect(await screen.findByRole("link", { name: /^Comments/ })).toBeVisible();
+  expect(screen.queryByRole("link", { name: /^Site information/ })).toBeNull();
+  expect(
+    screen.queryByRole("link", { name: /^Homepage display account/ }),
+  ).toBeNull();
+  expect(screen.queryByLabelText("Site title")).toBeNull();
+  expect(screen.queryByLabelText("Timezone")).toBeNull();
+  expect(screen.queryByLabelText("Public URL")).toBeNull();
+  expect(screen.queryByLabelText("Display account")).toBeNull();
+  const input = screen.getByRole("combobox", { name: "Search Settings" });
   act(() => input.focus());
-  for (const query of ["基本信息", "首页展示账号", "公开网址"]) {
+  for (const query of [
+    "Site information",
+    "Homepage display account",
+    "Public URL",
+  ]) {
     fireEvent.change(input, { target: { value: query } });
-    expect(await screen.findByText("没有找到匹配的设置")).toBeVisible();
-    expect(screen.queryByRole("option")).toBeNull();
+    if (query === "Site information") {
+      expect(
+        await screen.findByRole("option", { name: /^Download a site backup/ }),
+      ).toBeVisible();
+      expect(
+        screen.queryByRole("option", { name: /^Site information/ }),
+      ).toBeNull();
+    } else {
+      expect(
+        await screen.findByText("No matching settings found"),
+      ).toBeVisible();
+      expect(screen.queryByRole("option")).toBeNull();
+    }
   }
 });
 
@@ -220,14 +247,16 @@ it("discards a modal language choice when canceled without changing the account"
   window.history.replaceState({}, "", "/settings/display/language");
   const calls = installApi("member");
   render(<App />);
-  const english = await screen.findByRole("radio", { name: /English/ });
+  const english = await screen.findByRole("radio", {
+    name: /Simplified Chinese/,
+  });
   fireEvent.click(english);
-  fireEvent.click(screen.getByRole("button", { name: "取消" }));
+  fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
   await waitFor(() =>
     expect(window.location.pathname).toBe("/settings/display"),
   );
-  fireEvent.click(await screen.findByRole("link", { name: /^语言/ }));
-  expect(screen.getByRole("radio", { name: /简体中文/ })).toBeChecked();
+  fireEvent.click(await screen.findByRole("link", { name: /^Language/ }));
+  expect(screen.getByRole("radio", { name: /English/ })).toBeChecked();
   expect(
     calls.mock.calls.some(
       ([url, init]) =>
@@ -241,28 +270,29 @@ it("opens display and profile rows directly as dialogs over their category", asy
   window.history.replaceState({}, "", "/settings/display");
   installApi("member");
   render(<App />);
-  fireEvent.click(await screen.findByRole("link", { name: /^显示选择背景/ }));
-  const appearance = await screen.findByRole("dialog", { name: "自定义显示" });
+  fireEvent.click(await screen.findByRole("link", { name: /^Display/ }));
+  const appearance = await screen.findByRole("dialog", {
+    name: "Customize your display",
+  });
   await waitFor(() => expect(appearance).toBeVisible());
-  fireEvent.click(within(appearance).getByRole("button", { name: "完成" }));
+  fireEvent.click(within(appearance).getByRole("button", { name: "Done" }));
   await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
   await waitFor(() =>
     expect(window.location.pathname).toBe("/settings/display"),
   );
   fireEvent.click(
-    within(screen.getByRole("navigation", { name: "设置分类" })).getByRole(
-      "tab",
-      { name: "你的账号" },
-    ),
+    within(
+      screen.getByRole("navigation", { name: "Settings categories" }),
+    ).getByRole("tab", { name: "Your account" }),
   );
   fireEvent.click(
-    await screen.findByRole("link", { name: /^个人资料编辑名字/ }),
+    await screen.findByRole("link", { name: /^Profile.*Edit your name/ }),
   );
   await waitFor(() =>
-    expect(screen.getByRole("dialog", { name: "编辑资料" })).toBeVisible(),
+    expect(screen.getByRole("dialog", { name: "Edit profile" })).toBeVisible(),
   );
   expect(window.location.pathname).toBe("/settings/profile");
-  fireEvent.click(screen.getByRole("button", { name: "关闭编辑资料" }));
+  fireEvent.click(screen.getByRole("button", { name: "Close profile editor" }));
   await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
   await waitFor(() =>
     expect(window.location.pathname).toBe("/settings/account"),
@@ -272,18 +302,20 @@ it("opens display and profile rows directly as dialogs over their category", asy
 it("opens the personal categories for members without administrative settings", async () => {
   installApi("member");
   render(<App />);
-  await screen.findByRole("heading", { name: "你的账号" });
-  const nav = screen.getByRole("navigation", { name: "设置分类" });
+  await screen.findByRole("heading", { name: "Your Account" });
+  const nav = screen.getByRole("navigation", { name: "Settings categories" });
   expect(
     within(nav)
       .getAllByRole("tab")
       .map((link) => link.getAttribute("href")),
   ).toEqual(["/settings/account", "/settings/security", "/settings/display"]);
-  expect(screen.queryByLabelText("站点标题")).toBeNull();
-  fireEvent.click(within(nav).getByRole("tab", { name: "安全和账号访问" }));
-  fireEvent.click(await screen.findByRole("link", { name: /^API 令牌/ }));
+  expect(screen.queryByLabelText("Site title")).toBeNull();
+  fireEvent.click(
+    within(nav).getByRole("tab", { name: "Security and account access" }),
+  );
+  fireEvent.click(await screen.findByRole("link", { name: /^API token/ }));
   expect(
-    await screen.findByRole("button", { name: "创建 API 令牌" }),
+    await screen.findByRole("button", { name: "Create API token" }),
   ).toBeEnabled();
 });
 
@@ -291,8 +323,10 @@ it("refuses an administrative settings address for a member", async () => {
   window.history.replaceState({}, "", "/settings/site");
   installApi("member");
   render(<App />);
-  expect(await screen.findByText("此设置需要管理员权限。")).toBeVisible();
-  expect(screen.queryByLabelText("站点标题")).toBeNull();
+  expect(
+    await screen.findByText("This setting requires administrator permissions."),
+  ).toBeVisible();
+  expect(screen.queryByLabelText("Site title")).toBeNull();
 });
 it("navigates to a site child and saves only the fields on that page", async () => {
   const requests: unknown[] = [];
@@ -357,15 +391,19 @@ it("keeps password settings usable when the separate token list cannot be loaded
   render(<App />);
   expect(
     await screen.findByText(
-      "修改密码会撤销全部 API 令牌和浏览器会话，需要重新登录并重新配置 API 客户端。",
+      "Changing your password revokes all API tokens and browser sessions. You will need to log in and configure API clients again.",
     ),
   ).toBeVisible();
-  expect(screen.queryByText("登录凭据暂时无法读取，可以重试。")).toBeNull();
-  const nav = screen.getByRole("navigation", { name: "设置分类" });
-  fireEvent.click(within(nav).getByRole("tab", { name: "安全和账号访问" }));
-  fireEvent.click(await screen.findByRole("link", { name: /^API 令牌/ }));
   expect(
-    await screen.findByText("登录凭据暂时无法读取，可以重试。"),
+    screen.queryByText("Could not load login credentials. You can retry."),
+  ).toBeNull();
+  const nav = screen.getByRole("navigation", { name: "Settings categories" });
+  fireEvent.click(
+    within(nav).getByRole("tab", { name: "Security and account access" }),
+  );
+  fireEvent.click(await screen.findByRole("link", { name: /^API token/ }));
+  expect(
+    await screen.findByText("Could not load login credentials. You can retry."),
   ).toBeVisible();
 });
 
@@ -376,7 +414,7 @@ it("creates and revokes an account token without persisting the secret", async (
     if (url === "/api/v1/account/tokens" && init?.method === "POST")
       return json(
         {
-          credential: { ...token, id: "4".repeat(32), label: "新电脑" },
+          credential: { ...token, id: "4".repeat(32), label: "New computer" },
           token: secret,
         },
         201,
@@ -388,22 +426,22 @@ it("creates and revokes an account token without persisting the secret", async (
       return json({ revoked: true, reauthentication_required: false });
   });
   render(<App />);
-  fireEvent.change(await screen.findByLabelText("令牌名称"), {
-    target: { value: "新电脑" },
+  fireEvent.change(await screen.findByLabelText("Token name"), {
+    target: { value: "New computer" },
   });
-  fireEvent.click(screen.getByRole("button", { name: "创建 API 令牌" }));
-  expect(await screen.findByLabelText("新 API 令牌")).toHaveValue(secret);
+  fireEvent.click(screen.getByRole("button", { name: "Create API token" }));
+  expect(await screen.findByLabelText("New API token")).toHaveValue(secret);
   expect(window.sessionStorage.getItem(sessionKey)).not.toContain(secret);
   expect(
     Array.from({ length: window.localStorage.length }, (_, i) =>
       window.localStorage.getItem(window.localStorage.key(i)!),
     ).join(),
   ).not.toContain(secret);
-  fireEvent.click(screen.getByRole("button", { name: "已保存，隐藏令牌" }));
-  expect(screen.queryByLabelText("新 API 令牌")).toBeNull();
-  const tokenRow = screen.getByText("工作电脑").closest("li")!;
-  fireEvent.click(within(tokenRow).getByRole("button", { name: "撤销" }));
-  await within(tokenRow).findByText("已撤销");
+  fireEvent.click(screen.getByRole("button", { name: "Saved; hide token" }));
+  expect(screen.queryByLabelText("New API token")).toBeNull();
+  const tokenRow = screen.getByText("Work computer").closest("li")!;
+  fireEvent.click(within(tokenRow).getByRole("button", { name: "Revoke" }));
+  await within(tokenRow).findByText("Revoked");
   expect(
     calls.mock.calls.some(
       ([url, init]) =>
@@ -424,10 +462,12 @@ it("updates only this account password and requests a fresh sign-in", async () =
       return json({ methods: ["password", "token"] });
   });
   render(<App />);
-  fireEvent.change(await screen.findByLabelText("新密码"), {
+  fireEvent.change(await screen.findByLabelText("New password"), {
     target: { value: "a-new-account-password" },
   });
-  fireEvent.click(screen.getByRole("button", { name: "保存密码并重新登录" }));
+  fireEvent.click(
+    screen.getByRole("button", { name: "Save password and log in again" }),
+  );
   await waitFor(() => expect(window.location.pathname).toBe("/login"));
   expect(requests).toEqual([{ password: "a-new-account-password" }]);
   expect(window.sessionStorage.getItem(sessionKey)).toBeNull();
@@ -461,13 +501,15 @@ it("sends expired account settings to the standalone login page with its full re
     "/settings/account?section=security#credentials",
   );
   expect(await screen.findByText("Happening now")).toBeInTheDocument();
-  expect(screen.queryByRole("navigation", { name: "主要导航" })).toBeNull();
+  expect(
+    screen.queryByRole("navigation", { name: "Main navigation" }),
+  ).toBeNull();
   // Public reading remains available after leaving the sign-in page.
   act(() => {
     window.history.pushState({}, "", "/");
     window.dispatchEvent(new PopStateEvent("popstate", { state: {} }));
   });
-  await screen.findByRole("navigation", { name: "主要导航" });
+  await screen.findByRole("navigation", { name: "Main navigation" });
   expect(window.location.pathname).toBe("/");
   // A prior redirect does not exempt later private-route entries.
   act(() => {
@@ -514,23 +556,29 @@ it("lets a member preview and append personal data through account endpoints", a
     });
   });
   render(<App />);
-  const personal = await screen.findByRole("region", { name: "个人数据" });
-  fireEvent.change(within(personal).getByLabelText("个人导出文件"), {
+  const personal = await screen.findByRole("region", { name: "Personal data" });
+  fireEvent.change(within(personal).getByLabelText("Personal export file"), {
     target: { files: [file] },
   });
-  fireEvent.click(within(personal).getByRole("button", { name: "检查文件" }));
+  fireEvent.click(
+    within(personal).getByRole("button", { name: "Inspect file" }),
+  );
   expect(
-    await screen.findByText("当前站点已有的内容不会被删除或覆盖。"),
+    await screen.findByText(
+      "Existing content on this site will not be deleted or overwritten.",
+    ),
   ).toBeVisible();
   expect(restored).toBe(false);
   fireEvent.click(
-    within(personal).getByRole("button", { name: "确认添加到当前账号" }),
+    within(personal).getByRole("button", {
+      name: "Confirm and add to this account",
+    }),
   );
-  expect(await screen.findByText(/已添加 2 条内容、3 条评论/)).toBeVisible();
+  expect(await screen.findByText(/Added 2 posts, 3 comments/)).toBeVisible();
   expect(restored).toBe(true);
   await waitFor(() =>
     expect(
-      within(personal).getByRole("button", { name: "检查文件" }),
+      within(personal).getByRole("button", { name: "Inspect file" }),
     ).toHaveFocus(),
   );
   expect(
@@ -558,17 +606,22 @@ it("keeps personal import feedback on the import child page", async () => {
       : undefined,
   );
   render(<App />);
-  fireEvent.change(await screen.findByLabelText("个人导出文件"), {
+  fireEvent.change(await screen.findByLabelText("Personal export file"), {
     target: { files: [new File(["invalid archive"], "archive.zip")] },
   });
-  fireEvent.click(screen.getByRole("button", { name: "检查文件" }));
-  const failure = "文件不完整或校验失败。请重新导出并选择原始 ZIP 文件。";
+  fireEvent.click(screen.getByRole("button", { name: "Inspect file" }));
+  const failure =
+    "The file is incomplete or verification failed. Export again and choose the original ZIP.";
   expect(await screen.findByText(failure)).toBeVisible();
-  fireEvent.click(screen.getByRole("button", { name: "返回上一级" }));
-  fireEvent.click(await screen.findByRole("link", { name: /^导出个人数据/ }));
+  fireEvent.click(screen.getByRole("button", { name: "Go back" }));
+  fireEvent.click(
+    await screen.findByRole("link", { name: /^Download your data/ }),
+  );
   expect(screen.queryByText(failure)).toBeNull();
-  fireEvent.click(screen.getByRole("button", { name: "返回上一级" }));
-  fireEvent.click(await screen.findByRole("link", { name: /^导入个人数据/ }));
+  fireEvent.click(screen.getByRole("button", { name: "Go back" }));
+  fireEvent.click(
+    await screen.findByRole("link", { name: /^Import personal data/ }),
+  );
   expect(screen.getByText(failure)).toBeVisible();
 });
 

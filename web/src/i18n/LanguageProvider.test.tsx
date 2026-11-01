@@ -8,13 +8,12 @@ import {
   waitFor,
 } from "@testing-library/react";
 import { useState } from "react";
-import { useTranslation } from "react-i18next";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { LanguageDialog } from "../components/LanguageDialog";
 import { SessionProvider, useSession } from "../features/auth/SessionProvider";
 import { makeAccountSession } from "../test/accountFixtures";
 import { LanguageProvider, useLanguage } from "./LanguageProvider";
-import { LANGUAGE_STORAGE_KEY } from "./index";
+import i18n, { LANGUAGE_STORAGE_KEY } from "./index";
 
 function response(data: unknown, status = 200) {
   return new Response(
@@ -34,7 +33,6 @@ function response(data: unknown, status = 200) {
 }
 
 function Panel() {
-  const { t } = useTranslation();
   const { locale } = useLanguage();
   const auth = useSession();
   const [open, setOpen] = useState(false);
@@ -43,7 +41,7 @@ function Panel() {
       <output data-testid="language">{locale}</output>
       <output data-testid="auth">{auth.state}</output>
       <textarea aria-label="editing content" defaultValue="Unpublished text" />
-      <button onClick={() => setOpen(true)}>{t("语言")}</button>
+      <button onClick={() => setOpen(true)}>Choose language</button>
       <button onClick={() => auth.forgetSession(null)}>End session</button>
       {open ? <LanguageDialog onClose={() => setOpen(false)} /> : null}
     </>
@@ -58,6 +56,11 @@ const show = () =>
       </LanguageProvider>
     </SessionProvider>,
   );
+
+beforeEach(async () => {
+  vi.spyOn(navigator, "languages", "get").mockReturnValue(["en"]);
+  await i18n.changeLanguage("en");
+});
 
 afterEach(() => {
   cleanup();
@@ -76,24 +79,24 @@ describe("language selection", () => {
     );
     const input = screen.getByRole("textbox", { name: "editing content" });
     fireEvent.change(input, { target: { value: "Keep this draft" } });
-    fireEvent.click(screen.getByRole("button", { name: "语言" }));
+    fireEvent.click(screen.getByRole("button", { name: "Choose language" }));
     expect(await screen.findByRole("dialog")).toHaveAccessibleDescription(
-      "选择 Moment 的显示语言，保存在当前浏览器中。",
+      "Choose the display language for Moment. It is saved in this browser.",
     );
-    fireEvent.click(screen.getByRole("radio", { name: /English/ }));
-    fireEvent.click(screen.getByRole("button", { name: "取消" }));
-    expect(screen.getByTestId("language")).toHaveTextContent("zh-CN");
+    fireEvent.click(screen.getByRole("radio", { name: /Simplified Chinese/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(screen.getByTestId("language")).toHaveTextContent("en");
     expect(localStorage.getItem(LANGUAGE_STORAGE_KEY)).toBeNull();
-    fireEvent.click(screen.getByRole("button", { name: "语言" }));
-    fireEvent.click(screen.getByRole("radio", { name: /English/ }));
-    fireEvent.click(screen.getByRole("button", { name: "保存" }));
-    await screen.findByRole("button", { name: "Language" });
+    fireEvent.click(screen.getByRole("button", { name: "Choose language" }));
+    fireEvent.click(screen.getByRole("radio", { name: /Simplified Chinese/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await screen.findByRole("button", { name: "Choose language" });
     expect(screen.getByRole("textbox", { name: "editing content" })).toBe(
       input,
     );
     expect(input).toHaveValue("Keep this draft");
-    expect(localStorage.getItem(LANGUAGE_STORAGE_KEY)).toBe("en");
-    expect(document.documentElement.lang).toBe("en");
+    expect(localStorage.getItem(LANGUAGE_STORAGE_KEY)).toBe("zh-CN");
+    expect(document.documentElement.lang).toBe("zh-CN");
   });
 
   it("restores the account choice, surfaces save failures and restores the separate visitor choice on logout", async () => {
@@ -111,15 +114,17 @@ describe("language selection", () => {
       return response({ ui_locale: saved });
     });
     const first = show();
-    await screen.findByRole("button", { name: "Language" });
-    fireEvent.click(screen.getByRole("button", { name: "Language" }));
-    fireEvent.click(screen.getByRole("radio", { name: /简体中文/ }));
+    await screen.findByRole("button", { name: "Choose language" });
+    fireEvent.click(screen.getByRole("button", { name: "Choose language" }));
+    fireEvent.click(screen.getByRole("radio", { name: /Simplified Chinese/ }));
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
     expect(await screen.findByRole("alert")).toHaveTextContent(
       "Your language was not saved",
     );
     expect(screen.getByTestId("language")).toHaveTextContent("en");
-    expect(screen.getByRole("radio", { name: /简体中文/ })).toBeChecked();
+    expect(
+      screen.getByRole("radio", { name: /Simplified Chinese/ }),
+    ).toBeChecked();
     refuse = false;
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
@@ -153,15 +158,15 @@ describe("language selection", () => {
     await waitFor(() =>
       expect(screen.getByTestId("auth")).toHaveTextContent("signed-in"),
     );
-    fireEvent.click(screen.getByRole("button", { name: "语言" }));
-    fireEvent.click(screen.getByRole("radio", { name: /English/ }));
-    fireEvent.click(screen.getByRole("button", { name: "保存" }));
+    fireEvent.click(screen.getByRole("button", { name: "Choose language" }));
+    fireEvent.click(screen.getByRole("radio", { name: /Simplified Chinese/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
     fireEvent.click(
       screen.getByRole("button", { name: "End session", hidden: true }),
     );
-    await act(async () => finish?.(response({ ui_locale: "en" })));
+    await act(async () => finish?.(response({ ui_locale: "zh-CN" })));
     expect(screen.getByTestId("auth")).toHaveTextContent("guest");
-    expect(screen.getByTestId("language")).toHaveTextContent("zh-CN");
+    expect(screen.getByTestId("language")).toHaveTextContent("en");
     expect(screen.queryByRole("dialog")).toBeNull();
   });
 });
