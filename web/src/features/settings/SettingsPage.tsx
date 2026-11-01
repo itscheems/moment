@@ -1,3 +1,4 @@
+import { frame, motion, useReducedMotion } from "motion/react";
 import { SearchField } from "../memory/SearchField";
 import { SettingsTextField } from "./SettingsTextField";
 import { Autocomplete } from "@base-ui/react/autocomplete";
@@ -314,6 +315,9 @@ export function SettingsPage({
   const wide = useMediaQuery(RAIL_VIEWPORT_QUERY);
   const [query, setQuery] = useState("");
   const [searching, setSearching] = useState(false);
+  const [searchBackReady, setSearchBackReady] = useState(false);
+  const searchBackSlot = useRef<HTMLDivElement>(null);
+  const reduceMotion = useReducedMotion() ?? false;
   const searchInput = useRef<HTMLInputElement>(null);
   const categoryNavigation = useRef<HTMLElement>(null);
   const restoreCategoryFocus = useRef(false);
@@ -434,7 +438,22 @@ export function SettingsPage({
     navigation.closePanel("settings-dialog");
   }
 
+  function settleSearchBack() {
+    frame.postRender(() => {
+      const slot = searchBackSlot.current;
+      if (!slot) return;
+      const visible =
+        Number(getComputedStyle(slot.firstElementChild!).opacity) >= 0.99;
+      setSearchBackReady(
+        slot.dataset.searchOpen === "true" &&
+          slot.getBoundingClientRect().width >= 47.99 &&
+          visible,
+      );
+    });
+  }
+
   function closeSearch() {
+    setSearchBackReady(false);
     restoreCategoryFocus.current = true;
     setSearching(false);
     setQuery("");
@@ -501,15 +520,49 @@ export function SettingsPage({
         >
           <div className={styles.categoryScroll}>
             <div className={styles.settingsSearch}>
-              {searching ? (
-                <BackControl>
-                  <button
-                    type="button"
-                    aria-label={t("退出设置搜索")}
-                    onClick={closeSearch}
-                  />
-                </BackControl>
-              ) : null}
+              <motion.div
+                className={styles.searchBackSlot}
+                data-search-back-slot
+                data-search-open={searching}
+                ref={searchBackSlot}
+                initial={false}
+                animate={{ width: searching ? 48 : 0 }}
+                transition={{
+                  duration: reduceMotion ? 0 : 0.22,
+                  delay: reduceMotion || searching ? 0 : 0.08,
+                  ease: [0.2, 0, 0, 1],
+                }}
+                onAnimationComplete={settleSearchBack}
+                inert={!searching || !searchBackReady}
+                aria-hidden={!searching || !searchBackReady}
+                style={{
+                  pointerEvents: searching && searchBackReady ? "auto" : "none",
+                }}
+              >
+                <motion.div
+                  className={styles.searchBackInner}
+                  onAnimationComplete={settleSearchBack}
+                  initial={false}
+                  animate={{
+                    opacity: searching ? 1 : 0,
+                    x: searching ? 0 : -4,
+                  }}
+                  transition={{
+                    duration: reduceMotion ? 0 : searching ? 0.12 : 0.08,
+                    delay: reduceMotion || !searching ? 0 : 0.14,
+                    ease: [0.2, 0, 0, 1],
+                  }}
+                >
+                  <BackControl>
+                    <button
+                      type="button"
+                      aria-label={t("退出设置搜索")}
+                      onClick={closeSearch}
+                      tabIndex={searching && searchBackReady ? 0 : -1}
+                    />
+                  </BackControl>
+                </motion.div>
+              </motion.div>
               <SearchField
                 className={styles.searchInput}
                 inputRef={searchInput}
@@ -519,108 +572,120 @@ export function SettingsPage({
                 autoComplete="off"
                 spellCheck={false}
                 clearLabel={t("清除设置搜索")}
-                onFocus={() => setSearching(true)}
+                onFocus={() => {
+                  if (!searching) {
+                    setSearchBackReady(false);
+                    setSearching(true);
+                  }
+                }}
                 onKeyDown={(event) => {
                   if (event.key === "Escape") closeSearch();
                 }}
               />
             </div>
-            {searching ? (
-              <div>
-                <p className={styles.searchSummary} role="status">
-                  {!search
-                    ? t("尝试搜索账号、显示或备份等设置。")
-                    : results.length
-                      ? t("找到 {{count}} 项设置", { count: results.length })
-                      : t("没有找到匹配的设置")}
-                </p>
-                <Autocomplete.List aria-label={t("设置搜索结果")}>
-                  {(entry: SettingsItem) => (
-                    <Autocomplete.Item
-                      key={settingsItemPath(entry)}
-                      value={entry}
-                      className={styles.settingsRow}
-                      render={
-                        <InternalLink
-                          href={settingsItemPath(entry)}
-                          onClick={(event) => openItem(event, entry)}
-                          data-focus-key={`settings-search:${settingsItemPath(entry)}`}
-                        />
-                      }
-                    >
-                      <SettingsRowContent
-                        item={entry}
-                        breadcrumb={t(
-                          settingsCategories.find(
-                            (category) => category.id === entry.category,
-                          )!.title,
-                        )}
-                      />
-                    </Autocomplete.Item>
-                  )}
-                </Autocomplete.List>
-              </div>
-            ) : (
-              <nav ref={categoryNavigation} aria-label={t("设置分类")}>
-                <Tabs.Root
-                  orientation="vertical"
-                  value={wide || !root ? category.id : null}
-                >
-                  <Tabs.List aria-label={t("设置分类")}>
-                    {categories.map((entry) => (
-                      <div
-                        className={styles.categoryRow}
-                        key={entry.id}
-                        data-selected={
-                          entry.id === category.id && (wide || !root)
+            <motion.div
+              key={searching ? "search-results" : "categories"}
+              initial={reduceMotion ? false : { opacity: 0.55, y: 2 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: reduceMotion ? 0 : 0.14 }}
+            >
+              {searching ? (
+                <div>
+                  <p className={styles.searchSummary} role="status">
+                    {!search
+                      ? t("尝试搜索账号、显示或备份等设置。")
+                      : results.length
+                        ? t("找到 {{count}} 项设置", { count: results.length })
+                        : t("没有找到匹配的设置")}
+                  </p>
+                  <Autocomplete.List aria-label={t("设置搜索结果")}>
+                    {(entry: SettingsItem) => (
+                      <Autocomplete.Item
+                        key={settingsItemPath(entry)}
+                        value={entry}
+                        className={styles.settingsRow}
+                        render={
+                          <InternalLink
+                            href={settingsItemPath(entry)}
+                            onClick={(event) => openItem(event, entry)}
+                            data-focus-key={`settings-search:${settingsItemPath(entry)}`}
+                          />
                         }
                       >
-                        <Tabs.Tab
-                          value={entry.id}
-                          nativeButton={false}
-                          render={
-                            <InternalLink
-                              href={`/settings/${entry.id}`}
-                              data-focus-key={`/settings/${entry.id}`}
-                              onClick={(event) => {
-                                if (pathname === `/settings/${entry.id}`)
-                                  event.preventDefault();
-                              }}
-                            />
+                        <SettingsRowContent
+                          item={entry}
+                          breadcrumb={t(
+                            settingsCategories.find(
+                              (category) => category.id === entry.category,
+                            )!.title,
+                          )}
+                        />
+                      </Autocomplete.Item>
+                    )}
+                  </Autocomplete.List>
+                </div>
+              ) : (
+                <nav ref={categoryNavigation} aria-label={t("设置分类")}>
+                  <Tabs.Root
+                    orientation="vertical"
+                    value={wide || !root ? category.id : null}
+                  >
+                    <Tabs.List aria-label={t("设置分类")}>
+                      {categories.map((entry) => (
+                        <div
+                          className={styles.categoryRow}
+                          key={entry.id}
+                          data-selected={
+                            entry.id === category.id && (wide || !root)
                           }
                         >
-                          <div className={styles.categoryInner}>
-                            <span>
-                              {t(entry.title)}
-                              {entry.id === "members" && waiting > 0 ? (
-                                <span
-                                  className={styles.navBadge}
-                                  aria-label={t("{{count}} 位待审核", {
-                                    count: waiting,
-                                  })}
-                                >
-                                  {waiting}
-                                </span>
-                              ) : null}
-                            </span>
-                            <Icon
-                              name="chevron-right"
-                              className={styles.rowChevron}
+                          <Tabs.Tab
+                            value={entry.id}
+                            nativeButton={false}
+                            render={
+                              <InternalLink
+                                href={`/settings/${entry.id}`}
+                                data-focus-key={`/settings/${entry.id}`}
+                                onClick={(event) => {
+                                  if (pathname === `/settings/${entry.id}`)
+                                    event.preventDefault();
+                                }}
+                              />
+                            }
+                          >
+                            <div className={styles.categoryInner}>
+                              <span>
+                                {t(entry.title)}
+                                {entry.id === "members" && waiting > 0 ? (
+                                  <span
+                                    className={styles.navBadge}
+                                    aria-label={t("{{count}} 位待审核", {
+                                      count: waiting,
+                                    })}
+                                  >
+                                    {waiting}
+                                  </span>
+                                ) : null}
+                              </span>
+                              <Icon
+                                name="chevron-right"
+                                className={styles.rowChevron}
+                              />
+                            </div>
+                          </Tabs.Tab>
+                          {entry.id === category.id && (wide || !root) ? (
+                            <div
+                              aria-hidden="true"
+                              className={styles.selectionIndicator}
                             />
-                          </div>
-                        </Tabs.Tab>
-                        {entry.id === category.id && (wide || !root) ? (
-                          <div
-                            aria-hidden="true"
-                            className={styles.selectionIndicator}
-                          />
-                        ) : null}
-                      </div>
-                    ))}
-                  </Tabs.List>
-                </Tabs.Root>
-              </nav>
-            )}
+                          ) : null}
+                        </div>
+                      ))}
+                    </Tabs.List>
+                  </Tabs.Root>
+                </nav>
+              )}
+            </motion.div>
           </div>
         </Autocomplete.Root>
       </section>
