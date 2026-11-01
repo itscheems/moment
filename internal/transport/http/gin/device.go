@@ -274,10 +274,12 @@ func issueDeviceSession(ctx *gin.Context, gate *Gate, user domain.User, surface 
 	}
 	// The row is written before the value is handed out, so a credential a
 	// caller holds always has something to be revoked by.
-	if _, err := gate.accounts.StartSession(ctx.Request.Context(), user.ID, sessionID,
-		string(surface), session.ExpiresAt.UnixMilli()); err != nil {
+	record, err := gate.accounts.StartSession(ctx.Request.Context(), user.ID, sessionID,
+		string(surface), session.ExpiresAt.UnixMilli())
+	if err != nil {
 		return "", auth.Session{}, err
 	}
+	session.ExpiresAt = time.UnixMilli(record.ExpiresAtMS).UTC()
 	return value, session, nil
 }
 

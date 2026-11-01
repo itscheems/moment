@@ -27,7 +27,7 @@ type authenticationTestFixture struct {
 	instanceInitializedAt string
 }
 
-func newAuthenticationTestFixture(t *testing.T, secure bool) authenticationTestFixture {
+func newAuthenticationTestFixture(t *testing.T, secure bool, ttls ...time.Duration) authenticationTestFixture {
 	t.Helper()
 	runtimeState, err := runtimefs.Initialize(context.Background(), runtimefs.Config{DataDir: t.TempDir()})
 	if err != nil {
@@ -38,9 +38,13 @@ func newAuthenticationTestFixture(t *testing.T, secure bool) authenticationTestF
 	if err != nil {
 		t.Fatal(err)
 	}
+	ttl := 30 * time.Minute
+	if len(ttls) > 0 {
+		ttl = ttls[0]
+	}
 	manager, err := auth.NewManager(runtimeState.Root, auth.Options{
 		Now:        func() time.Time { return now },
-		SessionTTL: 30 * time.Minute,
+		SessionTTL: ttl,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -49,7 +53,7 @@ func newAuthenticationTestFixture(t *testing.T, secure bool) authenticationTestF
 		t.Fatal(err)
 	}
 	store := newMemoryAccounts(testProfileAccount())
-	accounts, err := app.NewAccountService(store, app.WithVerificationSender(memoryVerificationSender{store: store}))
+	accounts, err := app.NewAccountService(store, app.WithAccountClock(func() time.Time { return now }), app.WithVerificationSender(memoryVerificationSender{store: store}))
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -125,7 +125,7 @@ func (service *AccountService) BootstrapBrowserAccounts(ctx context.Context, sec
 		if err != nil {
 			return err
 		}
-		set.ExpiresAtMS = resolved.Session.ExpiresAtMS
+		set.ExpiresAtMS = resolved.Session.AbsoluteExpiryMS()
 		if err := store.CreateBrowserAccountSet(ctx, set); err != nil {
 			return err
 		}
@@ -202,8 +202,8 @@ func (service *AccountService) AddBrowserAccount(ctx context.Context, secret, ne
 				}
 			}
 		}
-		if resolved.Session.ExpiresAtMS > set.ExpiresAtMS {
-			set.ExpiresAtMS = resolved.Session.ExpiresAtMS
+		if resolved.Session.AbsoluteExpiryMS() > set.ExpiresAtMS {
+			set.ExpiresAtMS = resolved.Session.AbsoluteExpiryMS()
 		}
 		if err := store.PutBrowserAccountMember(ctx, BrowserAccountMember{SetID: set.ID, UserID: resolved.User.ID, SessionID: sessionID, LastUsedAtMS: nowMS}, set.ExpiresAtMS); err != nil {
 			return err

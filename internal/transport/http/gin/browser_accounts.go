@@ -270,7 +270,7 @@ func writeBrowserAccounts(ctx *gin.Context, gate *Gate, secret string, epoch uin
 }
 
 func resumeBrowserMember(ctx *gin.Context, gate *Gate, resolved app.SessionResolution, epoch uint64, cookies CookieOptions) bool {
-	value, issued, err := gate.manager.ResumeSession(auth.Subject{UserID: resolved.User.ID, SessionID: resolved.Session.ID}, time.UnixMilli(resolved.Session.ExpiresAtMS), epoch)
+	value, issued, err := gate.manager.ResumeSession(auth.Subject{UserID: resolved.User.ID, SessionID: resolved.Session.ID}, time.UnixMilli(resolved.Session.AbsoluteExpiryMS()), epoch)
 	if err != nil {
 		writeGateError(ctx, err)
 		return false

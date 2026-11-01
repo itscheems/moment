@@ -154,7 +154,8 @@ func RegisterRegistrationRoutes(engine *gin.Engine, gate *Gate, cookies CookieOp
 			failSession()
 			return
 		}
-		if _, err := gate.accounts.StartSession(ctx.Request.Context(), account.ID, sessionID, string(requestSurface(ctx)), session.ExpiresAt.UnixMilli()); err != nil {
+		record, err := gate.accounts.StartSession(ctx.Request.Context(), account.ID, sessionID, string(requestSurface(ctx)), session.ExpiresAt.UnixMilli())
+		if err != nil {
 			failSession()
 			return
 		}
@@ -166,7 +167,7 @@ func RegisterRegistrationRoutes(engine *gin.Engine, gate *Gate, cookies CookieOp
 		setSessionCookie(ctx, value, session.ExpiresAt, cookies)
 		Success(ctx, http.StatusCreated, registrationResponse{
 			AccountCreated: true, Username: account.Username, AccountStatus: account.Status,
-			ExpiresAt: session.ExpiresAt, CSRFToken: session.CSRFToken,
+			ExpiresAt: time.UnixMilli(record.ExpiresAtMS).UTC(), CSRFToken: session.CSRFToken,
 		}, nil)
 	})
 }

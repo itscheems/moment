@@ -61,6 +61,7 @@ type SessionStore interface {
 	RevokeSession(ctx context.Context, id string, atMS int64) error
 	RevokeUserSessions(ctx context.Context, userID string, atMS int64) (int, error)
 	TouchSession(ctx context.Context, id string, atMS int64) error
+	RenewSession(ctx context.Context, id string, expiresAtMS, atMS int64) error
 	ListUserSessions(ctx context.Context, userID string) ([]domain.SessionRecord, error)
 	PurgeExpiredSessions(ctx context.Context, beforeMS int64) (int, error)
 }
@@ -820,7 +821,7 @@ func (service *AccountService) startSession(ctx context.Context, userID, session
 		ID:            sessionID,
 		UserID:        userID,
 		IssuedAtMS:    nowMS,
-		ExpiresAtMS:   expiresAtMS,
+		ExpiresAtMS:   min(expiresAtMS, nowMS+domain.SessionIdleTTL.Milliseconds()),
 		LastSeenAtMS:  nowMS,
 		Surface:       surface,
 	}
@@ -859,6 +860,28 @@ func (service *AccountService) startSession(ctx context.Context, userID, session
 			}
 		}
 		return sessions.CreateSession(ctx, record)
+	})
+	return record, err
+}
+
+// RenewSession extends only a still-live sign-in. The cookie's signed lifetime
+// and the original sign-in time are independent ceilings; neither is reset here.
+func (service *AccountService) RenewSession(ctx context.Context, id string, credentialExpiryMS int64) (domain.SessionRecord, error) {
+	nowMS := domain.TimeToMillis(domain.NormalizeTime(service.clock()))
+	var record domain.SessionRecord
+	err := service.transactions.WriteAccounts(ctx, func(accounts AccountStore, sessions SessionStore) error {
+		resolved, err := resolveBrowserMember(ctx, accounts, sessions, id, nowMS)
+		if err != nil {
+			return err
+		}
+		record = resolved.Session
+		expires := min(nowMS+domain.SessionIdleTTL.Milliseconds(), record.AbsoluteExpiryMS(), credentialExpiryMS)
+		if expires <= nowMS {
+			return browserUnauthorized()
+		}
+		record.ExpiresAtMS = max(record.ExpiresAtMS, expires)
+		record.LastSeenAtMS = nowMS
+		return sessions.RenewSession(ctx, id, record.ExpiresAtMS, nowMS)
 	})
 	return record, err
 }

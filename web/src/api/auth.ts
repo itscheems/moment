@@ -333,6 +333,20 @@ export class AuthApi extends ApiClient {
     });
   }
 
+  async renewSession(csrfToken: string, signal?: AbortSignal): Promise<string> {
+    const response = await this.fetcher("/api/v1/account/session/renew", {
+      ...requestInit("POST", csrfToken),
+      signal,
+    });
+    const record = objectData((await decodeResponse(response)).data);
+    if (!hasExactKeys(record, ["expires_at"]))
+      throw invalidResponse("invalid session renewal");
+    const expiresAt = stringField(record, "expires_at");
+    if (!Number.isFinite(Date.parse(expiresAt)))
+      throw invalidResponse("invalid session expiry");
+    return expiresAt;
+  }
+
   async accountSession(signal?: AbortSignal): Promise<AccountSession> {
     const response = await this.fetcher("/api/v1/account/session", {
       ...requestInit("GET"),

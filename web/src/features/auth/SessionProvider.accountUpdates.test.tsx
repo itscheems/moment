@@ -142,3 +142,42 @@ it("accepts current profile changes while refusing a different account payload",
     "first|Updated|admin|csrf-first",
   );
 });
+
+it("keeps in-flight account updates valid across an ordinary renewal", async () => {
+  const previousFetch = fetch;
+  let finish!: (response: Response) => void;
+  const originalExpiry = new Date(Date.now() + 20 * 86400000).toISOString();
+  const nextExpiry = new Date(Date.now() + 30 * 86400000).toISOString();
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input).endsWith("/session/renew"))
+        return new Promise<Response>((resolve) => {
+          finish = resolve;
+        });
+      const response = await previousFetch(input, init);
+      const body = await response.json();
+      body.data.expires_at = originalExpiry;
+      return new Response(JSON.stringify(body), { status: 200 });
+    }),
+  );
+  await start();
+  await waitFor(() => expect(finish).toBeDefined());
+  const update = auth.applyAccount;
+  const version = auth.session?.version;
+  await act(async () => {
+    finish(
+      new Response(
+        JSON.stringify({ data: { expires_at: nextExpiry }, meta: {} }),
+        { status: 200 },
+      ),
+    );
+  });
+  expect(auth.session?.expiresAt).toBe(nextExpiry);
+  expect(auth.session?.version).toBe(version);
+  expect(auth.session?.csrfToken).toBe("csrf-first");
+  act(() => {
+    expect(update({ ...first, displayName: "Still current" })).toBe(true);
+  });
+  expect(auth.account?.displayName).toBe("Still current");
+});
