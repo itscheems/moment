@@ -55,6 +55,46 @@ func (store *memoryAccounts) RevokeBrowserAccountSet(_ context.Context, id strin
 	return nil
 }
 
+func (store *memoryAccounts) RotateBrowserAccountSet(_ context.Context, set app.BrowserAccountSet) error {
+	store.browserSets[set.ID] = set
+	return nil
+}
+
+func browserRotation(t *testing.T, f authenticationTestFixture, response *httptest.ResponseRecorder, old *http.Cookie, oldCSRF string) (*http.Cookie, string) {
+	t.Helper()
+	var next *http.Cookie
+	for _, c := range response.Result().Cookies() {
+		if c.Name == old.Name {
+			next = c
+		}
+	}
+	if next == nil || next.Value == old.Value {
+		t.Fatal("browser credential did not rotate")
+	}
+	request := jsonRequest("GET", "/api/v1/browser/accounts", "")
+	request.AddCookie(old)
+	if r := performRequest(f.engine, request); r.Code != 401 {
+		t.Fatalf("old browser credential accepted: %d", r.Code)
+	}
+	request = jsonRequest("GET", "/api/v1/browser/accounts", "")
+	request.AddCookie(next)
+	r := performRequest(f.engine, request)
+	if r.Code != 200 {
+		t.Fatal(r.Body)
+	}
+	csrf := decodeDataMap(t, r)["csrf_token"].(string)
+	if csrf == oldCSRF {
+		t.Fatal("browser CSRF did not rotate")
+	}
+	request = jsonRequest("DELETE", "/api/v1/browser/accounts", "")
+	request.AddCookie(next)
+	request.Header.Set(CSRFHeaderName, oldCSRF)
+	if r := performRequest(f.engine, request); r.Code != 403 {
+		t.Fatalf("old CSRF accepted with fresh browser credential: %d", r.Code)
+	}
+	return next, csrf
+}
+
 func browserBootstrap(t *testing.T, fixture authenticationTestFixture, cookie *http.Cookie, csrf string) (*http.Cookie, string) {
 	t.Helper()
 	request := jsonRequest("POST", "/api/v1/browser/accounts/bootstrap", "")
@@ -105,6 +145,7 @@ func TestBrowserAccountSwitchingAndScopedLogout(t *testing.T) {
 	if added.Code != 200 {
 		t.Fatalf("add %d %s", added.Code, added.Body)
 	}
+	group, csrf = browserRotation(t, f, added, group, csrf)
 	var current *http.Cookie
 	for _, c := range added.Result().Cookies() {
 		if c.Name == SessionCookieName {
@@ -114,11 +155,21 @@ func TestBrowserAccountSwitchingAndScopedLogout(t *testing.T) {
 	if current == nil {
 		t.Fatal("add did not select member")
 	}
-	issued, _ := f.manager.ValidateSession(current.Value)
 	for i := 0; i < 2; i++ {
-		if r := call("POST", "/api/v1/browser/accounts", string(mustJSON(t, map[string]string{"token": token.Value})), csrf, group, current); r.Code != 200 {
+		r := call("POST", "/api/v1/browser/accounts", string(mustJSON(t, map[string]string{"token": token.Value})), csrf, group, current)
+		if r.Code != 200 {
 			t.Fatal(r.Body)
 		}
+		group, csrf = browserRotation(t, f, r, group, csrf)
+		for _, c := range r.Result().Cookies() {
+			if c.Name == SessionCookieName {
+				current = c
+			}
+		}
+	}
+	issued, _ := f.manager.ValidateSession(current.Value)
+	if _, err := f.accounts.ResolveSession(context.Background(), issued.SessionID); err != nil {
+		t.Fatal("latest member session was invalid before exit", err)
 	}
 	listed := call("GET", "/api/v1/browser/accounts", "", "", group)
 	if listed.Code != 200 {
@@ -219,6 +270,7 @@ func TestOAuthAddOnlyUsesExistingIdentity(t *testing.T) {
 	if finished.Code != 303 {
 		t.Fatal(finished.Body)
 	}
+	group, csrf = browserRotation(t, f.authenticationTestFixture, finished, group, csrf)
 	var signed *http.Cookie
 	for _, c := range finished.Result().Cookies() {
 		if c.Name == SessionCookieName {
@@ -242,7 +294,7 @@ func TestOAuthAddOnlyUsesExistingIdentity(t *testing.T) {
 func TestStandaloneSignInReplacesRetainedSessionBeforeLogout(t *testing.T) {
 	f := newAuthenticationTestFixture(t, false)
 	first, data := exchangeAccountSession(t, f, f.token)
-	group, _ := browserBootstrap(t, f, first, data["csrf_token"].(string))
+	group, oldCSRF := browserBootstrap(t, f, first, data["csrf_token"].(string))
 	old, _ := f.manager.ValidateSession(first.Value)
 	request := jsonRequest("POST", "/api/v1/login/session", string(mustJSON(t, map[string]string{"token": f.token})))
 	request.AddCookie(group)
@@ -250,6 +302,28 @@ func TestStandaloneSignInReplacesRetainedSessionBeforeLogout(t *testing.T) {
 	if response.Code != 200 {
 		t.Fatal(response.Body)
 	}
+	var rotated *http.Cookie
+	for _, c := range response.Result().Cookies() {
+		if c.Name == browserAccountsCookieName {
+			rotated = c
+		}
+	}
+	if rotated == nil || rotated.Value == group.Value {
+		t.Fatal("fresh authentication reused the browser credential")
+	}
+	stale := jsonRequest("POST", "/api/v1/browser/accounts/"+old.UserID+"/activate", "")
+	stale.AddCookie(group)
+	stale.Header.Set(CSRFHeaderName, oldCSRF)
+	if r := performRequest(f.engine, stale); r.Code != 401 {
+		t.Fatalf("old browser credential restored newly authenticated account: %d", r.Code)
+	}
+	listRotated := jsonRequest("GET", "/api/v1/browser/accounts", "")
+	listRotated.AddCookie(rotated)
+	listed := performRequest(f.engine, listRotated)
+	if listed.Code != 200 || decodeDataMap(t, listed)["csrf_token"] == oldCSRF {
+		t.Fatal("fresh authentication did not rotate browser CSRF")
+	}
+	group = rotated
 	var fresh *http.Cookie
 	for _, c := range response.Result().Cookies() {
 		if c.Name == SessionCookieName {

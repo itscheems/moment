@@ -93,7 +93,7 @@ func RegisterOAuthRoutes(engine *gin.Engine, gate *Gate, config OAuthConfig) {
 	group.GET("/providers", listProviders(config.Registry))
 	group.GET("/:provider/start", startOAuth(gate, config))
 	group.POST("/:provider/add", func(ctx *gin.Context) {
-		secret, epoch, ok := authorizeBrowserAccounts(ctx, gate, true)
+		secret, epoch, ok := authorizeBrowserAccounts(ctx, gate, config.Cookies, true)
 		if !ok {
 			return
 		}
@@ -288,7 +288,7 @@ func completeOAuth(gate *Gate, config OAuthConfig) gin.HandlerFunc {
 
 		var outcome app.SignInOutcome
 		if flow.BrowserSetID != "" {
-			secret, epoch, ok := authorizeBrowserAccounts(ctx, gate, false)
+			secret, epoch, ok := authorizeBrowserAccounts(ctx, gate, config.Cookies, false)
 			if !ok {
 				return
 			}

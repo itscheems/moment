@@ -259,7 +259,7 @@ func unauthorized(ctx *gin.Context) {
 func logoutSession(gate *Gate, cookies CookieOptions) gin.HandlerFunc {
 	return func(ctx *gin.Context) {
 		if session, ok := CurrentSession(ctx); ok {
-			if secret, err := ctx.Cookie(browserAccountsCookieName); err == nil {
+			if secret, err := ctx.Cookie(browserCookieName(cookies)); err == nil {
 				if status, err := gate.manager.Status(); err == nil {
 					if _, entries, err := gate.accounts.BrowserAccounts(ctx.Request.Context(), secret, status.SessionEpoch); err == nil {
 						for _, entry := range entries {

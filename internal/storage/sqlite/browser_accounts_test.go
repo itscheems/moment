@@ -30,10 +30,16 @@ func TestBrowserAccountsPersistIsolationAndRevocation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, session := range sessions[1:] {
-		if _, err := service.AddBrowserAccount(ctx, secret, 1, session.ID); err != nil {
+	for i, session := range sessions[1:] {
+		next := fmt.Sprintf("%043d", i+1)
+		set, err = service.AddBrowserAccount(ctx, secret, next, fmt.Sprintf("csrf%039d", i), 1, session.ID)
+		if err != nil {
 			t.Fatal(err)
 		}
+		if _, _, err := service.BrowserAccounts(ctx, secret, 1); !domain.HasCode(err, domain.CodeUnauthorized) {
+			t.Fatal("old credential remained valid", err)
+		}
+		secret = next
 	}
 	reopened, err := app.NewAccountService(repo)
 	if err != nil {

@@ -13,6 +13,37 @@ import (
 const browserAccountsCookieName = "moment_browser_accounts"
 const browserAccountsContextKey = "moment.browser_accounts"
 
+func browserCookieName(cookies CookieOptions) string {
+	if cookies.Secure {
+		return "__Host-" + browserAccountsCookieName
+	}
+	return browserAccountsCookieName
+}
+
+func browserCookiePath(cookies CookieOptions) string {
+	if cookies.Secure {
+		return "/"
+	}
+	return "/api/v1"
+}
+
+func attachBrowserSession(ctx *gin.Context, gate *Gate, cookies CookieOptions, secret string, epoch uint64, sessionID string) (string, error) {
+	nextSecret, err := gate.manager.RandomToken(32)
+	if err != nil {
+		return "", err
+	}
+	csrf, err := gate.manager.RandomToken(32)
+	if err != nil {
+		return "", err
+	}
+	set, err := gate.accounts.AddBrowserAccount(ctx.Request.Context(), secret, nextSecret, csrf, epoch, sessionID)
+	if err != nil {
+		return "", err
+	}
+	setBrowserAccountsCookie(ctx, nextSecret, set.ExpiresAtMS, cookies)
+	return nextSecret, nil
+}
+
 // retainBrowserSession is shared by credential, provider and registration
 // sign-ins. A fresh proof must replace this browser's older member session,
 // including when authentication entered through a standalone page.
@@ -23,7 +54,7 @@ func retainBrowserSession(ctx *gin.Context, gate *Gate, cookies CookieOptions, s
 		return err
 	}
 	if !explicit {
-		value, err := ctx.Cookie(browserAccountsCookieName)
+		value, err := ctx.Cookie(browserCookieName(cookies))
 		if err != nil {
 			return nil
 		}
@@ -37,12 +68,8 @@ func retainBrowserSession(ctx *gin.Context, gate *Gate, cookies CookieOptions, s
 	} else if epoch, _ := ctx.Get(browserAccountsContextKey + ".epoch"); epoch != status.SessionEpoch {
 		return domain.NewError(domain.CodeUnauthorized, "browser authorization changed during sign-in", nil)
 	}
-	set, err := gate.accounts.AddBrowserAccount(ctx.Request.Context(), secret.(string), status.SessionEpoch, sessionID)
-	if err != nil {
-		return err
-	}
-	setBrowserAccountsCookie(ctx, secret.(string), set.ExpiresAtMS, cookies)
-	return nil
+	_, err = attachBrowserSession(ctx, gate, cookies, secret.(string), status.SessionEpoch, sessionID)
+	return err
 }
 
 type browserAccountView struct {
@@ -61,7 +88,7 @@ func RegisterBrowserAccountRoutes(engine *gin.Engine, gate *Gate, cookies Cookie
 		if !ok {
 			return
 		}
-		if secret, err := ctx.Cookie(browserAccountsCookieName); err == nil {
+		if secret, err := ctx.Cookie(browserCookieName(cookies)); err == nil {
 			if _, entries, err := gate.accounts.BrowserAccounts(ctx.Request.Context(), secret, epoch); err == nil {
 				current, _ := CurrentSession(ctx)
 				for _, entry := range entries {
@@ -70,12 +97,11 @@ func RegisterBrowserAccountRoutes(engine *gin.Engine, gate *Gate, cookies Cookie
 						return
 					}
 				}
-				set, err := gate.accounts.AddBrowserAccount(ctx.Request.Context(), secret, epoch, current.ID)
+				secret, err = attachBrowserSession(ctx, gate, cookies, secret, epoch, current.ID)
 				if err != nil {
 					writeAccountError(ctx, err)
 					return
 				}
-				setBrowserAccountsCookie(ctx, secret, set.ExpiresAtMS, cookies)
 				writeBrowserAccounts(ctx, gate, secret, epoch)
 				return
 			}
@@ -100,13 +126,13 @@ func RegisterBrowserAccountRoutes(engine *gin.Engine, gate *Gate, cookies Cookie
 		writeBrowserAccounts(ctx, gate, secret, epoch)
 	})
 	group.GET("", func(ctx *gin.Context) {
-		secret, epoch, ok := authorizeBrowserAccounts(ctx, gate, false)
+		secret, epoch, ok := authorizeBrowserAccounts(ctx, gate, cookies, false)
 		if ok {
 			writeBrowserAccounts(ctx, gate, secret, epoch)
 		}
 	})
 	group.POST("", func(ctx *gin.Context) {
-		secret, epoch, ok := authorizeBrowserAccounts(ctx, gate, true)
+		secret, epoch, ok := authorizeBrowserAccounts(ctx, gate, cookies, true)
 		if !ok {
 			return
 		}
@@ -115,7 +141,7 @@ func RegisterBrowserAccountRoutes(engine *gin.Engine, gate *Gate, cookies Cookie
 		exchangeSession(gate, cookies)(ctx)
 	})
 	group.POST("/:id/activate", func(ctx *gin.Context) {
-		secret, epoch, ok := authorizeBrowserAccounts(ctx, gate, true)
+		secret, epoch, ok := authorizeBrowserAccounts(ctx, gate, cookies, true)
 		if !ok {
 			return
 		}
@@ -134,7 +160,7 @@ func RegisterBrowserAccountRoutes(engine *gin.Engine, gate *Gate, cookies Cookie
 	})
 	remove := func(all bool) gin.HandlerFunc {
 		return func(ctx *gin.Context) {
-			secret, epoch, ok := authorizeBrowserAccounts(ctx, gate, true)
+			secret, epoch, ok := authorizeBrowserAccounts(ctx, gate, cookies, true)
 			if !ok {
 				return
 			}
@@ -172,7 +198,7 @@ func RegisterBrowserAccountRoutes(engine *gin.Engine, gate *Gate, cookies Cookie
 	group.DELETE("", remove(true))
 	group.DELETE("/:id", remove(false))
 	group.GET("/notification-counts", func(ctx *gin.Context) {
-		secret, epoch, ok := authorizeBrowserAccounts(ctx, gate, false)
+		secret, epoch, ok := authorizeBrowserAccounts(ctx, gate, cookies, false)
 		if !ok {
 			return
 		}
@@ -208,8 +234,8 @@ func browserEpoch(ctx *gin.Context, gate *Gate) (uint64, bool) {
 	return status.SessionEpoch, true
 }
 
-func authorizeBrowserAccounts(ctx *gin.Context, gate *Gate, csrf bool) (string, uint64, bool) {
-	secret, err := ctx.Cookie(browserAccountsCookieName)
+func authorizeBrowserAccounts(ctx *gin.Context, gate *Gate, cookies CookieOptions, csrf bool) (string, uint64, bool) {
+	secret, err := ctx.Cookie(browserCookieName(cookies))
 	if err != nil {
 		unauthorized(ctx)
 		return "", 0, false
@@ -254,8 +280,8 @@ func resumeBrowserMember(ctx *gin.Context, gate *Gate, resolved app.SessionResol
 }
 
 func setBrowserAccountsCookie(ctx *gin.Context, secret string, expires int64, cookies CookieOptions) {
-	http.SetCookie(ctx.Writer, &http.Cookie{Name: browserAccountsCookieName, Value: secret, Path: "/api/v1", Expires: time.UnixMilli(expires).UTC(), MaxAge: max(1, int(time.Until(time.UnixMilli(expires)).Seconds())), HttpOnly: true, Secure: cookies.Secure, SameSite: http.SameSiteLaxMode})
+	http.SetCookie(ctx.Writer, &http.Cookie{Name: browserCookieName(cookies), Value: secret, Path: browserCookiePath(cookies), Expires: time.UnixMilli(expires).UTC(), MaxAge: max(1, int(time.Until(time.UnixMilli(expires)).Seconds())), HttpOnly: true, Secure: cookies.Secure, SameSite: http.SameSiteLaxMode})
 }
 func clearBrowserAccountsCookie(ctx *gin.Context, cookies CookieOptions) {
-	http.SetCookie(ctx.Writer, &http.Cookie{Name: browserAccountsCookieName, Path: "/api/v1", Expires: time.Unix(1, 0), MaxAge: -1, HttpOnly: true, Secure: cookies.Secure, SameSite: http.SameSiteLaxMode})
+	http.SetCookie(ctx.Writer, &http.Cookie{Name: browserCookieName(cookies), Path: browserCookiePath(cookies), Expires: time.Unix(1, 0), MaxAge: -1, HttpOnly: true, Secure: cookies.Secure, SameSite: http.SameSiteLaxMode})
 }

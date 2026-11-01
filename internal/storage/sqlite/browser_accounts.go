@@ -58,3 +58,8 @@ func (store accountStore) RevokeBrowserAccountSet(ctx context.Context, id string
 	_, err := store.queries.ExecContext(ctx, `UPDATE browser_account_sets SET revoked_at_ms=? WHERE id=?`, at, id)
 	return err
 }
+
+func (store accountStore) RotateBrowserAccountSet(ctx context.Context, set app.BrowserAccountSet) error {
+	_, err := store.queries.ExecContext(ctx, `UPDATE browser_account_sets SET credential_hash=?,csrf_token=? WHERE id=?`, set.CredentialHash, set.CSRFToken, set.ID)
+	return err
+}

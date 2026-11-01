@@ -38,6 +38,7 @@ type BrowserAccountStore interface {
 	BrowserAccountSetByHash(context.Context, []byte) (BrowserAccountSet, bool, error)
 	BrowserAccountMembers(context.Context, string) ([]BrowserAccountMember, error)
 	PutBrowserAccountMember(context.Context, BrowserAccountMember, int64) error
+	RotateBrowserAccountSet(context.Context, BrowserAccountSet) error
 	DeleteBrowserAccountMember(context.Context, string, string) error
 	RevokeBrowserAccountSet(context.Context, string, int64) error
 }
@@ -166,7 +167,10 @@ func (service *AccountService) BrowserAccounts(ctx context.Context, secret strin
 }
 
 // AddBrowserAccount attaches a fresh credential-verified session, replacing duplicates.
-func (service *AccountService) AddBrowserAccount(ctx context.Context, secret string, epoch uint64, sessionID string) (BrowserAccountSet, error) {
+func (service *AccountService) AddBrowserAccount(ctx context.Context, secret, nextSecret, csrf string, epoch uint64, sessionID string) (BrowserAccountSet, error) {
+	if len(nextSecret) < 32 || len(nextSecret) > 128 || len(csrf) < 32 || len(csrf) > 128 || nextSecret == secret {
+		return BrowserAccountSet{}, browserUnauthorized()
+	}
 	nowMS := domain.TimeToMillis(domain.NormalizeTime(service.clock()))
 	var set BrowserAccountSet
 	err := service.transactions.WriteAccounts(ctx, func(accounts AccountStore, sessions SessionStore) error {
@@ -177,6 +181,9 @@ func (service *AccountService) AddBrowserAccount(ctx context.Context, secret str
 		set, err = browserSet(ctx, store, secret, epoch, nowMS)
 		if err != nil {
 			return err
+		}
+		if csrf == set.CSRFToken {
+			return browserUnauthorized()
 		}
 		resolved, err := resolveBrowserMember(ctx, accounts, sessions, sessionID, nowMS)
 		if err != nil {
@@ -196,7 +203,13 @@ func (service *AccountService) AddBrowserAccount(ctx context.Context, secret str
 		if resolved.Session.ExpiresAtMS > set.ExpiresAtMS {
 			set.ExpiresAtMS = resolved.Session.ExpiresAtMS
 		}
-		return store.PutBrowserAccountMember(ctx, BrowserAccountMember{SetID: set.ID, UserID: resolved.User.ID, SessionID: sessionID, LastUsedAtMS: nowMS}, set.ExpiresAtMS)
+		if err := store.PutBrowserAccountMember(ctx, BrowserAccountMember{SetID: set.ID, UserID: resolved.User.ID, SessionID: sessionID, LastUsedAtMS: nowMS}, set.ExpiresAtMS); err != nil {
+			return err
+		}
+		hash := sha256.Sum256([]byte(nextSecret))
+		set.CredentialHash = hash[:]
+		set.CSRFToken = csrf
+		return store.RotateBrowserAccountSet(ctx, set)
 	})
 	return set, err
 }
