@@ -230,13 +230,20 @@
   background: transparent;
   color: var(--text-secondary);
   cursor: pointer;
-  transition:
-    background-color 0.2s,
-    color 0.2s;
+}
+.remove::before {
+  content: "";
+  position: absolute;
+  inset: 8px;
+  border-radius: 50%;
+  background: transparent;
+  transition: background-color 0.2s;
 }
 .remove svg {
-  inline-size: 20px;
-  block-size: 20px;
+  position: relative;
+  inline-size: 18px;
+  block-size: 18px;
+  transition: color 0.2s;
 }
 .managementActions {
   flex: 0 0 auto;
@@ -327,8 +334,10 @@
     background: var(--surface-hover);
   }
   .remove:hover:not(:disabled) {
-    background: rgb(244 33 46 / 10%);
-    color: #f4212e;
+    color: var(--text-primary);
+  }
+  .remove:hover:not(:disabled)::before {
+    background: var(--surface-hover);
   }
 }
 @media (max-width: 719px) {
@@ -350,6 +359,8 @@
   .menuRow,
   .accountButton,
   .remove,
+  .remove::before,
+  .remove svg,
   .close,
   .managementActions > button {
     transition: none;

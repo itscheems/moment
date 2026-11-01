@@ -273,7 +273,7 @@ export function BrowserAccountDialogs({ site }: { site: SiteIdentity }) {
                                 )
                               }
                             >
-                              <Icon name="logout" />
+                              <Icon name="close" />
                             </button>
                           ) : null}
                         </div>
