@@ -320,6 +320,14 @@ func (store *memoryAccounts) RevokeUserSessions(_ context.Context, userID string
 	return revoked, nil
 }
 
+func (store *memoryAccounts) RenewSession(_ context.Context, id string, expiresAtMS, atMS int64) error {
+	session := store.sessions[id]
+	session.ExpiresAtMS = max(session.ExpiresAtMS, expiresAtMS)
+	session.LastSeenAtMS = atMS
+	store.sessions[id] = session
+	return nil
+}
+
 func (store *memoryAccounts) TouchSession(_ context.Context, id string, atMS int64) error {
 	if session, found := store.sessions[id]; found {
 		session.LastSeenAtMS = atMS

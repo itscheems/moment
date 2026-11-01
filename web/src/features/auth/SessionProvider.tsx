@@ -1,5 +1,6 @@
 import { useTranslation } from "react-i18next";
 import { type AccountPreferences } from "../../api/preferences";
+import { useSessionRenewal } from "./useSessionRenewal";
 import { accountCacheScope } from "./accountScope";
 import { authApi, type AccountLimits, type AuthSession } from "../../api/auth";
 import { browserAccountsApi } from "../../api/browserAccounts";
@@ -37,6 +38,7 @@ interface SessionMarker {
 }
 
 type SyncMessage =
+  | { type: "renew-session"; session: BrowserSession }
   | { type: "request-session"; requestId: string }
   | {
       type: "offer-session";
@@ -209,6 +211,12 @@ function parseSyncMessage(value: unknown): SyncMessage | null {
       ? { type: value.type, requestId: value.request_id }
       : null;
   }
+  if (value.type === "renew-session") {
+    const session = parseSession(value.session);
+    return hasExactKeys(value, ["type", "session"]) && session
+      ? { type: value.type, session }
+      : null;
+  }
   if (value.type === "offer-session") {
     const session = parseSession(value.session);
     return hasExactKeys(value, ["type", "request_id", "session"]) &&
@@ -241,6 +249,9 @@ function sessionWire(session: BrowserSession): Record<string, unknown> {
 function messageWire(message: SyncMessage): Record<string, unknown> {
   if (message.type === "request-session") {
     return { type: message.type, request_id: message.requestId };
+  }
+  if (message.type === "renew-session") {
+    return { type: message.type, session: sessionWire(message.session) };
   }
   if (message.type === "offer-session") {
     return {
@@ -378,6 +389,23 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     return true;
   }, []);
 
+  // Renewals preserve the identity generation so profile saves and sensitive
+  // confirmations in flight remain bound to the same sign-in.
+  const acceptRenewal = useCallback((next: BrowserSession) => {
+    const current = sessionRef.current;
+    if (
+      !current ||
+      compareMarker(markerOf(next), markerRef.current) !== 0 ||
+      current.csrfToken !== next.csrfToken ||
+      Date.parse(next.expiresAt) <= Date.parse(current.expiresAt)
+    )
+      return false;
+    sessionRef.current = next;
+    writeSession(next);
+    setSession(next);
+    return true;
+  }, []);
+
   const clearSession = useCallback(
     (nextState: "guest" | "expired", marker?: SessionMarker) => {
       if (marker && compareMarker(marker, markerRef.current) <= 0) return false;
@@ -439,7 +467,9 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     const receive = (event: MessageEvent<unknown>) => {
       const message = parseSyncMessage(event.data);
       if (!message) return;
-      if (message.type === "request-session") {
+      if (message.type === "renew-session") {
+        acceptRenewal(message.session);
+      } else if (message.type === "request-session") {
         const current = sessionRef.current;
         if (current) {
           broadcast({
@@ -465,7 +495,13 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       channel.close();
       if (channelRef.current === channel) channelRef.current = null;
     };
-  }, [acceptSession, broadcast, clearSession, requestSyncedSession]);
+  }, [
+    acceptSession,
+    acceptRenewal,
+    broadcast,
+    clearSession,
+    requestSyncedSession,
+  ]);
 
   /**
    * Work out what this browser already is, from the cookie it may be carrying.
@@ -785,6 +821,32 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       return true;
     },
     [clearSession, requestSyncedSession, session?.version],
+  );
+
+  const sessionRenewed = useCallback(
+    (expiresAt: string) => {
+      if (!session) return;
+      const next = { ...session, expiresAt };
+      if (acceptRenewal(next))
+        broadcast({ type: "renew-session", session: next });
+    },
+    [session, acceptRenewal, broadcast],
+  );
+
+  const renewalFailed = useCallback(
+    (error: unknown) => {
+      // Network failures retain the current deadline and retry on later activity.
+      // Invalid credentials follow the existing expiry/reauthentication flow.
+      expireIfInvalidSession(error);
+    },
+    [expireIfInvalidSession],
+  );
+
+  useSessionRenewal(
+    session,
+    state === "signed-in",
+    sessionRenewed,
+    renewalFailed,
   );
 
   const retryStatus = useCallback(

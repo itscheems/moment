@@ -109,10 +109,11 @@ func exchangeSession(gate *Gate, cookies CookieOptions) gin.HandlerFunc {
 			Failure(ctx, http.StatusServiceUnavailable, "AUTH_UNAVAILABLE", "session signing is unavailable", nil)
 			return
 		}
+		var record domain.SessionRecord
 		if sourceTokenID != "" {
-			_, err = gate.accounts.StartTokenSession(ctx.Request.Context(), account.ID, sessionID, string(requestSurface(ctx)), session.ExpiresAt.UnixMilli(), sourceTokenID)
+			record, err = gate.accounts.StartTokenSession(ctx.Request.Context(), account.ID, sessionID, string(requestSurface(ctx)), session.ExpiresAt.UnixMilli(), sourceTokenID)
 		} else {
-			_, err = gate.accounts.StartPasswordSession(ctx.Request.Context(), passwordAuthorization, sessionID, string(requestSurface(ctx)), session.ExpiresAt.UnixMilli())
+			record, err = gate.accounts.StartPasswordSession(ctx.Request.Context(), passwordAuthorization, sessionID, string(requestSurface(ctx)), session.ExpiresAt.UnixMilli())
 		}
 		if err != nil {
 			writeAccountError(ctx, err)
@@ -124,7 +125,7 @@ func exchangeSession(gate *Gate, cookies CookieOptions) gin.HandlerFunc {
 			return
 		}
 		setSessionCookie(ctx, value, session.ExpiresAt, cookies)
-		Success(ctx, http.StatusOK, sessionResponse{ExpiresAt: session.ExpiresAt, CSRFToken: session.CSRFToken}, nil)
+		Success(ctx, http.StatusOK, sessionResponse{ExpiresAt: time.UnixMilli(record.ExpiresAtMS).UTC(), CSRFToken: session.CSRFToken}, nil)
 	}
 }
 

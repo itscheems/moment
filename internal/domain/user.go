@@ -2,6 +2,7 @@ package domain
 
 import (
 	"strings"
+	"time"
 	"unicode"
 	"unicode/utf8"
 )
@@ -353,8 +354,19 @@ type SessionRecord struct {
 	Label         *string
 }
 
+// SessionIdleTTL bounds inactivity; SessionAbsoluteTTL never moves after sign-in.
+const (
+	SessionIdleTTL     = 30 * 24 * time.Hour
+	SessionAbsoluteTTL = 180 * 24 * time.Hour
+)
+
+// AbsoluteExpiryMS is anchored to the original sign-in, including after switching.
+func (session SessionRecord) AbsoluteExpiryMS() int64 {
+	return session.IssuedAtMS + SessionAbsoluteTTL.Milliseconds()
+}
+
 // Live reports whether this session should still be honoured at the given
 // instant.
 func (session SessionRecord) Live(nowMS int64) bool {
-	return session.RevokedAtMS == nil && session.ExpiresAtMS > nowMS
+	return session.RevokedAtMS == nil && session.ExpiresAtMS > nowMS && session.AbsoluteExpiryMS() > nowMS
 }

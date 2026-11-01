@@ -88,6 +88,7 @@ func RegisterAccountRoutes(engine *gin.Engine, gate *Gate, pictures *media.Store
 	account := engine.Group("/api/v1/account")
 	account.Use(gate.RequireAccount())
 	account.GET("/session", currentAccountSession(gate))
+	account.POST("/session/renew", renewAccountSession(gate))
 	account.GET("/preferences", ownPreferences(gate, false))
 	account.PATCH("/preferences", ownPreferences(gate, true))
 	account.PATCH("/profile", updateOwnProfile(gate))
@@ -169,7 +170,7 @@ func currentAccountSession(gate *Gate) gin.HandlerFunc {
 		if cookie, err := ctx.Request.Cookie(SessionCookieName); err == nil {
 			if issued, _, authErr := gate.manager.AuthorizeSession(cookie.Value); authErr == nil {
 				view.CSRFToken = issued.CSRFToken
-				view.ExpiresAt = issued.ExpiresAt
+				view.ExpiresAt = minTime(view.ExpiresAt, issued.ExpiresAt)
 			}
 		}
 		Success(ctx, http.StatusOK, view, nil)
@@ -297,7 +298,7 @@ func listOwnSessions(gate *Gate) gin.HandlerFunc {
 		nowMS := time.Now().UTC().UnixMilli()
 		items := make([]sessionListItem, 0, len(records))
 		for _, record := range records {
-			if record.RevokedAtMS != nil || record.ExpiresAtMS <= nowMS {
+			if !record.Live(nowMS) {
 				continue
 			}
 			items = append(items, sessionListItem{

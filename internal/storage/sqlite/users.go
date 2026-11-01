@@ -621,6 +621,13 @@ func (store accountStore) RevokeUserSessions(ctx context.Context, userID string,
 	return int(changed), nil
 }
 
+// RenewSession runs inside the account write transaction after live authority is resolved.
+func (store accountStore) RenewSession(ctx context.Context, id string, expiresAtMS, atMS int64) error {
+	_, err := store.queries.ExecContext(ctx,
+		`UPDATE sessions SET expires_at_ms = MAX(expires_at_ms, ?), last_seen_at_ms = MAX(last_seen_at_ms, ?) WHERE id = ? AND revoked_at_ms IS NULL AND expires_at_ms > ?`, expiresAtMS, atMS, id, atMS)
+	return err
+}
+
 func (store accountStore) TouchSession(ctx context.Context, id string, atMS int64) error {
 	_, err := store.queries.ExecContext(ctx,
 		`UPDATE sessions SET last_seen_at_ms = ? WHERE id = ?`, atMS, id)

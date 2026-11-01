@@ -31,7 +31,7 @@ const (
 	maxSecretsBytes    = 16 << 10
 	maxSessionBytes    = 4 << 10
 	maxSignedBytes     = (maxSessionBytes*8+5)/6 + 1 + (sha256.Size*8+5)/6
-	defaultSessionTTL  = 12 * time.Hour
+	defaultSessionTTL  = domain.SessionAbsoluteTTL
 	offlineLockTimeout = 150 * time.Millisecond
 )
 
@@ -51,7 +51,7 @@ var (
 )
 
 // Options provides deterministic test seams. Zero values select cryptographic
-// randomness, the system clock, and a twelve-hour browser session.
+// randomness, the system clock, and a browser credential bounded to 180 days.
 type Options struct {
 	Random     io.Reader
 	Now        func() time.Time
@@ -158,8 +158,8 @@ func NewManager(root string, options Options) (*Manager, error) {
 	if options.SessionTTL == 0 {
 		options.SessionTTL = defaultSessionTTL
 	}
-	if options.SessionTTL <= 0 || options.SessionTTL > 7*24*time.Hour {
-		return nil, errors.New("session TTL must be greater than zero and no more than seven days")
+	if options.SessionTTL <= 0 || options.SessionTTL > domain.SessionAbsoluteTTL {
+		return nil, errors.New("session TTL must be greater than zero and no more than 180 days")
 	}
 	return &Manager{
 		root:       absoluteRoot,

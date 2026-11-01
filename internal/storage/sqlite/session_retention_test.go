@@ -24,7 +24,7 @@ func TestSessionSweepPurgesStaleBrowserCollectionsWithoutEndingLiveSessions(t *t
 			id      string
 			expires int64
 		}{{liveSession, now.Add(time.Hour).UnixMilli()}, {expiredSession, cutoff - 1}} {
-			if _, err := queries.ExecContext(ctx, `INSERT INTO sessions(id,user_id,issued_at_ms,expires_at_ms,last_seen_at_ms,surface) VALUES (?,?,1,?,1,'web')`, session.id, userID, session.expires); err != nil {
+			if _, err := queries.ExecContext(ctx, `INSERT INTO sessions(id,user_id,issued_at_ms,expires_at_ms,last_seen_at_ms,surface) VALUES (?,?,?,?,?,'web')`, session.id, userID, now.Add(-10*24*time.Hour).UnixMilli(), session.expires, now.UnixMilli()); err != nil {
 				return err
 			}
 		}

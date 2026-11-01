@@ -112,6 +112,7 @@ function Probe({ name }: { name: string }) {
   return (
     <section aria-label={name}>
       <output data-testid={`${name}-state`}>{auth.state}</output>
+      <output data-testid={`${name}-expiry`}>{auth.session?.expiresAt}</output>
       <output data-testid={`${name}-csrf`}>
         {auth.session?.csrfToken ?? "none"}
       </output>
@@ -422,6 +423,53 @@ describe("account session cross-tab repair", () => {
       expect(screen.getByTestId("switch-account")).toHaveTextContent("second"),
     );
     expect(screen.getByTestId("switch-csrf")).toHaveTextContent("csrf-second");
+    peer.close();
+  });
+  it("accepts only matching sibling renewals without resetting the account", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => accountSession("csrf-current")),
+    );
+    render(
+      <SessionProvider>
+        <Probe name="renewed" />
+      </SessionProvider>,
+    );
+    await waitFor(() =>
+      expect(screen.getByTestId("renewed-state")).toHaveTextContent(
+        "signed-in",
+      ),
+    );
+    const stored = JSON.parse(window.sessionStorage.getItem(sessionKey)!);
+    const peer = new FakeBroadcastChannel(channelName);
+    const changed = vi.fn();
+    window.addEventListener("moment:account-changing", changed);
+    peer.postMessage({
+      type: "renew-session",
+      session: {
+        ...stored,
+        csrf_token: "csrf-old",
+        expires_at: "2999-09-11T01:00:00.000Z",
+      },
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(screen.getByTestId("renewed-expiry")).toHaveTextContent(
+      stored.expires_at,
+    );
+    peer.postMessage({
+      type: "renew-session",
+      session: { ...stored, expires_at: "2999-09-11T01:00:00.000Z" },
+    });
+    await waitFor(() =>
+      expect(screen.getByTestId("renewed-expiry")).toHaveTextContent(
+        "2999-09-11",
+      ),
+    );
+    expect(screen.getByTestId("renewed-account")).toHaveTextContent("owner");
+    expect(changed).not.toHaveBeenCalled();
+    window.removeEventListener("moment:account-changing", changed);
     peer.close();
   });
 });

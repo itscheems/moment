@@ -233,13 +233,11 @@ func getMediaAsset(store *media.Store, kind string, gate *Gate) gin.HandlerFunc 
 			// Only its reader's own browser may keep a copy; a shared cache
 			// in front of the site would hand it to the next visitor.
 			ctx.Header("Cache-Control", "private, max-age=0, must-revalidate")
-		} else if kind == "original" {
-			ctx.Header("Cache-Control", "public, max-age=31536000, immutable")
 		} else {
-			// Derived assets keep a stable public URL while their recipe version
-			// advances. Revalidate that URL so a corrected preview or poster is
-			// not pinned in browser caches for a year; the recipe-bearing ETag
-			// still makes unchanged responses a cheap 304.
+			// Media bytes may be immutable, but their public visibility is not.
+			// Revalidate originals as well as derived assets so a hidden post's
+			// old URL cannot bypass authorization through a fresh cache entry.
+			// The ETag still avoids resending unchanged, authorized content.
 			ctx.Header("Cache-Control", "public, max-age=0, must-revalidate")
 		}
 		ctx.Header("ETag", asset.ETag)

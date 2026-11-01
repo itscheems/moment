@@ -56,6 +56,9 @@ CLI: `moment site capabilities --data-dir ./moment-data --json`, or
 Passwords, API tokens and browser sessions belong to individual accounts. Every authenticated request resolves that account's current status and role. Roles are `admin` or `member`; status is `pending`, `active` or `suspended`. Multiple administrators are supported, and role changes, suspension and deletion must leave at least one active administrator.
 
 - `POST /login/session` exchanges a password with `username`, or an account API `token`, for a browser session. `GET /account/session` returns the real account and CSRF token.
+- Browser sessions have a 30-day inactivity deadline and a 180-day maximum lifetime anchored to the original sign-in. The signed HttpOnly cookie carries the fixed maximum; the server-side session record controls the shorter effective deadline. `GET /account/session` and the active-session list return that effective deadline.
+- `POST /account/session/renew` accepts an empty body with the current session cookie and CSRF header and returns `{expires_at}`. It extends only the authenticated, still-live session, without changing its identity, CSRF, original sign-in time, or sensitive-operation confirmation. Revoked, expired, or suspended sessions cannot renew. A retained account's notification count does not renew that account.
+- The web client renews on foreground visits and input, with a five-minute activity tolerance to bound writes; unattended tabs do not run a renewal timer. This is a browser-session HTTP operation, not a bearer-token or offline CLI capability. Existing cookies retain their signed expiration; a fresh login receives the new maximum lifetime. No database migration is required.
 - `GET /account/security`, `PUT /account/password`, and `GET|POST|DELETE /account/tokens[/id]` manage only the caller's credentials. Password changes atomically revoke all of that account's sessions and API tokens.
 - `/account/profile`, `/account/avatar`, and `/account/cover` edit the caller's personal profile. `/site` edits site configuration. `PUT /site/profile` selects the independent display account with `{user_id}`.
 - `/accounts` and `PUT /accounts/:id/role` are administrative resources. Selection as the site display account does not grant privileges or transfer content.
@@ -105,6 +108,8 @@ processing has a separate five-minute context budget. Normal JSON routes retain
 the server's existing timeouts. Reverse proxies and clients must also allow the
 necessary transfer duration. A stalled upload returns HTTP 408 with
 `MEDIA_UPLOAD_TIMEOUT`; malformed multipart input still returns `INVALID_ARGUMENT`.
+
+Media reads, including conditional requests and ranges, check current reference visibility and account authority before serving bytes or returning `304`. Public originals, previews and posters use `public, max-age=0, must-revalidate`; private media use `private, max-age=0, must-revalidate`. ETags permit reuse only after authorization. Publicly downloaded copies, including cache entries issued under earlier cache policies, cannot be recalled retroactively.
 
 `DELETE /media/:id` removes one **unreferenced** media object and requires an active administrator, including with `?dry_run=true`. Cookie callers also need CSRF. Active accounts upload through `POST /media` and receive a reuse grant for their own account. Deduplication shares the immutable object while keeping grants separate. Reading publicly referenced media does not grant permission to reuse it; unused uploads are private to accounts that hold a grant.
 
