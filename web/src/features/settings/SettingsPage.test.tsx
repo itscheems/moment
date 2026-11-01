@@ -585,11 +585,13 @@ it("requires confirmation before revoking all credentials and restores focus on 
   const dialog = await screen.findByRole("dialog", {
     name: "Revoke all access credentials?",
   });
-  expect(
-    within(dialog).getByRole("button", {
-      name: "Revoke all credentials and log out",
-    }),
-  ).toBeVisible();
+  await waitFor(() =>
+    expect(
+      within(dialog).getByRole("button", {
+        name: "Revoke all credentials and log out",
+      }),
+    ).toBeVisible(),
+  );
   expect(calls.mock.calls.some(([, init]) => init?.method === "POST")).toBe(
     false,
   );
