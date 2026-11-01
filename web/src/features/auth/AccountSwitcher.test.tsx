@@ -60,11 +60,11 @@ function json(data: unknown, status = 200) {
     headers: { "Content-Type": "application/json" },
   });
 }
-function installAccounts(extra = 0) {
+function installAccounts(extra = 0, includeReader = true) {
   let active: typeof owner | null = owner;
   let members = [
     owner,
-    reader,
+    ...(includeReader ? [reader] : []),
     ...Array.from({ length: extra }, (_, i) => ({
       ...reader,
       account: {
@@ -316,6 +316,25 @@ describe("browser account interactions", () => {
       ).toHaveFocus(),
     );
     expect(window.location.pathname).toBe("/settings");
+  });
+
+  it("shows management only when another retained account exists", async () => {
+    const api = installAccounts(0, false);
+    await mount();
+    fireEvent.click(screen.getByRole("button", { name: "Accounts menu" }));
+    await waitFor(() =>
+      expect(
+        api.fetcher.mock.calls.some(([url]) =>
+          String(url).endsWith("/notification-counts"),
+        ),
+      ).toBe(true),
+    );
+    expect(
+      screen.getByRole("menuitem", { name: "Add an existing account" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("menuitem", { name: "Manage accounts" }),
+    ).toBeNull();
   });
 
   it("shows the other account's capped badge and switches to the home page", async () => {

@@ -127,14 +127,18 @@ export function AccountMenuActions({ className }: { className: string }) {
   const { account } = useSession();
   const { t } = useTranslation();
   if (!browser) return null;
+  const multiple =
+    orderedAccounts(account, browser.snapshot?.accounts ?? []).length > 1;
   return (
     <>
       <Menu.Item className={className} onClick={() => browser.openAdd()}>
         {t("添加已有账户")}
       </Menu.Item>
-      <Menu.Item className={className} onClick={browser.openManage}>
-        {t("管理账户")}
-      </Menu.Item>
+      {multiple ? (
+        <Menu.Item className={className} onClick={browser.openManage}>
+          {t("管理账户")}
+        </Menu.Item>
+      ) : null}
       {account ? (
         <Menu.Item
           className={className}

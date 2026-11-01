@@ -187,7 +187,6 @@ function AccountRail({
   const { t } = useTranslation();
   const browser = useBrowserAccounts();
 
-  const { navigate } = useNavigation();
   const { href: loginDestination } = useLoginNavigation();
   // Nobody is signed in, so there is no face to show and one thing to offer.
   if (!account) {
@@ -256,15 +255,6 @@ function AccountRail({
             className={`${styles.mobileAccountPopup} ${styles.accountRailPopup}`}
           >
             {browser ? <AccountMenuAccounts /> : null}
-            {/* No profile entry: the rail already carries one, and a menu that
-                repeats the row above it is a longer way to the same page. */}
-            <Menu.Item
-              className={styles.mobileAccountItem}
-              onClick={() => navigate("/compose/articles")}
-            >
-              <Icon name="article" />
-              <span>{t("文章")}</span>
-            </Menu.Item>
             {browser ? (
               <AccountMenuActions className={styles.mobileAccountItem} />
             ) : (
