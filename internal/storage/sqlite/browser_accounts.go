@@ -31,7 +31,7 @@ func (store accountStore) BrowserAccountMembers(ctx context.Context, id string) 
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	members := []app.BrowserAccountMember{}
 	for rows.Next() {
 		var m app.BrowserAccountMember

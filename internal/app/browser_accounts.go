@@ -19,6 +19,7 @@ type BrowserAccountSet struct {
 	RevokedAtMS    *int64
 }
 
+// BrowserAccountMember binds a retained identity to its verified session.
 type BrowserAccountMember struct {
 	SetID        string
 	UserID       string
@@ -26,6 +27,7 @@ type BrowserAccountMember struct {
 	LastUsedAtMS int64
 }
 
+// BrowserAccountEntry describes a retained identity and its session availability.
 type BrowserAccountEntry struct {
 	User      domain.User
 	Member    BrowserAccountMember
@@ -214,6 +216,7 @@ func (service *AccountService) AddBrowserAccount(ctx context.Context, secret, ne
 	return set, err
 }
 
+// ActivateBrowserAccount resolves an available member without extending its session.
 func (service *AccountService) ActivateBrowserAccount(ctx context.Context, secret string, epoch uint64, userID string) (SessionResolution, error) {
 	nowMS := domain.TimeToMillis(domain.NormalizeTime(service.clock()))
 	var resolved SessionResolution
