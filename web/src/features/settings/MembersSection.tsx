@@ -225,8 +225,13 @@ export function MembersSection({
 } = {}) {
   const { t } = useTranslation();
 
-  const { session, account, applyAccount, expireIfInvalidSession } =
-    useSession();
+  const {
+    session,
+    account,
+    applyAccount,
+    isCurrentSession,
+    expireIfInvalidSession,
+  } = useSession();
   const [accounts, setAccounts] = useState<Account[] | null>(null);
   const [registrationMode, setRegistrationMode] =
     useState<RegistrationMode | null>(null);
@@ -328,14 +333,15 @@ export function MembersSection({
               entry.userId,
               change.value,
             );
-      if (!mounted.current) return false;
+      if (!mounted.current || !isCurrentSession()) return false;
+      if (saved.userId === account?.userId && !applyAccount(saved))
+        return false;
       setAccounts(
         (current) =>
           current?.map((user) =>
             user.userId === saved.userId ? saved : user,
           ) ?? null,
       );
-      if (saved.userId === account?.userId) applyAccount(saved);
       const message =
         change.kind === "role"
           ? t("已将 {{value1}} 设为{{value2}}。", {
@@ -355,7 +361,11 @@ export function MembersSection({
       notify(message, { id: "members-action" });
       return true;
     } catch (error) {
-      if (mounted.current && !expireIfInvalidSession(error)) {
+      if (
+        mounted.current &&
+        isCurrentSession() &&
+        !expireIfInvalidSession(error)
+      ) {
         const message =
           error instanceof PublicApiError &&
           error.code === "REAUTHENTICATION_REQUIRED"
@@ -380,7 +390,7 @@ export function MembersSection({
     setRegistrationNotice(null);
     try {
       await siteApi.updateSite(session.csrfToken, { registrationMode: next });
-      if (!mounted.current) return;
+      if (!mounted.current || !isCurrentSession()) return;
       setRegistrationMode(next);
       const label = registrationChoices.find(
         (choice) => choice.mode === next,
@@ -390,7 +400,11 @@ export function MembersSection({
         id: "registration-mode",
       });
     } catch (error) {
-      if (mounted.current && !expireIfInvalidSession(error)) {
+      if (
+        mounted.current &&
+        isCurrentSession() &&
+        !expireIfInvalidSession(error)
+      ) {
         const message =
           error instanceof PublicApiError &&
           error.code === "REAUTHENTICATION_REQUIRED"

@@ -136,6 +136,7 @@ export function ProfileEditor(props: ProfileEditorProps) {
 
     limits,
     session,
+    isCurrentSession,
     applyAccount,
     expireIfInvalidSession,
   } = useSession();
@@ -279,7 +280,7 @@ export function ProfileEditor(props: ProfileEditorProps) {
           undefined,
           controller.signal,
         );
-        if (uploads.current.cover !== controller) return;
+        if (uploads.current.cover !== controller || !isCurrentSession()) return;
         setCoverId(uploaded.id);
         setCoverPreview(uploaded.previewUrl);
         setCoverState("idle");
@@ -295,7 +296,7 @@ export function ProfileEditor(props: ProfileEditorProps) {
         controller.signal,
       );
       if (uploads.current[kind] !== controller) return;
-      applyAccount(saved);
+      if (!applyAccount(saved)) return;
       saveAccount(saved);
       setAvatarId(saved.avatarMediaId);
       setBoundAvatarId(saved.avatarMediaId);
@@ -304,7 +305,7 @@ export function ProfileEditor(props: ProfileEditorProps) {
       notify(t("头像已更新"));
       return;
     } catch (nextError) {
-      if (controller.signal.aborted) return;
+      if (controller.signal.aborted || !isCurrentSession()) return;
       expireIfInvalidSession(nextError);
       if (kind === "avatar") setAvatarState("failed");
       else setCoverState("failed");
@@ -374,11 +375,12 @@ export function ProfileEditor(props: ProfileEditorProps) {
         session.csrfToken,
         update,
       );
-      applyAccount(saved);
+      if (!applyAccount(saved)) return;
       saveAccount(saved);
       notify(t("个人资料已更新"));
       close(saved);
     } catch (nextError) {
+      if (!isCurrentSession()) return;
       if (!expireIfInvalidSession(nextError)) {
         setError(saveFailure(nextError));
       }

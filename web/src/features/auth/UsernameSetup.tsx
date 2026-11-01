@@ -65,7 +65,8 @@ export function UsernameSetup({
 }) {
   const { t } = useTranslation();
 
-  const { session, applyAccount, expireIfInvalidSession } = useSession();
+  const { session, applyAccount, isCurrentSession, expireIfInvalidSession } =
+    useSession();
   const [open, setOpen] = useState(true);
   const [username, setUsername] = useState(account.username);
   const [error, setError] = useState<string | null>(null);
@@ -84,17 +85,20 @@ export function UsernameSetup({
       const saved = await accountsApi.updateAccountProfile(session.csrfToken, {
         username: value,
       });
-      applyAccount(saved);
+      if (!applyAccount(saved)) return;
       setOpen(false);
       if (saved.role === "admin") {
         publicApi
           .site()
-          .then(onSiteChanged)
+          .then((site) => {
+            if (isCurrentSession()) onSiteChanged(site);
+          })
           .catch(() => {
             // Cosmetic until the next load; the rename itself is already saved.
           });
       }
     } catch (nextError) {
+      if (!isCurrentSession()) return;
       expireIfInvalidSession(nextError);
       setError(serverProblem(nextError));
     } finally {

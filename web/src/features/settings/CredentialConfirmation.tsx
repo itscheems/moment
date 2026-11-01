@@ -53,8 +53,8 @@ export function CredentialConfirmation() {
     setPending(false);
     complete?.(confirmed);
   }
-  function verified() {
-    if (!resolve.current) return;
+  function verified(confirmation: typeof resolve.current) {
+    if (!confirmation || resolve.current !== confirmation) return;
     notify(t("身份验证成功"), {
       id: "credential-confirmation",
       placement: "corner",
@@ -65,6 +65,7 @@ export function CredentialConfirmation() {
   useEffect(() => {
     setOpen(false);
     setSecret("");
+    setPending(false);
     if (!account || !session) return;
     const unregister = registerCredentialConfirmation(
       () =>
@@ -123,7 +124,9 @@ export function CredentialConfirmation() {
 
   async function confirm(event: FormEvent) {
     event.preventDefault();
-    if (!session || passwordEnabled === null || pending) return;
+    if (!session || !resolve.current || passwordEnabled === null || pending)
+      return;
+    const confirmation = resolve.current;
     setPending(true);
     setError(null);
     try {
@@ -131,17 +134,19 @@ export function CredentialConfirmation() {
         session.csrfToken,
         passwordEnabled ? { password: secret } : { token: secret },
       );
-      verified();
+      verified(confirmation);
     } catch (next) {
+      if (resolve.current !== confirmation) return;
       setSecret("");
       if (!expireIfInvalidSession(next))
         setError(t("验证失败，请输入当前有效的凭据。"));
     } finally {
-      setPending(false);
+      if (resolve.current === confirmation) setPending(false);
     }
   }
 
   function confirmProvider(provider: string) {
+    const confirmation = resolve.current;
     const popup = window.open(
       `${oauthStartUrl(provider, window.location.pathname)}&confirm=1`,
       "moment-credential-confirmation",
@@ -161,7 +166,7 @@ export function CredentialConfirmation() {
         const confirmed = await credentialConfirmationStatus(controller.signal);
         if (controller.signal.aborted) return;
         if (confirmed) {
-          verified();
+          verified(confirmation);
         } else if (popup.closed) {
           closeProvider();
           setPending(false);

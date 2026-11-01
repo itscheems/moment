@@ -101,7 +101,9 @@ interface SessionContextValue {
    * the server has already ended it -- signing every device out, for instance.
    */
   forgetSession: (instanceId: string | null) => void;
-  applyAccount: (account: Account) => void;
+  /** Whether an async result still belongs to this account's session. */
+  isCurrentSession: () => boolean;
+  applyAccount: (account: Account) => boolean;
   expireIfInvalidSession: (error: unknown) => boolean;
   retryStatus: () => void;
 }
@@ -583,6 +585,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       if (preserveDrafts)
         window.dispatchEvent(new Event("moment:account-changing"));
       setState("checking");
+      accountRef.current = null;
       setAccount(null);
       setLimits(null);
       try {
@@ -686,7 +689,27 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     [],
   );
 
-  const applyAccount = useCallback((next: Account) => setAccount(next), []);
+  const accountUserId = account?.userId;
+  const sessionVersion = session?.version;
+  const isCurrentSession = useCallback(
+    () =>
+      !!accountUserId &&
+      !!sessionVersion &&
+      accountRef.current?.userId === accountUserId &&
+      sessionRef.current?.version === sessionVersion,
+    [accountUserId, sessionVersion],
+  );
+
+  const applyAccount = useCallback(
+    (next: Account) => {
+      if (!isCurrentSession() || accountRef.current?.userId !== next.userId)
+        return false;
+      accountRef.current = next;
+      setAccount(next);
+      return true;
+    },
+    [isCurrentSession],
+  );
 
   const forgetSession = useCallback(
     (instanceId: string | null) => {
@@ -783,6 +806,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       logout,
       refreshSession,
       forgetSession,
+      isCurrentSession,
       applyAccount,
       expireIfInvalidSession,
       retryStatus,
@@ -793,6 +817,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       applyAccount,
       expireIfInvalidSession,
       forgetSession,
+      isCurrentSession,
       limits,
       preferences,
       applyPreferences,
