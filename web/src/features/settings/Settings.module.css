@@ -2299,3 +2299,16 @@
     transition: none;
   }
 }
+
+.revokeAll > .dangerButton {
+  border-radius: 9999px;
+  font: 700 15px/20px var(--font-sans);
+  max-inline-size: 100%;
+  padding: 10px 16px;
+  overflow-wrap: anywhere;
+}
+@media (hover: hover) {
+  .revokeAll > .dangerButton:hover:not(:disabled) {
+    background: color-mix(in srgb, var(--danger) 88%, #000);
+  }
+}

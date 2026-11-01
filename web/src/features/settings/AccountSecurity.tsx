@@ -334,7 +334,7 @@ export function AccountSecurity({
             trigger={
               <button
                 type="button"
-                className={styles.revokeToken}
+                className={styles.dangerButton}
                 disabled={!session || pending !== null}
               >
                 {t("撤销全部访问凭据")}

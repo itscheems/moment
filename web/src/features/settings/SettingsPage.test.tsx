@@ -571,3 +571,32 @@ it("keeps personal import feedback on the import child page", async () => {
   fireEvent.click(await screen.findByRole("link", { name: /^导入个人数据/ }));
   expect(screen.getByText(failure)).toBeVisible();
 });
+
+it("requires confirmation before revoking all credentials and restores focus on cancel", async () => {
+  window.history.replaceState({}, "", "/settings/security/tokens");
+  const calls = installApi("admin");
+  window.localStorage.setItem("moment.ui-locale", "en");
+  await act(() => i18n.changeLanguage("en"));
+  render(<App />);
+  const trigger = await screen.findByRole("button", {
+    name: "Revoke all access credentials",
+  });
+  fireEvent.click(trigger);
+  const dialog = await screen.findByRole("dialog", {
+    name: "Revoke all access credentials?",
+  });
+  expect(
+    within(dialog).getByRole("button", {
+      name: "Revoke all credentials and log out",
+    }),
+  ).toBeVisible();
+  expect(calls.mock.calls.some(([, init]) => init?.method === "POST")).toBe(
+    false,
+  );
+  fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  expect(calls.mock.calls.some(([, init]) => init?.method === "POST")).toBe(
+    false,
+  );
+  await waitFor(() => expect(trigger).toHaveFocus());
+});
