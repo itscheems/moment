@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import styles from "./Content.module.css";
 
 function ranges(value: string, query: string): Array<[number, number]> {
   if (!query) return [];
@@ -22,7 +23,9 @@ function markRanges(
     if (end <= start) continue;
     result.push(
       value.slice(cursor, start),
-      <mark key={start}>{value.slice(start, end)}</mark>,
+      <mark className={styles.searchMatch} key={start}>
+        {value.slice(start, end)}
+      </mark>,
     );
     cursor = end;
   }
