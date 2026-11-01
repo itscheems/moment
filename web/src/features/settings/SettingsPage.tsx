@@ -1,6 +1,5 @@
 import { frame, motion, useReducedMotion } from "motion/react";
 import { SearchField } from "../memory/SearchField";
-import { SettingsTextField } from "./SettingsTextField";
 import { Autocomplete } from "@base-ui/react/autocomplete";
 import { Tabs } from "@base-ui/react/tabs";
 import { useTranslation } from "react-i18next";
@@ -15,8 +14,7 @@ import {
   type ReactNode,
   type MouseEvent,
 } from "react";
-import { accountsApi } from "../../api/accounts";
-import { selectSiteProfile, siteApi } from "../../api/site";
+import { siteApi } from "../../api/site";
 import {
   PublicApiError,
   type Account,
@@ -49,55 +47,20 @@ import {
 import forms from "../../components/Forms.module.css";
 import styles from "./Settings.module.css";
 
-type SitePanel = "information" | "comments" | "profile";
-
-function SiteConfiguration({
+function SiteComments({
   site,
   onSaved,
-  active,
-  panel,
 }: {
   site: SiteIdentity;
   onSaved: (site: SiteIdentity) => void;
-  active: boolean;
-  panel: SitePanel;
 }) {
   const { t } = useTranslation();
-
   const { session, expireIfInvalidSession } = useSession();
-  const [title, setTitle] = useState(site.title);
-  const [timezone, setTimezone] = useState(site.timezone);
-  const [url, setUrl] = useState(site.publicBaseUrl ?? "");
   const [comments, setComments] = useState(site.commentsEnabled);
-  const [profile, setProfile] = useState(site.profileUserId);
-  const [roster, setRoster] = useState<Account[]>([]);
   const [pending, setPending] = useState(false);
-  const [errors, setErrors] = useState<
-    Partial<Record<SitePanel, string | null>>
-  >({});
-  const [notices, setNotices] = useState<
-    Partial<Record<SitePanel, string | null>>
-  >({});
-  const error = errors[panel];
-  const notice = notices[panel];
-  const setError = (value: string | null) =>
-    setErrors((current) => ({ ...current, [panel]: value }));
-  const setNotice = (value: string | null) =>
-    setNotices((current) => ({ ...current, [panel]: value }));
-  useEffect(() => {
-    if (!active) return;
-    const controller = new AbortController();
-    void accountsApi
-      .accounts(controller.signal)
-      .then((result) => {
-        if (!controller.signal.aborted) setRoster(result.accounts);
-      })
-      .catch((next: unknown) => {
-        if (!controller.signal.aborted && !expireIfInvalidSession(next))
-          setError(t("展示账号列表暂时无法读取。"));
-      });
-    return () => controller.abort();
-  }, [active, expireIfInvalidSession]);
+  const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+
   async function save(event: FormEvent) {
     event.preventDefault();
     if (!session || pending) return;
@@ -105,95 +68,35 @@ function SiteConfiguration({
     setError(null);
     setNotice(null);
     try {
-      const saved = await siteApi.updateSite(
-        session.csrfToken,
-        panel === "comments"
-          ? { commentsEnabled: comments }
-          : { title, timezone, publicBaseUrl: url.trim() || null },
-      );
+      const saved = await siteApi.updateSite(session.csrfToken, {
+        commentsEnabled: comments,
+      });
       onSaved({
         ...saved,
         instanceId: site.instanceId,
         instanceInitializedAt: site.instanceInitializedAt,
       });
-      setNotice(t("站点设置已保存。"));
+      setNotice("站点设置已保存。");
     } catch (next) {
       if (!expireIfInvalidSession(next))
         setError(
           next instanceof PublicApiError &&
             next.code === "REAUTHENTICATION_REQUIRED"
-            ? t("身份验证未完成，操作未执行。")
-            : t("站点设置没有保存。请检查时区和网址后重试。"),
+            ? "身份验证未完成，操作未执行。"
+            : "评论设置没有保存，请稍后重试。",
         );
     } finally {
       setPending(false);
     }
   }
-  async function selectProfile() {
-    if (!session || pending) return;
-    setPending(true);
-    setError(null);
-    setNotice(null);
-    try {
-      const saved = await selectSiteProfile(session.csrfToken, profile);
-      onSaved({
-        ...saved,
-        instanceId: site.instanceId,
-        instanceInitializedAt: site.instanceInitializedAt,
-      });
-      setNotice(t("首页展示账号已更新，账号权限保持不变。"));
-    } catch (next) {
-      if (!expireIfInvalidSession(next))
-        setError(
-          next instanceof PublicApiError &&
-            next.code === "REAUTHENTICATION_REQUIRED"
-            ? t("身份验证未完成，操作未执行。")
-            : t("展示账号没有更改，请选择已启用的账号后重试。"),
-        );
-    } finally {
-      setPending(false);
-    }
-  }
+
   return (
-    <section aria-label={t("站点设置")}>
-      <header className={styles.sectionHeader}>
-        <h2>{t("站点设置")}</h2>
-      </header>
+    <section aria-label={t("评论")}>
       <form
         className={styles.settingsForm}
-        hidden={panel === "profile"}
         onSubmit={(event) => void save(event)}
       >
-        <fieldset
-          className={styles.settingsFields}
-          hidden={panel !== "information"}
-          disabled={pending || panel !== "information"}
-          aria-label={t("基本信息")}
-        >
-          <SettingsTextField
-            label={t("站点标题")}
-            disabled={pending}
-            maxLength={120}
-            onChange={(event) => setTitle(event.target.value)}
-            required
-            value={title}
-          />
-          <SettingsTextField
-            label={t("时区")}
-            disabled={pending}
-            onChange={(event) => setTimezone(event.target.value)}
-            required
-            value={timezone}
-          />
-          <SettingsTextField
-            label={t("公开网址")}
-            disabled={pending}
-            onChange={(event) => setUrl(event.target.value)}
-            type="url"
-            value={url}
-          />
-        </fieldset>
-        <label className={styles.toggleField} hidden={panel !== "comments"}>
+        <label className={styles.toggleField}>
           <input
             checked={comments}
             disabled={pending}
@@ -210,44 +113,12 @@ function SiteConfiguration({
           {pending ? t("正在保存…") : t("保存站点设置")}
         </button>
       </form>
-      <div className={styles.siteProfile} hidden={panel !== "profile"}>
-        <h3>{t("首页展示账号")}</h3>
-        <p>
-          {t(
-            "选择首页使用的昵称、简介和图片。展示账号可以是普通成员，其管理权限不会因此变化。",
-          )}
-        </p>
-        <label>
-          {t("展示账号")}
-          <select
-            disabled={pending || roster.length === 0}
-            onChange={(event) => setProfile(event.target.value)}
-            value={profile}
-          >
-            {roster
-              .filter((user) => user.status === "active")
-              .map((user) => (
-                <option key={user.userId} value={user.userId}>
-                  {user.displayName} @{user.username}
-                </option>
-              ))}
-          </select>
-        </label>
-        <button
-          className={forms.secondaryButton}
-          disabled={!session || pending || profile === site.profileUserId}
-          onClick={() => void selectProfile()}
-          type="button"
-        >
-          {t("更新展示账号")}
-        </button>
-      </div>
       {error ? (
         <p className={forms.formError} role="alert">
-          {error}
+          {t(error)}
         </p>
       ) : null}
-      {notice ? <p role="status">{notice}</p> : null}
+      {notice ? <p role="status">{t(notice)}</p> : null}
     </section>
   );
 }
@@ -772,19 +643,8 @@ export function SettingsPage({
           {admin ? (
             <>
               {surface(
-                visible("site", ["information", "comments", "profile"]),
-                <SiteConfiguration
-                  site={site}
-                  onSaved={onSaved}
-                  active={visible("site", ["profile"])}
-                  panel={
-                    item?.id === "comments"
-                      ? "comments"
-                      : item?.id === "profile"
-                        ? "profile"
-                        : "information"
-                  }
-                />,
+                visible("site", ["comments"]),
+                <SiteComments site={site} onSaved={onSaved} />,
               )}
               {surface(
                 visible("members", ["roster", "registration"]),

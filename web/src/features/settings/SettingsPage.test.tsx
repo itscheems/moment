@@ -10,6 +10,7 @@ import {
 } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { App } from "../../app/App";
+import i18n from "../../i18n";
 import { makeAccountLimits } from "../../test/accountFixtures";
 
 const sessionKey = "moment.auth.session.v2";
@@ -167,47 +168,50 @@ it("searches permitted settings and opens a child using the keyboard", async () 
   );
 });
 
-it("keeps the unsaved site title when saving comments on a separate child page", async () => {
-  window.history.replaceState({}, "", "/settings/site/information");
-  const requests: unknown[] = [];
-  installApi("admin", (url, init) => {
-    if (url === "/api/v1/site" && init?.method === "PATCH") {
-      requests.push(JSON.parse(String(init.body)));
-      return json({ ...site, comments_enabled: false });
-    }
-  });
+it("keeps deployment configuration out of site navigation and settings search", async () => {
+  window.history.replaceState({}, "", "/settings/site");
+  installApi("admin");
   render(<App />);
-  const title = await screen.findByLabelText("站点标题");
-  fireEvent.change(title, { target: { value: "尚未保存的标题" } });
-  fireEvent.click(screen.getByRole("button", { name: "返回上一级" }));
-  fireEvent.click(await screen.findByRole("link", { name: /^评论/ }));
-  fireEvent.click(screen.getByRole("checkbox", { name: "允许新评论" }));
-  fireEvent.click(screen.getByRole("button", { name: "保存站点设置" }));
-  await waitFor(() => expect(requests).toEqual([{ comments_enabled: false }]));
-  expect(title).toHaveValue("尚未保存的标题");
+  expect(await screen.findByRole("link", { name: /^评论/ })).toBeVisible();
+  expect(screen.queryByRole("link", { name: /^基本信息/ })).toBeNull();
+  expect(screen.queryByRole("link", { name: /^首页展示账号/ })).toBeNull();
+  expect(screen.queryByLabelText("站点标题")).toBeNull();
+  expect(screen.queryByLabelText("时区")).toBeNull();
+  expect(screen.queryByLabelText("公开网址")).toBeNull();
+  expect(screen.queryByLabelText("展示账号")).toBeNull();
+  const input = screen.getByRole("combobox", { name: "搜索设置" });
+  act(() => input.focus());
+  for (const query of ["基本信息", "首页展示账号", "公开网址"]) {
+    fireEvent.change(input, { target: { value: query } });
+    expect(await screen.findByText("没有找到匹配的设置")).toBeVisible();
+    expect(screen.queryByRole("option")).toBeNull();
+  }
 });
 
-it("does not let an invalid hidden site draft block the comments form", async () => {
-  window.history.replaceState({}, "", "/settings/site/information");
-  const requests: unknown[] = [];
-  installApi("admin", (url, init) => {
-    if (url === "/api/v1/site" && init?.method === "PATCH") {
-      requests.push(JSON.parse(String(init.body)));
-      return json({ ...site, comments_enabled: false });
-    }
-  });
+it("reports a failed comments save without referring to removed fields", async () => {
+  window.history.replaceState({}, "", "/settings/site/comments");
+  installApi("admin", (url, init) =>
+    url === "/api/v1/site" && init?.method === "PATCH"
+      ? json({}, 503)
+      : undefined,
+  );
   render(<App />);
-  const title = await screen.findByLabelText("站点标题");
-  fireEvent.change(title, { target: { value: "" } });
-  expect(title).toBeInvalid();
-  fireEvent.click(screen.getByRole("button", { name: "返回上一级" }));
-  fireEvent.click(await screen.findByRole("link", { name: /^评论/ }));
-  const checkbox = screen.getByRole("checkbox", { name: "允许新评论" });
-  expect(checkbox.closest("form")?.checkValidity()).toBe(true);
-  fireEvent.click(checkbox);
+  fireEvent.click(await screen.findByRole("checkbox", { name: "允许新评论" }));
   fireEvent.click(screen.getByRole("button", { name: "保存站点设置" }));
-  await waitFor(() => expect(requests).toEqual([{ comments_enabled: false }]));
-  expect(title).toHaveValue("");
+  expect(await screen.findByRole("alert")).toHaveTextContent(
+    "评论设置没有保存，请稍后重试。",
+  );
+  expect(screen.getByRole("button", { name: "保存站点设置" })).toBeEnabled();
+  const checkbox = screen.getByRole("checkbox", { name: "允许新评论" });
+  const alert = screen.getByRole("alert");
+  await act(() => i18n.changeLanguage("en"));
+  expect(alert).toHaveTextContent(
+    "Comment settings were not saved. Try again later.",
+  );
+  expect(screen.getByRole("checkbox", { name: "Allow new comments" })).toBe(
+    checkbox,
+  );
+  expect(checkbox).not.toBeChecked();
 });
 
 it("discards a modal language choice when canceled without changing the account", async () => {
@@ -293,7 +297,7 @@ it("navigates to a site child and saves only the fields on that page", async () 
   installApi("admin", (url, init) => {
     if (url === "/api/v1/site" && init?.method === "PATCH") {
       requests.push(JSON.parse(String(init.body)));
-      return json({ ...site, title: "新站点" });
+      return json({ ...site, comments_enabled: false });
     }
   });
   render(<App />);
@@ -301,19 +305,15 @@ it("navigates to a site child and saves only the fields on that page", async () 
   const nav = screen.getByRole("navigation", { name: "设置分类" });
   fireEvent.click(within(nav).getByRole("tab", { name: "站点设置" }));
   expect(window.location.pathname).toBe("/settings/site");
-  fireEvent.click(await screen.findByRole("link", { name: /^基本信息/ }));
-  expect(window.location.pathname).toBe("/settings/site/information");
-  fireEvent.change(await screen.findByLabelText("站点标题"), {
-    target: { value: "新站点" },
-  });
+  fireEvent.click(await screen.findByRole("link", { name: /^评论/ }));
+  expect(window.location.pathname).toBe("/settings/site/comments");
+  fireEvent.click(await screen.findByRole("checkbox", { name: "允许新评论" }));
   await waitFor(() =>
     expect(screen.getByRole("button", { name: "保存站点设置" })).toBeEnabled(),
   );
   fireEvent.click(screen.getByRole("button", { name: "保存站点设置" }));
   await screen.findByText("站点设置已保存。");
-  expect(requests).toEqual([
-    { title: "新站点", timezone: "UTC", public_base_url: null },
-  ]);
+  expect(requests).toEqual([{ comments_enabled: false }]);
   expect(within(nav).getByRole("tab", { name: "站点设置" })).toHaveAttribute(
     "aria-selected",
     "true",
@@ -337,31 +337,6 @@ it("preserves an unsaved token label across categories and child pages", async (
   expect(field).toHaveValue("尚未创建的令牌");
 });
 
-it("selects a display account independently of its member role", async () => {
-  window.history.replaceState({}, "", "/settings/site/profile");
-  const requests: unknown[] = [];
-  installApi("admin", (url, init) => {
-    if (url === "/api/v1/site/profile") {
-      requests.push(JSON.parse(String(init?.body)));
-      return json({
-        ...site,
-        profile_user_id: otherId,
-        username: other.username,
-        display_name: other.display_name,
-      });
-    }
-  });
-  render(<App />);
-  await screen.findByRole("option", { name: "另一位作者 @reader" });
-  fireEvent.change(screen.getByLabelText("展示账号"), {
-    target: { value: otherId },
-  });
-  fireEvent.click(screen.getByRole("button", { name: "更新展示账号" }));
-  await waitFor(() => expect(requests).toEqual([{ user_id: otherId }]));
-  expect(
-    await screen.findByText("首页展示账号已更新，账号权限保持不变。"),
-  ).toBeVisible();
-});
 it("keeps password settings usable when the separate token list cannot be loaded", async () => {
   window.history.replaceState({}, "", "/settings/account/password");
   installApi("member", (url) =>

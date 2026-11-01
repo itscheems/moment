@@ -35,7 +35,7 @@ export const settingsCategories: Array<{
   {
     id: "site",
     title: "站点设置",
-    description: "管理站点基本信息、评论和首页展示账号。",
+    description: "管理站点的评论设置。",
     admin: true,
   },
   {
@@ -117,25 +117,11 @@ export const settingsItems: SettingsItem[] = [
     icon: "globe",
   },
   {
-    id: "information",
-    category: "site",
-    title: "基本信息",
-    description: "设置站点标题、时区和公开网址。",
-    icon: "info",
-  },
-  {
     id: "comments",
     category: "site",
     title: "评论",
     description: "决定是否允许新的评论。",
     icon: "reply",
-  },
-  {
-    id: "profile",
-    category: "site",
-    title: "首页展示账号",
-    description: "选择首页使用的个人资料，不改变账号权限。",
-    icon: "account-settings",
   },
   {
     id: "roster",
