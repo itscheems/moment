@@ -135,6 +135,7 @@ export function ProfilePage({
 
   const adoptSite = useCallback(
     (savedAccount: Account) => {
+      if (!applyAccount(savedAccount)) return;
       const saved = {
         ...site,
         username: savedAccount.username,
@@ -144,17 +145,6 @@ export function ProfilePage({
         coverMediaId: savedAccount.coverMediaId,
       };
       onSiteSaved(saved);
-      if (viewerAccount) {
-        applyAccount({
-          ...viewerAccount,
-          username: saved.username,
-          displayName: saved.displayName,
-          bio: saved.bio,
-          avatarMediaId: saved.avatarMediaId,
-          coverMediaId: saved.coverMediaId,
-          profileUrl: siteProfileHref(saved),
-        });
-      }
       // Only when the browser is standing on the handle that just stopped
       // existing. /profile is an alias a rename cannot break, and moving
       // somebody off it would change their URL for no reason.
@@ -170,7 +160,7 @@ export function ProfilePage({
         );
       }
     },
-    [applyAccount, navigation, onSiteSaved, site, viewerAccount],
+    [applyAccount, navigation, onSiteSaved, site],
   );
 
   const handlePostChange = useCallback(

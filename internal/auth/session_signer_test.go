@@ -111,6 +111,29 @@ func TestSignedSessionPreservesSubjectAndCSRFAndSurvivesReload(t *testing.T) {
 	}
 }
 
+func TestResumedSessionDoesNotRenewOriginalExpiry(t *testing.T) {
+	manager, _, now := signerFixture(t)
+	_, original, err := manager.IssueSessionForVerifiedSubject(testSubject())
+	if err != nil {
+		t.Fatal(err)
+	}
+	*now = now.Add(20 * time.Minute)
+	if _, _, err := manager.ResumeSession(testSubject(), original.ExpiresAt, original.Epoch+1); !errors.Is(err, ErrUnauthorized) {
+		t.Fatal("signing revision mismatch was accepted", err)
+	}
+	value, resumed, err := manager.ResumeSession(testSubject(), original.ExpiresAt, original.Epoch)
+	if err != nil || !resumed.ExpiresAt.Equal(original.ExpiresAt) || resumed.CSRFToken == original.CSRFToken {
+		t.Fatalf("resume renewed authority: %+v %v", resumed, err)
+	}
+	if verified, err := manager.ValidateSession(value); err != nil || verified != resumed {
+		t.Fatal("resumed cookie invalid", err)
+	}
+	*now = original.ExpiresAt
+	if _, _, err := manager.ResumeSession(testSubject(), original.ExpiresAt, original.Epoch); !errors.Is(err, ErrUnauthorized) {
+		t.Fatal("expired session resumed", err)
+	}
+}
+
 func TestSignerRejectsForgedExpiredAndIncompleteSessions(t *testing.T) {
 	manager, _, now := signerFixture(t)
 	value, _, err := manager.IssueSessionForVerifiedSubject(testSubject())

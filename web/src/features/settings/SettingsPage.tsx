@@ -335,7 +335,7 @@ export function SettingsPage({
     else navigation.replace(upHref);
   }
   function adopt(saved: Account) {
-    applyAccount(saved);
+    if (!applyAccount(saved)) return;
     if (site.profileUserId === saved.userId)
       onSaved({
         ...site,

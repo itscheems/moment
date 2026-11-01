@@ -798,7 +798,7 @@ describe("owner login offers the methods the server reports", () => {
       await screen.findByRole("button", { name: "选择其他登录方式" }),
     );
     fireEvent.click(
-      await screen.findByRole("button", { name: "使用API 令牌登录" }),
+      await screen.findByRole("button", { name: "使用 API 令牌 登录" }),
     );
 
     expect(await screen.findByLabelText("API 令牌")).toBeInTheDocument();

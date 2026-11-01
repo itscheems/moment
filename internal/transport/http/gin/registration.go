@@ -158,6 +158,11 @@ func RegisterRegistrationRoutes(engine *gin.Engine, gate *Gate, cookies CookieOp
 			failSession()
 			return
 		}
+		if err := retainBrowserSession(ctx, gate, cookies, sessionID); err != nil {
+			_ = gate.accounts.EndSession(ctx.Request.Context(), sessionID)
+			failSession()
+			return
+		}
 		setSessionCookie(ctx, value, session.ExpiresAt, cookies)
 		Success(ctx, http.StatusCreated, registrationResponse{
 			AccountCreated: true, Username: account.Username, AccountStatus: account.Status,

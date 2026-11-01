@@ -1,5 +1,6 @@
 import { useTranslation } from "react-i18next";
 import { Dialog } from "./Dialog";
+import { useDocumentScrollLock } from "./useDocumentScrollLock";
 import styles from "./SaveDraftDialog.module.css";
 
 export function SaveDraftDialog({
@@ -14,8 +15,9 @@ export function SaveDraftDialog({
   onDiscard: () => void;
 }) {
   const { t } = useTranslation();
+  useDocumentScrollLock(open);
   return (
-    <Dialog.Root open={open} onOpenChange={onOpenChange}>
+    <Dialog.Root modal="trap-focus" open={open} onOpenChange={onOpenChange}>
       <Dialog.Portal>
         <Dialog.Backdrop className={styles.backdrop} />
         <Dialog.Viewport className={styles.viewport}>

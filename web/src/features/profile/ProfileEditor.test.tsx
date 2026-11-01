@@ -1,5 +1,6 @@
 import "@testing-library/jest-dom/vitest";
 import {
+  act,
   cleanup,
   fireEvent,
   render,
@@ -13,7 +14,7 @@ import { mediaPreviewUrl } from "../../api/mediaUrls";
 import { mediaApi } from "../../api/media";
 import type { Account, SiteIdentity } from "../../api/public";
 import { FeedbackProvider } from "../../components/Feedback";
-import { SessionProvider } from "../auth/SessionProvider";
+import { SessionProvider, useSession } from "../auth/SessionProvider";
 import { ProfileEditor } from "./ProfileEditor";
 import { makeAccountLimits } from "../../test/accountFixtures";
 
@@ -36,6 +37,102 @@ vi.mock("./ProfileMediaCrop", () => ({
 
 const sessionKey = "moment.auth.session.v2";
 const mediaId = "01ARZ3NDEKTSV4RRFFQ69G5FAY";
+
+it("ignores a profile save that finishes after the editor's account was replaced", async () => {
+  sessionStorage.clear();
+  window.history.replaceState({}, "", "/owner");
+  vi.stubGlobal("scrollTo", vi.fn());
+  vi.stubGlobal("BroadcastChannel", undefined);
+  let switched = false;
+  let auth: ReturnType<typeof useSession>;
+  let complete!: (response: Response) => void;
+  const saved = vi.fn();
+  const pending = new Promise<Response>((resolve) => {
+    complete = resolve;
+  });
+  const fetcher = vi.fn(async (input: RequestInfo | URL) => {
+    if (String(input) === "/api/v1/account/profile") return pending;
+    const envelope = accountSessionEnvelope();
+    if (switched) {
+      envelope.data.csrf_token = "csrf-replacement";
+      envelope.data.account = {
+        ...envelope.data.account,
+        user_id: "1".repeat(32),
+        username: "replacement",
+        role: "member",
+        profile_url: "/replacement",
+      };
+    }
+    return json(envelope);
+  });
+  vi.stubGlobal("fetch", fetcher);
+  function Harness() {
+    auth = useSession();
+    return (
+      <>
+        <output data-testid="profile-identity">
+          {auth.account?.username}|{auth.account?.role}|
+          {auth.session?.csrfToken}
+        </output>
+        {auth.account?.username === "owner" ? (
+          <ProfileEditor account={auth.account} onSaved={saved} />
+        ) : null}
+      </>
+    );
+  }
+  try {
+    render(
+      <NavigationProvider>
+        <FeedbackProvider>
+          <SessionProvider>
+            <Harness />
+          </SessionProvider>
+        </FeedbackProvider>
+      </NavigationProvider>,
+    );
+    fireEvent.click(await screen.findByRole("button", { name: "编辑资料" }));
+    fireEvent.change(screen.getByLabelText("显示名称"), {
+      target: { value: "Changed profile" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "保存" }));
+    await waitFor(() =>
+      expect(fetcher).toHaveBeenCalledWith(
+        "/api/v1/account/profile",
+        expect.objectContaining({ method: "PATCH" }),
+      ),
+    );
+    switched = true;
+    await act(async () => {
+      await auth.refreshSession();
+    });
+    expect(screen.getByTestId("profile-identity")).toHaveTextContent(
+      "replacement|member|csrf-replacement",
+    );
+    expect(screen.queryByRole("dialog", { name: "编辑资料" })).toBeNull();
+    const destination = window.location.pathname;
+    await act(async () => {
+      complete(
+        json({
+          data: {
+            ...accountSessionEnvelope().data.account,
+            display_name: "Changed profile",
+          },
+          meta: {},
+        }),
+      );
+    });
+    expect(screen.getByTestId("profile-identity")).toHaveTextContent(
+      "replacement|member|csrf-replacement",
+    );
+    expect(saved).not.toHaveBeenCalled();
+    expect(screen.queryByText("个人资料已更新")).toBeNull();
+    expect(window.location.pathname).toBe(destination);
+  } finally {
+    cleanup();
+    vi.unstubAllGlobals();
+    sessionStorage.clear();
+  }
+});
 
 function accountSessionEnvelope() {
   return {

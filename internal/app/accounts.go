@@ -190,6 +190,15 @@ type SignInOutcome struct {
 // check performed before the transaction opens is a check another request can
 // invalidate before this one writes.
 func (service *AccountService) SignIn(ctx context.Context, external ExternalIdentity) (SignInOutcome, error) {
+	return service.signIn(ctx, external, false)
+}
+
+// SignInExisting resolves an already linked identity without registering an account.
+func (service *AccountService) SignInExisting(ctx context.Context, external ExternalIdentity) (SignInOutcome, error) {
+	return service.signIn(ctx, external, true)
+}
+
+func (service *AccountService) signIn(ctx context.Context, external ExternalIdentity, existingOnly bool) (SignInOutcome, error) {
 	if external.Provider == "" || external.ProviderUserID == "" {
 		return SignInOutcome{}, domain.NewError(domain.CodeOAuthIdentityUnusable, "the provider returned no stable account identifier", nil)
 	}
@@ -217,6 +226,9 @@ func (service *AccountService) SignIn(ctx context.Context, external ExternalIden
 			return nil
 		}
 
+		if existingOnly {
+			return domain.NewError(domain.CodeAccountNotFound, "this identity is not linked to an existing account", nil)
+		}
 		mode, err := accounts.RegistrationMode(ctx)
 		if err != nil {
 			return err
@@ -742,35 +754,9 @@ func (service *AccountService) ResolveSession(ctx context.Context, sessionID str
 	nowMS := domain.TimeToMillis(domain.NormalizeTime(service.clock()))
 	var resolved SessionResolution
 	err := service.transactions.ReadAccounts(ctx, func(accounts AccountStore, sessions SessionStore) error {
-		session, found, err := sessions.SessionByID(ctx, sessionID)
-		if err != nil {
-			return err
-		}
-		if !found || !session.Live(nowMS) {
-			return domain.NewError(domain.CodeUnauthorized, "this session is no longer valid", nil)
-		}
-		if session.SourceTokenID != nil {
-			store, err := credentialStore(accounts)
-			if err != nil {
-				return err
-			}
-			token, found, err := store.APITokenByID(ctx, *session.SourceTokenID)
-			if err != nil {
-				return err
-			}
-			if !found || !token.Live() || token.UserID != session.UserID {
-				return domain.NewError(domain.CodeUnauthorized, "this session is no longer valid", nil)
-			}
-		}
-		user, err := accounts.UserByID(ctx, session.UserID)
-		if err != nil {
-			return err
-		}
-		if !user.CanSignIn() {
-			return domain.NewError(domain.CodeAccountSuspended, "this account has been suspended", nil)
-		}
-		resolved = SessionResolution{Session: session, User: user}
-		return nil
+		var err error
+		resolved, err = resolveBrowserMember(ctx, accounts, sessions, sessionID, nowMS)
+		return err
 	})
 	return resolved, err
 }

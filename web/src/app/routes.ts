@@ -336,6 +336,8 @@ const notFound: AppRoute = {
 };
 
 export function resolveRoute(pathname: string): AppRoute {
+  if (pathname === "/account/add" || pathname === "/account/add/")
+    return resolveRoute("/");
   const route = routes.find((candidate) => candidate.match(pathname));
   if (!route) return notFound;
 

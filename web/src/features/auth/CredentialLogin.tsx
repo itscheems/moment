@@ -145,6 +145,9 @@ function stripAuthError() {
 export function CredentialLogin({
   site,
   heading = true,
+  authenticate,
+  authorizeProvider,
+  initialUsername = "",
 }: {
   site: SiteIdentity;
   /**
@@ -153,6 +156,13 @@ export function CredentialLogin({
    * thing twice in two sizes.
    */
   heading?: boolean;
+  authenticate?: (
+    credential: string,
+    method: "password" | "token",
+    username?: string,
+  ) => Promise<void>;
+  authorizeProvider?: (provider: string) => Promise<string>;
+  initialUsername?: string;
 }) {
   const { t } = useTranslation();
 
@@ -163,7 +173,7 @@ export function CredentialLogin({
   const [method, setMethod] = useState<SignInMethod>("password");
   const [methods, setMethods] = useState<SignInMethod[]>([]);
   const [showOtherMethods, setShowOtherMethods] = useState(false);
-  const [username, setUsername] = useState("");
+  const [username, setUsername] = useState(initialUsername);
   const [credential, setCredential] = useState("");
   const [showCredential, setShowCredential] = useState(false);
   const [pending, setPending] = useState(false);
@@ -240,10 +250,10 @@ export function CredentialLogin({
   useEffect(() => {
     // A cookie restore or another tab can complete sign-in without submitting
     // this form. The standalone page resumes its return path in either case.
-    if (state === "signed-in" && account !== null) {
+    if (!authenticate && state === "signed-in" && account !== null) {
       replace(returnPath);
     }
-  }, [account, replace, returnPath, state]);
+  }, [account, authenticate, replace, returnPath, state]);
 
   useEffect(() => {
     const timer = window.setTimeout(() => setHoldExpired(true), 2000);
@@ -352,14 +362,18 @@ export function CredentialLogin({
     pendingRef.current = true;
     setPending(true);
     try {
-      await login(credential, method, username.trim() || undefined);
+      await (authenticate ?? login)(
+        credential,
+        method,
+        username.trim() || undefined,
+      );
       if (!mountedRef.current) return;
       clearError();
       setCredential("");
       // The sign-in page leaves the history with the signing in: back from
       // the page it returns to should not be a sign-in form for a session
       // that already exists.
-      replace(returnPath);
+      if (!authenticate) replace(returnPath);
     } catch (nextError) {
       if (mountedRef.current)
         showError(
@@ -376,6 +390,16 @@ export function CredentialLogin({
     if (startingProvider !== null) return;
     clearError();
     setStartingProvider(name);
+    if (authorizeProvider) {
+      void authorizeProvider(name)
+        .then((url) => window.location.assign(url))
+        .catch((error: unknown) => {
+          if (!mountedRef.current) return;
+          setStartingProvider(null);
+          showError(credentialErrorMessage(error, method));
+        });
+      return;
+    }
     // A full page load, not a fetch: the provider owns the next screen and the
     // callback has to land back on this origin with its own cookies.
     window.location.assign(oauthStartUrl(name, returnPath));
@@ -434,7 +458,7 @@ export function CredentialLogin({
         {title}
       </motion.section>
     );
-  if (state === "signed-in")
+  if (!authenticate && state === "signed-in")
     return (
       <motion.section layout="position" className={styles.loginGate}>
         <p className={styles.eyebrow}>
@@ -463,6 +487,40 @@ export function CredentialLogin({
 
   const otherMethods = methods.filter((candidate) => candidate !== method);
 
+  const providerButtons =
+    providers.length > 0 ? (
+      <div className={styles.oauthOptions}>
+        {providers.map((provider) => {
+          const icon = PROVIDER_ICONS[provider.name];
+          const starting = startingProvider === provider.name;
+          return (
+            <button
+              className={styles.oauthButton}
+              disabled={pending || startingProvider !== null}
+              key={provider.name}
+              onClick={() => startOAuth(provider.name)}
+              type="button"
+            >
+              {icon ? <Icon name={icon} /> : null}
+              <span>
+                {starting
+                  ? t("正在前往 {{value1}}…", { value1: provider.label })
+                  : t("使用 {{value1}} 登录", { value1: provider.label })}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+    ) : null;
+  const providerSeparator =
+    providers.length > 0 ? (
+      <div className={styles.oauthSeparator}>
+        <span aria-hidden="true" className={styles.oauthRule} />
+        <span>{t("或")}</span>
+        <span aria-hidden="true" className={styles.oauthRule} />
+      </div>
+    ) : null;
+
   return (
     <motion.section layout="position" className={styles.loginGate}>
       {title}
@@ -473,6 +531,12 @@ export function CredentialLogin({
             {t("重试检查")}
           </button>
         </div>
+      ) : null}
+      {authenticate ? (
+        <>
+          {providerButtons}
+          {providerSeparator}
+        </>
       ) : null}
       <form
         className={styles.loginForm}
@@ -542,35 +606,10 @@ export function CredentialLogin({
           {pending ? t("正在登录…") : t("登录")}
         </button>
       </form>
-      {providers.length > 0 ? (
+      {!authenticate ? (
         <>
-          <div className={styles.oauthSeparator}>
-            <span aria-hidden="true" className={styles.oauthRule} />
-            <span>{t("或")}</span>
-            <span aria-hidden="true" className={styles.oauthRule} />
-          </div>
-          <div className={styles.oauthOptions}>
-            {providers.map((provider) => {
-              const icon = PROVIDER_ICONS[provider.name];
-              const starting = startingProvider === provider.name;
-              return (
-                <button
-                  className={styles.oauthButton}
-                  disabled={pending || startingProvider !== null}
-                  key={provider.name}
-                  onClick={() => startOAuth(provider.name)}
-                  type="button"
-                >
-                  {icon ? <Icon name={icon} /> : null}
-                  <span>
-                    {starting
-                      ? t("正在前往 {{value1}}…", { value1: provider.label })
-                      : t("使用 {{value1}} 登录", { value1: provider.label })}
-                  </span>
-                </button>
-              );
-            })}
-          </div>
+          {providerSeparator}
+          {providerButtons}
         </>
       ) : null}
       {otherMethods.length > 0 ? (
@@ -590,9 +629,9 @@ export function CredentialLogin({
                 }}
                 type="button"
               >
-                {t("使用")}
-                {METHOD_LABELS[candidate]}
-                {t("登录")}
+                {t("使用 {{method}} 登录", {
+                  method: METHOD_LABELS[candidate],
+                })}
               </button>
             ))
           ) : (

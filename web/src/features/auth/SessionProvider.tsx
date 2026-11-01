@@ -2,6 +2,7 @@ import { useTranslation } from "react-i18next";
 import { type AccountPreferences } from "../../api/preferences";
 import { accountCacheScope } from "./accountScope";
 import { authApi, type AccountLimits, type AuthSession } from "../../api/auth";
+import { browserAccountsApi } from "../../api/browserAccounts";
 import {
   createContext,
   type ReactNode,
@@ -94,12 +95,15 @@ interface SessionContextValue {
     displayName?: string,
   ) => Promise<Account>;
   logout: (instanceId: string | null) => Promise<void>;
+  refreshSession: (preserveDrafts?: boolean) => Promise<Account | null>;
   /**
    * Drop this browser's session without asking the server to end it, for when
    * the server has already ended it -- signing every device out, for instance.
    */
   forgetSession: (instanceId: string | null) => void;
-  applyAccount: (account: Account) => void;
+  /** Whether an async result still belongs to this account's session. */
+  isCurrentSession: () => boolean;
+  applyAccount: (account: Account) => boolean;
   expireIfInvalidSession: (error: unknown) => boolean;
   retryStatus: () => void;
 }
@@ -445,10 +449,10 @@ export function SessionProvider({ children }: { children: ReactNode }) {
           });
         }
       } else if (message.type === "offer-session") {
+        window.dispatchEvent(new Event("moment:account-changing"));
         if (acceptSession(message.session)) {
           setAccount(null);
           setLimits(null);
-          setPreferences(null);
         }
       } else {
         clearSession("guest", message.marker);
@@ -530,6 +534,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
           setAccount(restored.account);
           setLimits(restored.limits);
           setPreferences(restored.preferences);
+          if (restored.csrfToken !== session.csrfToken) adoptSession(restored);
         }
       })
       .catch((error: unknown) => {
@@ -546,7 +551,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
         setState("unavailable");
       });
     return () => controller.abort();
-  }, [account, api, clearSession, session, state]);
+  }, [account, api, adoptSession, clearSession, session, state]);
 
   // Announce a completed binding and take the outcome off the URL. The sign-in
   // outcome needs no announcement: the page behind it changes on its own.
@@ -571,6 +576,40 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       ),
     );
   }, [authOutcome]);
+
+  const refreshSession = useCallback(
+    async (preserveDrafts = true) => {
+      const markerAtStart = markerRef.current;
+      const overtaken = () =>
+        compareMarker(markerRef.current, markerAtStart) !== 0;
+      if (preserveDrafts)
+        window.dispatchEvent(new Event("moment:account-changing"));
+      setState("checking");
+      accountRef.current = null;
+      setAccount(null);
+      setLimits(null);
+      try {
+        const restored = await authApi.accountSession();
+        if (overtaken()) return null;
+        setAccount(restored.account);
+        setLimits(restored.limits);
+        setPreferences(restored.preferences);
+        adoptSession(restored);
+        return restored.account;
+      } catch (error) {
+        if (overtaken()) return null;
+        if (isInvalidSessionError(error)) {
+          const marker = nextMarker(markerRef.current);
+          clearSession("guest", marker);
+          broadcast({ type: "clear-session", marker });
+          return null;
+        }
+        setState("unavailable");
+        throw error;
+      }
+    },
+    [adoptSession, broadcast, clearSession],
+  );
 
   const login = useCallback(
     async (
@@ -650,7 +689,27 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     [],
   );
 
-  const applyAccount = useCallback((next: Account) => setAccount(next), []);
+  const accountUserId = account?.userId;
+  const sessionVersion = session?.version;
+  const isCurrentSession = useCallback(
+    () =>
+      !!accountUserId &&
+      !!sessionVersion &&
+      accountRef.current?.userId === accountUserId &&
+      sessionRef.current?.version === sessionVersion,
+    [accountUserId, sessionVersion],
+  );
+
+  const applyAccount = useCallback(
+    (next: Account) => {
+      if (!isCurrentSession() || accountRef.current?.userId !== next.userId)
+        return false;
+      accountRef.current = next;
+      setAccount(next);
+      return true;
+    },
+    [isCurrentSession],
+  );
 
   const forgetSession = useCallback(
     (instanceId: string | null) => {
@@ -667,28 +726,65 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const logout = useCallback(
     async (instanceId: string | null) => {
       const current = sessionRef.current;
+      let hasReplacement = false;
       if (current) {
         try {
-          await authApi.logout(current.csrfToken);
+          hasReplacement = await authApi.logout(current.csrfToken);
         } catch (error) {
           if (!(error instanceof PublicApiError && error.status === 401)) {
-            throw error;
+            const uncertain = !(
+              error instanceof PublicApiError &&
+              error.status >= 400 &&
+              error.status < 500
+            );
+            const target = accountRef.current?.userId;
+            if (!uncertain || !target) throw error;
+            let absent: boolean;
+            try {
+              absent = !(await browserAccountsApi.list()).accounts.some(
+                (entry) => entry.account.userId === target,
+              );
+            } catch (readError) {
+              absent =
+                readError instanceof PublicApiError && readError.status === 401;
+            }
+            if (!absent) throw error;
+            try {
+              const actual = await authApi.accountSession();
+              if (actual.account.userId === target) throw error;
+              hasReplacement = true;
+            } catch (readError) {
+              if (!isInvalidSessionError(readError)) throw error;
+            }
           }
         }
       }
-      forgetSession(instanceId);
+      if (hasReplacement) {
+        const scope = accountCacheScope(
+          instanceId,
+          accountRef.current?.userId ?? null,
+        );
+        clearComposeDraft(scope, { reason: "logout" });
+        clearKeptDrafts(scope);
+        await refreshSession(false);
+      } else forgetSession(instanceId);
     },
-    [api, forgetSession],
+    [api, forgetSession, refreshSession],
   );
 
   const expireIfInvalidSession = useCallback(
     (error: unknown) => {
       if (!isInvalidSessionError(error)) return false;
+      if (
+        !sessionRef.current ||
+        sessionRef.current.version !== session?.version
+      )
+        return false;
       clearSession("expired");
       requestSyncedSession();
       return true;
     },
-    [clearSession, requestSyncedSession],
+    [clearSession, requestSyncedSession, session?.version],
   );
 
   const retryStatus = useCallback(
@@ -708,7 +804,9 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       login,
       register,
       logout,
+      refreshSession,
       forgetSession,
+      isCurrentSession,
       applyAccount,
       expireIfInvalidSession,
       retryStatus,
@@ -719,12 +817,14 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       applyAccount,
       expireIfInvalidSession,
       forgetSession,
+      isCurrentSession,
       limits,
       preferences,
       applyPreferences,
       login,
       register,
       logout,
+      refreshSession,
       retryStatus,
       session,
       state,

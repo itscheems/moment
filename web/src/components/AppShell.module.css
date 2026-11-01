@@ -788,6 +788,21 @@
   color: var(--text-primary);
 }
 
+.accountRailMore {
+  position: relative;
+  display: flex;
+  flex: none;
+}
+.accountRailUnread {
+  position: absolute;
+  inline-size: 7px;
+  block-size: 7px;
+  inset-inline-end: -4px;
+  inset-block-start: -4px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+
 /* The rail narrows before it disappears, and at that width only the face fits
    -- the same trade the nav rows above make with their labels. It has to take
    their box as well as their trade: the rail centres its children there, and a
@@ -803,7 +818,8 @@
   }
 
   .accountRailIdentity,
-  .accountRail svg {
+  .accountRail svg,
+  .accountRailMore {
     display: none;
   }
 }

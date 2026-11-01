@@ -1,4 +1,6 @@
 import { NotificationProvider } from "../features/notifications/NotificationProvider";
+import { BrowserAccountsProvider } from "../features/auth/BrowserAccountsProvider";
+import { BrowserAccountDialogs } from "../features/auth/AccountSwitcher";
 import { BackControl } from "../components/BackControl";
 import { LikeProvider } from "../features/notifications/LikeAction";
 import { NotificationsPage } from "../features/notifications/NotificationsPage";
@@ -172,6 +174,21 @@ function PublicApp() {
       );
   }, [location]);
   const auth = useSession();
+  const previousIdentity = useRef(auth.account?.userId);
+  useEffect(() => {
+    const id = auth.account?.userId;
+    if (id) {
+      const previous = previousIdentity.current;
+      previousIdentity.current = id;
+      if (
+        previous &&
+        previous !== id &&
+        !authRoute &&
+        location.pathname !== "/"
+      )
+        location.replace("/");
+    } else if (auth.state === "guest") previousIdentity.current = undefined;
+  }, [auth.account?.userId, auth.state, authRoute, location]);
   const requestedRoute = resolveRoute(contentLocation.pathname);
   // Composing is a dialog wherever the page has room for one, whether it was
   // opened from the timeline or the address was loaded cold. Reloading it used
@@ -995,7 +1012,10 @@ function PublicApp() {
             enabled={!authRoute && siteIdentityReady}
             onSiteChanged={setSite}
           >
-            <NotificationProvider>{readingSurface}</NotificationProvider>
+            <NotificationProvider>
+              {readingSurface}
+              <BrowserAccountDialogs site={site} />
+            </NotificationProvider>
           </MediaViewerProvider>
         </LikeProvider>
       </div>
@@ -1012,7 +1032,9 @@ export function App() {
           <NavigationProvider>
             <SessionProvider>
               <LanguageProvider>
-                <PublicApp />
+                <BrowserAccountsProvider>
+                  <PublicApp />
+                </BrowserAccountsProvider>
               </LanguageProvider>
             </SessionProvider>
           </NavigationProvider>

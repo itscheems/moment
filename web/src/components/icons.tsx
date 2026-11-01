@@ -4,6 +4,7 @@ import { locationIconArtwork } from "./locationIcon";
 const iconSprite = "/icons/ui-symbols-v3.svg";
 
 export type IconName =
+  | "logout"
   | "account-settings"
   | "key"
   | "download"
@@ -91,6 +92,11 @@ const iconViewBoxes: Partial<Record<IconName, string>> = {
 };
 
 const paths: Record<IconName, React.ReactNode> = {
+  logout: (
+    <>
+      <path d="M9 4H5v16h4M9 12h12M16 7l5 5-5 5" />
+    </>
+  ),
   "account-settings": (
     <>
       {" "}

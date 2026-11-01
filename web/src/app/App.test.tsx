@@ -870,11 +870,12 @@ describe("App shell and public routes", () => {
       trigger.focus();
       fireEvent.keyDown(trigger, { key: "ArrowDown" });
       await screen.findByRole("menu", { hidden: true });
-      for (const name of ["Articles", "Log out @cheemschen"]) {
+      for (const name of ["Add an existing account", "Log out @cheemschen"]) {
         expect(screen.getByRole("menuitem", { name })).toBeInTheDocument();
       }
       // Not the profile: the rail carries that row already, and a menu that
       // repeats the row above it is a longer way to the same page.
+      expect(screen.queryByRole("menuitem", { name: "Articles" })).toBeNull();
       expect(screen.queryByRole("menuitem", { name: "Profile" })).toBeNull();
       expect(screen.queryByRole("menuitem", { name: "Settings" })).toBeNull();
       expect(screen.getByRole("link", { name: "Profile" })).toHaveAttribute(
@@ -896,6 +897,7 @@ describe("App shell and public routes", () => {
       fireEvent.click(
         await screen.findByRole("menuitem", { name: "Log out @cheemschen" }),
       );
+      fireEvent.click(await screen.findByRole("button", { name: "Log out" }));
 
       await waitFor(() =>
         expect(

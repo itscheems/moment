@@ -88,10 +88,48 @@ function startAction(signal?: AbortSignal) {
   return result;
 }
 beforeEach(() => {
+  auth.account = { userId: "confirmation-account" };
   auth.session = { csrfToken: "session-csrf" };
   window.localStorage.clear();
   window.sessionStorage.clear();
   vi.clearAllMocks();
+});
+
+it("does not let a previous session's proof complete a replacement prompt", async () => {
+  let finishProof!: (response: Response) => void;
+  const proof = new Promise<Response>((resolve) => {
+    finishProof = resolve;
+  });
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async (input: RequestInfo | URL) => {
+      const path = String(input);
+      if (path === "/protected") return json(null, 403);
+      if (path === "/api/v1/account/security")
+        return json({ methods: ["password"], password_enabled: true });
+      if (path === "/api/v1/account/reauthentication") return proof;
+      throw new Error("unexpected request: " + path);
+    }),
+  );
+  const view = render(<CredentialConfirmation />);
+  const first = startAction();
+  const input = await screen.findByLabelText("当前密码");
+  fireEvent.change(input, { target: { value: "current-private-password" } });
+  fireEvent.submit(input.closest("form")!);
+  auth.account = { userId: "replacement-account" };
+  auth.session = { csrfToken: "replacement-csrf" };
+  view.rerender(<CredentialConfirmation />);
+  expect((await first).status).toBe(403);
+  const second = startAction();
+  await screen.findByLabelText("当前密码");
+  await act(async () => {
+    finishProof(json({ expires_at: "2999-01-01T00:00:00Z" }));
+  });
+  expect(notify).not.toHaveBeenCalled();
+  expect(screen.getByRole("dialog")).toBeInTheDocument();
+  expect(screen.getByLabelText("当前密码")).toBeEnabled();
+  fireEvent.click(screen.getByRole("button", { name: "关闭身份确认" }));
+  expect((await second).status).toBe(403);
 });
 afterEach(() => {
   cleanup();

@@ -677,6 +677,9 @@ func (store accountStore) PurgeExpiredSessions(ctx context.Context, beforeMS int
 	if err != nil {
 		return 0, fmt.Errorf("inspect session purge: %w", err)
 	}
+	if _, err := store.queries.ExecContext(ctx, `DELETE FROM browser_account_sets WHERE expires_at_ms < ? OR revoked_at_ms < ?`, beforeMS, beforeMS); err != nil {
+		return 0, fmt.Errorf("purge stale browser account sets: %w", err)
+	}
 	return int(changed), nil
 }
 
