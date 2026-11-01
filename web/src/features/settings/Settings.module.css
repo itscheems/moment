@@ -2281,3 +2281,21 @@
 .rowDetails[role="tooltip"] dd {
   font-variant-numeric: tabular-nums;
 }
+
+.sessionActions > button {
+  border-radius: 9999px;
+  transition: background-color 0.15s;
+}
+@media (hover: hover) {
+  .sessionActions > .secondaryButton:hover:not(:disabled) {
+    background: var(--surface-hover-strong);
+  }
+  .sessionActions > .dangerButton:hover:not(:disabled) {
+    background: color-mix(in srgb, var(--danger) 88%, #000);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .sessionActions > button {
+    transition: none;
+  }
+}

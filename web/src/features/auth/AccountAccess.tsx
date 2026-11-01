@@ -479,7 +479,7 @@ export function AccountAccess({
             {revokeError}
           </p>
         ) : null}
-        <div className={styles.inlineActions}>
+        <div className={`${styles.inlineActions} ${styles.sessionActions}`}>
           <button
             className={styles.secondaryButton}
             disabled={!session || signingOut || revoking}
