@@ -137,9 +137,7 @@ export function MemberProfilePage({
     ? formatMomentDate(account.joinedAt, site.timezone).absolute
     : null;
   const selectFilter = (next: ProfileFilter) => {
-    navigation.navigate(profileFeedPath(account.username, next), {
-      preserveScroll: true,
-    });
+    navigation.replaceWithinPage(profileFeedPath(account.username, next));
   };
   return (
     <section aria-label={t("{{value1}} 的个人资料", { value1: title })}>

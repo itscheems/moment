@@ -1,5 +1,6 @@
 import "@testing-library/jest-dom/vitest";
 import {
+  act,
   cleanup,
   fireEvent,
   render,
@@ -7,6 +8,8 @@ import {
   waitFor,
 } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+import i18n from "../../i18n";
 
 import { PublicApi } from "../../api/public";
 import defaultAvatarUrl from "../../assets/default-avatar.png";
@@ -182,55 +185,90 @@ describe("member profile", () => {
     expect(screen.queryByRole("button", { name: "编辑资料" })).toBeNull();
   });
 
-  it("switches member profile tabs using author and post-kind filters", async () => {
-    window.history.replaceState({}, "", "/linlin");
-    const requested: string[] = [];
-    const fetcher = vi.fn(async (input: RequestInfo | URL) => {
-      const url = String(input);
-      requested.push(url);
-      if (url === "/api/v1/users/linlin") return json(memberEnvelope());
-      return json({
-        data: { items: [] },
-        meta: { next_cursor: null, prev_cursor: null, request_id: "req_posts" },
+  it.each([
+    "/",
+    "/m/01K2ABCDEF0123456789ABCDE1",
+    "/m/01K2ABCDEF0123456789ABCDE1/comments/01K2ABCDEF0123456789ABCDE3?view=thread",
+  ])(
+    "switches member feeds without adding history before returning to %s",
+    async (source) => {
+      await i18n.changeLanguage("en");
+      window.history.replaceState({}, "", source);
+      window.history.pushState({ momentInternal: true }, "", "/linlin");
+      const historyLength = window.history.length;
+      const requested: string[] = [];
+      const fetcher = vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        requested.push(url);
+        if (url === "/api/v1/users/linlin")
+          return json({
+            ...memberEnvelope(),
+            data: {
+              ...memberEnvelope().data,
+              display_name: "River",
+              bio: "Field notes",
+            },
+          });
+        return json({
+          data: { items: [] },
+          meta: {
+            next_cursor: null,
+            prev_cursor: null,
+            request_id: "req_posts",
+          },
+        });
       });
-    });
-    vi.stubGlobal("fetch", signedIn(null));
-    mount(new PublicApi(fetcher as unknown as typeof fetch), "linlin");
+      vi.stubGlobal("fetch", signedIn(null));
+      mount(new PublicApi(fetcher as unknown as typeof fetch), "linlin");
 
-    fireEvent.click(await screen.findByRole("tab", { name: "文章" }));
-    await waitFor(() =>
-      expect(window.location.pathname).toBe("/linlin/articles"),
-    );
-    await waitFor(() =>
-      expect(requested.some((url) => url.includes("kind=article"))).toBe(true),
-    );
-    const articleTab = screen.getByRole("tab", { name: "文章" });
-    expect(articleTab).toHaveTextContent("文章");
-    expect(articleTab.closest("[data-feed-motion]")).toHaveAttribute(
-      "data-feed-motion",
-      "slide",
-    );
-    expect(articleTab.closest("[data-feed-direction]")).toHaveAttribute(
-      "data-feed-direction",
-      "right",
-    );
-    fireEvent.click(screen.getByRole("tab", { name: "全部" }));
-    await waitFor(() => expect(window.location.pathname).toBe("/linlin/all"));
-    expect(articleTab.closest("[data-feed-direction]")).toHaveAttribute(
-      "data-feed-direction",
-      "left",
-    );
-    fireEvent.click(screen.getByRole("button", { name: "选择帖子类型" }));
-    fireEvent.click(await screen.findByRole("menuitem", { name: "帖子" }));
-    await waitFor(() => expect(window.location.pathname).toBe("/linlin/posts"));
-    await waitFor(() =>
-      expect(requested.some((url) => url.includes("kind=moment"))).toBe(true),
-    );
-    expect(articleTab.closest("[data-feed-motion]")).toHaveAttribute(
-      "data-feed-motion",
-      "none",
-    );
-  });
+      fireEvent.click(await screen.findByRole("tab", { name: "Articles" }));
+      await waitFor(() =>
+        expect(window.location.pathname).toBe("/linlin/articles"),
+      );
+      await waitFor(() =>
+        expect(requested.some((url) => url.includes("kind=article"))).toBe(
+          true,
+        ),
+      );
+      const articleTab = screen.getByRole("tab", { name: "Articles" });
+      expect(articleTab).toHaveTextContent("Articles");
+      expect(articleTab.closest("[data-feed-motion]")).toHaveAttribute(
+        "data-feed-motion",
+        "slide",
+      );
+      expect(articleTab.closest("[data-feed-direction]")).toHaveAttribute(
+        "data-feed-direction",
+        "right",
+      );
+      fireEvent.click(screen.getByRole("tab", { name: "All" }));
+      await waitFor(() => expect(window.location.pathname).toBe("/linlin/all"));
+      expect(articleTab.closest("[data-feed-direction]")).toHaveAttribute(
+        "data-feed-direction",
+        "left",
+      );
+      fireEvent.click(screen.getByRole("button", { name: "Choose post type" }));
+      fireEvent.click(await screen.findByRole("menuitem", { name: "Posts" }));
+      await waitFor(() =>
+        expect(window.location.pathname).toBe("/linlin/posts"),
+      );
+      await waitFor(() =>
+        expect(requested.some((url) => url.includes("kind=moment"))).toBe(true),
+      );
+      expect(articleTab.closest("[data-feed-motion]")).toHaveAttribute(
+        "data-feed-motion",
+        "none",
+      );
+      expect(window.history.length).toBe(historyLength);
+      act(() => window.history.back());
+      await waitFor(() =>
+        expect(window.location.pathname + window.location.search).toBe(source),
+      );
+      act(() => window.history.forward());
+      await waitFor(() =>
+        expect(window.location.pathname).toBe("/linlin/posts"),
+      );
+    },
+  );
 
   it("automatically restores a member identity after a temporary read failure", async () => {
     let reads = 0;
