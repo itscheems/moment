@@ -109,6 +109,8 @@ the server's existing timeouts. Reverse proxies and clients must also allow the
 necessary transfer duration. A stalled upload returns HTTP 408 with
 `MEDIA_UPLOAD_TIMEOUT`; malformed multipart input still returns `INVALID_ARGUMENT`.
 
+Media reads, including conditional requests and ranges, check current reference visibility and account authority before serving bytes or returning `304`. Public originals, previews and posters use `public, max-age=0, must-revalidate`; private media use `private, max-age=0, must-revalidate`. ETags permit reuse only after authorization. Publicly downloaded copies, including cache entries issued under earlier cache policies, cannot be recalled retroactively.
+
 `DELETE /media/:id` removes one **unreferenced** media object and requires an active administrator, including with `?dry_run=true`. Cookie callers also need CSRF. Active accounts upload through `POST /media` and receive a reuse grant for their own account. Deduplication shares the immutable object while keeping grants separate. Reading publicly referenced media does not grant permission to reuse it; unused uploads are private to accounts that hold a grant.
 
 The result is:

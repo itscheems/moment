@@ -93,8 +93,22 @@ func TestHiddenPostsAndTheirMediaAnswerOnlyToTheAuthorOverHTTP(t *testing.T) {
 		t.Fatalf("visitor detail after reveal = %d %s", response.Code, response.Body.String())
 	}
 	shown := performRequest(fixture.engine, httptest.NewRequest(http.MethodGet, "/api/v1/media/"+mediaID, nil))
-	if shown.Code != http.StatusOK || shown.Header().Get("Cache-Control") != "public, max-age=31536000, immutable" {
+	if shown.Code != http.StatusOK || shown.Header().Get("Cache-Control") != "public, max-age=0, must-revalidate" {
 		t.Fatalf("visitor media after reveal = %d cache=%q", shown.Code, shown.Header().Get("Cache-Control"))
+	}
+	// A previously public file must be revalidated, and authorization must run
+	// before an ETag can produce a cache hit after the post becomes private.
+	hiddenAgain := performRequest(fixture.engine, asAuthor(jsonRequest(http.MethodPatch, "/api/v1/posts/"+id, `{"visibility":"only_me"}`)))
+	if hiddenAgain.Code != http.StatusOK {
+		t.Fatal(hiddenAgain.Body)
+	}
+	cached := jsonRequest(http.MethodGet, "/api/v1/media/"+mediaID, "")
+	cached.Header.Set("If-None-Match", shown.Header().Get("ETag"))
+	if response := performRequest(fixture.engine, cached); response.Code != http.StatusNotFound {
+		t.Fatalf("stale public ETag bypassed private visibility: %d %s", response.Code, response.Body)
+	}
+	if response := performRequest(fixture.engine, asAuthor(cached)); response.Code != http.StatusNotModified || response.Header().Get("Cache-Control") != "private, max-age=0, must-revalidate" {
+		t.Fatalf("author revalidation=%d cache=%s", response.Code, response.Header().Get("Cache-Control"))
 	}
 	if response := performRequest(fixture.engine, asAuthor(jsonRequest(http.MethodPatch, "/api/v1/posts/"+id, `{"visibility":"only_you"}`))); response.Code != http.StatusBadRequest {
 		t.Fatalf("bad PATCH visibility = %d %s", response.Code, response.Body.String())

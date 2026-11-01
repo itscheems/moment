@@ -76,7 +76,7 @@ func TestMediaDeliveryHeadersConditionalsAndExplicitGIFOriginal(t *testing.T) {
 
 	originalResponse := performRequest(engine, httptest.NewRequest(http.MethodGet, "/api/v1/media/"+value.ID.String(), nil))
 	if originalResponse.Code != http.StatusOK || originalResponse.Header().Get("Content-Type") != "image/gif" ||
-		originalResponse.Header().Get("Cache-Control") != "public, max-age=31536000, immutable" || !bytes.Equal(originalResponse.Body.Bytes(), original) {
+		originalResponse.Header().Get("Cache-Control") != "public, max-age=0, must-revalidate" || !bytes.Equal(originalResponse.Body.Bytes(), original) {
 		t.Fatalf("explicit original = %d %q equal=%v", originalResponse.Code, originalResponse.Header().Get("Content-Type"), bytes.Equal(originalResponse.Body.Bytes(), original))
 	}
 
