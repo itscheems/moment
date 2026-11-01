@@ -1,4 +1,7 @@
 {
+  "保存草稿？": "Save post?",
+  "文字将保存在此浏览器的草稿中，媒体不会保存。": "Save the text to drafts in this browser. Media won’t be saved.",
+  "丢弃": "Discard",
   "正在自动重新获取站点资料…": "Restoring site details…",
   "站点资料暂时无法获取。": "Site details are temporarily unavailable.",
   "暂时无法确认登录身份。": "Your sign-in status could not be confirmed.",

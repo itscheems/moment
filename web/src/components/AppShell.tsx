@@ -433,6 +433,19 @@ function LeftRail({
               data-compact-label={t("发帖")}
               data-focus-key="shell:compose"
               href="/compose"
+              onMouseDown={(event) => {
+                // The dialog owns the focus transfer. Retain the background
+                // editor until it opens, including a held mouse press.
+                if (
+                  event.button === 0 &&
+                  !event.metaKey &&
+                  !event.ctrlKey &&
+                  !event.shiftKey &&
+                  !event.altKey &&
+                  window.matchMedia("(min-width: 720px)").matches
+                )
+                  event.preventDefault();
+              }}
               onClick={(event) => {
                 if (
                   event.button !== 0 ||
