@@ -10,6 +10,8 @@ import {
 } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import i18n, { LANGUAGE_STORAGE_KEY } from "../../i18n";
+
 import { App } from "../../app/App";
 import { makeAccountSession } from "../../test/accountFixtures";
 
@@ -165,6 +167,42 @@ describe("search and archive memory layer", () => {
     expect(
       screen.getByText(paragraphText("旧城雨落在街口")),
     ).toBeInTheDocument();
+  });
+
+  it.each([
+    "/",
+    `/m/${first.id}`,
+    `/m/${first.id}/comments/01K2ABCDEF0123456789ABCDE3?view=thread`,
+  ])("returns to %s after repeated search tab changes", async (source) => {
+    window.localStorage.setItem(LANGUAGE_STORAGE_KEY, "en");
+    await i18n.changeLanguage("en");
+    window.history.replaceState({}, "", source);
+    window.history.pushState({ momentInternal: true }, "", "/search?q=river");
+    const historyLength = window.history.length;
+    install(() =>
+      json({
+        data: { items: [], year_counts: [] },
+        meta: { next_cursor: null, request_id: "req_search" },
+      }),
+    );
+    render(<App />);
+    await screen.findByRole("heading", { name: "No Moments found" });
+    for (let repeat = 0; repeat < 3; repeat += 1) {
+      fireEvent.click(screen.getByRole("link", { name: "People" }));
+      await screen.findByRole("heading", { name: "No people found" });
+      fireEvent.click(screen.getByRole("link", { name: "Latest" }));
+      await screen.findByRole("heading", { name: "No Moments found" });
+    }
+    expect(window.history.length).toBe(historyLength);
+    fireEvent.click(screen.getByRole("button", { name: "Back to timeline" }));
+    await waitFor(() =>
+      expect(window.location.pathname + window.location.search).toBe(source),
+    );
+    act(() => window.history.forward());
+    await screen.findByRole("heading", { name: "No Moments found" });
+    expect(window.location.pathname + window.location.search).toBe(
+      "/search?q=river",
+    );
   });
 
   it("shows a real search hit that carries nullable post fields", async () => {

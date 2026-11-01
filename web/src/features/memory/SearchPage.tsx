@@ -417,12 +417,14 @@ export function SearchPage(props: {
         </div>
         <nav className={styles.searchTabs} aria-label={t("搜索类型")}>
           <InternalLink
+            replace
             href={query ? searchHref({ query }) : "/search"}
             aria-current={state.tab === "latest" ? "page" : undefined}
           >
             <span className={styles.searchTabLabel}>{t("最新")}</span>
           </InternalLink>
           <InternalLink
+            replace
             href={
               query ? searchHref({ query, tab: "people" }) : "/search?f=user"
             }

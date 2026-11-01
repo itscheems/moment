@@ -514,12 +514,14 @@ export function InternalLink({
   children,
   onClick,
   authSwitch = false,
+  replace = false,
   ...props
 }: Omit<React.AnchorHTMLAttributes<HTMLAnchorElement>, "href"> & {
   href: string;
   authSwitch?: boolean;
+  replace?: boolean;
 }) {
-  const { navigate, navigateAuth } = useNavigation();
+  const { navigate, navigateAuth, replace: replaceLocation } = useNavigation();
   const follow = (event: MouseEvent<HTMLAnchorElement>) => {
     onClick?.(event);
     if (
@@ -535,6 +537,7 @@ export function InternalLink({
     }
     event.preventDefault();
     if (authSwitch) navigateAuth(href);
+    else if (replace) replaceLocation(href);
     else navigate(href);
   };
   return (

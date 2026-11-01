@@ -9,6 +9,8 @@ import {
 } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import i18n from "../../i18n";
+
 import { PublicApi, type SiteIdentity } from "../../api/public";
 import { NavigationProvider } from "../../app/navigation";
 import { FeedbackProvider } from "../../components/Feedback";
@@ -637,103 +639,114 @@ describe("profile page", () => {
     );
   });
 
-  it("filters posts and articles, remembers the left filter, and refreshes cached feeds incrementally", async () => {
-    const article = {
-      ...post(pinnedId, ""),
-      kind: "article",
-      content_md: null,
-      content_html: "",
-      article: {
-        title: "文章标题",
-        excerpt: "文章摘要",
-        cover: null,
-        body: null,
-        body_schema_version: null,
-      },
-    };
-    let published = false;
-    const fetcher = vi.fn(async (input: RequestInfo | URL) => {
-      const query = new URL(String(input), "http://localhost").searchParams;
-      const kind = query.get("kind");
-      const items =
-        kind === "article"
-          ? [article]
-          : kind === "moment"
-            ? [post(otherId, "普通帖子")]
-            : [article, post(otherId, "普通帖子")];
-      if (published && kind !== "article")
-        items.unshift(post("01K2ABCDEF0123456789ABCDE2", "新增帖子"));
-      return json({
-        data: { items },
-        meta: {
-          next_cursor: null,
-          prev_cursor: null,
-          refresh_cursor: `head-${kind ?? "all"}`,
+  it.each([
+    "/",
+    `/m/${otherId}`,
+    `/m/${otherId}/comments/01K2ABCDEF0123456789ABCDE3?view=thread`,
+  ])(
+    "filters cached feeds without adding history before returning to %s",
+    async (source) => {
+      await i18n.changeLanguage("en");
+      window.history.replaceState({}, "", source);
+      window.history.pushState({ momentInternal: true }, "", "/owner");
+      const historyLength = window.history.length;
+      const article = {
+        ...post(pinnedId, ""),
+        kind: "article",
+        content_md: null,
+        content_html: "",
+        article: {
+          title: "Article title",
+          excerpt: "Article summary",
+          cover: null,
+          body: null,
+          body_schema_version: null,
         },
+      };
+      let published = false;
+      const fetcher = vi.fn(async (input: RequestInfo | URL) => {
+        const query = new URL(String(input), "http://localhost").searchParams;
+        const kind = query.get("kind");
+        const items =
+          kind === "article"
+            ? [article]
+            : kind === "moment"
+              ? [post(otherId, "Existing post")]
+              : [article, post(otherId, "Existing post")];
+        if (published && kind !== "article")
+          items.unshift(post("01K2ABCDEF0123456789ABCDE2", "New post"));
+        return json({
+          data: { items },
+          meta: {
+            next_cursor: null,
+            prev_cursor: null,
+            refresh_cursor: `head-${kind ?? "all"}`,
+          },
+        });
       });
-    });
-    render(
-      <FeedbackProvider>
-        <SessionProvider>
-          <NavigationProvider>
-            <ProfilePage
-              api={new PublicApi(fetcher as typeof fetch)}
-              onSiteSaved={vi.fn()}
-              site={{ ...site, pinnedPostId: null }}
-            />
-          </NavigationProvider>
-        </SessionProvider>
-      </FeedbackProvider>,
-    );
-    expect(await screen.findByText("普通帖子")).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "选择帖子类型" }));
-    fireEvent.click(await screen.findByRole("menuitem", { name: "帖子" }));
-    await waitFor(() =>
-      expect(screen.getByRole("tab", { name: "帖子" })).toHaveAttribute(
-        "aria-selected",
-        "true",
-      ),
-    );
-    expect(window.location.pathname).toBe("/owner/posts");
-    fireEvent.click(screen.getByRole("tab", { name: "文章" }));
-    expect(await screen.findByText("文章标题")).toBeInTheDocument();
-    expect(window.location.pathname).toBe("/owner/articles");
-    published = true;
-    fireEvent.click(screen.getByRole("tab", { name: "帖子" }));
-    expect(await screen.findByText("新增帖子")).toBeInTheDocument();
-    expect(window.location.pathname).toBe("/owner/posts");
-    expect(
-      fetcher.mock.calls
-        .map(
-          ([input]) => new URL(String(input), "http://localhost").searchParams,
-        )
-        .filter(
-          (query) => query.get("kind") === "moment" && !query.has("cursor"),
+      render(
+        <FeedbackProvider>
+          <SessionProvider>
+            <NavigationProvider>
+              <ProfilePage
+                api={new PublicApi(fetcher as typeof fetch)}
+                onSiteSaved={vi.fn()}
+                site={{ ...site, pinnedPostId: null }}
+              />
+            </NavigationProvider>
+          </SessionProvider>
+        </FeedbackProvider>,
+      );
+      expect(await screen.findByText("Existing post")).toBeInTheDocument();
+      fireEvent.click(screen.getByRole("button", { name: "Choose post type" }));
+      fireEvent.click(await screen.findByRole("menuitem", { name: "Posts" }));
+      await waitFor(() =>
+        expect(screen.getByRole("tab", { name: "Posts" })).toHaveAttribute(
+          "aria-selected",
+          "true",
         ),
-    ).toHaveLength(1);
-    expect(
-      fetcher.mock.calls.some(([input]) =>
-        String(input).includes("cursor=head-moment"),
-      ),
-    ).toBe(true);
-    fireEvent.click(screen.getByRole("button", { name: "选择帖子类型" }));
-    fireEvent.click(await screen.findByRole("menuitem", { name: "全部" }));
-    expect(window.location.pathname).toBe("/owner/all");
-    await waitFor(() =>
-      expect(screen.getByRole("tab", { name: "全部" })).toHaveAttribute(
-        "aria-selected",
-        "true",
-      ),
-    );
-    act(() => window.history.back());
-    await waitFor(() =>
-      expect(screen.getByRole("tab", { name: "帖子" })).toHaveAttribute(
-        "aria-selected",
-        "true",
-      ),
-    );
-    expect(window.location.pathname).toBe("/owner/posts");
-  });
+      );
+      expect(window.location.pathname).toBe("/owner/posts");
+      fireEvent.click(screen.getByRole("tab", { name: "Articles" }));
+      expect(await screen.findByText("Article title")).toBeInTheDocument();
+      expect(window.location.pathname).toBe("/owner/articles");
+      published = true;
+      fireEvent.click(screen.getByRole("tab", { name: "Posts" }));
+      expect(await screen.findByText("New post")).toBeInTheDocument();
+      expect(window.location.pathname).toBe("/owner/posts");
+      expect(
+        fetcher.mock.calls
+          .map(
+            ([input]) =>
+              new URL(String(input), "http://localhost").searchParams,
+          )
+          .filter(
+            (query) => query.get("kind") === "moment" && !query.has("cursor"),
+          ),
+      ).toHaveLength(1);
+      expect(
+        fetcher.mock.calls.some(([input]) =>
+          String(input).includes("cursor=head-moment"),
+        ),
+      ).toBe(true);
+      fireEvent.click(screen.getByRole("button", { name: "Choose post type" }));
+      fireEvent.click(await screen.findByRole("menuitem", { name: "All" }));
+      expect(window.location.pathname).toBe("/owner/all");
+      await waitFor(() =>
+        expect(screen.getByRole("tab", { name: "All" })).toHaveAttribute(
+          "aria-selected",
+          "true",
+        ),
+      );
+      expect(window.history.length).toBe(historyLength);
+      act(() => window.history.back());
+      await waitFor(() =>
+        expect(window.location.pathname + window.location.search).toBe(source),
+      );
+      act(() => window.history.forward());
+      await waitFor(() => expect(window.location.pathname).toBe("/owner/all"));
+    },
+  );
 
   it.each([
     ["/owner/posts", "moment", "帖子"],

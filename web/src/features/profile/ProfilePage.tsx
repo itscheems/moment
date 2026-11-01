@@ -99,9 +99,9 @@ export function ProfilePage({
     if (next === filter) void store.activate(next);
     const href = profileFeedPath(site.username, next);
     if (navigation.pathname.replace(/\/+$/, "") !== href) {
-      navigation.navigate(href + (next === filter ? navigation.search : ""), {
-        preserveScroll: true,
-      });
+      navigation.replaceWithinPage(
+        href + (next === filter ? navigation.search : ""),
+      );
     }
   };
   const title = siteDisplayName(site);
