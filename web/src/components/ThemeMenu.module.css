@@ -225,11 +225,11 @@
   background: var(--surface);
 }
 
-.appearanceDialog section + section {
+.appearanceOptions section + section {
   margin-block-start: var(--space-5);
 }
 
-.appearanceDialog h3 {
+.appearanceOptions h3 {
   margin: 0 0 var(--space-2);
   color: var(--text-secondary);
   font-size: var(--text-sm);
@@ -491,4 +491,23 @@
 
 .trigger[data-navigation][aria-expanded="true"] .triggerPill {
   background: transparent;
+}
+
+@media (max-width: 319px) {
+  .appearanceOptions .previewIdentity {
+    flex-wrap: wrap;
+    white-space: normal;
+  }
+  .appearanceOptions .previewIdentity > * {
+    flex: 0 1 auto;
+    max-inline-size: 100%;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+  .appearanceOptions .accentGrid {
+    grid-template-columns: repeat(auto-fit, minmax(44px, 1fr));
+  }
+  .appearanceOptions .backgroundGrid {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }

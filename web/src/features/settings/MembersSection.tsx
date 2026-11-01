@@ -218,7 +218,11 @@ function MemberRow({
 
 export function MembersSection({
   onWaitingChange,
-}: { onWaitingChange?: (waiting: number) => void } = {}) {
+  panel,
+}: {
+  onWaitingChange?: (waiting: number) => void;
+  panel?: "roster" | "registration";
+} = {}) {
   const { t } = useTranslation();
 
   const { session, account, applyAccount, expireIfInvalidSession } =
@@ -410,7 +414,11 @@ export function MembersSection({
       ? actionFailure.message
       : null;
   return (
-    <section aria-labelledby="members-title" className={styles.membersSection}>
+    <section
+      aria-labelledby="members-title"
+      className={styles.membersSection}
+      data-settings-panel={panel}
+    >
       <header className={`${settings.sectionHeader} ${styles.heading}`}>
         <div>
           <h2 id="members-title">{t("成员管理")}</h2>
@@ -422,10 +430,23 @@ export function MembersSection({
           </span>
         ) : null}
       </header>
+      {panel === "registration" && failed ? (
+        <p data-members-registration role="alert">
+          {t("暂时无法读取成员列表")}{" "}
+          <button
+            type="button"
+            onClick={() => setAttempt((value) => value + 1)}
+          >
+            {t("重试")}
+          </button>
+        </p>
+      ) : null}
       {registrationMode ? (
         <Collapsible.Root
           className={styles.policyPanel}
-          open={policyOpen}
+          data-members-registration
+          hidden={panel === "roster"}
+          open={panel === "registration" || policyOpen}
           onOpenChange={setPolicyOpen}
         >
           <div className={styles.policySummary}>

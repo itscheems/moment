@@ -36,9 +36,13 @@ jobs:
           if-no-files-found: error
 
   web-test:
-    name: Web tests
+    name: Web tests ${{ matrix.shard }}/2
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2]
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - uses: jdx/mise-action@5228313ee0372e111a38da051671ca30fc5a96db # v3
@@ -46,17 +50,27 @@ jobs:
           install_args: node pnpm
           cache: true
       - run: pnpm --dir web install --frozen-lockfile
-      - run: pnpm --dir web test
+      - run: pnpm --dir web test --shard=${{ matrix.shard }}/2 --maxWorkers=2
 
   go:
-    name: Go ${{ matrix.group }}
+    name: Go ${{ matrix.group }}${{ matrix.shard && format(' {0}/4', matrix.shard) || '' }}
     needs: web-build
     runs-on: ubuntu-latest
     timeout-minutes: 15
     strategy:
       fail-fast: false
       matrix:
-        group: [core, archive, lifecycle]
+        include:
+          - group: core
+          - group: lifecycle
+          - group: archive
+            shard: 1
+          - group: archive
+            shard: 2
+          - group: archive
+            shard: 3
+          - group: archive
+            shard: 4
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - uses: jdx/mise-action@5228313ee0372e111a38da051671ca30fc5a96db # v3
@@ -83,7 +97,7 @@ jobs:
         if: matrix.group == 'core'
         run: |
           node scripts/dev/check-go-format.mjs
-          node --test scripts/dev/check-go-format.test.mjs scripts/dev/layout-probe.test.mjs scripts/dev/check-merge-policy.test.mjs
+          node --test scripts/dev/test-go-group.test.mjs scripts/dev/check-go-format.test.mjs scripts/dev/layout-probe.test.mjs scripts/dev/check-merge-policy.test.mjs
       - name: Go vet
         if: matrix.group == 'core'
         run: go vet ./...
@@ -91,7 +105,7 @@ jobs:
         if: matrix.group == 'core'
         run: golangci-lint run
       - name: Go race tests
-        run: node scripts/dev/test-go-group.mjs "${{ matrix.group }}"
+        run: node scripts/dev/test-go-group.mjs "${{ matrix.group }}" ${{ matrix.shard && format('--shard={0}/4', matrix.shard) || '' }}
       - name: Process lock tests
         if: matrix.group == 'core'
         run: task lock:test

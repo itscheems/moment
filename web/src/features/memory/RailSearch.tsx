@@ -1,3 +1,4 @@
+import { SearchField } from "./SearchField";
 import { useTranslation } from "react-i18next";
 import { Autocomplete } from "@base-ui/react/autocomplete";
 import { useEffect, useRef, useState } from "react";
@@ -195,34 +196,20 @@ export function SearchBox({
           openOnInputClick
           value={value}
         >
-          <Autocomplete.InputGroup className={styles.field} data-search-control>
-            <span className={styles.searchIcon}>
-              <SearchGlyph />
-            </span>
-            <Autocomplete.Input
-              aria-label={t("搜索内容或用户")}
-              autoComplete="off"
-              autoFocus={autoFocus}
-              className={styles.input}
-              data-focus-key={main ? "search:query" : "shell:search"}
-              id={main ? "moment-search-input" : undefined}
-              aria-keyshortcuts={main ? "/" : undefined}
-              enterKeyHint="search"
-              maxLength={1_000}
-              onFocus={() => setOpen(true)}
-              ref={input}
-              placeholder={t("搜索")}
-              spellCheck={false}
-            />
-            <Autocomplete.Clear
-              aria-label={t("清除搜索内容")}
-              className={styles.clearInput}
-            >
-              <svg aria-hidden="true" viewBox="0 0 24 24">
-                <path d="M12 1.75C6.34 1.75 1.75 6.34 1.75 12S6.34 22.25 12 22.25 22.25 17.66 22.25 12 17.66 1.75 12 1.75zm3.71 12.54l-1.42 1.42-2.29-2.3-2.29 2.3-1.42-1.42 2.3-2.29-2.3-2.29 1.42-1.42 2.29 2.3 2.29-2.3 1.42 1.42-2.3 2.29 2.3 2.29z" />
-              </svg>
-            </Autocomplete.Clear>
-          </Autocomplete.InputGroup>
+          <SearchField
+            aria-label={t("搜索内容或用户")}
+            autoComplete="off"
+            autoFocus={autoFocus}
+            data-focus-key={main ? "search:query" : "shell:search"}
+            id={main ? "moment-search-input" : undefined}
+            aria-keyshortcuts={main ? "/" : undefined}
+            enterKeyHint="search"
+            maxLength={1_000}
+            onFocus={() => setOpen(true)}
+            inputRef={input}
+            placeholder={t("搜索")}
+            spellCheck={false}
+          />
           <Autocomplete.Portal>
             <Autocomplete.Positioner
               align="start"

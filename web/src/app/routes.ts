@@ -1,4 +1,5 @@
 import { t } from "../i18n";
+import { matchSettingsPath } from "../features/settings/settingsNavigation";
 export type RouteId =
   | "notifications"
   | "home"
@@ -307,9 +308,8 @@ const routes: Array<
       return t("设置");
     },
     eyebrow: "",
-    href: "/settings/account",
-    match: (pathname) =>
-      /^\/settings\/(account|site|members|backups)\/?$/.test(pathname),
+    href: "/settings",
+    match: matchSettingsPath,
   },
   // Handles live at the site root now (`/username`, not `/@username`), so this
   // pattern would swallow every other single-segment page. `resolveRoute` takes

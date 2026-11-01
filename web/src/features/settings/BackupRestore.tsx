@@ -595,11 +595,11 @@ function statusCopy(
 export function BackupRestore({
   settingsBlocked,
   instanceId,
-  onRestoreBusyChange,
+  panel,
 }: {
   settingsBlocked: boolean;
   instanceId: string | null;
-  onRestoreBusyChange: (busy: boolean) => void;
+  panel?: "export" | "restore";
 }) {
   const { t } = useTranslation();
 
@@ -670,11 +670,6 @@ export function BackupRestore({
     status?.phase === "needs_attention" ||
     manualStatusRequired ||
     siteRefreshRequired;
-
-  useEffect(
-    () => onRestoreBusyChange(restoreBusy),
-    [onRestoreBusyChange, restoreBusy],
-  );
 
   const clearPoll = useCallback(() => {
     pollControllerRef.current?.abort();
@@ -894,9 +889,8 @@ export function BackupRestore({
           .then(() => forgetMergeStaging(stagingKey, mergeToken))
           .catch(() => undefined);
       }
-      onRestoreBusyChange(false);
     };
-  }, [clearPoll, onRestoreBusyChange, queryStatus]);
+  }, [clearPoll, queryStatus]);
 
   useEffect(() => {
     if (!focusStatusRef.current || restoreState !== "running") return;
@@ -1582,12 +1576,20 @@ export function BackupRestore({
   );
 
   return (
-    <section aria-label={t("备份与恢复")} className={styles.portableFlow}>
+    <section
+      aria-label={t("备份与恢复")}
+      className={styles.portableFlow}
+      data-settings-panel={panel}
+    >
       <header className={styles.sectionHeader}>
         <h2>{t("备份与恢复")}</h2>
       </header>
       {restoreStatusPanel}
-      <div className={styles.portableStep}>
+      <div
+        className={styles.portableStep}
+        data-backup-export
+        hidden={panel === "restore"}
+      >
         <div>
           <h3>{t("导出完整站点")}</h3>
           <p>

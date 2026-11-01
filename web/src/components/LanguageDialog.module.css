@@ -145,3 +145,42 @@
     padding-inline: 1.5rem;
   }
 }
+
+.inline .content {
+  max-inline-size: none;
+  padding: 0;
+}
+.inline .description {
+  margin-block-end: 12px;
+  font-size: 13px;
+  line-height: 16px;
+}
+.inline .save,
+.inline .cancel {
+  inline-size: auto;
+  min-block-size: 36px;
+  padding: 8px 16px;
+}
+.inline .cancel {
+  margin: 0 0 0 12px;
+}
+
+.inline .option {
+  min-block-size: 72px;
+  padding-block: 12px;
+}
+.inline .option strong {
+  font: 400 15px/20px var(--font-sans);
+}
+.inline .option small {
+  font: 400 13px/16px var(--font-sans);
+}
+.inline .option input {
+  inline-size: 20px;
+  block-size: 20px;
+}
+.inline .save,
+.inline .cancel {
+  padding: 7px 16px;
+  font: 700 15px/20px var(--font-sans);
+}
