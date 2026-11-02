@@ -323,7 +323,7 @@ SELECT e.id, e.kind, e.content_md, e.content_text,
        coalesce(a.title, ''), coalesce(a.body_json, ''),
        `+searchSourceCardsSQL+`,
        count(f.rowid),
-       coalesce(sum(CASE WHEN f.content_text = e.content_text THEN 1 ELSE 0 END), 0)
+       coalesce(sum(CASE WHEN f.content_text = e.content_text AND f.compact_text = replace(e.content_text, ' ', '') THEN 1 ELSE 0 END), 0)
 FROM entries AS e
 LEFT JOIN entry_fts AS f ON f.entry_id = e.id
 LEFT JOIN entry_article AS a ON a.entry_id = e.id
