@@ -2987,6 +2987,117 @@ describe("owner composing flow", () => {
     ).toBeInTheDocument();
   });
 
+  const storedLinkCard = {
+    position: 0,
+    canonical_url: "https://example.com/song",
+    card_kind: "link",
+    title: "Saved song card",
+    description: "Saved description",
+    site_name: "Example",
+    author_name: "",
+    duration_seconds: null,
+    view_count: null,
+    comment_count: null,
+    like_count: null,
+    favicon_media_id: null,
+    thumbnail_media_id: "01K2ABCDEF0123456789ABCDE7",
+    thumbnail_mime_type: "image/png",
+    thumbnail_width: 1000,
+    thumbnail_height: 500,
+    embed_url: null,
+  };
+
+  it.each([false, true])(
+    "restores a stored card without refetching it (URL in body: %s)",
+    async (withUrl) => {
+      preauthenticate();
+      const content = withUrl
+        ? "Saved caption https://example.com/song"
+        : "Saved caption";
+      const item = {
+        ...post(content),
+        link_cards: [storedLinkCard],
+      };
+      window.history.replaceState({}, "", `/m/${item.id}/edit`);
+      const fetcher = installApi((url, init) => {
+        if (url === `/api/v1/posts/${item.id}`)
+          return json({
+            data: {
+              ...item,
+              content_md:
+                init?.method === "PATCH" ? "Changed caption" : content,
+            },
+            meta: {},
+          });
+      });
+      render(<App />);
+      const editor = await screen.findByLabelText("Moment 正文");
+      expect(
+        await screen.findByRole("region", { name: "链接预览" }),
+      ).toHaveTextContent("Saved song card");
+      expect(
+        document.querySelector('img[src*="01K2ABCDEF0123456789ABCDE7"]'),
+      ).not.toBeNull();
+      fireEvent.change(editor, {
+        target: {
+          value: withUrl
+            ? "Changed caption https://example.com/song"
+            : "Changed caption",
+        },
+      });
+      fireEvent.keyDown(editor, { key: "Enter", metaKey: true });
+      await waitFor(() =>
+        expect(window.location.pathname).toBe(`/m/${item.id}`),
+      );
+      const patch = fetcher.mock.calls.find(
+        ([url, init]) =>
+          String(url) === `/api/v1/posts/${item.id}` &&
+          init?.method === "PATCH",
+      );
+      expect(JSON.parse(String(patch?.[1]?.body))).not.toHaveProperty(
+        "link_cards",
+      );
+      expect(
+        fetcher.mock.calls.some(([url]) =>
+          String(url).includes("/links/unfurl"),
+        ),
+      ).toBe(false);
+    },
+  );
+
+  it("guards and saves an explicit stored-card removal without changing the caption", async () => {
+    preauthenticate();
+    const item = { ...post("Saved caption"), link_cards: [storedLinkCard] };
+    let current = item;
+    window.history.replaceState({}, "", `/m/${item.id}/edit`);
+    const fetcher = installApi((url, init) => {
+      if (url === `/api/v1/posts/${item.id}`) {
+        if (init?.method === "PATCH") current = { ...item, link_cards: [] };
+        return json({ data: current, meta: {} });
+      }
+    });
+    render(<App />);
+    const editor = await screen.findByLabelText("Moment 正文");
+    fireEvent.click(
+      await screen.findByRole("button", { name: "移除链接卡片" }),
+    );
+    expect(screen.queryByRole("region", { name: "链接预览" })).toBeNull();
+    const event = new Event("beforeunload", { cancelable: true });
+    window.dispatchEvent(event);
+    expect(event.defaultPrevented).toBe(true);
+    fireEvent.keyDown(editor, { key: "Enter", metaKey: true });
+    await waitFor(() => expect(window.location.pathname).toBe(`/m/${item.id}`));
+    const patch = fetcher.mock.calls.find(
+      ([url, init]) =>
+        String(url) === `/api/v1/posts/${item.id}` && init?.method === "PATCH",
+    );
+    expect(JSON.parse(String(patch?.[1]?.body))).toEqual({
+      content_md: "Saved caption",
+      media: [],
+      link_cards: [],
+    });
+  });
+
   it("keeps leave guards active after removing the last existing media usage", async () => {
     preauthenticate();
     const item = post("只编辑图片", "01K2ABCDEF0123456789ABCDF3", [
