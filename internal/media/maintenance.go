@@ -460,6 +460,10 @@ func (store *Store) RebuildPreviews(ctx context.Context, dryRun bool) (RebuildRe
 // commit before originals are removed, so an injected filesystem failure can
 // leave only a recoverable orphan blob, never a row pointing at missing bytes.
 func (store *Store) Prune(ctx context.Context, now time.Time, dryRun bool) (PruneResult, error) {
+	return store.prune(ctx, now, dryRun, false)
+}
+
+func (store *Store) prune(ctx context.Context, now time.Time, dryRun, linksOnly bool) (PruneResult, error) {
 	mode := runtimefs.Exclusive
 	if dryRun {
 		mode = runtimefs.Shared
@@ -469,6 +473,11 @@ func (store *Store) Prune(ctx context.Context, now time.Time, dryRun bool) (Prun
 		return PruneResult{}, fmt.Errorf("coordinate media prune: %w", err)
 	}
 	defer func() { _ = leases.Release() }()
+	if !dryRun {
+		if err := sqlite.ExpireLinkDraftMedia(ctx, store.db, now); err != nil {
+			return PruneResult{}, err
+		}
+	}
 	cutoff := domain.NormalizeTime(now).Add(-pruneGracePeriod)
 	var candidateIDs []domain.ID
 	if err := store.references.Read(ctx, func(resolver app.MediaReferenceStore) error {
@@ -481,6 +490,17 @@ func (store *Store) Prune(ctx context.Context, now time.Time, dryRun bool) (Prun
 	result := PruneResult{Eligible: len(candidateIDs), DryRun: dryRun, Items: make([]PruneItem, 0, len(candidateIDs))}
 	candidates := make([]Media, 0, len(candidateIDs))
 	for _, id := range candidateIDs {
+		if linksOnly {
+			var captured bool
+			if err := store.db.ReadTx(ctx, func(q sqlite.Queries) error {
+				return q.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM link_preview_media WHERE media_id=?)`, id.String()).Scan(&captured)
+			}); err != nil {
+				return PruneResult{}, err
+			}
+			if !captured {
+				continue
+			}
+		}
 		value, err := store.getLocked(ctx, id)
 		if err != nil {
 			return PruneResult{}, err
@@ -491,6 +511,7 @@ func (store *Store) Prune(ctx context.Context, now time.Time, dryRun bool) (Prun
 		candidates = append(candidates, value)
 		result.Items = append(result.Items, PruneItem{MediaID: id.String(), SHA256: value.SHA256, ByteSize: value.ByteSize, UnreferencedSince: *value.UnreferencedSince})
 	}
+	result.Eligible = len(candidates)
 	if dryRun {
 		return result, nil
 	}

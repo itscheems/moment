@@ -129,6 +129,10 @@ Abandoned uploads that a client cannot clean remain eligible for `media prune`.
 CLI: `moment media delete <id> --dry-run --json`, then `--yes` to delete.
 Both direct and API modes return the same result and retain confirmation rules.
 
+`PUT /links/drafts/:key/media` protects the captured images of one browser-local draft. It requires an active account, CSRF for cookie authentication, a 64-character hexadecimal key, and `{"media_ids":[...]}` containing at most two media IDs granted to that account. An empty array releases the draft's references. The response is `{"saved":true}` in the standard envelope. References expire after 30 days, matching browser draft retention; publication establishes content references before releasing draft references. This endpoint manages browser-local draft resources only and intentionally has no standalone CLI draft command. Media maintenance remains available through the CLI.
+
+The server automatically checks captured link resources at startup and hourly. Only captured resources continuously unreferenced for at least 24 hours are eligible; saved draft references and content references prevent deletion. Ordinary uploads are excluded from automatic link cleanup. `moment media prune --link-previews-only --dry-run` inspects this subset offline; actual deletion requires `--yes` or confirmation.
+
 ## Request source
 
 Send `X-Moment-Surface: ios` on native requests, including login and public reads.

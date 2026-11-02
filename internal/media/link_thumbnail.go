@@ -12,6 +12,8 @@ type LinkThumbnailAdapter struct {
 	store *Store
 }
 
+type linkPreviewCaptureKey struct{}
+
 // NewLinkThumbnailAdapter wraps a media store.
 func NewLinkThumbnailAdapter(store *Store) *LinkThumbnailAdapter {
 	if store == nil {
@@ -22,7 +24,7 @@ func NewLinkThumbnailAdapter(store *Store) *LinkThumbnailAdapter {
 
 // Ingest commits the downloaded bytes and reports the managed identity.
 func (adapter *LinkThumbnailAdapter) Ingest(ctx context.Context, originalName string, input io.Reader) (domain.ID, string, uint32, uint32, error) {
-	value, _, err := adapter.store.Ingest(ctx, originalName, input)
+	value, _, err := adapter.store.Ingest(context.WithValue(ctx, linkPreviewCaptureKey{}, true), originalName, input)
 	if err != nil {
 		return "", "", 0, 0, err
 	}

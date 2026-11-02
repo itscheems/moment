@@ -42,6 +42,17 @@ export function parseLinkCardInput(value: unknown): LinkCardInput {
 }
 
 export class LinksApi extends ApiClient {
+  async retainDraft(
+    csrfToken: string,
+    key: string,
+    mediaIds: string[],
+  ): Promise<void> {
+    const response = await this.fetcher(`/api/v1/links/drafts/${key}/media`, {
+      ...requestInit("PUT", csrfToken, { media_ids: mediaIds }),
+    });
+    await decodeResponse(response);
+  }
+
   async unfurlLink(url: string, signal?: AbortSignal): Promise<LinkCardInput> {
     const params = new URLSearchParams({ url });
     const response = await this.fetcher(`/api/v1/links/unfurl?${params}`, {

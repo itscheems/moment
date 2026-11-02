@@ -134,6 +134,7 @@ func runServe(ctx context.Context, invocation Invocation, input CommandInput, in
 				return err
 			}
 			board.EndMaintenance()
+			go host.RunLinkPreviewRetention(retentionContext)
 			return nil
 		},
 		Address: listenAddress, Log: systemLog,

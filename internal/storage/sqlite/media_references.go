@@ -13,6 +13,8 @@ import (
 )
 
 const mediaReferencedSQL = `(
+    EXISTS (SELECT 1 FROM compose_draft_link_media AS draft WHERE draft.media_id = media.id)
+    OR
     EXISTS (SELECT 1 FROM entry_media AS usage WHERE usage.media_id = media.id)
     OR EXISTS (SELECT 1 FROM comment_media AS usage WHERE usage.media_id = media.id)
  OR EXISTS (SELECT 1 FROM comments WHERE comments.author_avatar_media_id = media.id)

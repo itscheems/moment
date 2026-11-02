@@ -924,13 +924,14 @@ function PublicApp() {
                     instanceId={draftScope}
                     onEditingChange={setDraftsEditing}
                     onOpenDraft={(draft) => {
-                      overlayComposer.current?.loadDraft(
+                      void overlayComposer.current?.loadDraft(
                         draft.contentMd,
                         draft.id,
                         draft.mapCard,
                         draft.quote,
+                        draft.linkPreview,
+                        closeDrafts,
                       );
-                      closeDrafts();
                     }}
                   />
                 ) : null}
@@ -971,8 +972,9 @@ function PublicApp() {
       <SaveDraftDialog
         open={composeExitOpen}
         onOpenChange={setComposeExitOpen}
-        onSave={() => {
-          overlayComposer.current?.leaveAndKeepDraft();
+        onSave={async () => {
+          if (!(await overlayComposer.current?.leaveAndKeepDraft()))
+            return false;
           setComposeExitOpen(false);
           closeOverlayComposer();
         }}

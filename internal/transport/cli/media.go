@@ -92,14 +92,17 @@ func registerMedia(application *Application) {
 	application.MustRegisterLeaf(LeafSpec{
 		Path: []string{"media", "prune"}, Short: "Delete continuously unreferenced media",
 		Long:       "Delete only media rechecked by the central resolver as continuously unreferenced for at least 24 hours inside the exclusive destructive boundary.",
-		Inputs:     "Use --dry-run first. Actual deletion requires confirmation or --yes; confirmation never bypasses reachability or the 24-hour clock.",
+		Inputs:     "Use --dry-run first. --link-previews-only selects captured link resources. Actual deletion requires confirmation or --yes; confirmation never bypasses reachability or the 24-hour clock.",
 		Output:     "Eligible/deleted counts, reclaimed bytes, cleanup warnings, and the exact candidate IDs.",
 		Errors:     "Lock cancellation uses exit code 9; authority corruption and storage failures use stable integrity/IO behavior.",
 		Safety:     "Originals and media rows are destructive; database authority commits before best-effort blob/cache cleanup.",
 		Example:    "moment media prune --data-dir ./moment-data --dry-run --json",
 		Capability: CapabilityDirectOnly,
 		Policy:     SafetyPolicy{Destructive: true, SupportsDryRun: true, Confirmation: "Permanently prune eligible media now?"},
-		Run:        runMediaPrune,
+		Flags: func(flags *pflag.FlagSet) {
+			flags.Bool("link-previews-only", false, "limit cleanup to captured link resources")
+		},
+		Run: runMediaPrune,
 	})
 }
 
@@ -249,13 +252,22 @@ func runMediaRebuild(ctx context.Context, invocation Invocation, _ CommandInput)
 	return Result{Data: result, Text: fmt.Sprintf("Preview recipe %s: %d ready, %d rebuilt, %d missing, %d stale", result.RecipeVersion, result.Ready, result.Rebuilt, result.Missing, result.Stale)}, nil
 }
 
-func runMediaPrune(ctx context.Context, invocation Invocation, _ CommandInput) (Result, error) {
+func runMediaPrune(ctx context.Context, invocation Invocation, input CommandInput) (Result, error) {
 	direct, err := openDirectMedia(ctx, invocation)
 	if err != nil {
 		return Result{}, mediaCLIError(err)
 	}
 	defer func() { _ = direct.Close() }()
-	result, err := direct.store.Prune(ctx, time.Now().UTC(), invocation.Safety().DryRun)
+	linksOnly, err := input.Bool("link-previews-only")
+	if err != nil {
+		return Result{}, err
+	}
+	var result media.PruneResult
+	if linksOnly {
+		result, err = direct.store.PruneLinkPreviews(ctx, time.Now().UTC(), invocation.Safety().DryRun)
+	} else {
+		result, err = direct.store.Prune(ctx, time.Now().UTC(), invocation.Safety().DryRun)
+	}
 	if err != nil {
 		return Result{}, mediaCLIError(err)
 	}

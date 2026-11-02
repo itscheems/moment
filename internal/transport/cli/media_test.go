@@ -99,6 +99,15 @@ func TestMediaDirectAgentContractAndMaintenanceSafety(t *testing.T) {
 		t.Fatal(err)
 	}
 	_ = database.Close()
+	for _, safety := range []string{"--dry-run", "--yes"} {
+		selected := execute(application, "", "media", "prune", "--link-previews-only", safety, "--data-dir", dataDir, "--as", "writer", "--json")
+		if selected.exit != ExitSuccess || selected.stderr != "" {
+			t.Fatalf("selected prune: %#v", selected)
+		}
+		if scoped := commandData(t, selected); scoped["eligible"] != float64(0) || scoped["deleted"] != float64(0) {
+			t.Fatalf("ordinary upload selected: %#v", scoped)
+		}
+	}
 	plan := commandData(t, execute(application, "", "media", "prune", "--dry-run", "--data-dir", dataDir, "--as", "writer", "--json"))
 	if plan["eligible"] != float64(1) || plan["deleted"] != float64(0) {
 		t.Fatalf("prune plan = %#v", plan)

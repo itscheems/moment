@@ -3,8 +3,10 @@ package ginhttp
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"strings"
 	"sync"
@@ -31,6 +33,26 @@ func RegisterMediaRoutes(engine *gin.Engine, store *media.Store, gate *Gate) {
 	}
 	uploads := engine.Group("/api/v1")
 	uploads.Use(gate.RequireActiveAccount())
+	uploads.PUT("/links/drafts/:key/media", func(ctx *gin.Context) {
+		body, read := readBody(ctx)
+		if !read {
+			return
+		}
+		var input struct {
+			MediaIDs []string `json:"media_ids"`
+		}
+		decoder := json.NewDecoder(bytes.NewReader(body))
+		decoder.DisallowUnknownFields()
+		if err := decoder.Decode(&input); err != nil || decoder.Decode(&struct{}{}) != io.EOF || input.MediaIDs == nil {
+			Failure(ctx, http.StatusBadRequest, "INVALID_ARGUMENT", "invalid draft resources", nil)
+			return
+		}
+		if err := store.RetainLinkDraft(ctx.Request.Context(), ctx.Param("key"), input.MediaIDs); err != nil {
+			writeMediaError(ctx, err)
+			return
+		}
+		Success(ctx, http.StatusOK, map[string]bool{"saved": true}, nil)
+	})
 	engine.DELETE("/api/v1/media/:id", gate.RequireAdmin(), deleteMedia(store))
 	posters := newUploadPosterCache()
 	uploads.POST("/media", mediaDeadlines(true, mediaTransferIdle, mediaTransferMax), uploadMedia(store, posters))

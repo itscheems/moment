@@ -13,6 +13,9 @@ type expectedCatalogObject struct {
 }
 
 var requiredCatalogObjects = []expectedCatalogObject{
+	{name: "link_preview_media", kind: "table", table: "link_preview_media"},
+	{name: "compose_draft_link_media", kind: "table", table: "compose_draft_link_media"},
+	{name: "compose_draft_link_media_media_idx", kind: "index", table: "compose_draft_link_media"},
 	{name: "browser_account_sets", kind: "table", table: "browser_account_sets"},
 	{name: "browser_account_members", kind: "table", table: "browser_account_members"},
 	{name: "browser_account_members_session", kind: "index", table: "browser_account_members"},

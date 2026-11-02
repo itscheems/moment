@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/moment/moment/internal/app"
 	"github.com/moment/moment/internal/domain"
@@ -457,6 +458,10 @@ func (store accountStore) SetStatus(ctx context.Context, userID string, status d
 // cascade; comments deliberately do not, because author_user_id carries no
 // foreign key and the text belongs to the site.
 func (store accountStore) DeleteAccount(ctx context.Context, userID string) error {
+	draftMedia, err := linkDraftMediaIDs(ctx, store.queries, `WHERE user_id=?`, userID)
+	if err != nil {
+		return err
+	}
 	result, err := store.queries.ExecContext(ctx, `DELETE FROM users WHERE id = ?`, userID)
 	if err != nil {
 		return fmt.Errorf("delete account: %w", err)
@@ -468,7 +473,7 @@ func (store accountStore) DeleteAccount(ctx context.Context, userID string) erro
 	if changed != 1 {
 		return domain.NewError(domain.CodeAccountNotFound, "no such account", nil)
 	}
-	return nil
+	return newMediaReferenceStore(store.queries).ReconcileMediaReferences(ctx, draftMedia, time.Now().UTC())
 }
 
 func (store accountStore) SearchAccounts(ctx context.Context, query string, limit, offset int) ([]domain.User, error) {

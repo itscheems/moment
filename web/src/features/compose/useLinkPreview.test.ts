@@ -57,6 +57,20 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
+it("allows the same link again after its dismissed URL is removed", () => {
+  const api = new LinksApi(vi.fn());
+  const content = "https://example.com/saved";
+  const { result, rerender } = renderHook(
+    ({ text }) => useLinkPreview(api, text, true, { card: stored, content }),
+    { initialProps: { text: content } },
+  );
+  act(() => result.current.dismiss());
+  expect(result.current.storedCard).toBeNull();
+  rerender({ text: "" });
+  rerender({ text: content });
+  expect(result.current.storedCard).toEqual(stored);
+});
+
 it("dismisses and restores a detached saved card without treating it as a new snapshot", () => {
   const fetcher = vi.fn();
   const api = new LinksApi(fetcher);

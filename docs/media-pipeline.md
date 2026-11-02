@@ -72,6 +72,14 @@ avoids trusting a cache hit that a concurrent prune could remove. A failed
 processor or commit never publishes an authoritative media row or original;
 an orphaned derived cache entry is harmless and can be rebuilt or pruned.
 
+## Link preview retention
+
+Link thumbnails and site icons are captured into managed media while a preview is resolved. Newly captured media carry a link-resource marker; existing ordinary uploads keep their original lifecycle when deduplicated. Closing a preview does not delete shared bytes immediately. Startup and hourly maintenance remove marked resources only after at least 24 continuous hours without a content or saved browser-draft reference. The central reference resolver protects saved cards from explicit media deletion and manual pruning as well as automatic cleanup.
+
+Browser drafts retain their card snapshot locally and register account-scoped media references before confirming a save. Each browser uses a separate resource key namespace. Removing or publishing a loaded draft releases its temporary references; successful publication owns independent content references. Draft references expire after the browser's existing 30-day retention period, then start a fresh 24-hour cleanup grace period. A failed release can therefore delay cleanup until expiry. Unmarked historical media are not classified for automatic deletion by filename.
+
+The schema migration adds resource markers and draft references without rewriting content or originals. Older executables reject the newer schema. Rollback requires a compatible build that keeps schema support, or a pre-upgrade database backup when discarding subsequent writes is acceptable.
+
 ## Video quality strategy
 
 Moment optimizes for a useful display version, not for making every result
