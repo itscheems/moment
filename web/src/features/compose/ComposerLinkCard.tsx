@@ -1,4 +1,5 @@
 import { useTranslation } from "react-i18next";
+import { type PublicLinkCard } from "../../api/public";
 import { type LinkCardInput } from "../../api/client";
 
 import { mediaPreviewUrl } from "../../api/mediaUrls";
@@ -10,22 +11,28 @@ export function ComposerLinkCard({
   disabled,
   onRemove,
 }: {
-  card: LinkCardInput;
+  card: LinkCardInput | PublicLinkCard;
   disabled: boolean;
   onRemove: () => void;
 }) {
   const { t } = useTranslation();
 
-  const site = card.site_name.trim() || card.canonical_url;
+  const saved = "canonicalUrl" in card;
+  const site =
+    (saved ? card.siteName : card.site_name).trim() ||
+    (saved ? card.canonicalUrl : card.canonical_url);
+  const thumbnail = saved ? card.thumbnailMediaId : card.thumbnail_media_id;
+  const width = saved ? card.thumbnailWidth : card.thumbnail_width;
+  const height = saved ? card.thumbnailHeight : card.thumbnail_height;
   return (
     <section aria-label={t("链接预览")} className={styles.composerLinkCard}>
-      {card.thumbnail_media_id ? (
+      {thumbnail ? (
         <img
           alt=""
           className={styles.composerLinkThumbnail}
-          height={card.thumbnail_height ?? undefined}
-          src={mediaPreviewUrl(card.thumbnail_media_id)}
-          width={card.thumbnail_width ?? undefined}
+          height={height ?? undefined}
+          src={mediaPreviewUrl(thumbnail)}
+          width={width ?? undefined}
         />
       ) : null}
       <div className={styles.composerLinkText}>

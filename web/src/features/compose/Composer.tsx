@@ -272,7 +272,15 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
       string | null
     >(null);
     const initialLocation = useMemo(() => initialPostLocation(post), [post]);
-    const linkPreview = useLinkPreview(linksApi, content, !quotedPost);
+    const linkPreview = useLinkPreview(
+      linksApi,
+      content,
+      !quotedPost,
+      post?.linkCards[0]
+        ? { card: post.linkCards[0], content: initialContent }
+        : undefined,
+    );
+    const displayedLinkCard = linkPreview.card ?? linkPreview.storedCard;
     const [location, setLocation] = useState<LocationInput | null>(
       initialLocation,
     );
@@ -350,6 +358,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
     const hasUnpublishedChange =
       dirty &&
       (mapChanged ||
+        linkPreview.changed ||
         content !== initialContent ||
         mediaChanged ||
         locationChanged ||
@@ -360,7 +369,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
       mediaItems.length > 0 ||
       mapCard !== null ||
       quotedPost !== null ||
-      linkPreview.card !== null;
+      displayedLinkCard !== null;
     const inlineLayout = variant === "inline" || variant === "edit";
     const expanded =
       variant !== "inline" ||
@@ -371,7 +380,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
       location !== null ||
       mapCard !== null ||
       quotedPost !== null ||
-      linkPreview.card !== null;
+      displayedLinkCard !== null;
 
     const onSettingsOpenChange = (
       setting: "audience" | "replies" | "location" | "map",
@@ -1787,12 +1796,14 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
                 {t("正在获取链接预览…")}
               </p>
             ) : null}
-            {linkPreview.card ? (
+            {displayedLinkCard ? (
               <ComposerLinkCard
-                card={linkPreview.card}
+                card={displayedLinkCard}
                 disabled={pending}
                 onRemove={() => {
                   linkPreview.dismiss();
+                  dirtyRef.current = true;
+                  setDirty(true);
                   setAnnouncement(t("链接卡片已移除"));
                   window.requestAnimationFrame(() =>
                     textareaRef.current?.focus(),

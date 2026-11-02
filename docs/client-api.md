@@ -146,6 +146,8 @@ spans/blocks and explicit Markdown link labels keep their existing semantics.
 A card hides a bare URL only when the URL occupies the final line alone; a URL
 inside a sentence intentionally remains visible.
 
+The web editor restores a post's saved link card even when the body has no URL. Caption-only edits preserve the stored snapshot and its managed cover without resolving the external URL again. Removing the card is an explicit edit that can be undone or saved independently of the caption.
+
 Post and search DTOs add nullable `edited_at` (RFC 3339 UTC strings with millisecond
 precision). Actual changes
 to Markdown, ordered media/alt text, location, map card, or link cards update this field.

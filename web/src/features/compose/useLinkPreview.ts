@@ -1,3 +1,4 @@
+import { type PublicLinkCard } from "../../api/public";
 import { type LinkCardInput } from "../../api/client";
 import { useCallback, useEffect, useRef, useState } from "react";
 
@@ -42,6 +43,7 @@ export type LinkPreviewStatus = "idle" | "loading" | "ready" | "failed";
 export interface LinkPreviewState {
   status: LinkPreviewStatus;
   card: LinkCardInput | null;
+  storedCard: PublicLinkCard | null;
   dismiss: () => void;
   dismissed: Set<string>;
   restoreDismissed: (urls: Set<string>) => void;
@@ -63,7 +65,10 @@ export function useLinkPreview(
   api: LinksApi,
   content: string,
   enabled: boolean,
+  initial?: { card: PublicLinkCard; content: string },
 ): LinkPreviewState {
+  const saved = useRef(initial);
+  const savedUrl = saved.current ? detectLinkUrl(saved.current.content) : null;
   const [status, setStatus] = useState<LinkPreviewStatus>("idle");
   const [card, setCard] = useState<LinkCardInput | null>(null);
   const [dismissed, setDismissed] = useState<Set<string>>(() => new Set());
@@ -71,7 +76,13 @@ export function useLinkPreview(
   const controller = useRef<AbortController | null>(null);
   const resolvedCards = useRef(new Map<string, LinkCardInput>());
 
-  const url = enabled ? detectLinkUrl(content) : null;
+  const url = enabled
+    ? (detectLinkUrl(content) ??
+      (saved.current && !savedUrl ? saved.current.card.canonicalUrl : null))
+    : null;
+  const savedMatches =
+    !!saved.current &&
+    (url === savedUrl || url === saved.current.card.canonicalUrl);
   const suppressed = url !== null && dismissed.has(url);
 
   useEffect(() => {
@@ -79,6 +90,11 @@ export function useLinkPreview(
     if (!url || suppressed) {
       controller.current = null;
       setStatus("idle");
+      setCard(null);
+      return;
+    }
+    if (savedMatches) {
+      setStatus("ready");
       setCard(null);
       return;
     }
@@ -112,26 +128,44 @@ export function useLinkPreview(
       window.clearTimeout(timer);
       abort.abort();
     };
-    // `card` is deliberately read but not depended on: reacting to it would
-    // refetch immediately after every successful resolve.
-  }, [api, url, suppressed, card]);
+  }, [api, url, suppressed, card, savedMatches]);
 
   useEffect(() => () => controller.current?.abort(), []);
 
   const dismiss = useCallback(() => {
     if (!url) return;
-    setDismissed((previous) => new Set(previous).add(url));
+    setDismissed((previous) => {
+      const next = new Set(previous).add(url);
+      if (saved.current) {
+        next.add(saved.current.card.canonicalUrl);
+        if (savedUrl) next.add(savedUrl);
+      }
+      return next;
+    });
     setCard(null);
     setStatus("idle");
     setChanged(true);
-  }, [url]);
+  }, [url, savedUrl]);
 
+  const current = !suppressed && card?.source_url === url ? card : null;
+  const savedDismissed =
+    saved.current && dismissed.has(savedUrl ?? saved.current.card.canonicalUrl);
+  const storedCard =
+    enabled &&
+    !suppressed &&
+    !savedDismissed &&
+    url &&
+    saved.current &&
+    !current
+      ? saved.current.card
+      : null;
   return {
+    storedCard,
     status: suppressed ? "idle" : status,
-    card: suppressed ? null : card,
+    card: current,
     dismiss,
     dismissed,
     restoreDismissed: setDismissed,
-    changed,
+    changed: storedCard ? false : changed || (!!saved.current && url === null),
   };
 }
