@@ -1,6 +1,7 @@
 package sqlite
 
 import (
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -236,5 +237,50 @@ func assertMediaClock(t *testing.T, database *Database, id string, want *time.Ti
 	}
 	if value == nil || *value != want.UnixMilli() {
 		t.Fatalf("unreferenced clock = %v, want %d", value, want.UnixMilli())
+	}
+}
+
+func TestLinkCardDisplayUpdatesPreserveCapturedSnapshot(t *testing.T) {
+	ctx := testAccountContext()
+	db, state := openTestDatabase(t, Options{})
+	repo, err := NewPostRepository(db, state.Locks)
+	if err != nil {
+		t.Fatal(err)
+	}
+	service, err := app.NewPostService(repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	original := domain.LinkCard{SourceURL: "https://example.com/source", CanonicalURL: "https://example.com/page", Provider: domain.LinkProviderGeneric, Kind: domain.LinkKindLink, Title: "Captured title", Description: "Captured description", SiteName: "Example", CapturedAt: 1700000000000}
+	created, err := service.Create(ctx, app.CreatePostInput{ContentMD: "Caption", LinkCards: []domain.LinkCard{original}, IdempotencyKey: "layout-snapshot"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if created.Post.LinkCards[0].Card.EffectiveDisplayMode() != domain.LinkDisplayCover {
+		t.Fatal("new cards must default to cover")
+	}
+	compact := original
+	compact.DisplayMode = domain.LinkDisplayCompact
+	if _, err := service.Create(ctx, app.CreatePostInput{ContentMD: "Caption", LinkCards: []domain.LinkCard{compact}, IdempotencyKey: "layout-snapshot"}); !domain.HasCode(err, domain.CodeIdempotencyKeyReused) {
+		t.Fatalf("layout did not participate in retry identity: %v", err)
+	}
+	for _, mode := range []domain.LinkCardDisplayMode{domain.LinkDisplayCompact, domain.LinkDisplayCover} {
+		updated, err := service.Update(ctx, app.UpdatePostInput{ID: created.Post.Entry.ID, PreserveContent: true, LinkCardDisplayMode: &mode})
+		if err != nil {
+			t.Fatal(err)
+		}
+		expected := original
+		expected.DisplayMode = mode
+		got := updated.LinkCards[0].Card
+		if !reflect.DeepEqual(got, expected) {
+			t.Fatalf("snapshot was rewritten: %+v, want %+v", got, expected)
+		}
+		var stored string
+		err = db.ReadTx(ctx, func(q Queries) error {
+			return q.QueryRowContext(ctx, `SELECT display_mode FROM entry_link_card WHERE entry_id=?`, created.Post.Entry.ID.String()).Scan(&stored)
+		})
+		if err != nil || stored != string(mode) {
+			t.Fatalf("stored display: %q, %v", stored, err)
+		}
 	}
 }

@@ -285,7 +285,10 @@ export function isReadArticlePost(
  * A card whose embed origin has since been withdrawn arrives without it and
  * renders as a static card rather than a frame the page could not load.
  */
+export type LinkCardDisplayMode = "cover" | "compact";
+
 export interface PublicLinkCard {
+  displayMode?: LinkCardDisplayMode;
   position: number;
   canonicalUrl: string;
   cardKind: "link" | "video";
@@ -1971,12 +1974,24 @@ function parseLinkCards(value: unknown): PublicLinkCard[] {
   }
   return value.map((item, index) => {
     // mirrors postdto.LinkCard (internal/transport/postdto/dto.go)
-    if (!isRecord(item) || !hasExactKeys(item, linkCardKeys)) {
+    if (
+      !isRecord(item) ||
+      !hasExactKeys(item, [
+        ...linkCardKeys,
+        ...(Object.hasOwn(item, "display_mode") ? ["display_mode"] : []),
+      ])
+    ) {
       throw invalidResponse(
         "link card contains an unsupported or missing field",
       );
     }
     const kind = stringField(item, "card_kind");
+    if (
+      item.display_mode !== undefined &&
+      item.display_mode !== "cover" &&
+      item.display_mode !== "compact"
+    )
+      throw invalidResponse("link card display mode is invalid");
     if (kind !== "link" && kind !== "video") {
       throw invalidResponse("link card kind is invalid");
     }
@@ -1998,6 +2013,9 @@ function parseLinkCards(value: unknown): PublicLinkCard[] {
       position: index,
       canonicalUrl,
       cardKind: kind,
+      ...(item.display_mode === "cover" || item.display_mode === "compact"
+        ? { displayMode: item.display_mode }
+        : {}),
       title: stringField(item, "title"),
       description: stringField(item, "description"),
       siteName: stringField(item, "site_name"),

@@ -234,6 +234,8 @@ type UpdatePostInput struct {
 	// follows the media-usage list convention rather than the single-value
 	// double-pointer convention Location uses.
 	LinkCards *[]domain.LinkCard
+	// LinkCardDisplayMode changes presentation while preserving captured metadata.
+	LinkCardDisplayMode *domain.LinkCardDisplayMode
 	// Visibility nil preserves the current audience. Changing it alone is a
 	// complete update: nothing else about the post has to move.
 	Visibility *domain.Visibility
@@ -1013,7 +1015,7 @@ func (service *PostService) Update(ctx context.Context, input UpdatePostInput) (
 	if err := validatePostID(input.ID); err != nil {
 		return Post{}, err
 	}
-	if input.PreserveContent && input.Media == nil && input.Location == nil && input.LinkCards == nil && input.MapCard == nil && input.Visibility == nil {
+	if input.PreserveContent && input.Media == nil && input.Location == nil && input.LinkCards == nil && input.LinkCardDisplayMode == nil && input.MapCard == nil && input.Visibility == nil {
 		return Post{}, domain.NewError(domain.CodeInvalidArgument, "post update must change content_md, media, map_card, location, link cards, or visibility", map[string]any{"field": "body"})
 	}
 	if input.MapCard != nil && *input.MapCard != nil {
@@ -1023,6 +1025,9 @@ func (service *PostService) Update(ctx context.Context, input UpdatePostInput) (
 	}
 	if input.Visibility != nil && !input.Visibility.Valid() {
 		return Post{}, domain.NewError(domain.CodeInvalidArgument, "visibility must be everyone or only_me", map[string]any{"field": "visibility"})
+	}
+	if input.LinkCardDisplayMode != nil && !input.LinkCardDisplayMode.Valid() {
+		return Post{}, domain.NewError(domain.CodeInvalidArgument, "link card display mode must be cover or compact", map[string]any{"field": "link_card_display_mode"})
 	}
 	if input.Media != nil {
 		if err := domain.ValidateEntryMediaUsages(*input.Media); err != nil {
@@ -1102,12 +1107,21 @@ func (service *PostService) Update(ctx context.Context, input UpdatePostInput) (
 		// The replacement set is authoritative for validation and for the
 		// derived search text. Projections are reloaded after the write so the
 		// response carries each thumbnail's stored geometry.
-		nextLinkCards := LinkCardsOf(currentLinkCards)
+		nextLinkCards := domain.CloneLinkCards(LinkCardsOf(currentLinkCards))
 		if input.LinkCards != nil {
 			if mediaErr := domain.ValidateLinkCards(*input.LinkCards); mediaErr != nil {
 				return mediaErr
 			}
 			nextLinkCards = *input.LinkCards
+		}
+		if input.LinkCardDisplayMode != nil {
+			if len(nextLinkCards) == 0 {
+				return domain.NewError(domain.CodeInvalidArgument, "a link card is required to change its display mode", nil)
+			}
+			nextLinkCards = domain.CloneLinkCards(nextLinkCards)
+			for index := range nextLinkCards {
+				nextLinkCards[index].DisplayMode = *input.LinkCardDisplayMode
+			}
 		}
 		nextMap := entry.MapCard
 		if input.MapCard != nil {
@@ -1167,13 +1181,13 @@ func (service *PostService) Update(ctx context.Context, input UpdatePostInput) (
 				return updateErr
 			}
 		}
-		if input.LinkCards != nil {
-			if updateErr := store.ReplaceEntryLinkCards(ctx, input.ID, *input.LinkCards); updateErr != nil {
+		if input.LinkCards != nil || input.LinkCardDisplayMode != nil {
+			if updateErr := store.ReplaceEntryLinkCards(ctx, input.ID, nextLinkCards); updateErr != nil {
 				return updateErr
 			}
 			// Old and new thumbnails are reconciled together in this same
 			// transaction so a replaced card never leaves a stale clock.
-			affectedCards := append(linkCardMediaIDs(LinkCardsOf(currentLinkCards)), linkCardMediaIDs(*input.LinkCards)...)
+			affectedCards := append(linkCardMediaIDs(LinkCardsOf(currentLinkCards)), linkCardMediaIDs(nextLinkCards)...)
 			if updateErr := store.ReconcileMediaReferences(ctx, affectedCards, now); updateErr != nil {
 				return updateErr
 			}
@@ -1349,6 +1363,9 @@ func hashCreatePost(content string, media []domain.EntryMediaUsage, location *do
 		_, _ = digest.Write([]byte("\x00link-card-v1\x00"))
 		writeHashLength(digest, len(cards))
 		for _, card := range cards {
+			if card.EffectiveDisplayMode() != domain.LinkDisplayCover {
+				_, _ = digest.Write([]byte("\x00link-display:" + string(card.EffectiveDisplayMode()) + "\x00"))
+			}
 			writeHashLength(digest, card.Position)
 			for _, value := range []string{
 				card.SourceURL, card.CanonicalURL, string(card.Provider), string(card.Kind),

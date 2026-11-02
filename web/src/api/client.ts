@@ -1,4 +1,8 @@
-import { decodeResponse, PublicApiError } from "./public";
+import {
+  decodeResponse,
+  PublicApiError,
+  type LinkCardDisplayMode,
+} from "./public";
 import { credentialFetch } from "./credentialConfirmation";
 
 export type RegistrationMode = "open" | "approval" | "closed";
@@ -14,6 +18,7 @@ export type LocationProvider = "manual" | "amap" | "geoapify";
 export type CoordinateSystem = "wgs84" | "gcj02";
 
 export interface LinkCardInput {
+  display_mode?: LinkCardDisplayMode;
   source_url: string;
   canonical_url: string;
   provider: string;

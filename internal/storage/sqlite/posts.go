@@ -529,7 +529,7 @@ SELECT card.position, card.source_url, card.canonical_url, card.provider,
        card.embed_url, card.captured_at_ms, card.view_count,
        card.comment_count, card.like_count, card.favicon_media_id,
        favicon.mime_type,
-       thumbnail.mime_type, thumbnail.width, thumbnail.height
+       thumbnail.mime_type, thumbnail.width, thumbnail.height, card.display_mode
 FROM entry_link_card AS card
 LEFT JOIN media AS thumbnail ON thumbnail.id = card.thumbnail_media_id
 LEFT JOIN media AS favicon ON favicon.id = card.favicon_media_id
@@ -559,7 +559,7 @@ ORDER BY card.position`, entryID.String())
 			&card.Kind, &card.Title, &card.Description, &card.SiteName,
 			&card.AuthorName, &duration, &thumbnail, &card.EmbedURL, &card.CapturedAt,
 			&views, &comments, &likes, &favicon, &faviconMT,
-			&mimeType, &width, &height,
+			&mimeType, &width, &height, &card.DisplayMode,
 		); err != nil {
 			return nil, fmt.Errorf("scan entry link card: %w", err)
 		}
@@ -609,14 +609,14 @@ INSERT INTO entry_link_card (
     entry_id, position, source_url, canonical_url, provider, card_kind, title,
     description, site_name, author_name, duration_seconds, thumbnail_media_id,
     embed_url, captured_at_ms, view_count, comment_count, like_count,
-    favicon_media_id
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    favicon_media_id, display_mode
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 			entryID.String(), card.Position, card.SourceURL, card.CanonicalURL,
 			string(card.Provider), string(card.Kind), card.Title, card.Description,
 			card.SiteName, card.AuthorName, duration, thumbnail, card.EmbedURL,
 			card.CapturedAt, countArgument(card.ViewCount),
 			countArgument(card.CommentCount), countArgument(card.LikeCount),
-			mediaArgument(card.FaviconMediaID),
+			mediaArgument(card.FaviconMediaID), string(card.EffectiveDisplayMode()),
 		); err != nil {
 			return fmt.Errorf("insert entry link card: %w", err)
 		}

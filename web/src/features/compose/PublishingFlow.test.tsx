@@ -3041,6 +3041,7 @@ describe("owner composing flow", () => {
               link_cards: [
                 {
                   ...storedLinkCard,
+                  display_mode: "compact",
                   canonical_url: draftLinkCard.canonical_url,
                   title: draftLinkCard.title,
                 },
@@ -3060,14 +3061,23 @@ describe("owner composing flow", () => {
       target: { value: draftLinkCard.source_url },
     });
     await screen.findByRole("region", { name: "链接预览" });
+    const layout = screen.getByRole("button", { name: "链接卡片展示方式" });
+    fireEvent.keyDown(layout, { key: "ArrowDown", code: "ArrowDown" });
+    const compactOption = await screen.findByRole("menuitemradio", {
+      name: "小图卡片",
+    });
+    fireEvent.mouseDown(compactOption);
+    fireEvent.mouseUp(compactOption);
+    fireEvent.click(compactOption);
     fireEvent.click(
       screen.getAllByRole("link", { name: "乔乔的 Moment首页" })[0],
     );
     await keepDraftAndResumeNavigation();
     await waitFor(() => expect(window.location.pathname).toBe("/"));
-    expect(listKeptDrafts(instance)[0]?.linkPreview?.card).toEqual(
-      draftLinkCard,
-    );
+    expect(listKeptDrafts(instance)[0]?.linkPreview?.card).toEqual({
+      ...draftLinkCard,
+      display_mode: "compact",
+    });
     const retention = fetcher.mock.calls.find(([url]) =>
       String(url).includes("/links/drafts/"),
     );
@@ -3102,7 +3112,7 @@ describe("owner composing flow", () => {
         String(url) === "/api/v1/posts" && init?.method === "POST",
     );
     expect(JSON.parse(String(published?.[1]?.body)).link_cards).toEqual([
-      draftLinkCard,
+      { ...draftLinkCard, display_mode: "compact" },
     ]);
     await waitFor(() => expect(window.location.pathname).toBe("/"));
     await waitFor(() =>
@@ -3219,6 +3229,60 @@ describe("owner composing flow", () => {
       ).toBe(false);
     },
   );
+
+  it("saves a layout change while retaining the stored link snapshot", async () => {
+    preauthenticate();
+    const item = {
+      ...post("Saved caption"),
+      link_cards: [{ ...storedLinkCard, display_mode: "cover" }],
+    };
+    window.history.replaceState({}, "", `/m/${item.id}/edit`);
+    const fetcher = installApi((url, init) => {
+      if (url === `/api/v1/posts/${item.id}`)
+        return json({
+          data:
+            init?.method === "PATCH"
+              ? {
+                  ...item,
+                  link_cards: [
+                    {
+                      ...storedLinkCard,
+                      display_mode: JSON.parse(String(init.body))
+                        .link_card_display_mode,
+                    },
+                  ],
+                }
+              : item,
+          meta: {},
+        });
+    });
+    render(<App />);
+    const editor = await screen.findByLabelText("Moment 正文");
+    fireEvent.keyDown(
+      await screen.findByRole("button", { name: "链接卡片展示方式" }),
+      { key: "ArrowDown", code: "ArrowDown" },
+    );
+    expect(
+      await screen.findByRole("menuitemradio", { name: "大图封面" }),
+    ).toHaveAttribute("aria-checked", "true");
+    fireEvent.click(screen.getByRole("menuitemradio", { name: "小图卡片" }));
+    fireEvent.keyDown(editor, { key: "Enter", metaKey: true });
+    await waitFor(() => expect(window.location.pathname).toBe(`/m/${item.id}`));
+    const patch = fetcher.mock.calls.find(
+      ([url, init]) =>
+        String(url) === `/api/v1/posts/${item.id}` && init?.method === "PATCH",
+    );
+    expect(JSON.parse(String(patch?.[1]?.body))).toMatchObject({
+      link_card_display_mode: "compact",
+      content_md: "Saved caption",
+    });
+    expect(JSON.parse(String(patch?.[1]?.body))).not.toHaveProperty(
+      "link_cards",
+    );
+    expect(
+      fetcher.mock.calls.some(([url]) => String(url).includes("/links/unfurl")),
+    ).toBe(false);
+  });
 
   it("guards and saves an explicit stored-card removal without changing the caption", async () => {
     preauthenticate();

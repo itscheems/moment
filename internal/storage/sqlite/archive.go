@@ -748,7 +748,7 @@ SELECT card.position, card.source_url, card.canonical_url, card.provider,
        card.card_kind, card.title, card.description, card.site_name,
        card.author_name, card.duration_seconds, card.embed_url,
        card.captured_at_ms, card.view_count, card.comment_count,
-       card.like_count, thumbnail.sha256, favicon.sha256
+       card.like_count, thumbnail.sha256, favicon.sha256, card.display_mode
 FROM entry_link_card AS card
 LEFT JOIN media AS thumbnail ON thumbnail.id = card.thumbnail_media_id
 LEFT JOIN media AS favicon ON favicon.id = card.favicon_media_id
@@ -767,7 +767,7 @@ ORDER BY card.position`, entryID)
 			&card.Position, &card.SourceURL, &card.CanonicalURL, &card.Provider,
 			&card.Kind, &card.Title, &card.Description, &card.SiteName,
 			&card.AuthorName, &duration, &card.EmbedURL, &card.CapturedAt,
-			&views, &comments, &likes, &sha, &faviconSHA,
+			&views, &comments, &likes, &sha, &faviconSHA, &card.DisplayMode,
 		); err != nil {
 			return nil, fmt.Errorf("scan archive entry link card: %w", err)
 		}

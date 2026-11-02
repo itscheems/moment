@@ -280,3 +280,13 @@ describe("LinkCard site mark", () => {
     expect(screen.getByText("崽崽阿阿_")).toBeInTheDocument();
   });
 });
+
+it("keeps compact video cards playable", () => {
+  render(<LinkCard card={card({ displayMode: "compact" })} />);
+  expect(screen.getByRole("region", { name: "链接预览" })).toHaveAttribute(
+    "data-display-mode",
+    "compact",
+  );
+  fireEvent.click(screen.getByRole("button", { name: /播放/ }));
+  expect(document.querySelector("iframe")?.src).toContain("autoplay=1");
+});

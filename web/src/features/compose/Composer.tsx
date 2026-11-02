@@ -418,6 +418,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
       dirty &&
       (mapChanged ||
         linkPreview.changed ||
+        linkPreview.displayModeChanged ||
         content !== initialContent ||
         mediaChanged ||
         locationChanged ||
@@ -1069,6 +1070,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
       quotedPost,
       quoteTarget,
       dismissed: linkPreview.dismissed,
+      linkDisplayMode: linkPreview.displayMode,
     };
     const historyGroup = JSON.stringify([
       mapCard,
@@ -1077,6 +1079,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
       visibility,
       quoteTarget,
       [...linkPreview.dismissed].sort(),
+      linkPreview.displayMode,
     ]);
     const { reset: resetHistory, ...historyEvents } = useEditHistory({
       value: historyValue,
@@ -1113,6 +1116,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
         setVisibility(next.visibility);
         setQuotedPost(next.quotedPost);
         linkPreview.restoreDismissed(next.dismissed);
+        linkPreview.setDisplayMode(next.linkDisplayMode);
         setMention(null);
         setMentionItems([]);
         if (session)
@@ -1501,6 +1505,9 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
                 : undefined,
               visibilityChanged ? visibility : undefined,
               mapChanged ? mapCard : undefined,
+              displayedLinkCard && linkPreview.displayModeChanged
+                ? linkPreview.displayMode
+                : undefined,
             )
           : repostOnly && quotedPost
             ? await postsApi.setReposted(session.csrfToken, quotedPost.id, true)
@@ -1890,6 +1897,12 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
             {displayedLinkCard ? (
               <ComposerLinkCard
                 card={displayedLinkCard}
+                displayMode={linkPreview.displayMode}
+                onDisplayModeChange={(mode) => {
+                  linkPreview.setDisplayMode(mode);
+                  dirtyRef.current = true;
+                  setDirty(true);
+                }}
                 disabled={pending}
                 onRemove={() => {
                   linkPreview.dismiss();

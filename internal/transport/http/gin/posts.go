@@ -178,6 +178,7 @@ func updatePost(posts *app.PostService) gin.HandlerFunc {
 			return
 		}
 		update := app.UpdatePostInput{ID: id, ContentMD: decoded.ContentMD, PreserveContent: !decoded.ContentPresent}
+		update.LinkCardDisplayMode = decoded.LinkCardDisplayMode
 		if decoded.MapPresent {
 			update.MapCard = &decoded.MapCard
 		}
@@ -281,21 +282,22 @@ func postListInput(ctx *gin.Context) (app.ListPostsInput, error) {
 }
 
 type decodedPostWrite struct {
-	ContentMD         string
-	ContentPresent    bool
-	MapCard           *domain.MapCard
-	MapPresent        bool
-	Media             []domain.EntryMediaUsage
-	MediaPresent      bool
-	Location          *domain.Location
-	LocationPresent   bool
-	LinkCards         []domain.LinkCard
-	LinkCardPresent   bool
-	QuotedPostID      *domain.ID
-	QuotedCommentID   *domain.ID
-	QuotePresent      bool
-	Visibility        domain.Visibility
-	VisibilityPresent bool
+	LinkCardDisplayMode *domain.LinkCardDisplayMode
+	ContentMD           string
+	ContentPresent      bool
+	MapCard             *domain.MapCard
+	MapPresent          bool
+	Media               []domain.EntryMediaUsage
+	MediaPresent        bool
+	Location            *domain.Location
+	LocationPresent     bool
+	LinkCards           []domain.LinkCard
+	LinkCardPresent     bool
+	QuotedPostID        *domain.ID
+	QuotedCommentID     *domain.ID
+	QuotePresent        bool
+	Visibility          domain.Visibility
+	VisibilityPresent   bool
 }
 
 func decodePostWrite(ctx *gin.Context, patch bool) (decodedPostWrite, error) {
@@ -365,6 +367,13 @@ func decodePostWrite(ctx *gin.Context, patch bool) (decodedPostWrite, error) {
 			}
 			result.LinkCards = cards
 			result.LinkCardPresent = true
+		case "link_card_display_mode":
+			var value string
+			if !patch || json.Unmarshal(raw, &value) != nil || !domain.LinkCardDisplayMode(value).Valid() {
+				return decodedPostWrite{}, invalidPostArgument("link_card_display_mode must be cover or compact on an update", key)
+			}
+			mode := domain.LinkCardDisplayMode(value)
+			result.LinkCardDisplayMode = &mode
 		case "visibility":
 			var value string
 			if bytes.Equal(bytes.TrimSpace(raw), []byte("null")) || json.Unmarshal(raw, &value) != nil {
@@ -406,7 +415,7 @@ func decodePostWrite(ctx *gin.Context, patch bool) (decodedPostWrite, error) {
 		return decodedPostWrite{}, invalidPostArgument("request must contain exactly one JSON document", "body")
 	}
 	if (!patch && !result.ContentPresent && !result.MediaPresent && !result.QuotePresent && !result.MapPresent && !result.LinkCardPresent) ||
-		(patch && !result.ContentPresent && !result.MediaPresent && !result.LocationPresent && !result.MapPresent && !result.LinkCardPresent && !result.VisibilityPresent) {
+		(patch && !result.ContentPresent && !result.MediaPresent && !result.LocationPresent && !result.MapPresent && !result.LinkCardPresent && result.LinkCardDisplayMode == nil && !result.VisibilityPresent) {
 		return decodedPostWrite{}, invalidPostArgument("request must contain content_md, media, location, link_cards, or visibility", "body")
 	}
 	if result.QuotedPostID != nil && result.QuotedCommentID != nil {

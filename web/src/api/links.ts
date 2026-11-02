@@ -34,7 +34,13 @@ export function parseLinkCardInput(value: unknown): LinkCardInput {
   if (
     typeof value !== "object" ||
     value === null ||
-    !hasExactKeys(value as Record<string, unknown>, linkCardInputKeys)
+    !hasExactKeys(value as Record<string, unknown>, [
+      ...linkCardInputKeys,
+      ...(Object.hasOwn(value, "display_mode") ? ["display_mode"] : []),
+    ]) ||
+    ("display_mode" in value &&
+      value.display_mode !== "cover" &&
+      value.display_mode !== "compact")
   ) {
     throw invalidResponse("link card contains an unsupported or missing field");
   }

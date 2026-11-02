@@ -1,4 +1,7 @@
-import { type PublicLinkCard } from "../../api/public";
+import {
+  type PublicLinkCard,
+  type LinkCardDisplayMode,
+} from "../../api/public";
 import { type LinkCardInput } from "../../api/client";
 import { useCallback, useEffect, useRef, useState } from "react";
 
@@ -41,6 +44,9 @@ export function detectLinkUrl(content: string): string | null {
 export type LinkPreviewStatus = "idle" | "loading" | "ready" | "failed";
 
 export interface LinkPreviewState {
+  displayMode: LinkCardDisplayMode;
+  setDisplayMode: (mode: LinkCardDisplayMode) => void;
+  displayModeChanged: boolean;
   status: LinkPreviewStatus;
   card: LinkCardInput | null;
   storedCard: PublicLinkCard | null;
@@ -80,6 +86,7 @@ export function useLinkPreview(
   const [card, setCard] = useState<LinkCardInput | null>(null);
   const [dismissed, setDismissed] = useState<Set<string>>(() => new Set());
   const [changed, setChanged] = useState(false);
+  const [displayOverride, setDisplayMode] = useState<LinkCardDisplayMode>();
   const controller = useRef<AbortController | null>(null);
   const resolvedCards = useRef(new Map<string, LinkCardInput>());
 
@@ -170,6 +177,7 @@ export function useLinkPreview(
   }, [url, savedUrl]);
 
   const reset = useCallback(() => {
+    setDisplayMode(undefined);
     controller.current?.abort();
     saved.current = undefined;
     setDismissed(new Set());
@@ -179,6 +187,7 @@ export function useLinkPreview(
   }, []);
 
   const restore = useCallback((snapshot?: LinkDraftSnapshot) => {
+    setDisplayMode(undefined);
     controller.current?.abort();
     saved.current = undefined;
     const next = snapshot?.card ?? null;
@@ -201,10 +210,26 @@ export function useLinkPreview(
     !current
       ? saved.current.card
       : null;
+  const displayMode =
+    displayOverride ??
+    current?.display_mode ??
+    storedCard?.displayMode ??
+    "cover";
   return {
-    storedCard,
+    displayMode,
+    setDisplayMode,
+    displayModeChanged:
+      !!saved.current &&
+      displayMode !== (saved.current.card.displayMode ?? "cover"),
+    storedCard:
+      storedCard && displayOverride
+        ? { ...storedCard, displayMode: displayOverride }
+        : storedCard,
     status: suppressed ? "idle" : status,
-    card: current,
+    card:
+      current && displayOverride
+        ? { ...current, display_mode: displayOverride }
+        : current,
     dismiss,
     dismissed,
     restoreDismissed: setDismissed,

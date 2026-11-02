@@ -180,3 +180,22 @@ it("does not revive a dismissed saved card when a replacement URL is removed", (
   rerender({ text: "https://example.com/another" });
   expect(result.current.storedCard).toBeNull();
 });
+
+it("changes a saved card layout without refetching its snapshot", () => {
+  const fetcher = vi.fn();
+  const api = new LinksApi(fetcher);
+  const { result } = renderHook(() =>
+    useLinkPreview(api, "Caption", true, {
+      card: { ...stored, displayMode: "compact" },
+      content: "Caption",
+    }),
+  );
+  expect(result.current.displayMode).toBe("compact");
+  act(() => result.current.setDisplayMode("cover"));
+  expect(result.current.displayModeChanged).toBe(true);
+  expect(result.current.changed).toBe(false);
+  expect(result.current.storedCard?.title).toBe(stored.title);
+  expect(fetcher).not.toHaveBeenCalled();
+  act(() => result.current.setDisplayMode("compact"));
+  expect(result.current.displayModeChanged).toBe(false);
+});

@@ -16,6 +16,51 @@
   text-decoration: none;
 }
 
+.compact .surface {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-2);
+}
+
+.compact .media {
+  flex: 0 0 auto;
+  inline-size: 4.5rem;
+  block-size: 4.5rem;
+  overflow: hidden;
+  border-radius: 0.6rem;
+}
+
+.compact .thumbnail {
+  inline-size: 100%;
+  block-size: 100%;
+  object-fit: cover;
+}
+
+.compact .meta {
+  min-inline-size: 0;
+  flex: 1 1 auto;
+  padding: 0;
+}
+
+.compact .description,
+.compact .stats {
+  display: none;
+}
+
+.compact .play {
+  inset-block-start: var(--space-2);
+  inset-inline-start: var(--space-2);
+  inline-size: 4.5rem;
+  block-size: 4.5rem;
+}
+
+.compact .play svg {
+  inline-size: 2.25rem;
+  block-size: 2.25rem;
+  padding: 0.45rem;
+}
+
 .surface:focus-visible {
   background: var(--surface-hover);
 }

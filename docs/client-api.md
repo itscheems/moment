@@ -152,6 +152,8 @@ inside a sentence intentionally remains visible.
 
 The web editor restores a post's saved link card even when the body has no URL. Caption-only edits preserve the stored snapshot and its managed cover without resolving the external URL again. Removing the card is an explicit edit that can be undone or saved independently of the caption.
 
+Link cards accept optional `display_mode: "cover" | "compact"`, defaulting to `cover` for older snapshots and clients. Public cards include the selected mode. `PATCH /posts/:id` also accepts `link_card_display_mode` to change presentation without resubmitting captured metadata. It requires an existing card and retains its title, description, original URL, capture time, and managed images. CLI: `moment post update <id> --link-display compact --json`; new snapshots may set `display_mode` in `--link-json` input. Browser drafts preserve the selection, while their editing card stays compact.
+
 Post and search DTOs add nullable `edited_at` (RFC 3339 UTC strings with millisecond
 precision). Actual changes
 to Markdown, ordered media/alt text, location, map card, or link cards update this field.

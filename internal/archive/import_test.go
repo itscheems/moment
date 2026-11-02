@@ -1296,6 +1296,10 @@ INSERT INTO entry_link_card (
           'A captured title', 'A captured description', 'YouTube', 'A channel',
           212, ?, 'https://www.youtube-nocookie.com/embed/dQw4w9WgXcQ', 1700000000000)`,
 			cardEntryID, mediaOneID)
+		if err != nil {
+			return err
+		}
+		_, err = queries.ExecContext(context.Background(), `UPDATE entry_link_card SET display_mode='compact' WHERE entry_id=?`, cardEntryID)
 		return err
 	}); err != nil {
 		t.Fatal(err)
@@ -1340,6 +1344,9 @@ INSERT INTO entry_link_card (
 		t.Fatalf("restored entry = %#v", restored)
 	}
 	card := restored.LinkCards[0]
+	if card.Card.DisplayMode != domain.LinkDisplayCompact {
+		t.Fatalf("display mode was not restored: %q", card.Card.DisplayMode)
+	}
 	if card.Card.Title != "A captured title" || card.Card.Description != "A captured description" {
 		t.Fatalf("card text did not survive: %#v", card.Card)
 	}

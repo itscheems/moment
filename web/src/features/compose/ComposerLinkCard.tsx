@@ -1,5 +1,10 @@
 import { useTranslation } from "react-i18next";
-import { type PublicLinkCard } from "../../api/public";
+import {
+  type PublicLinkCard,
+  type LinkCardDisplayMode,
+} from "../../api/public";
+import { Menu } from "@base-ui/react/menu";
+import audienceStyles from "./Audience.module.css";
 import { type LinkCardInput } from "../../api/client";
 
 import { mediaPreviewUrl } from "../../api/mediaUrls";
@@ -10,10 +15,14 @@ export function ComposerLinkCard({
   card,
   disabled,
   onRemove,
+  displayMode = "cover",
+  onDisplayModeChange,
 }: {
   card: LinkCardInput | PublicLinkCard;
   disabled: boolean;
   onRemove: () => void;
+  displayMode?: LinkCardDisplayMode;
+  onDisplayModeChange: (mode: LinkCardDisplayMode) => void;
 }) {
   const { t } = useTranslation();
 
@@ -41,6 +50,52 @@ export function ComposerLinkCard({
           <p className={styles.composerLinkTitle}>{card.title.trim()}</p>
         ) : null}
       </div>
+      <Menu.Root>
+        <Menu.Trigger
+          aria-label={t("链接卡片展示方式")}
+          className={styles.composerLinkRemove}
+          disabled={disabled}
+        >
+          <Icon name="ellipsis" />
+        </Menu.Trigger>
+        <Menu.Portal>
+          <Menu.Positioner
+            align="end"
+            side="bottom"
+            sideOffset={4}
+            className={audienceStyles.positioner}
+          >
+            <Menu.Popup
+              aria-label={t("链接卡片展示方式")}
+              className={styles.actionsMenuPopup}
+            >
+              <Menu.RadioGroup
+                value={displayMode}
+                onValueChange={(value) => {
+                  if (value === "cover" || value === "compact")
+                    onDisplayModeChange(value);
+                }}
+              >
+                {(["compact", "cover"] as const).map((mode) => (
+                  <Menu.RadioItem
+                    key={mode}
+                    value={mode}
+                    closeOnClick
+                    className={audienceStyles.option}
+                  >
+                    <span className={audienceStyles.optionLabel}>
+                      {mode === "compact" ? t("小图卡片") : t("大图封面")}
+                    </span>
+                    <Menu.RadioItemIndicator>
+                      <Icon name="check" />
+                    </Menu.RadioItemIndicator>
+                  </Menu.RadioItem>
+                ))}
+              </Menu.RadioGroup>
+            </Menu.Popup>
+          </Menu.Positioner>
+        </Menu.Portal>
+      </Menu.Root>
       <button
         aria-label={t("移除链接卡片")}
         className={styles.composerLinkRemove}

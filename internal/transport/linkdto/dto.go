@@ -12,9 +12,10 @@ import (
 	"github.com/moment/moment/internal/linkfetch"
 )
 
-// Card is the canonical wire shape for one link card. Every field is required,
-// including explicit nulls, so a client cannot silently omit part of a snapshot.
+// Card is the canonical wire shape for one link card. Captured fields require
+// explicit nulls; legacy clients may omit display_mode to retain the cover default.
 type Card struct {
+	DisplayMode       string  `json:"display_mode,omitempty"`
 	SourceURL         string  `json:"source_url"`
 	CanonicalURL      string  `json:"canonical_url"`
 	Provider          string  `json:"provider"`
@@ -67,7 +68,14 @@ func (card *Card) UnmarshalJSON(data []byte) error {
 			return errors.New("link card is missing required field " + field)
 		}
 	}
-	if len(present) != len(cardFields) {
+	optional := 0
+	if _, exists := present["display_mode"]; exists {
+		optional = 1
+		if !domain.LinkCardDisplayMode(value.DisplayMode).Valid() {
+			return errors.New("link card display_mode must be cover or compact")
+		}
+	}
+	if len(present) != len(cardFields)+optional {
 		return errors.New("link card contains an unsupported field")
 	}
 	*card = Card(value)
@@ -77,6 +85,7 @@ func (card *Card) UnmarshalJSON(data []byte) error {
 // Domain constructs a validated stored preview snapshot.
 func (card Card) Domain(position int) (domain.LinkCard, error) {
 	value := domain.LinkCard{
+		DisplayMode:  domain.LinkCardDisplayMode(card.DisplayMode),
 		Position:     position,
 		SourceURL:    card.SourceURL,
 		CanonicalURL: card.CanonicalURL,
@@ -129,6 +138,7 @@ func copyCount(value *int64) *int64 {
 // FromPreview maps an application preview into its public representation.
 func FromPreview(preview app.LinkPreview) Card {
 	card := Card{
+		DisplayMode:  string(preview.Card.EffectiveDisplayMode()),
 		SourceURL:    preview.Card.SourceURL,
 		CanonicalURL: preview.Card.CanonicalURL,
 		Provider:     string(preview.Card.Provider),
@@ -174,6 +184,7 @@ func FromPreview(preview app.LinkPreview) Card {
 // can round-trip a card between unfurl and post write without losing a field.
 func FromDomainCard(card domain.LinkCard) Card {
 	wire := Card{
+		DisplayMode:  string(card.EffectiveDisplayMode()),
 		SourceURL:    card.SourceURL,
 		CanonicalURL: card.CanonicalURL,
 		Provider:     string(card.Provider),

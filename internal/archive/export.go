@@ -716,6 +716,7 @@ type articleDraftRecord struct {
 // content hash rather than by media ID because media identifiers are reassigned
 // on import while the hash is the stable anchor across instances.
 type linkCardRecord struct {
+	DisplayMode     string  `json:"display_mode,omitempty"`
 	Position        int     `json:"position"`
 	SourceURL       string  `json:"source_url"`
 	CanonicalURL    string  `json:"canonical_url"`
@@ -1383,7 +1384,8 @@ func portableLinkCards(values []sqlitestore.ArchiveLinkCard) []linkCardRecord {
 	records := make([]linkCardRecord, 0, len(values))
 	for _, value := range values {
 		record := linkCardRecord{
-			Position: value.Card.Position, SourceURL: value.Card.SourceURL,
+			DisplayMode: string(value.Card.EffectiveDisplayMode()),
+			Position:    value.Card.Position, SourceURL: value.Card.SourceURL,
 			CanonicalURL: value.Card.CanonicalURL, Provider: string(value.Card.Provider),
 			CardKind: string(value.Card.Kind), Title: value.Card.Title,
 			Description: value.Card.Description, SiteName: value.Card.SiteName,
@@ -1422,11 +1424,13 @@ func domainLinkCards(values []linkCardRecord) ([]sqlitestore.ArchiveLinkCard, er
 		}
 		capturedAt := instant.UnixMilli()
 		card := domain.LinkCard{
-			Position: index, SourceURL: value.SourceURL, CanonicalURL: value.CanonicalURL,
+			DisplayMode: domain.LinkCardDisplayMode(value.DisplayMode),
+			Position:    index, SourceURL: value.SourceURL, CanonicalURL: value.CanonicalURL,
 			Provider: domain.LinkCardProvider(value.Provider), Kind: domain.LinkCardKind(value.CardKind),
 			Title: value.Title, Description: value.Description, SiteName: value.SiteName,
 			AuthorName: value.AuthorName, EmbedURL: value.EmbedURL, CapturedAt: capturedAt,
 		}
+		card.DisplayMode = card.EffectiveDisplayMode()
 		if value.DurationSeconds != nil {
 			seconds := *value.DurationSeconds
 			card.DurationSeconds = &seconds
