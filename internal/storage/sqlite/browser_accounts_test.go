@@ -12,7 +12,15 @@ import (
 )
 
 func TestBrowserAccountsPersistIsolationAndRevocation(t *testing.T) {
-	repo, service := newAccountFixture(t)
+	repo, _ := newAccountFixture(t)
+	clock := time.Now()
+	service, err := app.NewAccountService(repo, app.WithAccountClock(func() time.Time {
+		clock = clock.Add(time.Millisecond)
+		return clock
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
 	ctx := context.Background()
 	secret := strings.Repeat("a", 43)
 	users := []domain.User{}
