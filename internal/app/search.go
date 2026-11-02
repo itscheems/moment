@@ -658,13 +658,19 @@ func prepareSearchQuery(raw string) (SearchRepositoryQuery, string, error) {
 	if err != nil || normalized == "" {
 		return SearchRepositoryQuery{}, "", domain.NewError(domain.CodeInvalidArgument, "q must contain searchable text", map[string]any{"field": "q"})
 	}
+	compact := strings.ReplaceAll(normalized, " ", "")
 	if utf8.RuneCountInString(normalized) <= 2 {
 		return SearchRepositoryQuery{Mode: SearchModeLike, QueryValue: "%" + escapeLike(normalized) + "%"}, normalized, nil
 	}
 	if !strings.ContainsFunc(normalized, func(r rune) bool { return unicode.IsLetter(r) || unicode.IsNumber(r) }) {
 		return SearchRepositoryQuery{}, "", domain.NewError(domain.CodeInvalidArgument, "q must contain a letter or number", map[string]any{"field": "q"})
 	}
-	return SearchRepositoryQuery{Mode: SearchModeFTS, QueryValue: `"` + strings.ReplaceAll(normalized, `"`, `""`) + `"`}, normalized, nil
+	quoted := func(value string) string { return `"` + strings.ReplaceAll(value, `"`, `""`) + `"` }
+	match := quoted(normalized)
+	if compact != normalized && utf8.RuneCountInString(compact) >= 3 {
+		match += " OR " + quoted(compact)
+	}
+	return SearchRepositoryQuery{Mode: SearchModeFTS, QueryValue: match}, normalized, nil
 }
 
 func escapeLike(value string) string {
@@ -747,9 +753,28 @@ func searchSnippet(content, query string) string {
 		return content
 	}
 	index := strings.Index(content, query)
-	start := 0
+	match := -1
 	if index >= 0 {
-		start = utf8.RuneCountInString(content[:index]) - 40
+		match = utf8.RuneCountInString(content[:index])
+	} else {
+		compact := strings.ReplaceAll(content, " ", "")
+		if offset := strings.Index(compact, strings.ReplaceAll(query, " ", "")); offset >= 0 {
+			remaining := utf8.RuneCountInString(compact[:offset])
+			for i, character := range contentRunes {
+				if character == ' ' {
+					continue
+				}
+				if remaining == 0 {
+					match = i
+					break
+				}
+				remaining--
+			}
+		}
+	}
+	start := 0
+	if match >= 0 {
+		start = match - 40
 		if start < 0 {
 			start = 0
 		}
