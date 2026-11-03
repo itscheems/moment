@@ -53,9 +53,7 @@ function Identity({
       </span>
       {selected ? (
         <span className={styles.selected} aria-label={t("当前账户")}>
-          <svg viewBox="0 0 24 24" aria-hidden="true">
-            <path d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20Zm-1.25 14.2-4-4 1.4-1.4 2.4 2.4 5-6 1.5 1.3-6.3 7.7Z" />
-          </svg>
+          <Icon name="selected-check" />
         </span>
       ) : badge ? (
         <span

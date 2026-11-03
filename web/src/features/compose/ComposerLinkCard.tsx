@@ -5,6 +5,7 @@ import {
 } from "../../api/public";
 import { Menu } from "@base-ui/react/menu";
 import audienceStyles from "./Audience.module.css";
+import accountStyles from "../auth/AccountSwitcher.module.css";
 import { type LinkCardInput } from "../../api/client";
 
 import { mediaPreviewUrl } from "../../api/mediaUrls";
@@ -86,9 +87,11 @@ export function ComposerLinkCard({
                     <span className={audienceStyles.optionLabel}>
                       {mode === "compact" ? t("小图卡片") : t("大图封面")}
                     </span>
-                    <Menu.RadioItemIndicator>
-                      <Icon name="check" />
-                    </Menu.RadioItemIndicator>
+                    <span className={accountStyles.selected} aria-hidden="true">
+                      <Menu.RadioItemIndicator>
+                        <Icon name="selected-check" />
+                      </Menu.RadioItemIndicator>
+                    </span>
                   </Menu.RadioItem>
                 ))}
               </Menu.RadioGroup>
