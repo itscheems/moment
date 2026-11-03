@@ -977,7 +977,9 @@ describe("search and archive memory layer", () => {
       ),
     ).toBe(false);
     await act(async () => release?.());
-    expect(await findCalendarDay("8月10日，2 条 Moment")).toBeInTheDocument();
+    expect(
+      await findCalendarDay("2026-08-10，2 条 Moment"),
+    ).toBeInTheDocument();
     expect(postRequests(fetcher)).toEqual(["/api/v1/archive/posts?limit=20"]);
     expect(
       fetcher.mock.calls.filter(
@@ -1006,7 +1008,9 @@ describe("search and archive memory layer", () => {
       ),
     ).toBe(false);
     fireEvent.click(retry);
-    expect(await findCalendarDay("8月10日，2 条 Moment")).toBeInTheDocument();
+    expect(
+      await findCalendarDay("2026-08-10，2 条 Moment"),
+    ).toBeInTheDocument();
     expect(postRequests(fetcher)).toEqual(["/api/v1/archive/posts?limit=20"]);
     expect(window.location.pathname).toBe("/archive");
   });
@@ -1035,7 +1039,7 @@ describe("search and archive memory layer", () => {
     await renderArchive();
     expect(await screen.findByText("旧城雨落在街口")).toBeInTheDocument();
     expect(
-      await findCalendarDay("8月10日，2 条 Moment", { timeout: 2500 }),
+      await findCalendarDay("2026-08-10，2 条 Moment", { timeout: 2500 }),
     ).toHaveAttribute("href", "/archive?day=2026-08-10");
     expect(screen.getByText("旧城雨落在街口")).toBeInTheDocument();
     expect(months).toBe(2);
@@ -1070,13 +1074,15 @@ describe("search and archive memory layer", () => {
 
     // August, not the empty current month.
     expect(
-      screen.getByRole("button", { name: "2026年8月，选择年月" }),
+      screen.getByRole("button", { name: "2026-08, 选择年月" }),
     ).toBeInTheDocument();
-    expect(await findCalendarDay("8月10日，2 条 Moment")).toHaveAttribute(
+    expect(await findCalendarDay("2026-08-10，2 条 Moment")).toHaveAttribute(
       "href",
       "/archive?day=2026-08-10",
     );
-    expect(screen.getByLabelText("8月11日，没有 Moment").tagName).toBe("SPAN");
+    expect(screen.getByLabelText("2026-08-11，没有 Moment").tagName).toBe(
+      "SPAN",
+    );
     expect(screen.getByText("本月 2 条")).toBeInTheDocument();
     expect(screen.queryByRole("link", { name: "回到最新" })).toBeNull();
 
@@ -1093,7 +1099,7 @@ describe("search and archive memory layer", () => {
     const fetcher = installArchive([repostedLater]);
     await renderArchive();
 
-    fireEvent.click(await findCalendarDay("8月10日，2 条 Moment"));
+    fireEvent.click(await findCalendarDay("2026-08-10，2 条 Moment"));
     expect(window.location.search).toBe("?day=2026-08-10");
     // The list opens at the end of the day and reads both ways from it: the
     // rows on and before it, then the first page after it.
@@ -1125,7 +1131,7 @@ describe("search and archive memory layer", () => {
       ),
     ).toBe(false);
     expect(
-      screen.getByRole("link", { name: "8月10日，2 条 Moment，已选择" }),
+      screen.getByRole("link", { name: "2026-08-10，2 条 Moment，已选择" }),
     ).toHaveAttribute("aria-current", "date");
 
     // More after the day loads from the top, the way more before it loads
@@ -1157,7 +1163,7 @@ describe("search and archive memory layer", () => {
       expect(window.location.search).toContain("day=2026-08-10"),
     );
     expect(
-      await findCalendarDay("8月10日，2 条 Moment，已选择"),
+      await findCalendarDay("2026-08-10，2 条 Moment，已选择"),
     ).toBeInTheDocument();
     expect(await screen.findByText("旧城雨落在街口")).toBeInTheDocument();
   });
@@ -1168,7 +1174,9 @@ describe("search and archive memory layer", () => {
     const fetcher = installArchive();
     await renderArchive();
 
-    const selectedDay = await findCalendarDay("8月10日，2 条 Moment，已选择");
+    const selectedDay = await findCalendarDay(
+      "2026-08-10，2 条 Moment，已选择",
+    );
     const landingRow = (await screen.findByText("旧城雨落在街口")).closest(
       "article",
     )!;
@@ -1194,7 +1202,7 @@ describe("search and archive memory layer", () => {
     window.history.replaceState({}, "", "/archive");
     const fetcher = installArchive();
     await renderArchive();
-    const day = await findCalendarDay("8月10日，2 条 Moment");
+    const day = await findCalendarDay("2026-08-10，2 条 Moment");
     const row = (await screen.findByText("旧城雨落在街口")).closest("article");
     const requests = postRequests(fetcher);
     fireEvent.click(day);
@@ -1210,7 +1218,7 @@ describe("search and archive memory layer", () => {
     window.history.replaceState({}, "", "/archive");
     const fetcher = installArchive([repostedLater]);
     await renderArchive();
-    const day = await findCalendarDay("8月10日，2 条 Moment");
+    const day = await findCalendarDay("2026-08-10，2 条 Moment");
     const row = screen.getByText("旧帖，后来转发").closest("article");
     let release: (() => void) | undefined;
     const gate = new Promise<void>((resolve) => {
@@ -1230,7 +1238,7 @@ describe("search and archive memory layer", () => {
     expect(row).toBeInTheDocument();
     expect(screen.queryByText("旧城雨落在街口")).not.toBeInTheDocument();
     fireEvent.click(
-      screen.getByRole("link", { name: "8月10日，2 条 Moment，已选择" }),
+      screen.getByRole("link", { name: "2026-08-10，2 条 Moment，已选择" }),
     );
     expect(row).toBeInTheDocument();
     expect(
@@ -1247,7 +1255,7 @@ describe("search and archive memory layer", () => {
     await renderArchive();
 
     fireEvent.click(
-      await screen.findByRole("button", { name: "2026年8月，选择年月" }),
+      await screen.findByRole("button", { name: "2026-08, 选择年月" }),
     );
     const years = await screen.findByRole("group", { name: "年份" });
     expect(within(years).getByRole("button", { name: /2026/ })).toHaveAttribute(
@@ -1258,28 +1266,22 @@ describe("search and archive memory layer", () => {
       within(years).getByRole("button", { name: /2025/ }),
     ).toHaveTextContent("1 条");
     expect(
-      screen.getByRole("link", { name: "2026年8月，2 条 Moment" }),
+      screen.getByRole("link", { name: "2026-08，2 条 Moment" }),
     ).toHaveAttribute("aria-current", "date");
-    expect(screen.getByLabelText("2026年7月，没有 Moment").tagName).toBe(
-      "SPAN",
-    );
+    expect(screen.getByLabelText("2026-07，没有 Moment").tagName).toBe("SPAN");
 
     // A year moves the calendar to its newest month and leaves the picker up.
     fireEvent.click(within(years).getByRole("button", { name: /2025/ }));
     expect(
-      await screen.findByRole("button", { name: "2025年12月，选择年月" }),
+      await screen.findByRole("button", { name: "2025-12, 选择年月" }),
     ).toBeInTheDocument();
-    expect(
-      screen.getByRole("list", { name: "2025 年的月份" }),
-    ).toBeInTheDocument();
+    expect(screen.getByRole("list", { name: "2025" })).toBeInTheDocument();
     expect(window.location.search).toBe("");
 
     // A month moves the list and closes the picker.
     const requestsBeforeMonth = postRequests(fetcher);
     const cachedRow = screen.getByText("去年最后一天的雨").closest("article");
-    fireEvent.click(
-      screen.getByRole("link", { name: "2025年12月，1 条 Moment" }),
-    );
+    fireEvent.click(screen.getByRole("link", { name: "2025-12，1 条 Moment" }));
     expect(window.location.search).toBe("?month=2025-12");
     expect(postRequests(fetcher)).toEqual(requestsBeforeMonth);
     expect(screen.getByText("去年最后一天的雨").closest("article")).toBe(
@@ -1288,7 +1290,9 @@ describe("search and archive memory layer", () => {
     await waitFor(() =>
       expect(screen.queryByRole("group", { name: "年份" })).toBeNull(),
     );
-    expect(await findCalendarDay("12月31日，1 条 Moment")).toBeInTheDocument();
+    expect(
+      await findCalendarDay("2025-12-31，1 条 Moment"),
+    ).toBeInTheDocument();
   });
 
   it("pages the calendar within the archive's span without moving the list", async () => {
@@ -1296,13 +1300,13 @@ describe("search and archive memory layer", () => {
     window.history.replaceState({}, "", "/archive");
     const fetcher = installArchive();
     await renderArchive();
-    await findCalendarDay("8月10日，2 条 Moment");
+    await findCalendarDay("2026-08-10，2 条 Moment");
     const requestsBefore = fetcher.mock.calls.length;
 
     // Forward to the site's current month, September, and no further.
     fireEvent.click(screen.getByRole("button", { name: "下个月" }));
     expect(
-      screen.getByRole("button", { name: "2026年9月，选择年月" }),
+      screen.getByRole("button", { name: "2026-09, 选择年月" }),
     ).toBeInTheDocument();
     expect(screen.getByText("这个月没有 Moment")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "下个月" })).toBeDisabled();
@@ -1311,10 +1315,12 @@ describe("search and archive memory layer", () => {
     const previous = screen.getByRole("button", { name: "上个月" });
     for (let step = 0; step < 9; step += 1) fireEvent.click(previous);
     expect(
-      screen.getByRole("button", { name: "2025年12月，选择年月" }),
+      screen.getByRole("button", { name: "2025-12, 选择年月" }),
     ).toBeInTheDocument();
     expect(previous).toBeDisabled();
-    expect(await findCalendarDay("12月31日，1 条 Moment")).toBeInTheDocument();
+    expect(
+      await findCalendarDay("2025-12-31，1 条 Moment"),
+    ).toBeInTheDocument();
 
     // The list never moved, and empty months cost nothing.
     expect(window.location.search).toBe("");
@@ -1334,7 +1340,7 @@ describe("search and archive memory layer", () => {
     const fetcher = installArchive();
     const { unmount } = await renderArchive();
     expect(
-      await findCalendarDay("8月10日，2 条 Moment，已选择"),
+      await findCalendarDay("2026-08-10，2 条 Moment，已选择"),
     ).toBeInTheDocument();
     await waitFor(() =>
       expect(postRequests(fetcher)).toContain(
@@ -1369,11 +1375,11 @@ describe("search and archive memory layer", () => {
 
     const rail = screen.getByRole("complementary", { name: "记忆导航" });
     expect(
-      await within(rail).findByRole("button", { name: "2026年8月，选择年月" }),
+      await within(rail).findByRole("button", { name: "2026-08, 选择年月" }),
     ).toBeInTheDocument();
     expect(
       within(screen.getByRole("main")).queryByRole("button", {
-        name: "2026年8月，选择年月",
+        name: "2026-08, 选择年月",
       }),
     ).toBeNull();
   });
