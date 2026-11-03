@@ -149,16 +149,17 @@
 }
 
 .profileMeta time {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
+  display: block;
+  line-height: 12px;
   cursor: default;
 }
 
 .profileMeta svg {
+  display: inline-block;
   inline-size: 18.75px;
   block-size: 18.75px;
-  flex: none;
+  margin-inline-end: 4px;
+  vertical-align: text-bottom;
 }
 
 .headerSearch {

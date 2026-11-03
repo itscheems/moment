@@ -182,8 +182,8 @@ export function MemberProfilePage({
               exact={joinedExact}
               children={
                 <time dateTime={account.joinedAt}>
-                  <Icon name="calendar" />{" "}
-                  {t("{{value1}}加入", { value1: joined })}
+                  <Icon name="calendar" />
+                  <span>{t("{{value1}}加入", { value1: joined })}</span>
                 </time>
               }
             />

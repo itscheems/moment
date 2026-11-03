@@ -152,10 +152,9 @@ describe("member profile", () => {
     await i18n.changeLanguage("en");
     vi.stubGlobal("fetch", signedIn(null));
     mount(new PublicApi(async () => json(memberEnvelope())), "linlin");
-    expect(await screen.findByText("Joined August 2026")).toHaveAttribute(
-      "datetime",
-      "2026-08-01T09:08:00Z",
-    );
+    expect(
+      (await screen.findByText("Joined August 2026")).closest("time"),
+    ).toHaveAttribute("datetime", "2026-08-01T09:08:00Z");
   });
 
   it("renders another account's identity over the plain cover band", async () => {
