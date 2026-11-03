@@ -154,6 +154,7 @@ type QuotedPost struct {
 // portable archive, so removing a recognizer can never change what a stored
 // card renders as.
 type LinkCard struct {
+	DisplayMode       string  `json:"display_mode"`
 	Position          int     `json:"position"`
 	CanonicalURL      string  `json:"canonical_url"`
 	Kind              string  `json:"card_kind"`
@@ -332,6 +333,7 @@ func linkCardProjections(cards []app.LinkCardProjection) []LinkCard {
 	for _, projection := range cards {
 		card := projection.Card
 		mapped := LinkCard{
+			DisplayMode:     string(card.EffectiveDisplayMode()),
 			Position:        card.Position,
 			CanonicalURL:    card.CanonicalURL,
 			Kind:            string(card.Kind),

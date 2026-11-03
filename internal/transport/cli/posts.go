@@ -108,6 +108,7 @@ func registerPosts(application *Application) {
 		Capability: CapabilityBoth,
 		Flags: func(flags *pflag.FlagSet) {
 			flags.String("content", "", "replacement UTF-8 Markdown content")
+			flags.String("link-display", "", "stored link presentation: cover or compact")
 			registerPostVisibilityFlag(flags)
 			registerPostMediaFlags(flags)
 			registerPostLocationFlags(flags, true)
@@ -464,6 +465,18 @@ func runPostCreate(ctx context.Context, invocation Invocation, input CommandInpu
 }
 
 func runPostUpdate(ctx context.Context, invocation Invocation, input CommandInput) (Result, error) {
+	var linkDisplay *domain.LinkCardDisplayMode
+	if input.Changed("link-display") {
+		value, err := input.String("link-display")
+		if err != nil {
+			return Result{}, err
+		}
+		mode := domain.LinkCardDisplayMode(value)
+		if !mode.Valid() {
+			return Result{}, invalidArgument("link display must be cover or compact", "use --link-display cover or compact")
+		}
+		linkDisplay = &mode
+	}
 	mapInput, err := postMapInputFromFlags(ctx, input, true)
 	if err != nil {
 		return Result{}, err
@@ -493,7 +506,7 @@ func runPostUpdate(ctx context.Context, invocation Invocation, input CommandInpu
 	if err != nil {
 		return Result{}, err
 	}
-	if !contentPresent && !mediaInput.Present && !locationInput.Present && !linkInput.Present && !mapInput.Present && visibility == nil {
+	if !contentPresent && !mediaInput.Present && !locationInput.Present && !linkInput.Present && !mapInput.Present && visibility == nil && linkDisplay == nil {
 		return Result{}, invalidArgument("post update requires a content, media, map, location, link, or visibility change", "provide --content, media input, --map-json, --clear-map, --location-name, --location-json, --clear-location, --link, --link-json, --clear-link, or --visibility")
 	}
 	var (
@@ -513,7 +526,7 @@ func runPostUpdate(ctx context.Context, invocation Invocation, input CommandInpu
 		if err != nil {
 			return Result{}, err
 		}
-		update := app.UpdatePostInput{ID: id, ContentMD: content, PreserveContent: !contentPresent}
+		update := app.UpdatePostInput{ID: id, ContentMD: content, PreserveContent: !contentPresent, LinkCardDisplayMode: linkDisplay}
 		if mapInput.Present {
 			update.MapCard = &mapInput.Card
 		}
@@ -544,7 +557,7 @@ func runPostUpdate(ctx context.Context, invocation Invocation, input CommandInpu
 		if err != nil {
 			return Result{}, err
 		}
-		payload := postWritePayload{}
+		payload := postWritePayload{LinkCardDisplayMode: linkDisplay}
 		if mapInput.Present {
 			payload.MapCard = &mapInput.Card
 		}
@@ -682,14 +695,15 @@ func runPostPinChange(ctx context.Context, invocation Invocation, input CommandI
 }
 
 type postWritePayload struct {
-	MapCard         **domain.MapCard       `json:"map_card,omitempty"`
-	ContentMD       *string                `json:"content_md,omitempty"`
-	Media           *[]postdto.MediaUsage  `json:"media,omitempty"`
-	Location        **locationdto.Location `json:"location,omitempty"`
-	LinkCards       *[]linkdto.Card        `json:"link_cards,omitempty"`
-	QuotedPostID    *string                `json:"quoted_post_id,omitempty"`
-	QuotedCommentID *string                `json:"quoted_comment_id,omitempty"`
-	Visibility      *string                `json:"visibility,omitempty"`
+	LinkCardDisplayMode *domain.LinkCardDisplayMode `json:"link_card_display_mode,omitempty"`
+	MapCard             **domain.MapCard            `json:"map_card,omitempty"`
+	ContentMD           *string                     `json:"content_md,omitempty"`
+	Media               *[]postdto.MediaUsage       `json:"media,omitempty"`
+	Location            **locationdto.Location      `json:"location,omitempty"`
+	LinkCards           *[]linkdto.Card             `json:"link_cards,omitempty"`
+	QuotedPostID        *string                     `json:"quoted_post_id,omitempty"`
+	QuotedCommentID     *string                     `json:"quoted_comment_id,omitempty"`
+	Visibility          *string                     `json:"visibility,omitempty"`
 }
 
 func registerPostVisibilityFlag(flags *pflag.FlagSet) {

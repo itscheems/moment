@@ -636,23 +636,27 @@ describe("drawing the card", () => {
     ).toMatch(/^700 /);
   });
 
-  it("draws what a link preview is and what it says", async () => {
-    await renderShareCard(
-      input({
-        link: {
-          title: "永不放弃",
-          siteName: "YouTube",
-          thumbnailUrl: "/api/v1/media/01C/preview",
-          video: true,
-        },
-      }),
-    );
+  it.each(["cover", "compact"] as const)(
+    "draws a link snapshot and video badge (%s)",
+    async (displayMode) => {
+      await renderShareCard(
+        input({
+          link: {
+            displayMode,
+            title: "永不放弃",
+            siteName: "YouTube",
+            thumbnailUrl: "/api/v1/media/01C/preview",
+            video: true,
+          },
+        }),
+      );
 
-    expect(recording.text()).toContain("YouTube");
-    expect(recording.text()).toContain("永不放弃");
-    // A video preview wears the same badge its thumbnail would on the page.
-    expect(badges()).toBe(1);
-  });
+      expect(recording.text()).toContain("YouTube");
+      expect(recording.text()).toContain("永不放弃");
+      // A video preview wears the same badge its thumbnail would on the page.
+      expect(badges()).toBe(1);
+    },
+  );
 
   it("keeps a link preview that has no picture", async () => {
     await renderShareCard(

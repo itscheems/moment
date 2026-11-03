@@ -616,6 +616,11 @@ INSERT INTO media (
 		if err != nil {
 			return fmt.Errorf("insert media metadata: %w", err)
 		}
+		if capture, _ := ctx.Value(linkPreviewCaptureKey{}).(bool); capture {
+			if _, err := queries.ExecContext(ctx, `INSERT INTO link_preview_media(media_id) VALUES(?)`, media.ID.String()); err != nil {
+				return err
+			}
+		}
 		return grantIngestedMedia(ctx, queries, media.ID, media.CreatedAt)
 	})
 }

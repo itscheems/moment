@@ -57,6 +57,20 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
+it("allows the same link again after its dismissed URL is removed", () => {
+  const api = new LinksApi(vi.fn());
+  const content = "https://example.com/saved";
+  const { result, rerender } = renderHook(
+    ({ text }) => useLinkPreview(api, text, true, { card: stored, content }),
+    { initialProps: { text: content } },
+  );
+  act(() => result.current.dismiss());
+  expect(result.current.storedCard).toBeNull();
+  rerender({ text: "" });
+  rerender({ text: content });
+  expect(result.current.storedCard).toEqual(stored);
+});
+
 it("dismisses and restores a detached saved card without treating it as a new snapshot", () => {
   const fetcher = vi.fn();
   const api = new LinksApi(fetcher);
@@ -165,4 +179,23 @@ it("does not revive a dismissed saved card when a replacement URL is removed", (
   expect(result.current.changed).toBe(true);
   rerender({ text: "https://example.com/another" });
   expect(result.current.storedCard).toBeNull();
+});
+
+it("changes a saved card layout without refetching its snapshot", () => {
+  const fetcher = vi.fn();
+  const api = new LinksApi(fetcher);
+  const { result } = renderHook(() =>
+    useLinkPreview(api, "Caption", true, {
+      card: { ...stored, displayMode: "compact" },
+      content: "Caption",
+    }),
+  );
+  expect(result.current.displayMode).toBe("compact");
+  act(() => result.current.setDisplayMode("cover"));
+  expect(result.current.displayModeChanged).toBe(true);
+  expect(result.current.changed).toBe(false);
+  expect(result.current.storedCard?.title).toBe(stored.title);
+  expect(fetcher).not.toHaveBeenCalled();
+  act(() => result.current.setDisplayMode("compact"));
+  expect(result.current.displayModeChanged).toBe(false);
 });

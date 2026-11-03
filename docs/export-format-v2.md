@@ -37,6 +37,8 @@ Media members follow in SHA order. The checksum file lists every other ZIP membe
 
 `data/entries.jsonl` preserves IDs, `author_user_id`, publication and edit timestamps, visibility, publication state, original/repost state, locations, link snapshots, media order and descriptions, and quoted entry IDs. Private and unpublished content remains associated with its real author.
 
+Link snapshots preserve `display_mode` as `cover` or `compact`. Older records that omit it use `cover`. Import, personal restore, and merge retain the presentation choice together with the captured metadata and managed image references.
+
 An article entry has `kind: "article"` and a null Markdown body. Its structured document and cover are stored in `data/entry_articles.jsonl`. Ordinary posts carry Markdown instead. Derived HTML and search indexes are rebuilt with the current implementation.
 
 `data/article_drafts.jsonl` preserves the real author, title, structured body, cover, publication relationship and revision timestamps. Published working copies, withdrawn documents and unpublished drafts remain distinct. The full graph is validated, including inline media and references to published entries.

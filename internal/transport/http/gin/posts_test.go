@@ -697,3 +697,31 @@ func TestPostHTTPRefreshCursorKeepsAnEmptyTimelineRefreshable(t *testing.T) {
 		t.Fatalf("refresh: %s", newer.Body.String())
 	}
 }
+
+func TestPostLinkCardDisplayCanChangeWithoutResubmittingSnapshot(t *testing.T) {
+	fixture := newPostHTTPFixture(t, 0)
+	card := domain.LinkCard{SourceURL: "https://example.com/source", CanonicalURL: "https://example.com/canonical", Provider: domain.LinkProviderGeneric, Kind: domain.LinkKindLink, Title: "Retained title", Description: "Retained description", SiteName: "Example", CapturedAt: 1700000000000}
+	created, err := fixture.posts.Create(fixture.ctx, app.CreatePostInput{ContentMD: "Caption", LinkCards: []domain.LinkCard{card}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	endpoint := "/api/v1/posts/" + created.Post.Entry.ID.String()
+	for _, mode := range []string{"compact", "cover"} {
+		request := jsonRequest(http.MethodPatch, endpoint, `{"link_card_display_mode":"`+mode+`"}`)
+		request.Header.Set("Authorization", "Bearer "+fixture.token)
+		response := performRequest(fixture.engine, request)
+		if response.Code != http.StatusOK {
+			t.Fatalf("update: %d %s", response.Code, response.Body.String())
+		}
+		data := decodeDataMap(t, response)
+		snapshot := data["link_cards"].([]any)[0].(map[string]any)
+		if snapshot["display_mode"] != mode || snapshot["title"] != card.Title || snapshot["description"] != card.Description || data["content_md"] != "Caption" {
+			t.Fatalf("changed snapshot: %#v", data)
+		}
+	}
+	invalid := jsonRequest(http.MethodPatch, endpoint, `{"link_card_display_mode":"invalid"}`)
+	invalid.Header.Set("Authorization", "Bearer "+fixture.token)
+	if response := performRequest(fixture.engine, invalid); response.Code != http.StatusBadRequest {
+		t.Fatalf("invalid mode: %d", response.Code)
+	}
+}

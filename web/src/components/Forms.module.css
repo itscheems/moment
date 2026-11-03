@@ -1538,6 +1538,20 @@
   font-weight: 700;
 }
 
+.composerLinkMenu {
+  min-inline-size: 15rem;
+  max-inline-size: calc(100vw - 1rem);
+  transition: none;
+}
+
+.composerLinkMenu[data-closed] {
+  visibility: hidden;
+}
+
+.composerLinkMenu .composerLinkMenuIndicator {
+  margin-inline: 0;
+}
+
 .composerLinkRemove {
   flex: 0 0 auto;
   inline-size: 2rem;

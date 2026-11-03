@@ -327,12 +327,13 @@ function preauthenticate() {
   );
 }
 
-async function openMomentActions(trigger?: HTMLElement) {
+async function openMenu(trigger?: HTMLElement) {
   const button =
     trigger ?? (await screen.findByRole("button", { name: "更多操作" }));
   await waitFor(() => expect(button).toBeEnabled());
   await act(async () => {
     button.focus();
+    expect(button).toHaveFocus();
     fireEvent.keyDown(button, { key: "ArrowDown", code: "ArrowDown" });
     fireEvent.keyUp(button, { key: "ArrowDown", code: "ArrowDown" });
   });
@@ -1837,7 +1838,7 @@ describe("owner composing flow", () => {
     });
     render(<App />);
 
-    await openMomentActions();
+    await openMenu();
     fireEvent.click(await screen.findByRole("menuitem", { name: "编辑" }));
     const editor = await screen.findByLabelText("Moment 正文");
     expect(window.location.pathname).toBe(`/m/${item.id}/edit`);
@@ -3007,6 +3008,171 @@ describe("owner composing flow", () => {
     embed_url: null,
   };
 
+  const draftLinkCard = {
+    source_url: "https://example.com/draft",
+    canonical_url: "https://example.com/draft",
+    provider: "generic",
+    card_kind: "link",
+    title: "Draft preview",
+    description: "",
+    site_name: "Example",
+    author_name: "",
+    duration_seconds: null,
+    view_count: null,
+    comment_count: null,
+    like_count: null,
+    favicon_media_id: null,
+    thumbnail_media_id: "01K2ABCDEF0123456789ABCDE7",
+    thumbnail_mime_type: "image/png",
+    thumbnail_width: 800,
+    thumbnail_height: 400,
+    embed_url: null,
+    captured_at_ms: 1800000000000,
+  };
+
+  it("preserves a kept draft's card and publishes its snapshot without another unfurl", async () => {
+    preauthenticate();
+    window.history.replaceState({}, "", "/compose");
+    const fetcher = installApi((url, init) => {
+      if (url === "/api/v1/posts" && init?.method === "POST")
+        return json(
+          {
+            data: {
+              ...post(draftLinkCard.source_url),
+              link_cards: [
+                {
+                  ...storedLinkCard,
+                  display_mode: "compact",
+                  canonical_url: draftLinkCard.canonical_url,
+                  title: draftLinkCard.title,
+                },
+              ],
+            },
+            meta: {},
+          },
+          201,
+        );
+      if (url.startsWith("/api/v1/links/unfurl"))
+        return json({ data: draftLinkCard, meta: {} });
+      if (url.includes("/api/v1/links/drafts/"))
+        return json({ data: { saved: true }, meta: {} });
+    });
+    render(<App />);
+    fireEvent.change(await screen.findByLabelText("此刻想到什么？"), {
+      target: { value: draftLinkCard.source_url },
+    });
+    await screen.findByRole("region", { name: "链接预览" });
+    const layout = screen.getByRole("button", { name: "链接卡片展示方式" });
+    await openMenu(layout);
+    const compactOption = await screen.findByRole("menuitemradio", {
+      name: "小图卡片",
+    });
+    fireEvent.mouseDown(compactOption);
+    fireEvent.mouseUp(compactOption);
+    fireEvent.click(compactOption);
+    fireEvent.click(
+      screen.getAllByRole("link", { name: "乔乔的 Moment首页" })[0],
+    );
+    await keepDraftAndResumeNavigation();
+    await waitFor(() => expect(window.location.pathname).toBe("/"));
+    expect(listKeptDrafts(instance)[0]?.linkPreview?.card).toEqual({
+      ...draftLinkCard,
+      display_mode: "compact",
+    });
+    const retention = fetcher.mock.calls.find(([url]) =>
+      String(url).includes("/links/drafts/"),
+    );
+    expect(JSON.parse(String(retention?.[1]?.body))).toEqual({
+      media_ids: [draftLinkCard.thumbnail_media_id],
+    });
+    fireEvent.click(await screen.findByRole("link", { name: "发帖" }));
+    fireEvent.click(await screen.findByRole("button", { name: /^草稿/ }));
+    fireEvent.click(
+      await screen.findByText(draftLinkCard.source_url, { selector: "span" }),
+    );
+    await screen.findByRole("region", { name: "链接预览" });
+    expect(
+      fetcher.mock.calls.filter(([url]) =>
+        String(url).includes("/links/unfurl"),
+      ),
+    ).toHaveLength(1);
+    await waitFor(() => expect(window.location.pathname).toBe("/compose"));
+    const editor = document.getElementById("page-composer-content");
+    if (!editor) throw new Error("Restored editor is missing");
+    fireEvent.keyDown(editor, { key: "Enter", metaKey: true });
+    await waitFor(() =>
+      expect(
+        fetcher.mock.calls.some(
+          ([url, init]) =>
+            String(url) === "/api/v1/posts" && init?.method === "POST",
+        ),
+      ).toBe(true),
+    );
+    const published = fetcher.mock.calls.find(
+      ([url, init]) =>
+        String(url) === "/api/v1/posts" && init?.method === "POST",
+    );
+    expect(JSON.parse(String(published?.[1]?.body)).link_cards).toEqual([
+      { ...draftLinkCard, display_mode: "compact" },
+    ]);
+    await waitFor(() => expect(window.location.pathname).toBe("/"));
+    await waitFor(() =>
+      expect(
+        fetcher.mock.calls.some(
+          ([url, init]) =>
+            String(url).includes("/links/drafts/") &&
+            JSON.parse(String(init?.body)).media_ids.length === 0,
+        ),
+      ).toBe(true),
+    );
+  });
+
+  it("keeps the editor open when draft image retention fails", async () => {
+    preauthenticate();
+    window.history.replaceState({}, "", "/compose");
+    const fetcher = installApi((url) => {
+      if (url.startsWith("/api/v1/links/unfurl"))
+        return json({ data: draftLinkCard, meta: {} });
+      if (url.includes("/api/v1/links/drafts/"))
+        return json(
+          {
+            error: {
+              code: "INTERNAL",
+              message: "unavailable",
+              details: {},
+              request_id: "req_retention",
+            },
+          },
+          503,
+        );
+    });
+    render(<App />);
+    fireEvent.change(await screen.findByLabelText("此刻想到什么？"), {
+      target: { value: draftLinkCard.source_url },
+    });
+    await screen.findByRole("region", { name: "链接预览" });
+    fireEvent.click(
+      screen.getAllByRole("link", { name: "乔乔的 Moment首页" })[0],
+    );
+    await keepDraftAndResumeNavigation();
+    const failureDialog = await screen.findByRole("dialog", {
+      name: "保存草稿？",
+    });
+    expect(await within(failureDialog).findByRole("alert")).toHaveTextContent(
+      "草稿未能保存，请重试。",
+    );
+    expect(
+      fetcher.mock.calls.some(([url]) =>
+        String(url).includes("/links/drafts/"),
+      ),
+    ).toBe(true);
+    expect(window.location.pathname).toBe("/compose");
+    expect(
+      screen.getByRole("dialog", { name: "保存草稿？" }),
+    ).toBeInTheDocument();
+    expect(listKeptDrafts(instance)).toEqual([]);
+  });
+
   it.each([false, true])(
     "restores a stored card without refetching it (URL in body: %s)",
     async (withUrl) => {
@@ -3064,6 +3230,59 @@ describe("owner composing flow", () => {
       ).toBe(false);
     },
   );
+
+  it("saves a layout change while retaining the stored link snapshot", async () => {
+    preauthenticate();
+    const item = {
+      ...post("Saved caption"),
+      link_cards: [{ ...storedLinkCard, display_mode: "cover" }],
+    };
+    window.history.replaceState({}, "", `/m/${item.id}/edit`);
+    const fetcher = installApi((url, init) => {
+      if (url === `/api/v1/posts/${item.id}`)
+        return json({
+          data:
+            init?.method === "PATCH"
+              ? {
+                  ...item,
+                  link_cards: [
+                    {
+                      ...storedLinkCard,
+                      display_mode: JSON.parse(String(init.body))
+                        .link_card_display_mode,
+                    },
+                  ],
+                }
+              : item,
+          meta: {},
+        });
+    });
+    render(<App />);
+    const editor = await screen.findByLabelText("Moment 正文");
+    await openMenu(
+      await screen.findByRole("button", { name: "链接卡片展示方式" }),
+    );
+    expect(
+      await screen.findByRole("menuitemradio", { name: "大图封面" }),
+    ).toHaveAttribute("aria-checked", "true");
+    fireEvent.click(screen.getByRole("menuitemradio", { name: "小图卡片" }));
+    fireEvent.keyDown(editor, { key: "Enter", metaKey: true });
+    await waitFor(() => expect(window.location.pathname).toBe(`/m/${item.id}`));
+    const patch = fetcher.mock.calls.find(
+      ([url, init]) =>
+        String(url) === `/api/v1/posts/${item.id}` && init?.method === "PATCH",
+    );
+    expect(JSON.parse(String(patch?.[1]?.body))).toMatchObject({
+      link_card_display_mode: "compact",
+      content_md: "Saved caption",
+    });
+    expect(JSON.parse(String(patch?.[1]?.body))).not.toHaveProperty(
+      "link_cards",
+    );
+    expect(
+      fetcher.mock.calls.some(([url]) => String(url).includes("/links/unfurl")),
+    ).toBe(false);
+  });
 
   it("guards and saves an explicit stored-card removal without changing the caption", async () => {
     preauthenticate();
@@ -3178,7 +3397,7 @@ describe("owner composing flow", () => {
     render(<App />);
     await screen.findByText("准备删除");
     const more = screen.getByRole("button", { name: "更多操作" });
-    await openMomentActions(more);
+    await openMenu(more);
     fireEvent.click(await screen.findByRole("menuitem", { name: "删除" }));
     expect(
       await screen.findByRole("heading", { name: "删除这段 Moment？" }),
@@ -3199,7 +3418,7 @@ describe("owner composing flow", () => {
     expect(document.body.style.position).toBe("");
     expect(document.documentElement.style.overflow).toBe("");
 
-    await openMomentActions(more);
+    await openMenu(more);
     fireEvent.click(await screen.findByRole("menuitem", { name: "删除" }));
     fireEvent.click(await screen.findByRole("button", { name: "删除 Moment" }));
     await waitFor(() => expect(screen.queryByText("准备删除")).toBeNull());
@@ -3238,7 +3457,7 @@ describe("owner composing flow", () => {
     render(<App />);
     await screen.findByText("删除失败后保留");
 
-    await openMomentActions();
+    await openMenu();
     fireEvent.click(await screen.findByRole("menuitem", { name: "删除" }));
     const dialog = await screen.findByRole("dialog", {
       name: "删除这段 Moment？",

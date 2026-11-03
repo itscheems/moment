@@ -1772,5 +1772,11 @@
   "多个账户": "Accounts",
   "使用 {{method}} 登录": "Log in with {{method}}",
   "当前账户 @{{username}}": "Current account @{{username}}",
-  "其他账户有新通知": "Other accounts have new notifications"
+  "其他账户有新通知": "Other accounts have new notifications",
+  "文字和链接卡片将保存在此浏览器的草稿中，上传的图片和视频需要重新选择。": "Text and link cards will be saved to drafts in this browser. Uploaded images and videos must be selected again.",
+  "草稿未能保存，请重试。": "The draft could not be saved. Please try again.",
+  "草稿未能删除，请重试。": "The draft could not be deleted. Please try again.",
+  "链接卡片展示方式": "Link card layout",
+  "小图卡片": "Small image card",
+  "大图封面": "Large image cover"
 }

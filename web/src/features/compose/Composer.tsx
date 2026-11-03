@@ -64,7 +64,7 @@ import {
 import { AudienceSelector, audienceLabel } from "./AudienceSelector";
 import { ReplyAudience } from "./ReplyAudience";
 import { ComposerLinkCard } from "./ComposerLinkCard";
-import { useLinkPreview } from "./useLinkPreview";
+import { useLinkPreview, type LinkDraftSnapshot } from "./useLinkPreview";
 import { LocationPicker, SelectedLocationChip } from "./LocationPicker";
 import { MentionSuggestions } from "./MentionSuggestions";
 import {
@@ -96,6 +96,8 @@ import {
   dropKeptDraft,
   dropKeptDraftByContent,
   keepDraft,
+  keepDraftWithPreview,
+  linkDraftResourceKey,
   listKeptDrafts,
 } from "./drafts";
 import { useSession } from "../auth/SessionProvider";
@@ -166,7 +168,7 @@ function initialPostLocation(post?: PublicPost): LocationInput | null {
 
 export interface ComposerHandle {
   hasUnpublishedChanges: () => boolean;
-  leaveAndKeepDraft: () => void;
+  leaveAndKeepDraft: () => Promise<boolean>;
   leaveAndDiscard: () => void;
   /**
    * Put a kept draft back in the editor, ready to finish. Passing its id
@@ -178,7 +180,9 @@ export interface ComposerHandle {
     keptId?: string,
     mapCard?: MapCardData,
     quote?: ComposeQuoteTarget,
-  ) => void;
+    linkPreview?: LinkDraftSnapshot,
+    returnToEditor?: () => void,
+  ) => Promise<boolean>;
 }
 
 interface ComposerProps {
@@ -281,6 +285,61 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
         : undefined,
     );
     const displayedLinkCard = linkPreview.card ?? linkPreview.storedCard;
+    const retainedDraftKeys = useRef(new Set<string>());
+    const releaseRetainedPreviews = () => {
+      if (!session) return;
+      for (const key of retainedDraftKeys.current) {
+        void linksApi.retainDraft(session.csrfToken, key, []).catch(() => {
+          // The server also expires references with the browser draft lifetime.
+        });
+      }
+      retainedDraftKeys.current.clear();
+    };
+    const keepPreviewDraft = useCallback(
+      async (
+        text: string,
+        map?: MapCardData | null,
+        quote?: ComposeQuoteTarget | null,
+      ) => {
+        try {
+          const kept = await keepDraftWithPreview(
+            draftScope,
+            session?.csrfToken,
+            text,
+            map,
+            quote,
+            { card: linkPreview.card, dismissed: [...linkPreview.dismissed] },
+          );
+          if (!kept) throw new Error("Draft storage is unavailable");
+          if (session) {
+            for (const key of retainedDraftKeys.current) {
+              if (
+                !kept.linkPreview?.card ||
+                key !== linkDraftResourceKey(draftScope, kept.fingerprint)
+              ) {
+                void linksApi
+                  .retainDraft(session.csrfToken, key, [])
+                  .catch(() => {});
+              }
+            }
+            retainedDraftKeys.current.clear();
+          }
+          return true;
+        } catch (nextError) {
+          expireIfInvalidSession(nextError);
+          notify(t("草稿未能保存，请重试。"), { type: "error" });
+          return false;
+        }
+      },
+      [
+        draftScope,
+        session,
+        linkPreview.card,
+        linkPreview.dismissed,
+        expireIfInvalidSession,
+        t,
+      ],
+    );
     const [location, setLocation] = useState<LocationInput | null>(
       initialLocation,
     );
@@ -359,6 +418,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
       dirty &&
       (mapChanged ||
         linkPreview.changed ||
+        linkPreview.displayModeChanged ||
         content !== initialContent ||
         mediaChanged ||
         locationChanged ||
@@ -637,13 +697,14 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
     // Putting a kept draft back in the editor. Reached from the 草稿 list
     // on this surface, and from the compose dialog's list through the ref.
     const restoreDraftText = useCallback(
-      (
+      async (
         contentMd: string,
         keptId?: string,
         restoredMap?: MapCardData,
         restoredQuote?: ComposeQuoteTarget,
+        restoredPreview?: LinkDraftSnapshot,
+        returnToEditor?: () => void,
       ) => {
-        resetEditHistory.current();
         // Whatever is in the editor right now is not thrown away for it.
         const current = contentRef.current;
         if (
@@ -654,18 +715,30 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
             quoteTargetRef.current,
           ) !== fingerprintComposeDraft(contentMd, restoredMap, restoredQuote)
         ) {
-          keepDraft(
-            draftScope,
-            current,
-            undefined,
-            mapCardRef.current,
-            quoteTargetRef.current,
-          );
+          if (
+            !(await keepPreviewDraft(
+              current,
+              mapCardRef.current,
+              quoteTargetRef.current,
+            ))
+          )
+            return false;
         }
+        resetEditHistory.current();
         // The draft leaves 草稿 as it enters the editor: it is the live
         // text now, and filing it again on the way out replaces it rather
         // than adding a second, near-identical copy.
-        if (keptId) dropKeptDraft(draftScope, keptId);
+        if (keptId) {
+          const kept = listKeptDrafts(draftScope).find(
+            (draft) => draft.id === keptId,
+          );
+          if (kept?.linkPreview?.card)
+            retainedDraftKeys.current.add(
+              linkDraftResourceKey(draftScope, kept.fingerprint),
+            );
+          dropKeptDraft(draftScope, keptId);
+        }
+        linkPreview.restore(restoredPreview);
         quoteTargetRef.current = restoredQuote ?? null;
         setQuoteTarget(restoredQuote ?? null);
         setQuoteError(false);
@@ -687,24 +760,30 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
         setDirty(true);
         allowLeaveRef.current = false;
         setAnnouncement(t("已载入草稿；图片需要重新选择。"));
+        if (returnToEditor) {
+          // Moving from the draft list into this same editor discards no work.
+          allowLeaveRef.current = true;
+          returnToEditor();
+          allowLeaveRef.current = false;
+        }
         window.requestAnimationFrame(() => textareaRef.current?.focus());
+        return true;
       },
-      [draftScope],
+      [draftScope, keepPreviewDraft, linkPreview.restore],
     );
 
     useImperativeHandle(
       ref,
       () => ({
         hasUnpublishedChanges: () => hasUnpublishedChange,
-        leaveAndKeepDraft: () => {
-          allowLeaveRef.current = true;
+        leaveAndKeepDraft: async () => {
           if (
             variant === "edit" ||
             (content.trim().length === 0 &&
               !mapCardRef.current &&
               !quoteTargetRef.current)
           )
-            return;
+            return true;
           const current =
             activeDraftRef.current?.fingerprint ===
             fingerprintComposeDraft(
@@ -725,15 +804,17 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
           // Keeping is a decision, so it also files a copy under 草稿 --
           // the recovery slot only ever holds the most recent text, and a
           // second keep would otherwise erase the first.
-          keepDraft(
-            draftScope,
+          const kept = await keepPreviewDraft(
             content,
-            undefined,
             mapCardRef.current,
             quoteTargetRef.current,
           );
+          allowLeaveRef.current = kept;
+          return kept;
         },
         leaveAndDiscard: () => {
+          releaseRetainedPreviews();
+          linkPreview.reset();
           allowLeaveRef.current = true;
           const current = activeDraftRef.current;
           if (variant !== "edit" && current) {
@@ -767,6 +848,9 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
         initialLocation,
         initialVisibility,
         restoreDraftText,
+        keepPreviewDraft,
+        session,
+        linkPreview.reset,
         draftScope,
         variant,
       ],
@@ -986,6 +1070,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
       quotedPost,
       quoteTarget,
       dismissed: linkPreview.dismissed,
+      linkDisplayMode: linkPreview.displayMode,
     };
     const historyGroup = JSON.stringify([
       mapCard,
@@ -994,6 +1079,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
       visibility,
       quoteTarget,
       [...linkPreview.dismissed].sort(),
+      linkPreview.displayMode,
     ]);
     const { reset: resetHistory, ...historyEvents } = useEditHistory({
       value: historyValue,
@@ -1030,6 +1116,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
         setVisibility(next.visibility);
         setQuotedPost(next.quotedPost);
         linkPreview.restoreDismissed(next.dismissed);
+        linkPreview.setDisplayMode(next.linkDisplayMode);
         setMention(null);
         setMentionItems([]);
         if (session)
@@ -1108,6 +1195,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
       const instanceId = draftScope;
       if (variant === "edit" || !instanceId) return;
       const resetDraftSurface = () => {
+        linkPreview.reset();
         allowLeaveRef.current = true;
         activeDraftRef.current = null;
         setActiveDraft(null);
@@ -1193,7 +1281,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
         unsubscribeClearance();
         cancelDraftRemovalRepair();
       };
-    }, [clearMedia, draftScope, variant]);
+    }, [clearMedia, draftScope, variant, linkPreview.reset]);
 
     useEffect(() => {
       if (
@@ -1256,14 +1344,14 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
       variant,
     ]);
 
-    const finishPendingNavigation = (discard: boolean) => {
+    const finishPendingNavigation = async (discard: boolean) => {
       const resume = pendingNavigationRef.current;
-      pendingNavigationRef.current = null;
-      allowLeaveRef.current = true;
 
       if (variant !== "edit") {
         const currentDraft = activeDraftRef.current;
         if (discard) {
+          releaseRetainedPreviews();
+          linkPreview.reset();
           if (currentDraft) {
             clearComposeDraft(draftScope, {
               reason: "discarded",
@@ -1302,19 +1390,23 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
           // and that is not a decision to shelve anything, it is the same
           // sentence continuing on a bigger surface.
           if (variant === "page") {
-            keepDraft(
-              draftScope,
-              currentDraft.contentMd,
-              undefined,
-              currentDraft.mapCard,
-              currentDraft.quote,
-            );
+            if (
+              !(await keepPreviewDraft(
+                currentDraft.contentMd,
+                currentDraft.mapCard,
+                currentDraft.quote,
+              ))
+            )
+              return false;
           }
         }
       }
 
       setLeavePromptOpen(false);
+      pendingNavigationRef.current = null;
+      allowLeaveRef.current = true;
       window.queueMicrotask(() => resume?.());
+      return true;
     };
 
     const retryUpload = async (key: string) => {
@@ -1413,6 +1505,9 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
                 : undefined,
               visibilityChanged ? visibility : undefined,
               mapChanged ? mapCard : undefined,
+              displayedLinkCard && linkPreview.displayModeChanged
+                ? linkPreview.displayMode
+                : undefined,
             )
           : repostOnly && quotedPost
             ? await postsApi.setReposted(session.csrfToken, quotedPost.id, true)
@@ -1429,6 +1524,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
                 visibility,
                 mapCard ?? undefined,
               );
+        releaseRetainedPreviews();
         allowLeaveRef.current = true;
         dirtyRef.current = false;
         setDirty(false);
@@ -1467,6 +1563,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
         );
         clearMedia();
         if (variant === "inline") {
+          linkPreview.reset();
           setContent("");
           setMapCard(null);
           mapCardRef.current = null;
@@ -1587,14 +1684,15 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
               editing={draftsEditing}
               instanceId={draftScope}
               onEditingChange={setDraftsEditing}
-              onOpenDraft={(kept) => {
-                restoreDraftText(
+              onOpenDraft={async (kept) => {
+                const restored = await restoreDraftText(
                   kept.contentMd,
                   kept.id,
                   kept.mapCard,
                   kept.quote,
+                  kept.linkPreview,
                 );
-                setDraftsListOpen(false);
+                if (restored) setDraftsListOpen(false);
               }}
             />
           </div>
@@ -1799,6 +1897,12 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
             {displayedLinkCard ? (
               <ComposerLinkCard
                 card={displayedLinkCard}
+                displayMode={linkPreview.displayMode}
+                onDisplayModeChange={(mode) => {
+                  linkPreview.setDisplayMode(mode);
+                  dirtyRef.current = true;
+                  setDirty(true);
+                }}
                 disabled={pending}
                 onRemove={() => {
                   linkPreview.dismiss();

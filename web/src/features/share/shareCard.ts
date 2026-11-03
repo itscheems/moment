@@ -118,6 +118,7 @@ export function shareCardMediaUrl(media: ShareCardMedia): string {
 /** Everything the card draws, already resolved by the caller. */
 /** A link preview, flattened to what the card draws. */
 export interface ShareCardLink {
+  displayMode?: PublicLinkCard["displayMode"];
   title: string;
   siteName: string;
   thumbnailUrl: string | null;
@@ -134,6 +135,7 @@ export interface ShareCardLink {
  */
 export function shareCardLink(card: PublicLinkCard): ShareCardLink {
   return {
+    ...(card.displayMode ? { displayMode: card.displayMode } : {}),
     title: card.title.trim(),
     siteName: card.siteName.trim() || hostOf(card.canonicalUrl),
     thumbnailUrl: card.thumbnailMediaId
@@ -576,36 +578,48 @@ function linkLayout(
 ): { thumbHeight: number; title: string[]; height: number } | null {
   if (!thumbnail && link.title === "" && link.siteName === "") return null;
   const thumbHeight = thumbnail
-    ? Math.round(
-        Math.min(
-          Math.max(
-            (width * thumbnail.naturalHeight) / thumbnail.naturalWidth,
-            width * 0.42,
+    ? link.displayMode === "compact"
+      ? LINK_SITE_LINE + 3 + LINK_TITLE_LINES * LINK_TITLE_LINE
+      : Math.round(
+          Math.min(
+            Math.max(
+              (width * thumbnail.naturalHeight) / thumbnail.naturalWidth,
+              width * 0.42,
+            ),
+            width * 0.62,
           ),
-          width * 0.62,
-        ),
-      )
+        )
     : 0;
   ruler.font = font(700, LINK_TITLE_SIZE);
-  const wrapped =
-    link.title === "" ? [] : wrap(ruler, link.title, width - LINK_PAD * 2);
+  const textWidth =
+    width -
+    LINK_PAD * 2 -
+    (link.displayMode === "compact" && thumbnail ? thumbHeight + LINK_PAD : 0);
+  const wrapped = link.title === "" ? [] : wrap(ruler, link.title, textWidth);
   const title = wrapped.slice(0, LINK_TITLE_LINES);
   if (wrapped.length > title.length && title.length > 0) {
     title[title.length - 1] = truncate(
       ruler,
       title[title.length - 1] ?? "",
-      width - LINK_PAD * 2,
+      textWidth,
     );
   }
   return {
     thumbHeight,
     title,
     height:
-      thumbHeight +
-      LINK_PAD +
-      LINK_SITE_LINE +
-      (title.length > 0 ? 3 + title.length * LINK_TITLE_LINE : 0) +
-      LINK_PAD,
+      link.displayMode === "compact"
+        ? Math.max(
+            thumbHeight,
+            LINK_SITE_LINE +
+              (title.length ? 3 + title.length * LINK_TITLE_LINE : 0),
+          ) +
+          LINK_PAD * 2
+        : thumbHeight +
+          LINK_PAD +
+          LINK_SITE_LINE +
+          (title.length > 0 ? 3 + title.length * LINK_TITLE_LINE : 0) +
+          LINK_PAD,
   };
 }
 
@@ -619,6 +633,8 @@ function drawLinkCard(
   y: number,
   width: number,
 ): void {
+  const compact = link.displayMode === "compact";
+  const textInset = compact && thumbnail ? laid.thumbHeight + LINK_PAD : 0;
   if (thumbnail) {
     // Square-cornered inside the clip: the box's own rounding is what shapes
     // the top two corners, and rounding the picture as well leaves a sliver of
@@ -627,9 +643,24 @@ function drawLinkCard(
     ctx.beginPath();
     ctx.roundRect(x, y, width, laid.height, LINK_RADIUS);
     ctx.clip();
-    drawCover(ctx, thumbnail, x, y, width, laid.thumbHeight, 0);
+    drawCover(
+      ctx,
+      thumbnail,
+      x + (compact ? LINK_PAD : 0),
+      y + (compact ? LINK_PAD : 0),
+      compact ? laid.thumbHeight : width,
+      laid.thumbHeight,
+      compact ? 8 : 0,
+    );
     ctx.restore();
-    if (link.video) drawPlayBadge(ctx, x, y, width, laid.thumbHeight);
+    if (link.video)
+      drawPlayBadge(
+        ctx,
+        x + (compact ? LINK_PAD : 0),
+        y + (compact ? LINK_PAD : 0),
+        compact ? laid.thumbHeight : width,
+        laid.thumbHeight,
+      );
   }
 
   // Stroked on the half pixel, so a one-pixel border lands on one pixel.
@@ -639,13 +670,13 @@ function drawLinkCard(
   ctx.strokeStyle = LINK_BORDER;
   ctx.stroke();
 
-  let cursor = y + laid.thumbHeight + LINK_PAD;
+  let cursor = y + (compact ? 0 : laid.thumbHeight) + LINK_PAD;
   if (link.siteName !== "") {
     ctx.fillStyle = MUTED;
     ctx.font = font(400, LINK_SITE_SIZE);
     ctx.fillText(
-      truncate(ctx, link.siteName, width - LINK_PAD * 2),
-      x + LINK_PAD,
+      truncate(ctx, link.siteName, width - LINK_PAD * 2 - textInset),
+      x + LINK_PAD + textInset,
       cursor + LINK_SITE_SIZE,
     );
   }
@@ -655,7 +686,7 @@ function drawLinkCard(
   laid.title.forEach((line, row) => {
     ctx.fillText(
       line,
-      x + LINK_PAD,
+      x + LINK_PAD + textInset,
       cursor + row * LINK_TITLE_LINE + LINK_TITLE_SIZE,
     );
   });

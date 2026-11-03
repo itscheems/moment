@@ -14,6 +14,7 @@ import {
   parsePost,
   parseSiteIdentity,
   type PostVisibility,
+  type LinkCardDisplayMode,
   type PublicPost,
   type SiteIdentity,
 } from "./public";
@@ -63,8 +64,11 @@ export class PostsApi extends ApiClient {
     linkCards?: LinkCardInput[] | null,
     visibility?: PostVisibility,
     mapCard?: MapCardData | null,
+    linkCardDisplayMode?: LinkCardDisplayMode,
   ): Promise<PublicPost> {
     const body: Record<string, unknown> = { content_md: contentMd };
+    if (linkCardDisplayMode !== undefined)
+      body.link_card_display_mode = linkCardDisplayMode;
     if (media) body.media = mediaPayload(media);
     if (location !== undefined) {
       body.location = location === null ? null : locationPayload(location);

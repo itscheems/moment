@@ -84,6 +84,7 @@ export function LinkCard({ card }: { card: PublicLinkCard }) {
   const embeddable = card.embedUrl !== null && card.cardKind === "video";
   const site = hostLabel(card);
   const title = card.title.trim();
+  const compact = card.displayMode === "compact";
 
   const startPlayback = useCallback(() => {
     setPlaybackFailed(false);
@@ -211,14 +212,18 @@ export function LinkCard({ card }: { card: PublicLinkCard }) {
   }
 
   return (
-    <section aria-label={t("链接预览")} className={styles.card}>
+    <section
+      aria-label={t("链接预览")}
+      className={`${styles.card} ${compact ? styles.compact : ""}`}
+      data-display-mode={compact ? "compact" : "cover"}
+    >
       <a
         className={styles.surface}
         href={card.canonicalUrl}
         rel="nofollow noopener noreferrer"
         target="_blank"
       >
-        {thumbnail ? (
+        {thumbnail || (compact && embeddable) ? (
           <div className={styles.media}>
             {thumbnail}
             {card.durationSeconds !== null ? (

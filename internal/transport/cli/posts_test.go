@@ -812,3 +812,44 @@ func TestPostListRefreshCursorDirectAndAPIParity(t *testing.T) {
 		t.Fatalf("API: %+v", api)
 	}
 }
+
+func TestPostLinkDisplayDirectAndAPIParity(t *testing.T) {
+	fixture := newPostCLIFixture(t)
+	account, err := testAccountService(t, fixture.database, fixture.runtime).AccountByUsername(context.Background(), "writer")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := app.WithContentActor(context.Background(), account)
+	card := domain.LinkCard{SourceURL: "https://example.com/source", CanonicalURL: "https://example.com/page", Provider: domain.LinkProviderGeneric, Kind: domain.LinkKindLink, Title: "Captured title", SiteName: "Example", CapturedAt: 1700000000000}
+	created, err := fixture.posts.Create(ctx, app.CreatePostInput{ContentMD: "Caption", LinkCards: []domain.LinkCard{card}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	tokenFile := filepath.Join(t.TempDir(), "token")
+	if err := os.WriteFile(tokenFile, []byte(fixture.token), 0600); err != nil {
+		t.Fatal(err)
+	}
+	cases := []struct {
+		mode   string
+		target []string
+	}{
+		{"compact", []string{"--data-dir", fixture.dataDir, "--as", "writer"}},
+		{"cover", []string{"--url", fixture.server.URL, "--token-file", tokenFile}},
+	}
+	for _, test := range cases {
+		args := []string{"post", "update", created.Post.Entry.ID.String(), "--link-display", test.mode, "--json"}
+		output := execute(momentTestApplication(), "", append(args, test.target...)...)
+		if output.exit != ExitSuccess || output.stderr != "" {
+			t.Fatalf("%s: %#v", test.mode, output)
+		}
+		data := commandData(t, output)
+		snapshot := data["link_cards"].([]any)[0].(map[string]any)
+		if snapshot["display_mode"] != test.mode || snapshot["title"] != card.Title || data["content_md"] != "Caption" {
+			t.Fatalf("updated card: %#v", data)
+		}
+	}
+	invalid := execute(momentTestApplication(), "", "post", "update", created.Post.Entry.ID.String(), "--link-display", "invalid", "--data-dir", fixture.dataDir, "--json")
+	if invalid.exit != ExitInvalidInput {
+		t.Fatalf("invalid layout: %#v", invalid)
+	}
+}

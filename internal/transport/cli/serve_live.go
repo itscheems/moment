@@ -43,6 +43,7 @@ type liveServerHost struct {
 	// session janitor sweeps whichever generation is current rather than one
 	// captured when the process started.
 	accounts *app.AccountService
+	media    *media.Store
 	// google is the Google adapter this process has already built, with the
 	// callback address it was built for. It is kept on the host rather than in
 	// a package variable because there is one host per server process and a
@@ -110,6 +111,8 @@ func (host *liveServerHost) CloseActive() error {
 	host.mu.Lock()
 	database := host.database
 	host.database = nil
+	host.accounts = nil
+	host.media = nil
 	host.mu.Unlock()
 	if database == nil {
 		return nil
@@ -247,6 +250,7 @@ func (host *liveServerHost) Activate(ctx context.Context, runtimeState *runtimef
 	previous := host.database
 	host.database = database
 	host.accounts = accountService
+	host.media = mediaStore
 	host.mu.Unlock()
 	if previous != nil && previous != database {
 		return errors.Join(errors.New("live activation replaced an unclosed database"), previous.Close())
@@ -430,6 +434,37 @@ func (host *liveServerHost) RunSessionRetention(ctx context.Context) {
 	sweep()
 	ticker := time.NewTicker(time.Hour)
 	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			sweep()
+		}
+	}
+}
+
+// RunLinkPreviewRetention follows the active generation, including import swaps.
+// Maintenance locks serialize a sweep with imports; never hold host.mu while
+// waiting for those locks, because an import needs host.mu to close the store.
+func (host *liveServerHost) RunLinkPreviewRetention(ctx context.Context) {
+	sweep := func() {
+		host.mu.RLock()
+		store := host.media
+		host.mu.RUnlock()
+		if store == nil {
+			return
+		}
+		result, err := store.PruneLinkPreviews(ctx, time.Now().UTC(), false)
+		if host.log != nil && err != nil && ctx.Err() == nil {
+			host.log(observability.SurfaceSystem, "error", "link_preview_retention_failed", nil)
+		} else if host.log != nil && result.Deleted > 0 {
+			host.log(observability.SurfaceSystem, "info", "link_preview_retention", map[string]any{"deleted": result.Deleted, "bytes_reclaimed": result.BytesReclaimed, "cleanup_failures": result.CleanupFailures})
+		}
+	}
+	ticker := time.NewTicker(time.Hour)
+	defer ticker.Stop()
+	sweep()
 	for {
 		select {
 		case <-ctx.Done():

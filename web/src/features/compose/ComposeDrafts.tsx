@@ -4,7 +4,14 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { Icon } from "../../components/icons";
 import { ConfirmDialog } from "../../components/ConfirmDialog";
-import { dropKeptDraft, type KeptDraft, listKeptDrafts } from "./drafts";
+import {
+  dropKeptDraft,
+  type KeptDraft,
+  listKeptDrafts,
+  releaseDraftPreview,
+} from "./drafts";
+import { useSession } from "../auth/SessionProvider";
+import { notify } from "../../components/Feedback";
 import styles from "../../components/Forms.module.css";
 
 function preview(contentMd: string): string {
@@ -24,6 +31,20 @@ export function ComposeDrafts({
   onOpenDraft: (draft: KeptDraft) => void;
 }) {
   const { t } = useTranslation();
+  const { session } = useSession();
+  const remove = async (draft: KeptDraft) => {
+    try {
+      if (draft.linkPreview?.card) {
+        if (!session) throw new Error("Session is unavailable");
+        await releaseDraftPreview(session.csrfToken, draft, instanceId);
+      }
+      dropKeptDraft(instanceId, draft.id);
+      refresh();
+    } catch {
+      notify(t("草稿未能删除，请重试。"), { type: "error" });
+      throw new Error("Draft resources could not be released");
+    }
+  };
 
   const [drafts, setDrafts] = useState<KeptDraft[]>(() =>
     listKeptDrafts(instanceId),
@@ -145,10 +166,7 @@ export function ComposeDrafts({
               confirmLabel={t("删除草稿")}
               danger
               description={t("这段文字只存在这台浏览器里，删除后无法找回。")}
-              onConfirm={() => {
-                dropKeptDraft(instanceId, draft.id);
-                refresh();
-              }}
+              onConfirm={() => remove(draft)}
               title={t("删除这份草稿？")}
               trigger={
                 <button
@@ -193,8 +211,8 @@ export function ComposeDrafts({
               "这 {{value1}} 段文字只存在这台浏览器里，删除后无法找回。",
               { value1: pickedHere.length },
             )}
-            onConfirm={() => {
-              for (const one of pickedHere) dropKeptDraft(instanceId, one.id);
+            onConfirm={async () => {
+              for (const one of pickedHere) await remove(one);
               setPicked(new Set());
               refresh();
             }}

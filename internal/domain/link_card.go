@@ -45,6 +45,20 @@ const (
 // LinkCardKind separates a plain link snapshot from an embeddable video.
 type LinkCardKind string
 
+// LinkCardDisplayMode controls presentation independently of the captured page.
+type LinkCardDisplayMode string
+
+// Supported link card display modes.
+const (
+	LinkDisplayCover   LinkCardDisplayMode = "cover"
+	LinkDisplayCompact LinkCardDisplayMode = "compact"
+)
+
+// Valid reports whether mode is an explicit supported presentation choice.
+func (mode LinkCardDisplayMode) Valid() bool {
+	return mode == LinkDisplayCover || mode == LinkDisplayCompact
+}
+
 // Recognized link card kinds.
 const (
 	// LinkKindLink is a static snapshot with no inline player.
@@ -55,6 +69,7 @@ const (
 
 // LinkCard is an immutable URL preview snapshot attached to content.
 type LinkCard struct {
+	DisplayMode      LinkCardDisplayMode
 	Position         int
 	SourceURL        string
 	CanonicalURL     string
@@ -82,8 +97,19 @@ type LinkCard struct {
 	LikeCount    *int64
 }
 
+// EffectiveDisplayMode treats an omitted preference as the cover presentation.
+func (card LinkCard) EffectiveDisplayMode() LinkCardDisplayMode {
+	if card.DisplayMode == "" {
+		return LinkDisplayCover
+	}
+	return card.DisplayMode
+}
+
 // Validate checks preview fields and managed-media references.
 func (card LinkCard) Validate() error {
+	if !card.EffectiveDisplayMode().Valid() {
+		return NewError(CodeInvalidArgument, "link card display mode must be cover or compact", map[string]any{"field": "display_mode"})
+	}
 	if card.Position < 0 || card.Position >= MaxLinkCardsPerEntry {
 		return NewError(CodeInvalidArgument, "link card position is out of range", map[string]any{"field": "position", "limit": MaxLinkCardsPerEntry})
 	}

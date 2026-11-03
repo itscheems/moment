@@ -21,5 +21,16 @@ func grantIngestedMedia(ctx context.Context, queries sqlite.Queries, id domain.I
 }
 
 func (store *Store) grantExistingMedia(ctx context.Context, id domain.ID) error {
-	return store.db.WriteTx(ctx, func(queries sqlite.Queries) error { return grantIngestedMedia(ctx, queries, id, store.options.Clock()) })
+	return store.db.WriteTx(ctx, func(queries sqlite.Queries) error {
+		if err := grantIngestedMedia(ctx, queries, id, store.options.Clock()); err != nil {
+			return err
+		}
+		if capture, _ := ctx.Value(linkPreviewCaptureKey{}).(bool); capture {
+			return nil
+		}
+		// An explicit upload can share bytes with a captured link image. It must
+		// then follow ordinary upload retention, regardless of which arrived first.
+		_, err := queries.ExecContext(ctx, `DELETE FROM link_preview_media WHERE media_id=?`, id.String())
+		return err
+	})
 }

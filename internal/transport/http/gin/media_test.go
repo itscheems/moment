@@ -261,3 +261,41 @@ func TestUnreferencedUploadIsPrivateToItsUploaderAndNeverPubliclyCached(t *testi
 		t.Fatalf("private upload cache=%d %q", own.Code, own.Header().Get("Cache-Control"))
 	}
 }
+
+func TestLinkDraftResourceRetentionRequiresAccountAndValidOwnership(t *testing.T) {
+	engine, store, token, state := newMediaHTTPFixture(t)
+	ctx := fixtureContentContext(t, testAccountsForRuntime(t, state))
+	value, _, err := store.Ingest(ctx, "draft.gif", bytes.NewReader(testGIF(t)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	endpoint := "/api/v1/links/drafts/" + strings.Repeat("a", 64) + "/media"
+	request := func(body string, authenticated bool) *httptest.ResponseRecorder {
+		req := httptest.NewRequest(http.MethodPut, endpoint, strings.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		if authenticated {
+			req.Header.Set("Authorization", "Bearer "+token)
+		}
+		return performRequest(engine, req)
+	}
+	body := `{"media_ids":["` + value.ID.String() + `"]}`
+	if got := request(body, false); got.Code != http.StatusUnauthorized {
+		t.Fatalf("anonymous: %d %s", got.Code, got.Body.String())
+	}
+	if got := request(body, true); got.Code != http.StatusOK {
+		t.Fatalf("retain: %d %s", got.Code, got.Body.String())
+	}
+	// The central resolver also prevents an administrator's explicit deletion.
+	if _, err := store.Delete(ctx, value.ID, false); err == nil {
+		t.Fatal("deleted saved draft resource")
+	}
+	if got := request(`{"media_ids":["01ARZ3NDEKTSV4RRFFQ69G5FAV"]}`, true); got.Code != http.StatusNotFound {
+		t.Fatalf("missing: %d %s", got.Code, got.Body.String())
+	}
+	if got := request(`{"media_ids":[]}`, true); got.Code != http.StatusOK {
+		t.Fatalf("release: %d %s", got.Code, got.Body.String())
+	}
+	if _, err := store.Delete(ctx, value.ID, false); err != nil {
+		t.Fatalf("released resource still protected: %v", err)
+	}
+}

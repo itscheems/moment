@@ -60,6 +60,7 @@ type MergeReviewLocation struct {
 // difference between two versions of a post, so a review that omitted it would
 // show two identical-looking sides beside the words "link_cards changed".
 type MergeReviewLinkCard struct {
+	DisplayMode  string `json:"display_mode"`
 	Position     int    `json:"position"`
 	SourceURL    string `json:"source_url"`
 	CanonicalURL string `json:"canonical_url"`
@@ -407,7 +408,8 @@ func reviewLinkCards(values []sqlitestore.ArchiveLinkCard) []MergeReviewLinkCard
 	result := make([]MergeReviewLinkCard, 0, len(values))
 	for _, value := range values {
 		result = append(result, MergeReviewLinkCard{
-			Position: value.Card.Position, SourceURL: value.Card.SourceURL,
+			DisplayMode: string(value.Card.EffectiveDisplayMode()),
+			Position:    value.Card.Position, SourceURL: value.Card.SourceURL,
 			CanonicalURL: value.Card.CanonicalURL, Provider: string(value.Card.Provider),
 			CardKind: string(value.Card.Kind), Title: value.Card.Title, SiteName: value.Card.SiteName,
 		})

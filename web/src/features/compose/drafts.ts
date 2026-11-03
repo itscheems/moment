@@ -1,4 +1,6 @@
 import { mapCardPayload, parseMapCard, type MapCardData } from "../maps/types";
+import { linksApi, parseLinkCardInput } from "../../api/links";
+import type { LinkDraftSnapshot } from "./useLinkPreview";
 import {
   fingerprintComposeDraft,
   parseComposeQuoteTarget,
@@ -11,8 +13,10 @@ const MAX_KEPT = 30;
 const MAX_AGE_MS = 30 * 24 * 60 * 60 * 1_000;
 const INSTANCE_PATTERN = /^[0-9a-f]{32}\.[0-9a-f]{32}$/;
 const ID_PATTERN = /^[0-9a-f]{32}$/;
+const RESOURCE_BROWSER_KEY = "moment.compose.resources.browser.v1";
 
 export interface KeptDraft {
+  linkPreview?: LinkDraftSnapshot;
   quote?: ComposeQuoteTarget;
   mapCard?: MapCardData;
   id: string;
@@ -56,6 +60,22 @@ function newDraftID(): string {
   ).join("");
 }
 
+// Browser-local drafts with identical text in different browsers must not
+// release each other's server references.
+export function linkDraftResourceKey(
+  scope: string | null,
+  fingerprint: string,
+): string {
+  const target = storage();
+  if (!target || !scope) throw new Error("Draft storage is unavailable");
+  let browser = target.getItem(RESOURCE_BROWSER_KEY);
+  if (!browser || !ID_PATTERN.test(browser)) {
+    browser = newDraftID();
+    target.setItem(RESOURCE_BROWSER_KEY, browser);
+  }
+  return fingerprintComposeDraft(`${browser}:${scope}:${fingerprint}`);
+}
+
 function parseEntry(value: unknown, now: number): KeptDraft | null {
   if (
     typeof value !== "object" ||
@@ -67,6 +87,7 @@ function parseEntry(value: unknown, now: number): KeptDraft | null {
       "saved_at",
       ...(Object.hasOwn(value, "map_card") ? ["map_card"] : []),
       ...(Object.hasOwn(value, "quote") ? ["quote"] : []),
+      ...(Object.hasOwn(value, "link_preview") ? ["link_preview"] : []),
     ])
   ) {
     return null;
@@ -87,13 +108,33 @@ function parseEntry(value: unknown, now: number): KeptDraft | null {
   if (savedTime > now + 60_000 || now - savedTime > MAX_AGE_MS) return null;
   let quote: ComposeQuoteTarget | undefined;
   let mapCard: MapCardData | undefined;
+  let linkPreview: LinkDraftSnapshot | undefined;
   try {
     quote = parseComposeQuoteTarget(entry.quote);
     mapCard = entry.map_card == null ? undefined : parseMapCard(entry.map_card);
+    if (entry.link_preview != null) {
+      const value = entry.link_preview;
+      if (
+        typeof value !== "object" ||
+        !Object.hasOwn(value, "card") ||
+        !("dismissed" in value) ||
+        !Array.isArray(value.dismissed) ||
+        !value.dismissed.every((url) => typeof url === "string")
+      )
+        return null;
+      linkPreview = {
+        card:
+          "card" in value && value.card != null
+            ? parseLinkCardInput(value.card)
+            : null,
+        dismissed: value.dismissed,
+      };
+    }
   } catch {
     return null;
   }
   return {
+    ...(linkPreview ? { linkPreview } : {}),
     ...(mapCard ? { mapCard } : {}),
     id: entry.id,
     contentMd: entry.content_md,
@@ -163,6 +204,7 @@ function write(instanceId: string, drafts: KeptDraft[]): boolean {
           ...(draft.quote ? { quote: draft.quote } : {}),
           ...(draft.mapCard ? { map_card: mapCardPayload(draft.mapCard) } : {}),
           saved_at: draft.savedAt,
+          ...(draft.linkPreview ? { link_preview: draft.linkPreview } : {}),
         })),
       }),
     );
@@ -190,6 +232,7 @@ export function keepDraft(
   now = new Date(),
   mapCard?: MapCardData | null,
   quote?: ComposeQuoteTarget | null,
+  linkPreview?: LinkDraftSnapshot,
 ): KeptDraft | null {
   if (!instanceId || !INSTANCE_PATTERN.test(instanceId)) return null;
   if (contentMd.trim().length === 0 && !mapCard && !quote) return null;
@@ -197,6 +240,7 @@ export function keepDraft(
   const current = read(instanceId, now.getTime());
   const existing = current.find((draft) => draft.fingerprint === fingerprint);
   const kept: KeptDraft = {
+    ...(linkPreview ? { linkPreview } : {}),
     ...(quote ? { quote } : {}),
     ...(mapCard ? { mapCard } : {}),
     id: existing?.id ?? newDraftID(),
@@ -206,6 +250,76 @@ export function keepDraft(
   };
   const next = [kept, ...current.filter((draft) => draft.id !== kept.id)];
   return write(instanceId, next) ? kept : null;
+}
+
+/** Protect captured resources before confirming that a browser draft is saved. */
+export async function keepDraftWithPreview(
+  instanceId: string | null,
+  csrfToken: string | undefined,
+  contentMd: string,
+  mapCard: MapCardData | null | undefined,
+  quote: ComposeQuoteTarget | null | undefined,
+  snapshot: LinkDraftSnapshot,
+): Promise<KeptDraft | null> {
+  const fingerprint = fingerprintComposeDraft(contentMd, mapCard, quote);
+  const previousDrafts = listKeptDrafts(instanceId);
+  const ids = [
+    snapshot.card?.thumbnail_media_id,
+    snapshot.card?.favicon_media_id,
+  ].filter((id): id is string => !!id);
+  const previous = previousDrafts.find(
+    (draft) => draft.fingerprint === fingerprint,
+  );
+  const key =
+    ids.length || previous?.linkPreview?.card
+      ? linkDraftResourceKey(instanceId, fingerprint)
+      : null;
+  if (ids.length || previous?.linkPreview?.card) {
+    if (!csrfToken)
+      throw new Error("A session is required to preserve card resources");
+    if (key) await linksApi.retainDraft(csrfToken, key, ids);
+  }
+  const kept = keepDraft(
+    instanceId,
+    contentMd,
+    undefined,
+    mapCard,
+    quote,
+    snapshot,
+  );
+  if (!kept && csrfToken && key)
+    await linksApi.retainDraft(
+      csrfToken,
+      key,
+      [
+        previous?.linkPreview?.card?.thumbnail_media_id,
+        previous?.linkPreview?.card?.favicon_media_id,
+      ].filter((id): id is string => !!id),
+    );
+  if (kept && csrfToken) {
+    const remaining = new Set(
+      listKeptDrafts(instanceId).map((draft) => draft.id),
+    );
+    await Promise.allSettled(
+      previousDrafts
+        .filter((draft) => !remaining.has(draft.id))
+        .map((draft) => releaseDraftPreview(csrfToken, draft, instanceId)),
+    );
+  }
+  return kept;
+}
+
+export async function releaseDraftPreview(
+  csrfToken: string,
+  draft: KeptDraft,
+  scope: string | null,
+): Promise<void> {
+  if (draft.linkPreview?.card)
+    await linksApi.retainDraft(
+      csrfToken,
+      linkDraftResourceKey(scope, draft.fingerprint),
+      [],
+    );
 }
 
 export function dropKeptDraft(

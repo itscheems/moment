@@ -129,6 +129,10 @@ Abandoned uploads that a client cannot clean remain eligible for `media prune`.
 CLI: `moment media delete <id> --dry-run --json`, then `--yes` to delete.
 Both direct and API modes return the same result and retain confirmation rules.
 
+`PUT /links/drafts/:key/media` protects the captured images of one browser-local draft. It requires an active account, CSRF for cookie authentication, a 64-character hexadecimal key, and `{"media_ids":[...]}` containing at most two media IDs granted to that account. An empty array releases the draft's references. The response is `{"saved":true}` in the standard envelope. References expire after 30 days, matching browser draft retention; publication establishes content references before releasing draft references. This endpoint manages browser-local draft resources only and intentionally has no standalone CLI draft command. Media maintenance remains available through the CLI.
+
+The server automatically checks captured link resources at startup and hourly. Only captured resources continuously unreferenced for at least 24 hours are eligible; saved draft references and content references prevent deletion. Ordinary uploads are excluded from automatic link cleanup. `moment media prune --link-previews-only --dry-run` inspects this subset offline; actual deletion requires `--yes` or confirmation.
+
 ## Request source
 
 Send `X-Moment-Surface: ios` on native requests, including login and public reads.
@@ -147,6 +151,8 @@ A card hides a bare URL only when the URL occupies the final line alone; a URL
 inside a sentence intentionally remains visible.
 
 The web editor restores a post's saved link card even when the body has no URL. Caption-only edits preserve the stored snapshot and its managed cover without resolving the external URL again. Removing the card is an explicit edit that can be undone or saved independently of the caption.
+
+Link cards accept optional `display_mode: "cover" | "compact"`, defaulting to `cover` for older snapshots and clients. Public cards include the selected mode. `PATCH /posts/:id` also accepts `link_card_display_mode` to change presentation without resubmitting captured metadata. It requires an existing card and retains its title, description, original URL, capture time, and managed images. CLI: `moment post update <id> --link-display compact --json`; new snapshots may set `display_mode` in `--link-json` input. Browser drafts preserve the selection, while their editing card stays compact.
 
 Post and search DTOs add nullable `edited_at` (RFC 3339 UTC strings with millisecond
 precision). Actual changes

@@ -1,4 +1,5 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { linksApi } from "../../api/links";
 
 import { fingerprintComposeDraft } from "./draft";
 import {
@@ -6,14 +7,77 @@ import {
   dropKeptDraft,
   dropKeptDraftByContent,
   keepDraft,
+  keepDraftWithPreview,
   keptDraftsKey,
   listKeptDrafts,
+  linkDraftResourceKey,
 } from "./drafts";
 
 const instance = "a".repeat(32) + "." + "b".repeat(32);
 
-afterEach(() => {
+it("isolates identical draft resources across browsers and account scopes", () => {
+  const fingerprint = fingerprintComposeDraft("https://example.com/draft");
+  const first = linkDraftResourceKey(instance, fingerprint);
+  expect(linkDraftResourceKey(instance, fingerprint)).toBe(first);
+  expect(
+    linkDraftResourceKey("c".repeat(32) + "." + "d".repeat(32), fingerprint),
+  ).not.toBe(first);
   window.localStorage.clear();
+  expect(linkDraftResourceKey(instance, fingerprint)).not.toBe(first);
+});
+
+afterEach(() => {
+  vi.restoreAllMocks();
+  window.localStorage.clear();
+});
+
+it("preserves an existing draft and its resource references when local saving fails", async () => {
+  const content = "https://example.com/draft";
+  const snapshot = {
+    card: {
+      source_url: content,
+      canonical_url: content,
+      provider: "generic",
+      card_kind: "link",
+      title: "Saved preview",
+      description: "",
+      site_name: "Example",
+      author_name: "",
+      duration_seconds: null,
+      view_count: null,
+      comment_count: null,
+      like_count: null,
+      thumbnail_media_id: "01ARZ3NDEKTSV4RRFFQ69G5FAV",
+      favicon_media_id: null,
+      thumbnail_mime_type: "image/png",
+      thumbnail_width: 100,
+      thumbnail_height: 100,
+      embed_url: null,
+      captured_at_ms: 1800000000000,
+    },
+    dismissed: [],
+  };
+  keepDraft(instance, content, undefined, undefined, undefined, snapshot);
+  linkDraftResourceKey(instance, fingerprintComposeDraft(content));
+  const retain = vi.spyOn(linksApi, "retainDraft").mockResolvedValue();
+  vi.spyOn(window.localStorage, "setItem").mockImplementationOnce(() => {
+    throw new Error("quota exceeded");
+  });
+  expect(
+    await keepDraftWithPreview(
+      instance,
+      "csrf",
+      content,
+      undefined,
+      undefined,
+      { card: null, dismissed: [content] },
+    ),
+  ).toBeNull();
+  expect(listKeptDrafts(instance)[0]?.linkPreview).toEqual(snapshot);
+  expect(retain.mock.calls.map((call) => call[2])).toEqual([
+    [],
+    [snapshot.card.thumbnail_media_id],
+  ]);
 });
 
 describe("kept compose drafts", () => {
