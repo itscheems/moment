@@ -176,24 +176,38 @@ export function TimelinePage({
   /** The top row and where it was, measured just before a page is prepended. */
   const compensation = useRef<{ key: string; top: number } | null>(null);
 
-  const reconcilePostChanges = useCallback((items: PublicPost[]) => {
-    let reconciled = items;
-    for (const event of postChanges.current.values()) {
-      reconciled = reconcileTimelineEvent(reconciled, event);
-    }
-    return reconciled;
-  }, []);
-
-  const handlePostChange = useCallback((event: PostChangeEvent) => {
-    postChanges.current.set(event.post.id, event);
-    setPosts((current) => {
-      if (event.kind === "created") {
-        setFreshId(event.post.id);
-        window.setTimeout(() => setFreshId(null), 700);
+  const reconcilePostChanges = useCallback(
+    (items: PublicPost[]) => {
+      let reconciled = items;
+      for (const event of postChanges.current.values()) {
+        reconciled = reconcileTimelineEvent(
+          reconciled,
+          event,
+          emptyContext === "timeline",
+        );
       }
-      return reconcileTimelineEvent(current, event);
-    });
-  }, []);
+      return reconciled;
+    },
+    [emptyContext],
+  );
+
+  const handlePostChange = useCallback(
+    (event: PostChangeEvent) => {
+      postChanges.current.set(event.post.id, event);
+      setPosts((current) => {
+        if (event.kind === "created") {
+          setFreshId(event.post.id);
+          window.setTimeout(() => setFreshId(null), 700);
+        }
+        return reconcileTimelineEvent(
+          current,
+          event,
+          emptyContext === "timeline",
+        );
+      });
+    },
+    [emptyContext],
+  );
 
   const handleReposted = useCallback(
     (post: PublicPost) => handlePostChange({ kind: "reordered", post }),

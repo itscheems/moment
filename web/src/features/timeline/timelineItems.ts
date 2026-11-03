@@ -44,11 +44,16 @@ function asTimelineItem(
 export function reconcileTimelineEvent(
   current: PublicPost[],
   event: PostChangeEvent,
+  publicOnly = false,
 ): PublicPost[] {
   const matching = current.filter((post) => post.id === event.post.id);
   const others = current.filter((post) => post.id !== event.post.id);
 
-  if (event.kind === "deleted") return others;
+  if (
+    event.kind === "deleted" ||
+    (publicOnly && event.post.visibility === "only_me")
+  )
+    return others;
   if (event.kind === "created") {
     return [asTimelineItem(event.post, "original"), ...others].sort(
       compareTimelineItems,

@@ -66,8 +66,14 @@ func TestHiddenPostsAndTheirMediaAnswerOnlyToTheAuthorOverHTTP(t *testing.T) {
 	if detail.Code != http.StatusOK || decodeDataMap(t, detail)["visibility"] != "only_me" {
 		t.Fatalf("owner detail = %d %s", detail.Code, detail.Body.String())
 	}
-	if items := decodeDataMap(t, performRequest(fixture.engine, asAuthor(jsonRequest(http.MethodGet, "/api/v1/posts?limit=10", ""))))["items"].([]any); len(items) != 2 {
-		t.Fatalf("owner timeline = %#v", items)
+	if items := decodeDataMap(t, performRequest(fixture.engine, asAuthor(jsonRequest(http.MethodGet, "/api/v1/posts?limit=10", ""))))["items"].([]any); len(items) != 1 || items[0].(map[string]any)["visibility"] != "everyone" {
+		t.Fatalf("owner home timeline = %#v", items)
+	}
+	for _, path := range []string{"/api/v1/archive/posts?limit=10", "/api/v1/posts?author_user_id=" + createdData["author"].(map[string]any)["user_id"].(string)} {
+		response := performRequest(fixture.engine, asAuthor(jsonRequest(http.MethodGet, path, "")))
+		if response.Code != http.StatusOK || len(decodeDataMap(t, response)["items"].([]any)) != 2 {
+			t.Fatalf("author private list %s = %d %s", path, response.Code, response.Body.String())
+		}
 	}
 	authorSearch := decodeDataMap(t, performRequest(fixture.engine, asAuthor(jsonRequest(http.MethodGet, "/api/v1/search?q=shoreline", ""))))
 	if items := authorSearch["items"].([]any); len(items) != 2 || authorSearch["year_counts"].([]any)[0].(map[string]any)["count"].(float64) != 2 {

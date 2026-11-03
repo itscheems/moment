@@ -112,6 +112,9 @@ func listPosts(posts *app.PostService, site *app.SiteService, gate *Gate, ownArc
 		}
 		input.Timezone = settings.Timezone
 		input.Viewer = gate.Viewer(ctx)
+		if input.AuthorUserID == "" {
+			input.Viewer = app.PublicViewer()
+		}
 		if len(ownArchive) > 0 && ownArchive[0] {
 			input.Viewer = app.AccountViewer(input.AuthorUserID)
 		}
