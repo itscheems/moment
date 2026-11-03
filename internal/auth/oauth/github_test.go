@@ -319,7 +319,7 @@ func TestGitHubExchangeReportsTheAccountAndCarriesPKCEToTheTokenEndpoint(t *test
 	}
 }
 
-func TestGitHubAuthCodeURLCarriesS256PKCEAndOnlyTheIdentityScopes(t *testing.T) {
+func TestGitHubAuthCodeURLRequestsAccountSelectionAndPreservesAuthorization(t *testing.T) {
 	fake := newFakeGitHub(t)
 
 	parsed, err := url.Parse(fake.provider(t).AuthCodeURL("the-state", "the-verifier", ""))
@@ -327,6 +327,9 @@ func TestGitHubAuthCodeURLCarriesS256PKCEAndOnlyTheIdentityScopes(t *testing.T) 
 		t.Fatal(err)
 	}
 	query := parsed.Query()
+	if query.Get("prompt") != "select_account" {
+		t.Fatalf("prompt = %q, want the account picker", query.Get("prompt"))
+	}
 	if query.Get("state") != "the-state" {
 		t.Fatalf("state = %q", query.Get("state"))
 	}
