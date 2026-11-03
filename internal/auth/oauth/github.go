@@ -121,7 +121,10 @@ func (github *GitHub) Label() string { return "GitHub" }
 //
 // GitHub supports PKCE and requires S256; the plain method is refused.
 func (github *GitHub) AuthCodeURL(state, verifier, _ string) string {
-	return github.config.AuthCodeURL(state, oauth2.S256ChallengeOption(verifier))
+	return github.config.AuthCodeURL(state,
+		oauth2.S256ChallengeOption(verifier),
+		oauth2.SetAuthURLParam("prompt", "select_account"),
+	)
 }
 
 type githubUser struct {
