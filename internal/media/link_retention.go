@@ -34,7 +34,7 @@ func (store *Store) RetainLinkDraft(ctx context.Context, key string, rawIDs []st
 	if err != nil {
 		return err
 	}
-	defer lease.Release()
+	defer func() { _ = lease.Release() }()
 	return sqlite.ReplaceLinkDraftMedia(ctx, store.db, user.ID, key, ids, store.options.Clock())
 }
 

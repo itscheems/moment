@@ -48,11 +48,13 @@ type LinkCardKind string
 // LinkCardDisplayMode controls presentation independently of the captured page.
 type LinkCardDisplayMode string
 
+// Supported link card display modes.
 const (
 	LinkDisplayCover   LinkCardDisplayMode = "cover"
 	LinkDisplayCompact LinkCardDisplayMode = "compact"
 )
 
+// Valid reports whether mode is an explicit supported presentation choice.
 func (mode LinkCardDisplayMode) Valid() bool {
 	return mode == LinkDisplayCover || mode == LinkDisplayCompact
 }
@@ -95,6 +97,7 @@ type LinkCard struct {
 	LikeCount    *int64
 }
 
+// EffectiveDisplayMode treats an omitted preference as the cover presentation.
 func (card LinkCard) EffectiveDisplayMode() LinkCardDisplayMode {
 	if card.DisplayMode == "" {
 		return LinkDisplayCover

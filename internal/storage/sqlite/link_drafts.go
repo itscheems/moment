@@ -55,7 +55,7 @@ func linkDraftMediaIDs(ctx context.Context, q Queries, predicate string, args ..
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	var ids []domain.ID
 	for rows.Next() {
 		var raw string
