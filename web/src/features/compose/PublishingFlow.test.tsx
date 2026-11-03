@@ -327,12 +327,13 @@ function preauthenticate() {
   );
 }
 
-async function openMomentActions(trigger?: HTMLElement) {
+async function openMenu(trigger?: HTMLElement) {
   const button =
     trigger ?? (await screen.findByRole("button", { name: "更多操作" }));
   await waitFor(() => expect(button).toBeEnabled());
   await act(async () => {
     button.focus();
+    expect(button).toHaveFocus();
     fireEvent.keyDown(button, { key: "ArrowDown", code: "ArrowDown" });
     fireEvent.keyUp(button, { key: "ArrowDown", code: "ArrowDown" });
   });
@@ -1837,7 +1838,7 @@ describe("owner composing flow", () => {
     });
     render(<App />);
 
-    await openMomentActions();
+    await openMenu();
     fireEvent.click(await screen.findByRole("menuitem", { name: "编辑" }));
     const editor = await screen.findByLabelText("Moment 正文");
     expect(window.location.pathname).toBe(`/m/${item.id}/edit`);
@@ -3062,7 +3063,7 @@ describe("owner composing flow", () => {
     });
     await screen.findByRole("region", { name: "链接预览" });
     const layout = screen.getByRole("button", { name: "链接卡片展示方式" });
-    fireEvent.keyDown(layout, { key: "ArrowDown", code: "ArrowDown" });
+    await openMenu(layout);
     const compactOption = await screen.findByRole("menuitemradio", {
       name: "小图卡片",
     });
@@ -3258,9 +3259,8 @@ describe("owner composing flow", () => {
     });
     render(<App />);
     const editor = await screen.findByLabelText("Moment 正文");
-    fireEvent.keyDown(
+    await openMenu(
       await screen.findByRole("button", { name: "链接卡片展示方式" }),
-      { key: "ArrowDown", code: "ArrowDown" },
     );
     expect(
       await screen.findByRole("menuitemradio", { name: "大图封面" }),
@@ -3397,7 +3397,7 @@ describe("owner composing flow", () => {
     render(<App />);
     await screen.findByText("准备删除");
     const more = screen.getByRole("button", { name: "更多操作" });
-    await openMomentActions(more);
+    await openMenu(more);
     fireEvent.click(await screen.findByRole("menuitem", { name: "删除" }));
     expect(
       await screen.findByRole("heading", { name: "删除这段 Moment？" }),
@@ -3418,7 +3418,7 @@ describe("owner composing flow", () => {
     expect(document.body.style.position).toBe("");
     expect(document.documentElement.style.overflow).toBe("");
 
-    await openMomentActions(more);
+    await openMenu(more);
     fireEvent.click(await screen.findByRole("menuitem", { name: "删除" }));
     fireEvent.click(await screen.findByRole("button", { name: "删除 Moment" }));
     await waitFor(() => expect(screen.queryByText("准备删除")).toBeNull());
@@ -3457,7 +3457,7 @@ describe("owner composing flow", () => {
     render(<App />);
     await screen.findByText("删除失败后保留");
 
-    await openMomentActions();
+    await openMenu();
     fireEvent.click(await screen.findByRole("menuitem", { name: "删除" }));
     const dialog = await screen.findByRole("dialog", {
       name: "删除这段 Moment？",

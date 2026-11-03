@@ -1,6 +1,12 @@
 import "@testing-library/jest-dom/vitest";
 import { afterEach, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import {
+  act,
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+} from "@testing-library/react";
 import { ComposerLinkCard } from "./ComposerLinkCard";
 import type { PublicLinkCard } from "../../api/public";
 
@@ -36,7 +42,12 @@ it("selects a layout through the existing radio menu without removing the card",
     />,
   );
   const trigger = screen.getByRole("button", { name: "链接卡片展示方式" });
-  fireEvent.keyDown(trigger, { key: "ArrowDown", code: "ArrowDown" });
+  await act(async () => {
+    trigger.focus();
+    expect(trigger).toHaveFocus();
+    fireEvent.keyDown(trigger, { key: "ArrowDown", code: "ArrowDown" });
+    fireEvent.keyUp(trigger, { key: "ArrowDown", code: "ArrowDown" });
+  });
   const cover = await screen.findByRole("menuitemradio", { name: "大图封面" });
   expect(cover).toHaveAttribute("aria-checked", "true");
   fireEvent.click(screen.getByRole("menuitemradio", { name: "小图卡片" }));
