@@ -68,7 +68,7 @@ export function ComposerLinkCard({
           >
             <Menu.Popup
               aria-label={t("链接卡片展示方式")}
-              className={styles.actionsMenuPopup}
+              className={`${styles.actionsMenuPopup} ${styles.composerLinkMenu}`}
             >
               <Menu.RadioGroup
                 value={displayMode}
@@ -87,7 +87,10 @@ export function ComposerLinkCard({
                     <span className={audienceStyles.optionLabel}>
                       {mode === "compact" ? t("小图卡片") : t("大图封面")}
                     </span>
-                    <span className={accountStyles.selected} aria-hidden="true">
+                    <span
+                      className={`${accountStyles.selected} ${styles.composerLinkMenuIndicator}`}
+                      aria-hidden="true"
+                    >
                       <Menu.RadioItemIndicator>
                         <Icon name="selected-check" />
                       </Menu.RadioItemIndicator>
