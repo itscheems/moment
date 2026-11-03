@@ -37,7 +37,10 @@ it.each(["zh-CN", "en"])("uses numeric archive dates in %s", async (locale) => {
     "/archive?day=2026-08-10",
   );
   fireEvent.click(title);
-  expect(
-    await screen.findByRole("link", { name: /2026-08[，,]/ }),
-  ).toHaveTextContent(/^8/);
+  const month = await screen.findByRole("link", { name: /2026-08[，,]/ });
+  expect(month).toHaveTextContent(/^8/);
+  const count = locale === "en" ? /^1 post$/ : /^1 条$/;
+  expect(month.querySelector("small")).toHaveTextContent(count);
+  const years = screen.getByRole("group", { name: i18n.t("年份") });
+  expect(years.querySelector("button small")).toHaveTextContent(count);
 });

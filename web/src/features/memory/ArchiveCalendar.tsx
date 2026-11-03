@@ -116,7 +116,7 @@ function MonthPicker({
           >
             <strong>{index}</strong>
             <small>
-              {count} {t("条")}
+              {count} {t("条", { count })}
             </small>
           </InternalLink>
         ) : (
@@ -186,7 +186,8 @@ function MonthPicker({
                 >
                   <strong>{value}</strong>
                   <small>
-                    {yearCounts.get(value)} {t("条")}
+                    {yearCounts.get(value)}{" "}
+                    {t("条", { count: yearCounts.get(value) })}
                   </small>
                 </button>
               ))}
