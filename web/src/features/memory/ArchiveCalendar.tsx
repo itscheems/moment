@@ -144,6 +144,9 @@ function MonthPicker({
       open={open}
     >
       <h2 className={styles.calendarTitle}>
+        <span aria-hidden="true" className={styles.calendarTitleGuide}>
+          {t(WEEK_DAYS[0])}
+        </span>
         <Popover.Trigger
           aria-label={`${visibleMonth}, ${t("选择年月")}`}
           className={styles.monthTitle}

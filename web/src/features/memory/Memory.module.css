@@ -445,22 +445,34 @@
 
 .calendarHeader {
   min-block-size: var(--target-size);
-  display: flex;
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
   align-items: center;
-  justify-content: space-between;
-  gap: var(--space-2);
 }
 
 .calendarTitle {
+  position: relative;
+  grid-column: 1;
+  justify-self: center;
   min-inline-size: 0;
-  flex: 1 1 auto;
   margin: 0;
+  font: inherit;
+}
+
+/* Match the first weekday's intrinsic width so the title starts at its text. */
+.calendarTitleGuide {
+  visibility: hidden;
+  white-space: nowrap;
 }
 
 /* The month is a heading and a button: the words are the control. */
 .monthTitle {
+  position: absolute;
+  inset-block-start: 50%;
+  inset-inline-start: 0;
+  transform: translateY(-50%);
   min-block-size: var(--target-size);
-  max-inline-size: 100%;
+  inline-size: max-content;
   display: inline-flex;
   align-items: center;
   gap: var(--space-1);
@@ -490,8 +502,7 @@
   }
 }
 
-/* The words never wrap: a flex heading offers its child its narrowest
-   width, and a title reading 2026年9 over 月 is a title that broke. */
+/* Keep the month label on one line beside its chevron. */
 .monthTitle span {
   overflow: hidden;
   text-overflow: ellipsis;
@@ -506,8 +517,9 @@
 }
 
 .calendarPager {
+  grid-column: 5 / -1;
+  justify-self: end;
   display: flex;
-  flex: 0 0 auto;
   gap: var(--space-1);
 }
 
@@ -562,10 +574,14 @@
   list-style: none;
 }
 
+.calendarTitleGuide,
 .weekHeader {
-  color: var(--text-tertiary);
   font-family: var(--font-sans);
   font-size: var(--text-xs);
+}
+
+.weekHeader {
+  color: var(--text-tertiary);
   text-align: center;
 }
 
