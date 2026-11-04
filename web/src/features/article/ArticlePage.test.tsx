@@ -188,6 +188,22 @@ function renderArticle(post = makeArticle()) {
 }
 
 describe("article detail page", () => {
+  it("keeps authored inline contents available without the reading sidebar", async () => {
+    renderArticle(
+      makeArticle({
+        body: { ...body, content: [...body.content, { type: "tocNode" }] },
+      }),
+    );
+    await waitFor(() =>
+      expect(
+        document.querySelector(
+          "[data-content-renderer] .tiptap-table-of-contents-item",
+        ),
+      ).not.toBeNull(),
+    );
+    expect(document.querySelector(".toc-sidebar")).toBeNull();
+  });
+
   it("enables only reading actions and find, with isolated detail and focus instances", async () => {
     // This test exercises native reading actions after its lazy module is ready.
     await import("./reader/ArticleReadingContent");
@@ -212,6 +228,7 @@ describe("article detail page", () => {
         }
       ).editor;
     await waitFor(() => expect(current()).toBeDefined());
+    expect(document.querySelector(".toc-sidebar")).toBeNull();
     const detail = current();
     const original = detail.getJSON();
     const updated = vi.fn();
@@ -256,6 +273,7 @@ describe("article detail page", () => {
     await waitFor(() => expect(current()).not.toBe(detail));
     expect(detail.isDestroyed).toBe(true);
     const focus = current();
+    expect(document.querySelector(".toc-sidebar")).not.toBeNull();
     expect(screen.getByRole("button", { name: "查找" })).toBeInTheDocument();
     expect(focus.storage.readingAnnotations.ranges).toHaveLength(0);
     expect(focus.storage.findAndReplace.searchTerm).toBe("");
@@ -267,6 +285,7 @@ describe("article detail page", () => {
     mounted.rerender(show());
     await waitFor(() => expect(current()).not.toBe(focus));
     expect(current().storage.readingAnnotations.ranges).toHaveLength(0);
+    expect(document.querySelector(".toc-sidebar")).toBeNull();
     expect(screen.queryByRole("button", { name: "阅读工具" })).toBeNull();
     mounted.unmount();
     expect(
@@ -396,6 +415,7 @@ describe("article detail page", () => {
       </NavigationProvider>,
     );
     expect(screen.queryByLabelText("文章作者")).toBeNull();
+    expect(document.querySelector(".toc-sidebar")).toBeNull();
     expect(screen.getByRole("article")).not.toHaveClass(styles.detailLayout);
   });
 

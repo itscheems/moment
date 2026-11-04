@@ -252,12 +252,6 @@
   border-color: var(--article-action-divider);
 }
 
-@media (min-width: 1265px) {
-  .detailLayout > [data-article-sheet] :global(.toc-sidebar) {
-    inset-inline-end: -1.875rem;
-  }
-}
-
 .byline {
   display: grid;
   grid-template-columns: 2.5rem minmax(0, 1fr) auto;

@@ -1252,7 +1252,7 @@ export function ArticleEditor({
 
             <ArticleSheet
               enableReadingLayout={previewing}
-              outline={previewing ? undefined : <></>}
+              showOutline={false}
               cover={
                 <CoverField
                   busy={coverBusy}

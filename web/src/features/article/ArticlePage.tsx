@@ -97,6 +97,7 @@ function ArticlePageBody({
       ) : null}
       <ArticleSheet
         enableReadingLayout={focusReading}
+        showOutline={focusReading}
         cover={
           cover ? (
             <ArticleCover
