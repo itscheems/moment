@@ -17,6 +17,7 @@ import { NavigationProvider } from "../../app/navigation";
 import { FeedbackProvider } from "../../components/Feedback";
 import { SessionProvider } from "../auth/SessionProvider";
 import { TimelinePage } from "./TimelinePage";
+import { announcePostChanged } from "../posts/postEvents";
 
 const site: SiteIdentity = {
   profileUserId: "00000000000000000000000000000000",
@@ -104,6 +105,7 @@ function renderTimeline(
   api: PublicApi,
   initialSearch = "",
   canPublish = false,
+  emptyContext: "timeline" | "archive" = "timeline",
 ) {
   return render(
     <FeedbackProvider>
@@ -112,6 +114,7 @@ function renderTimeline(
           api={api}
           initialSearch={initialSearch}
           canPublish={canPublish}
+          emptyContext={emptyContext}
           site={site}
         />
       </NavigationProvider>
@@ -153,6 +156,35 @@ describe("public timeline", () => {
     window.sessionStorage.clear();
     vi.unstubAllGlobals();
   });
+
+  it.each(["timeline", "archive"] as const)(
+    "keeps private post events scoped to the %s surface",
+    async (context) => {
+      const api = new PublicApi(async () =>
+        page([post("01K2ABCDEF0123456789ABCDE0", "Visible record")], null),
+      );
+      const visible = (await api.timeline()).items[0];
+      renderTimeline(api, "", false, context);
+      await screen.findByText("Visible record");
+      const privatePost = {
+        ...visible,
+        visibility: "only_me" as const,
+        contentMd: "Private record",
+        contentHtml: "<p>Private record</p>",
+      };
+      act(() => announcePostChanged({ kind: "updated", post: privatePost }));
+      expect(screen.queryByText("Private record") !== null).toBe(
+        context === "archive",
+      );
+      expect(screen.queryByText("Visible record")).toBeNull();
+      act(() => announcePostChanged({ kind: "created", post: privatePost }));
+      expect(screen.queryByText("Private record") !== null).toBe(
+        context === "archive",
+      );
+      act(() => announcePostChanged({ kind: "created", post: visible }));
+      expect(await screen.findByText("Visible record")).toBeInTheDocument();
+    },
+  );
 
   it("adds a linked repost at the top, keeps the original, and removes the projection on undo", async () => {
     const id = "01K2ABCDEF0123456789ABCDE0";

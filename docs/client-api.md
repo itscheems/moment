@@ -184,7 +184,7 @@ An available comment target uses the existing `quoted_post` projection with `id`
 
 ## Timeline paging
 
-`GET /api/v1/posts` reads one page at a time, newest first. `author_user_id` filters by an immutable account ID without widening visibility; the CLI exposes the same filter as `post list --author-id`. The page's `meta`
+`GET /api/v1/posts` reads one public timeline page at a time, newest first, even for authenticated callers. With `author_user_id`, the page contains that account's publications and includes private posts only when the authenticated caller is their author. The CLI uses the same scopes in direct and API modes: `post list` reads the public timeline, and `post list --author-id` selects an author. The page's `meta`
 carries two opaque cursors: `next_cursor` continues *older* from the page's
 last item and `prev_cursor` continues *newer* from its first. Either goes back
 as `cursor=`; a cursor knows its own direction. Each is `null` once the read
