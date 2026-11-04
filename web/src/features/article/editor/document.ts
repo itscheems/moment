@@ -78,6 +78,9 @@ function wireAttrs(
 ): Record<string, unknown> | null {
   const value: Record<string, unknown> = isRecord(raw) ? raw : {};
   const attrs: Record<string, unknown> = {};
+  if (type === "inlineMath" || type === "blockMath") {
+    attrs.latex = typeof value.latex === "string" ? value.latex : "";
+  }
   if (type === "heading") {
     const level = counted(value.level) ?? 1;
     attrs.level = Math.min(level, 3);
@@ -209,7 +212,15 @@ function wireNode(value: unknown): Record<string, unknown> | null {
   if (attrs === null) return null;
   if (Object.keys(attrs).length > 0) node.attrs = attrs;
 
-  if (type === "horizontalRule" || type === "hardBreak" || type === "tocNode") {
+  if (
+    [
+      "horizontalRule",
+      "hardBreak",
+      "tocNode",
+      "inlineMath",
+      "blockMath",
+    ].includes(type)
+  ) {
     return node;
   }
 
@@ -277,6 +288,8 @@ export function hasArticleSubstance(document: ArticleDocument): boolean {
     nodes.some((node) => {
       if (node.type === "image" || node.type === "table") return true;
       if (node.type === "text") return (node.text ?? "").trim() !== "";
+      if (node.type === "inlineMath" || node.type === "blockMath")
+        return (node.attrs?.latex ?? "").trim() !== "";
       return node.content ? walk(node.content) : false;
     });
   return walk(document.content);

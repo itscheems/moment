@@ -26,6 +26,10 @@ import Typography from "@tiptap/extension-typography";
 import { Markdown } from "tiptap-markdown";
 import Placeholder from "@tiptap/extension-placeholder";
 import { articleContentExtensions } from "../../../components/content/schema";
+import {
+  articleMathExtensions,
+  type MathClickHandler,
+} from "../../../components/content/mathematics";
 import { TocNode } from "@notion/components/nodes/toc-node/extensions/toc-node-extension";
 import { ListNormalizationExtension } from "@notion/components/extensions/list-normalization-extension";
 import { lowlight } from "./lowlight";
@@ -49,7 +53,11 @@ export {
 
 /** Writing adds interaction to the same document the reader renders. */
 export function articleEditorExtensions(
-  options: { placeholder?: string; upload?: UploadFunction } = {},
+  options: {
+    placeholder?: string;
+    upload?: UploadFunction;
+    onMathClick?: MathClickHandler;
+  } = {},
 ): Extensions {
   return [
     ...articleContentExtensions()
@@ -62,6 +70,8 @@ export function articleEditorExtensions(
             "tableHeader",
             "image",
             "mapCard",
+            "inlineMath",
+            "blockMath",
           ].includes(extension.name),
       )
       .map((extension) =>
@@ -99,6 +109,7 @@ export function articleEditorExtensions(
     UiState,
     ManagedNotionImage,
     InteractiveMapNode,
+    ...articleMathExtensions(options.onMathClick),
     ImageUploadNode.configure({
       upload: options.upload,
       accept: "image/*",

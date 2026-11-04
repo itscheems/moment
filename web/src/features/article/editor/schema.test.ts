@@ -16,6 +16,7 @@ const MEDIA_ID = "01K2ABCDEF0123456789ABCDE7";
 
 /** One plausible value per attribute the allowlist names. */
 const SAMPLE_ATTRS: Readonly<Record<string, unknown>> = {
+  latex: "x^2",
   map_card: {
     places: [
       {

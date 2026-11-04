@@ -15,7 +15,7 @@ export function ArticleSheet({
   byline,
   children,
   className = "",
-  outline,
+  showOutline = true,
   enableReadingLayout = false,
 }: {
   cover?: ReactNode;
@@ -23,7 +23,7 @@ export function ArticleSheet({
   byline: ReactNode;
   children: ReactNode;
   className?: string;
-  outline?: ReactNode;
+  showOutline?: boolean;
   enableReadingLayout?: boolean;
 }) {
   const body = useRef<HTMLDivElement>(null);
@@ -45,7 +45,7 @@ export function ArticleSheet({
         <div ref={body} className={styles.body}>
           {children}
         </div>
-        {outline ?? <StaticArticleOutline container={body} />}
+        <StaticArticleOutline container={body} showSidebar={showOutline} />
       </div>
     </TocProvider>
   );

@@ -471,6 +471,9 @@ describe("opening a draft", () => {
     fireEvent.click(screen.getByRole("button", { name: "预览" }));
     await advance(1);
     expect(
+      document.querySelector("[data-article-sheet] > .toc-sidebar"),
+    ).toBeNull();
+    expect(
       document.querySelectorAll(
         "[data-content-renderer] .tiptap-table-of-contents-item",
       ),

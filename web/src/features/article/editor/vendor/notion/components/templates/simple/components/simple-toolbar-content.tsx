@@ -42,6 +42,7 @@ export const MainToolbarContent = ({
   isSearchAndReplaceOpen,
   searchAndReplaceButtonRef,
   isMobile,
+  children,
 }: {
   onHighlighterClick: () => void;
   onLinkClick: () => void;
@@ -49,6 +50,7 @@ export const MainToolbarContent = ({
   isSearchAndReplaceOpen: boolean;
   searchAndReplaceButtonRef: React.RefObject<HTMLButtonElement | null>;
   isMobile: boolean;
+  children?: React.ReactNode;
 }) => {
   return (
     <>
@@ -92,6 +94,7 @@ export const MainToolbarContent = ({
       <ToolbarGroup>
         <MarkButton type="superscript" />
         <MarkButton type="subscript" />
+        {children}
       </ToolbarGroup>
 
       <ToolbarSeparator />

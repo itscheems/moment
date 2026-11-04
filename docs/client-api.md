@@ -240,6 +240,14 @@ Article detail reads carry the validated document in `article.body`. Web readers
 render that document using the same Tiptap content extensions as the article
 editor. `content_html` remains a derived representation for API consumers.
 
+Article document schema 4 adds `inlineMath` inside paragraphs and headings,
+and `blockMath` among block content. Both are leaf nodes with a required
+`attrs.latex` string, limited to 4,096 Unicode code points. The source is
+preserved for editing, search, and archive round trips. Documents using schemas
+1–3 remain readable; math nodes require schema 4. `content_html` exposes escaped
+source in `span[data-type="inline-math"]` or `div[data-type="block-math"]`,
+with the same source in `data-latex`, for clients to typeset or display as text.
+
 An article with inline pictures also carries `article.body_media`: a deduplicated
 array of `{media_id, mime_type, width, height}`. These dimensions reserve space
 before each picture loads. The document owns picture order and descriptions;

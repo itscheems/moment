@@ -4,6 +4,7 @@ import {
   DOMSerializer,
 } from "@tiptap/pm/model";
 import { contentSchemas } from "../../../components/content/schema";
+import { ARTICLE_SCHEMA_VERSION } from "../../../components/content/articleContract";
 import { parseArticleDocument } from "../../../api/public";
 import { toArticleDocument, toEditorContent } from "./document";
 import { mapCardPayload, type MapCardData } from "../../maps/types";
@@ -40,7 +41,7 @@ describe("article map snapshots", () => {
     expect(restored.firstChild?.attrs.map_card).toEqual(mapCardPayload(card));
   });
 
-  it("preserves the map node when an article is opened and saved", () => {
+  it("preserves legacy map nodes when saving with the current article schema", () => {
     const document = parseArticleDocument({
       schema_version: 3,
       type: "doc",
@@ -51,6 +52,9 @@ describe("article map snapshots", () => {
         },
       ],
     });
-    expect(toArticleDocument(toEditorContent(document))).toEqual(document);
+    expect(toArticleDocument(toEditorContent(document))).toEqual({
+      ...document,
+      schema_version: ARTICLE_SCHEMA_VERSION,
+    });
   });
 });

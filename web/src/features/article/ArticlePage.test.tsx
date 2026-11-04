@@ -188,7 +188,25 @@ function renderArticle(post = makeArticle()) {
 }
 
 describe("article detail page", () => {
+  it("keeps authored inline contents available without the reading sidebar", async () => {
+    renderArticle(
+      makeArticle({
+        body: { ...body, content: [...body.content, { type: "tocNode" }] },
+      }),
+    );
+    await waitFor(() =>
+      expect(
+        document.querySelector(
+          "[data-content-renderer] .tiptap-table-of-contents-item",
+        ),
+      ).not.toBeNull(),
+    );
+    expect(document.querySelector(".toc-sidebar")).toBeNull();
+  });
+
   it("enables only reading actions and find, with isolated detail and focus instances", async () => {
+    // This test exercises native reading actions after its lazy module is ready.
+    await import("./reader/ArticleReadingContent");
     const show = (focusReading = false) => (
       <FeedbackProvider>
         <NavigationProvider>
@@ -210,6 +228,7 @@ describe("article detail page", () => {
         }
       ).editor;
     await waitFor(() => expect(current()).toBeDefined());
+    expect(document.querySelector(".toc-sidebar")).toBeNull();
     const detail = current();
     const original = detail.getJSON();
     const updated = vi.fn();
@@ -254,6 +273,7 @@ describe("article detail page", () => {
     await waitFor(() => expect(current()).not.toBe(detail));
     expect(detail.isDestroyed).toBe(true);
     const focus = current();
+    expect(document.querySelector(".toc-sidebar")).not.toBeNull();
     expect(screen.getByRole("button", { name: "查找" })).toBeInTheDocument();
     expect(focus.storage.readingAnnotations.ranges).toHaveLength(0);
     expect(focus.storage.findAndReplace.searchTerm).toBe("");
@@ -265,6 +285,7 @@ describe("article detail page", () => {
     mounted.rerender(show());
     await waitFor(() => expect(current()).not.toBe(focus));
     expect(current().storage.readingAnnotations.ranges).toHaveLength(0);
+    expect(document.querySelector(".toc-sidebar")).toBeNull();
     expect(screen.queryByRole("button", { name: "阅读工具" })).toBeNull();
     mounted.unmount();
     expect(
@@ -379,13 +400,36 @@ describe("article detail page", () => {
     const footer = screen.getByLabelText("文章作者");
     expect(within(footer).getByText("文章作者")).toBeInTheDocument();
     expect(within(footer).getByText("@alice")).toBeInTheDocument();
-    expect(within(footer).getByRole("link")).toHaveAttribute("href", "/alice");
+    expect(within(footer).getAllByRole("link")).toHaveLength(3);
+    for (const link of within(footer).getAllByRole("link"))
+      expect(link).toHaveAttribute("href", "/alice");
     expect(screen.queryByRole("button", { name: /回复这篇文章/ })).toBeNull();
     expect(screen.queryByRole("button", { name: "分享这篇文章" })).toBeNull();
     expect(document.querySelector('a[href="#comments"]')).toBeNull();
     expect(screen.getByRole("article")).not.toHaveClass(styles.detailLayout);
     expect(footer.closest("[data-article-sheet]")).not.toBeNull();
   });
+
+  it.each(["查看 Moment 的个人资料", "Moment", "@owner"])(
+    "opens the shared profile card from the footer identity link %s",
+    async (name) => {
+      render(
+        <NavigationProvider>
+          <ArticlePage post={makeArticle()} site={site} focusReading />
+        </NavigationProvider>,
+      );
+      const footer = screen.getByLabelText("文章作者");
+      fireEvent.focus(within(footer).getByRole("link", { name }));
+      const heading = await screen.findByRole("heading", {
+        name: "Moment",
+      });
+      const card = heading.closest('[class*="identityCard"]');
+      expect(card).toHaveTextContent("@owner");
+      fireEvent.click(within(heading).getByRole("link"));
+      expect(window.location.pathname).toBe("/owner");
+      expect(screen.queryByRole("heading", { name: "Moment" })).toBeNull();
+    },
+  );
 
   it("does not add a reading footer to the workspace publication preview", () => {
     render(
@@ -394,6 +438,7 @@ describe("article detail page", () => {
       </NavigationProvider>,
     );
     expect(screen.queryByLabelText("文章作者")).toBeNull();
+    expect(document.querySelector(".toc-sidebar")).toBeNull();
     expect(screen.getByRole("article")).not.toHaveClass(styles.detailLayout);
   });
 

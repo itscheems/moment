@@ -6,10 +6,12 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { EditorContext, type Editor } from "@tiptap/react";
 import { Toolbar } from "@notion/components/primitives/toolbar";
+import { Button } from "@notion/components/primitives/button";
 import { useIsBreakpoint } from "@notion/hooks/use-is-breakpoint";
 import { useWindowSize } from "@notion/hooks/use-window-size";
 import { useCursorVisibility } from "@notion/hooks/use-cursor-visibility";
 import { SearchAndReplace } from "@notion/components/ui/search-and-replace";
+import { MathIcon } from "./MathIcon";
 import {
   MainToolbarContent,
   MobileToolbarContent,
@@ -22,9 +24,11 @@ const SEARCH_AND_REPLACE_SCROLL_OPTIONS: ScrollIntoViewOptions = {
 export function ArticleFormatToolbar({
   editor,
   loading = false,
+  onInsertMath,
 }: {
   editor: Editor;
   loading?: boolean;
+  onInsertMath: () => void;
 }) {
   const { t } = useTranslation();
 
@@ -110,7 +114,18 @@ export function ArticleFormatToolbar({
           isSearchAndReplaceOpen={isSearchAndReplaceOpen}
           searchAndReplaceButtonRef={searchAndReplaceButtonRef}
           isMobile={isMobile}
-        />
+        >
+          <Button
+            type="button"
+            data-style="ghost"
+            aria-label={t("插入公式")}
+            tooltip={t("插入公式")}
+            onClick={onInsertMath}
+            disabled={loading}
+          >
+            <MathIcon className="tiptap-button-icon" />
+          </Button>
+        </MainToolbarContent>
       ) : (
         <MobileToolbarContent
           type={mobileView === "highlighter" ? "highlighter" : "link"}

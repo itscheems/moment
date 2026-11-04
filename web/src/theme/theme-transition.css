@@ -1,0 +1,30 @@
+:root[data-theme-transition="active"]::view-transition {
+  pointer-events: none;
+}
+
+:root[data-theme-transition="active"]::view-transition-old(root),
+:root[data-theme-transition="active"]::view-transition-new(root) {
+  animation: none;
+  mix-blend-mode: normal;
+}
+
+:root[data-theme-transition="active"]::view-transition-group(root) {
+  animation-duration: 400ms;
+}
+
+:root[data-theme-transition="active"]::view-transition-old(root) {
+  z-index: 0;
+}
+
+:root[data-theme-transition="active"]::view-transition-new(root) {
+  z-index: 1;
+  clip-path: var(--theme-transition-from);
+}
+
+/* Each snapshot carries one complete palette, without mixed intermediate colours. */
+:root[data-theme-transition="active"],
+:root[data-theme-transition="active"] *,
+:root[data-theme-transition="active"] *::before,
+:root[data-theme-transition="active"] *::after {
+  transition: none !important;
+}

@@ -69,6 +69,8 @@ import { ArticleReadingContent } from "../reader";
 import { MentionProvider } from "../../../app/mentions";
 import { NotionSurface } from "./NotionSurface";
 import { ArticleFormatToolbar } from "./ArticleFormatToolbar";
+import { MathFormulaDialog, type MathTarget } from "./MathFormulaDialog";
+import { NodeSelection } from "@tiptap/pm/state";
 import { ThemeToggle } from "../../../components/content/notion/components/templates/notion-like/notion-like-editor-theme-toggle";
 import { ButtonGroup } from "@notion/components/primitives/button";
 
@@ -126,6 +128,7 @@ export function ArticleEditor({
   const loadError = loadState.draftId === draftId ? readError : null;
   const [draft, setDraft] = useState<ArticleDraft | null>(null);
   const [title, setTitle] = useState("");
+  const [mathTarget, setMathTarget] = useState<MathTarget | null>(null);
   const [coverMediaId, setCoverMediaId] = useState<string | null>(null);
   const [visibility, setVisibility] = useState<PostVisibility>("everyone");
   const [saveState, setSaveState] = useState<SaveState>({ kind: "idle" });
@@ -182,6 +185,12 @@ export function ArticleEditor({
   const extensions = useMemo(
     () =>
       articleEditorExtensions({
+        onMathClick: (node, pos) =>
+          setMathTarget({
+            type: node.type.name === "blockMath" ? "blockMath" : "inlineMath",
+            latex: node.attrs.latex,
+            pos,
+          }),
         upload: async (file, onProgress, signal) => {
           const current = uploadSession.current;
           const token = current.session?.csrfToken;
@@ -229,6 +238,28 @@ export function ArticleEditor({
     },
   });
 
+  const openMath = () => {
+    if (!editor) return;
+    const selection = editor.state.selection;
+    if (
+      selection instanceof NodeSelection &&
+      ["inlineMath", "blockMath"].includes(selection.node.type.name)
+    ) {
+      setMathTarget({
+        type:
+          selection.node.type.name === "blockMath" ? "blockMath" : "inlineMath",
+        latex: selection.node.attrs.latex,
+        pos: selection.from,
+      });
+    } else {
+      setMathTarget({
+        type: "blockMath",
+        latex: editor.state.doc.textBetween(selection.from, selection.to),
+        range: { from: selection.from, to: selection.to },
+      });
+    }
+  };
+
   const markChanged = useCallback(() => {
     revision.current += 1;
     const at = Date.now();
@@ -266,6 +297,7 @@ export function ArticleEditor({
       return;
     }
     uploadGeneration.current += 1;
+    setMathTarget(null);
     coverUpload.current?.abort();
     coverUpload.current = null;
     setCoverFile(null);
@@ -1134,10 +1166,21 @@ export function ArticleEditor({
         !publishing &&
         !discarding &&
         (loading || !loadError) ? (
-          <ArticleFormatToolbar editor={editor} loading={loading} />
+          <ArticleFormatToolbar
+            editor={editor}
+            loading={loading}
+            onInsertMath={openMath}
+          />
         ) : null}
 
         <div className={styles.main}>
+          {editor && mathTarget && !loading && (
+            <MathFormulaDialog
+              editor={editor}
+              target={mathTarget}
+              onClose={() => setMathTarget(null)}
+            />
+          )}
           <div
             className={styles.railPanel}
             id="article-library"
@@ -1209,7 +1252,7 @@ export function ArticleEditor({
 
             <ArticleSheet
               enableReadingLayout={previewing}
-              outline={previewing ? undefined : <></>}
+              showOutline={false}
               cover={
                 <CoverField
                   busy={coverBusy}
@@ -1284,6 +1327,7 @@ export function ArticleEditor({
                   {editor && (
                     <NotionSurface
                       editor={editor}
+                      onInsertMath={openMath}
                       readOnly={
                         previewing ||
                         publishing ||

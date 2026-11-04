@@ -8,8 +8,10 @@ import { TocSidebar } from "@content-notion/components/nodes/toc-node/ui/toc-sid
 /** Adapt static-renderer headings into the template's existing TOC data contract. */
 function StaticCatalog({
   container,
+  showSidebar = true,
 }: {
   container: RefObject<HTMLDivElement | null>;
+  showSidebar?: boolean;
 }) {
   const { setTocContent } = useToc();
   useEffect(() => {
@@ -56,10 +58,11 @@ function StaticCatalog({
       window.removeEventListener("scroll", update);
     };
   }, [container, setTocContent]);
-  return <TocSidebar topOffset={92} maxShowCount={100} />;
+  return showSidebar ? <TocSidebar topOffset={92} maxShowCount={100} /> : null;
 }
 export function StaticArticleOutline(props: {
   container: RefObject<HTMLDivElement | null>;
+  showSidebar?: boolean;
 }) {
   return <StaticCatalog {...props} />;
 }
