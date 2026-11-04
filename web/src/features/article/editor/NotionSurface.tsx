@@ -19,6 +19,7 @@ import {
 import { EmojiDropdownMenu } from "@notion/components/ui/emoji-dropdown-menu";
 import { MentionDropdownMenu } from "@notion/components/ui/mention-dropdown-menu";
 import "./notion.scss";
+import { MathIcon } from "./MathIcon";
 
 const ignoreHashResult = () => {};
 
@@ -74,6 +75,7 @@ function Surface({ editor, readOnly, onInsertMath }: SurfaceProps) {
                     customItems: [
                       {
                         title: t("数学公式"),
+                        badge: MathIcon,
                         group: t("Insert"),
                         keywords: [
                           "math",

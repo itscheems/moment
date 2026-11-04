@@ -11,6 +11,7 @@ import { useIsBreakpoint } from "@notion/hooks/use-is-breakpoint";
 import { useWindowSize } from "@notion/hooks/use-window-size";
 import { useCursorVisibility } from "@notion/hooks/use-cursor-visibility";
 import { SearchAndReplace } from "@notion/components/ui/search-and-replace";
+import { MathIcon } from "./MathIcon";
 import {
   MainToolbarContent,
   MobileToolbarContent,
@@ -87,16 +88,6 @@ export function ArticleFormatToolbar({
         ...(isMobile ? { bottom: `calc(100% - ${height - rect.y}px)` } : {}),
       }}
     >
-      <Button
-        type="button"
-        data-style="ghost"
-        aria-label={t("插入公式")}
-        tooltip={t("插入公式")}
-        onClick={onInsertMath}
-        disabled={loading}
-      >
-        <span aria-hidden="true">∑</span>
-      </Button>
       <MapCardEditor
         value={null}
         triggerOnly
@@ -123,7 +114,18 @@ export function ArticleFormatToolbar({
           isSearchAndReplaceOpen={isSearchAndReplaceOpen}
           searchAndReplaceButtonRef={searchAndReplaceButtonRef}
           isMobile={isMobile}
-        />
+        >
+          <Button
+            type="button"
+            data-style="ghost"
+            aria-label={t("插入公式")}
+            tooltip={t("插入公式")}
+            onClick={onInsertMath}
+            disabled={loading}
+          >
+            <MathIcon className="tiptap-button-icon" />
+          </Button>
+        </MainToolbarContent>
       ) : (
         <MobileToolbarContent
           type={mobileView === "highlighter" ? "highlighter" : "link"}
