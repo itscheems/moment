@@ -126,3 +126,71 @@ it("previews input, rejects malformed formulas and leaves cancellation unchanged
   expect(onClose).toHaveBeenCalled();
   expect(editor.getJSON()).toEqual(before);
 });
+
+it.each(["blockMath", "inlineMath"] as const)(
+  "inserts %s at a caret without reporting failure or requiring another click",
+  async (type) => {
+    editor = new Editor({
+      extensions: articleEditorExtensions(),
+      content: "<p>before after</p>",
+    });
+    await new Promise<void>((resolve) => editor.on("create", () => resolve()));
+    editor.commands.setTextSelection(7);
+    const before = editor.getJSON();
+    const { from, to } = editor.state.selection;
+    const onClose = vi.fn();
+    render(
+      <MathFormulaDialog
+        editor={editor}
+        target={{ type, latex: "x+1", range: { from, to } }}
+        onClose={onClose}
+      />,
+    );
+    await screen.findByRole("textbox", { name: "LaTeX 源码" });
+    fireEvent.click(screen.getByRole("button", { name: /^插入$/ }));
+    expect(onClose).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    const formulas: string[] = [];
+    editor.state.doc.descendants((node) => {
+      if (node.type.name === type) formulas.push(node.attrs.latex);
+    });
+    expect(formulas).toEqual(["x+1"]);
+    expect(editor.commands.undo()).toBe(true);
+    expect(editor.getJSON()).toEqual(before);
+  },
+);
+
+it.each(["blockMath", "inlineMath"] as const)(
+  "replaces selected text with %s while preserving surrounding text and undo",
+  async (type) => {
+    editor = new Editor({
+      extensions: articleEditorExtensions(),
+      content: "<p>left value right</p>",
+    });
+    await new Promise<void>((resolve) => editor.on("create", () => resolve()));
+    editor.commands.setTextSelection({ from: 6, to: 11 });
+    const before = editor.getJSON();
+    const onClose = vi.fn();
+    render(
+      <MathFormulaDialog
+        editor={editor}
+        target={{ type, latex: "x+1", range: { from: 6, to: 11 } }}
+        onClose={onClose}
+      />,
+    );
+    await screen.findByRole("textbox", { name: "LaTeX 源码" });
+    fireEvent.click(screen.getByRole("button", { name: /^插入$/ }));
+    expect(onClose).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    const text: string[] = [];
+    const formulas: string[] = [];
+    editor.state.doc.descendants((node) => {
+      if (node.isText) text.push(node.text ?? "");
+      if (node.type.name === type) formulas.push(node.attrs.latex);
+    });
+    expect(text.join("")).toBe("left  right");
+    expect(formulas).toEqual(["x+1"]);
+    expect(editor.commands.undo()).toBe(true);
+    expect(editor.getJSON()).toEqual(before);
+  },
+);

@@ -60,8 +60,11 @@ export function MathFormulaDialog({
           ? chain.updateBlockMath({ latex, pos: target.pos })
           : chain.updateInlineMath({ latex, pos: target.pos });
     } else {
-      if (target.range)
-        chain = chain.setTextSelection(target.range).deleteSelection();
+      if (target.range) {
+        chain = chain.setTextSelection(target.range);
+        if (target.range.from !== target.range.to)
+          chain = chain.deleteSelection();
+      }
       chain = block
         ? chain.insertBlockMath({ latex })
         : chain.insertInlineMath({ latex });
