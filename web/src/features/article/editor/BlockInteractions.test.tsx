@@ -4,7 +4,7 @@ import { EditorContent } from "@tiptap/react";
 import { NodeRangeSelection } from "@tiptap/extension-node-range";
 import { DOMParser } from "@tiptap/pm/model";
 import { act, cleanup, render, waitFor } from "@testing-library/react";
-import { afterEach, expect, it } from "vitest";
+import { afterEach, expect, it, vi } from "vitest";
 import { articleEditorExtensions } from "./schema";
 import { toArticleDocument } from "./document";
 import { DeleteNodeButton } from "@notion/components/ui/delete-node-button";
@@ -32,6 +32,45 @@ function setup() {
     },
   });
 }
+
+it.each([8, 80])(
+  "starts a text paragraph when clicking %ipx below a final formula",
+  async (distance) => {
+    editor = new Editor({
+      extensions: articleEditorExtensions(),
+      content: {
+        type: "doc",
+        content: [{ type: "blockMath", attrs: { latex: "a+b" } }],
+      },
+    });
+    await new Promise<void>((resolve) => editor.on("create", () => resolve()));
+    const original = editor.getJSON();
+    const formula = editor.view.nodeDOM(0) as HTMLElement;
+    vi.spyOn(editor.view.dom, "getBoundingClientRect").mockReturnValue(
+      new DOMRect(0, 0, 600, 500),
+    );
+    vi.spyOn(formula, "getBoundingClientRect").mockReturnValue(
+      new DOMRect(24, 40, 552, 40),
+    );
+    editor.view.dom.style.paddingInline = "24px";
+    const event = new MouseEvent("gap-test", {
+      bubbles: true,
+      cancelable: true,
+      clientX: 100,
+      clientY: 80 + distance,
+    });
+    editor.view.dom.dispatchEvent(event);
+    const handled = editor.view.someProp("handleDOMEvents", (handlers) =>
+      handlers.mousedown?.(editor.view, event),
+    );
+    expect(handled).toBe(true);
+    expect(editor.state.doc.childCount).toBe(2);
+    expect(editor.state.selection.$from.parent.type.name).toBe("paragraph");
+    expect(editor.state.selection.empty).toBe(true);
+    expect(editor.commands.undo()).toBe(true);
+    expect(editor.getJSON()).toEqual(original);
+  },
+);
 
 it("registers upstream block range selection for mouse and keyboard selection", () => {
   setup();

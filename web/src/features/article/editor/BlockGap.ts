@@ -3,9 +3,9 @@ import { isNodeRangeSelection } from "@tiptap/extension-node-range";
 import { closeHistory } from "@tiptap/pm/history";
 import { Plugin, TextSelection } from "@tiptap/pm/state";
 
-const media = new Set(["image", "mapCard"]);
+const gapBlocks = new Set(["image", "mapCard", "blockMath"]);
 
-/** Make the whitespace beside media blocks a writing target, without adding
+/** Make the whitespace beside block content a writing target, without adding
  * empty paragraphs to the stored document until the author actually clicks. */
 export const BlockGap = Extension.create({
   name: "blockGap",
@@ -49,7 +49,7 @@ export const BlockGap = Extension.create({
               }
               if (
                 event.target.closest(
-                  "button, input, textarea, a, [role=button], p, h1, h2, h3, pre, li, .tiptap-image-content, .tiptap-image-caption",
+                  "button, input, textarea, a, [role=button], p, h1, h2, h3, pre, li, .tiptap-image-content, .tiptap-image-caption, .tiptap-mathematics-render",
                 )
               )
                 return false;
@@ -78,16 +78,14 @@ export const BlockGap = Extension.create({
                 const before = blocks[index - 1];
                 const after = blocks[index];
                 if (
-                  !media.has(before?.node.type.name) &&
-                  !media.has(after?.node.type.name)
+                  !gapBlocks.has(before?.node.type.name) &&
+                  !gapBlocks.has(after?.node.type.name)
                 )
                   continue;
                 const top = before
                   ? before.rect.bottom - 6
                   : after.rect.top - 18;
-                const bottom = after
-                  ? after.rect.top + 6
-                  : before.rect.bottom + 18;
+                const bottom = after ? after.rect.top + 6 : rect.bottom;
                 if (event.clientY < top || event.clientY > bottom) continue;
                 const empty = [before, after].find(
                   (block) =>
