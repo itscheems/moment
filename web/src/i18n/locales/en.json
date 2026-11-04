@@ -907,6 +907,8 @@
   "{{value1}}年{{value2}}月，{{value3}} 条 Moment": "{{value1}}-{{value2}}, {{value3}} Moments",
   "月": "month",
   "条": "posts",
+  "条_one": "post",
+  "条_other": "posts",
   "{{value1}}年{{value2}}月，没有 Moment": "{{value1}}-{{value2}}, no Moments",
   "{{value1}}年{{value2}}月，选择年月": "{{value1}}-{{value2}}. Choose year and month",
   "年": "year",

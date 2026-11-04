@@ -907,6 +907,8 @@
   "{{value1}}年{{value2}}月，{{value3}} 条 Moment": "{{value1}}年{{value2}}月，{{value3}} 条 Moment",
   "月": "月",
   "条": "条",
+  "条_one": "条",
+  "条_other": "条",
   "{{value1}}年{{value2}}月，没有 Moment": "{{value1}}年{{value2}}月，没有 Moment",
   "{{value1}}年{{value2}}月，选择年月": "{{value1}}年{{value2}}月，选择年月",
   "年": "年",

@@ -102,11 +102,11 @@ function MonthPicker({
         {count > 0 ? (
           <InternalLink
             aria-current={key === visibleMonth ? "date" : undefined}
-            aria-label={t("{{value1}}年{{value2}}月，{{value3}} 条 Moment", {
-              count: count,
-              value1: year,
-              value2: index,
-              value3: count,
+            aria-label={t("{{value1}}，{{value2}} 条 Moment{{value3}}", {
+              count,
+              value1: key,
+              value2: count,
+              value3: "",
             })}
             href={archiveHref({ month: key })}
             onClick={(event) => {
@@ -114,26 +114,17 @@ function MonthPicker({
               setOpen(false);
             }}
           >
-            <strong>
-              {index}
-              {t("月")}
-            </strong>
+            <strong>{index}</strong>
             <small>
-              {count} {t("条")}
+              {count} {t("条", { count })}
             </small>
           </InternalLink>
         ) : (
           <span
-            aria-label={t("{{value1}}年{{value2}}月，没有 Moment", {
-              value1: year,
-              value2: index,
-            })}
+            aria-label={t("{{value1}}，没有 Moment", { value1: key })}
             className={styles.pickerEmptyMonth}
           >
-            <strong>
-              {index}
-              {t("月")}
-            </strong>
+            <strong>{index}</strong>
             <small>—</small>
           </span>
         )}
@@ -153,19 +144,14 @@ function MonthPicker({
       open={open}
     >
       <h2 className={styles.calendarTitle}>
+        <span aria-hidden="true" className={styles.calendarTitleGuide}>
+          {t(WEEK_DAYS[0])}
+        </span>
         <Popover.Trigger
-          aria-label={t("{{value1}}年{{value2}}月，选择年月", {
-            value1: shown.year,
-            value2: shown.month,
-          })}
+          aria-label={`${visibleMonth}, ${t("选择年月")}`}
           className={styles.monthTitle}
         >
-          <span>
-            {shown.year}
-            {t("年")}
-            {shown.month}
-            {t("月")}
-          </span>
+          <span>{visibleMonth}</span>
           <Icon name="chevron-down" />
         </Popover.Trigger>
       </h2>
@@ -200,15 +186,13 @@ function MonthPicker({
                 >
                   <strong>{value}</strong>
                   <small>
-                    {yearCounts.get(value)} {t("条")}
+                    {yearCounts.get(value)}{" "}
+                    {t("条", { count: yearCounts.get(value) })}
                   </small>
                 </button>
               ))}
             </div>
-            <ol
-              aria-label={t("{{value1}} 年的月份", { value1: year })}
-              className={styles.pickerMonths}
-            >
+            <ol aria-label={String(year)} className={styles.pickerMonths}>
               {cells}
             </ol>
           </Popover.Popup>
@@ -244,7 +228,6 @@ export function ArchiveCalendar({
 }: ArchiveCalendarProps) {
   const { t } = useTranslation();
 
-  const { month } = splitMonth(visibleMonth);
   const previous = shiftMonth(visibleMonth, -1);
   const next = shiftMonth(visibleMonth, 1);
   const monthCount = monthCounts.get(visibleMonth) ?? 0;
@@ -266,11 +249,7 @@ export function ArchiveCalendar({
     const count = dayCounts?.get(day) ?? 0;
     const isToday = date === today;
     const isSelected = date === selectedDay;
-    const spoken = t("{{value1}}月{{value2}}日{{value3}}", {
-      value1: month,
-      value2: day,
-      value3: isToday ? t("，今天") : "",
-    });
+    const spoken = `${date}${isToday ? t("，今天") : ""}`;
     cells.push(
       <li
         className={count > 0 ? styles.calendarDay : styles.calendarEmptyDay}
