@@ -41,7 +41,7 @@ func registerPosts(application *Application) {
 	application.MustRegisterLeaf(LeafSpec{
 		Path:       []string{"post", "list"},
 		Short:      "List the public Moment timeline",
-		Long:       "Read one stable page, newest first, through the selected local instance or HTTP API: the head of the timeline, a cursor's continuation in the direction it names, or the end of an anchored day read back from.",
+		Long:       "Read one stable page, newest first, through the selected local instance or HTTP API: the head of the public timeline, a cursor's continuation in the direction it names, or the end of an anchored day read back from. With --author-id, read that account's publications, including private posts when reading as their author.",
 		Inputs:     "Use --cursor for continuation, --limit from 1 to 100, and optional YYYY-MM-DD boundaries: inclusive --from and exclusive --to in the configured site timezone. --anchor names a site day to read back from instead; it cannot be combined with --cursor, --from, or --to.",
 		Output:     "A canonical post array in data.items with nullable meta.next_cursor (continues older) and meta.prev_cursor (continues newer); meta.refresh_cursor is a reusable newer watermark, including an empty head. With --author-id, data.author_post_count counts that author's visible published originals across all pages and filters.",
 		Errors:     "Invalid cursors, limits, dates, or site authority return stable machine codes.",
@@ -269,7 +269,10 @@ func runPostList(ctx context.Context, invocation Invocation, input CommandInput)
 			return Result{}, postCLIError(err)
 		}
 		listInput.Timezone = settings.Timezone
-		listInput.Viewer = app.ViewerFromContext(ctx)
+		listInput.Viewer = app.PublicViewer()
+		if listInput.AuthorUserID != "" {
+			listInput.Viewer = app.ViewerFromContext(ctx)
+		}
 		result, err := service.List(ctx, listInput)
 		if err != nil {
 			return Result{}, postCLIError(err)
