@@ -142,7 +142,7 @@ export function useLinkHandler(props: LinkHandlerProps) {
     if (!url || !editor) return;
 
     const { selection } = editor.state;
-    const isEmpty = selection.empty;
+    const isEmpty = selection.empty && !isLinkActive(editor);
 
     let chain = editor.chain().focus();
 
