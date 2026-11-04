@@ -87,6 +87,7 @@ function useTooltip({
 
   const data = useFloating({
     placement,
+    transform: false,
     open,
     onOpenChange: setOpen,
     whileElementsMounted: autoUpdate,
@@ -223,6 +224,7 @@ export const TooltipContent = forwardRef<HTMLDivElement, TooltipContentProps>(
         ref={ref}
         style={{
           ...context.floatingStyles,
+          visibility: context.isPositioned ? "visible" : "hidden",
           ...style,
         }}
         {...context.getFloatingProps(props)}
