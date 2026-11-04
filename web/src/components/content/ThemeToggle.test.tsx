@@ -1,7 +1,14 @@
 import "@testing-library/jest-dom/vitest";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import {
+  act,
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+} from "@testing-library/react";
 import { afterEach, beforeEach, expect, it } from "vitest";
 import { ThemeProvider } from "../../theme/ThemeProvider";
+import i18n from "../../i18n";
 import { ThemeToggle } from "./notion/components/templates/notion-like/notion-like-editor-theme-toggle";
 
 beforeEach(() => window.localStorage.clear());
@@ -37,4 +44,26 @@ it("recognizes an existing dim preference as dark", () => {
     screen.getByRole("button", { name: "切换到浅色模式" }),
   ).toBeInTheDocument();
   expect(window.localStorage.getItem("moment.theme.v1")).toBe("dim");
+});
+
+it("localizes both target themes in English", async () => {
+  const previous = i18n.language;
+  await i18n.changeLanguage("en");
+  try {
+    render(
+      <ThemeProvider>
+        <ThemeToggle />
+      </ThemeProvider>,
+    );
+    fireEvent.click(
+      screen.getByRole("button", { name: "Switch to dark mode" }),
+    );
+    expect(
+      screen.getByRole("button", { name: "Switch to light mode" }),
+    ).toBeInTheDocument();
+  } finally {
+    await act(async () => {
+      await i18n.changeLanguage(previous);
+    });
+  }
 });

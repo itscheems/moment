@@ -1791,5 +1791,7 @@
   "公式格式有误，请检查 LaTeX 源码。": "Invalid formula. Check the LaTeX source.",
   "公式未能更新，请重新选择插入位置。": "The formula could not be updated. Choose its position again.",
   "删除公式": "Delete formula",
-  "插入": "Insert"
+  "插入": "Insert",
+  "切换到浅色模式": "Switch to light mode",
+  "切换到暗色模式": "Switch to dark mode"
 }
