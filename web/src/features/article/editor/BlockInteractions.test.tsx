@@ -33,23 +33,35 @@ function setup() {
   });
 }
 
-it.each([8, 80])(
-  "starts a text paragraph when clicking %ipx below a final formula",
-  async (distance) => {
+it.each(
+  [
+    {
+      name: "formula",
+      content: { type: "blockMath", attrs: { latex: "a+b" } },
+    },
+    {
+      name: "code block",
+      content: {
+        type: "codeBlock",
+        content: [{ type: "text", text: "const value = 1;" }],
+      },
+    },
+  ].flatMap((block) => [8, 80].map((distance) => ({ ...block, distance }))),
+)(
+  "starts a text paragraph when clicking $distance px below a final $name",
+  async ({ content, distance }) => {
     editor = new Editor({
       extensions: articleEditorExtensions(),
-      content: {
-        type: "doc",
-        content: [{ type: "blockMath", attrs: { latex: "a+b" } }],
-      },
+      content: { type: "doc", content: [content] },
     });
     await new Promise<void>((resolve) => editor.on("create", () => resolve()));
+    render(<EditorContent editor={editor} />);
     const original = editor.getJSON();
-    const formula = editor.view.nodeDOM(0) as HTMLElement;
+    const block = editor.view.nodeDOM(0) as HTMLElement;
     vi.spyOn(editor.view.dom, "getBoundingClientRect").mockReturnValue(
       new DOMRect(0, 0, 600, 500),
     );
-    vi.spyOn(formula, "getBoundingClientRect").mockReturnValue(
+    vi.spyOn(block, "getBoundingClientRect").mockReturnValue(
       new DOMRect(24, 40, 552, 40),
     );
     editor.view.dom.style.paddingInline = "24px";
