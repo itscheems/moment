@@ -107,6 +107,31 @@ it("exposes the upstream drag handle on the image surface without including its 
   ).toBeNull();
 });
 
+it("preserves image dimensions on the native lazy image before it loads", async () => {
+  setup();
+  editor.commands.setContent({
+    type: "doc",
+    content: [
+      {
+        type: "image",
+        attrs: {
+          media_id: mediaId,
+          src: `/api/v1/media/${mediaId}/preview`,
+          width: 1200,
+          height: 800,
+        },
+      },
+    ],
+  });
+  render(<EditorContent editor={editor} />);
+  await waitFor(() => {
+    const image = editor.view.dom.querySelector("img");
+    expect(image).toHaveAttribute("width", "1200");
+    expect(image).toHaveAttribute("height", "800");
+    expect(image).toHaveAttribute("loading", "lazy");
+  });
+});
+
 it("retains managed media when the actual editor serializes a copied block range", () => {
   setup();
   const selection = NodeRangeSelection.create(

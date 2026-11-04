@@ -27,7 +27,7 @@ export interface ResizableImageProps extends React.HTMLAttributes<HTMLDivElement
   src: string;
   imageAttributes?: Pick<
     React.ImgHTMLAttributes<HTMLImageElement>,
-    "loading" | "decoding"
+    "loading" | "decoding" | "width" | "height"
   >;
   alt?: string;
   editor?: Editor;
