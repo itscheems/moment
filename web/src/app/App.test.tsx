@@ -1642,7 +1642,11 @@ describe("App shell and public routes", () => {
     fireEvent.click(trigger);
     expect(window.location.pathname).toBe(`/alice/article/${id}`);
     const footer = screen.getByLabelText("Article author");
-    expect(within(footer).getByRole("link")).toHaveAttribute("href", "/alice");
+    const authorLinks = within(footer).getAllByRole("link");
+    expect(authorLinks).toHaveLength(3);
+    for (const link of authorLinks) {
+      expect(link).toHaveAttribute("href", "/alice");
+    }
   });
 
   it.each(["moment", "missing"])(
