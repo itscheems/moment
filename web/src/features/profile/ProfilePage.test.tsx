@@ -376,7 +376,7 @@ describe("profile page", () => {
     );
     expect(screen.queryByText("媒体与归档")).not.toBeInTheDocument();
     expect(screen.getByText("@owner", { selector: "p" })).toBeInTheDocument();
-    expect(screen.getByText("2026年8月加入")).toHaveAttribute(
+    expect(screen.getByText("2026年8月加入").closest("time")).toHaveAttribute(
       "datetime",
       site.instanceInitializedAt,
     );

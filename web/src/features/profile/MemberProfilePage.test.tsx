@@ -140,11 +140,21 @@ describe("member profile", () => {
     vi.stubGlobal("scrollTo", vi.fn());
   });
 
-  afterEach(() => {
+  afterEach(async () => {
     cleanup();
+    await i18n.changeLanguage("zh-CN");
     vi.restoreAllMocks();
     vi.unstubAllGlobals();
     window.sessionStorage.clear();
+  });
+
+  it("renders the English joined date as a complete phrase", async () => {
+    await i18n.changeLanguage("en");
+    vi.stubGlobal("fetch", signedIn(null));
+    mount(new PublicApi(async () => json(memberEnvelope())), "linlin");
+    expect(
+      (await screen.findByText("Joined August 2026")).closest("time"),
+    ).toHaveAttribute("datetime", "2026-08-01T09:08:00Z");
   });
 
   it("renders another account's identity over the plain cover band", async () => {
