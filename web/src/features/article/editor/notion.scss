@@ -36,6 +36,13 @@
   background: var(--tt-selection-color);
 }
 
+/* A leading atom is the native initial selection, before the author focuses it. */
+.notion-like-editor:not(.ProseMirror-focused)
+  .tiptap-mathematics-render.ProseMirror-selectednode:not(:hover) {
+  background: transparent;
+  outline: none;
+}
+
 /* Image rows span the text measure for alignment; paint only the media box. */
 .notion-like-editor .node-image.ProseMirror-selectednoderange {
   outline: none;
