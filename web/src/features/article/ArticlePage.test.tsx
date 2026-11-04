@@ -400,13 +400,36 @@ describe("article detail page", () => {
     const footer = screen.getByLabelText("文章作者");
     expect(within(footer).getByText("文章作者")).toBeInTheDocument();
     expect(within(footer).getByText("@alice")).toBeInTheDocument();
-    expect(within(footer).getByRole("link")).toHaveAttribute("href", "/alice");
+    expect(within(footer).getAllByRole("link")).toHaveLength(3);
+    for (const link of within(footer).getAllByRole("link"))
+      expect(link).toHaveAttribute("href", "/alice");
     expect(screen.queryByRole("button", { name: /回复这篇文章/ })).toBeNull();
     expect(screen.queryByRole("button", { name: "分享这篇文章" })).toBeNull();
     expect(document.querySelector('a[href="#comments"]')).toBeNull();
     expect(screen.getByRole("article")).not.toHaveClass(styles.detailLayout);
     expect(footer.closest("[data-article-sheet]")).not.toBeNull();
   });
+
+  it.each(["查看 Moment 的个人资料", "Moment", "@owner"])(
+    "opens the shared profile card from the footer identity link %s",
+    async (name) => {
+      render(
+        <NavigationProvider>
+          <ArticlePage post={makeArticle()} site={site} focusReading />
+        </NavigationProvider>,
+      );
+      const footer = screen.getByLabelText("文章作者");
+      fireEvent.focus(within(footer).getByRole("link", { name }));
+      const heading = await screen.findByRole("heading", {
+        name: "Moment",
+      });
+      const card = heading.closest('[class*="identityCard"]');
+      expect(card).toHaveTextContent("@owner");
+      fireEvent.click(within(heading).getByRole("link"));
+      expect(window.location.pathname).toBe("/owner");
+      expect(screen.queryByRole("heading", { name: "Moment" })).toBeNull();
+    },
+  );
 
   it("does not add a reading footer to the workspace publication preview", () => {
     render(

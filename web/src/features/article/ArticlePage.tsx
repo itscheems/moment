@@ -206,28 +206,39 @@ function ArticlePageBody({
         />
         {focusReading ? (
           <footer aria-label={t("文章作者")} className={styles.readingFooter}>
-            <SiteIdentityPreview
-              site={site}
-              children={
+            <div className={styles.readingAuthor}>
+              <SiteIdentityPreview site={site}>
                 <InternalLink
                   aria-label={t("查看 {{value1}} 的个人资料", {
                     value1: siteName,
                   })}
-                  className={styles.readingAuthor}
+                  className={`${postStyles.identityLink} ${styles.readingAuthorAvatar}`}
                   href={siteProfileHref(site)}
                 >
-                  <span className={styles.readingAuthorAvatar}>
-                    <SiteAvatar site={site} size={40} />
-                  </span>
-                  <span className={styles.readingAuthorText}>
+                  <SiteAvatar site={site} size={40} />
+                </InternalLink>
+              </SiteIdentityPreview>
+              <div className={styles.readingAuthorText}>
+                <SiteIdentityPreview site={site}>
+                  <InternalLink
+                    className={postStyles.nameLink}
+                    href={siteProfileHref(site)}
+                  >
                     <strong>
                       <AccountName identity={site} name={siteName} />
                     </strong>
-                    <span>@{site.username}</span>
-                  </span>
-                </InternalLink>
-              }
-            />
+                  </InternalLink>
+                </SiteIdentityPreview>
+                <SiteIdentityPreview site={site}>
+                  <InternalLink
+                    className={styles.readingAuthorHandle}
+                    href={siteProfileHref(site)}
+                  >
+                    @{site.username}
+                  </InternalLink>
+                </SiteIdentityPreview>
+              </div>
+            </div>
           </footer>
         ) : null}
       </ArticleSheet>
