@@ -1,6 +1,7 @@
 import { useScrollToHash } from "@notion/components/ui/copy-anchor-link-button";
 import { useUiEditorState } from "@notion/hooks/use-ui-editor-state";
 import { useEffect } from "react";
+import { useTranslation } from "react-i18next";
 import { EditorContent, EditorContext, type Editor } from "@tiptap/react";
 import { DragContextMenu } from "@notion/components/ui/drag-context-menu";
 import { SlashDropdownMenu } from "@notion/components/ui/slash-dropdown-menu";
@@ -35,9 +36,11 @@ const CellMenu: NonNullable<TableSelectionOverlayProps["cellMenu"]> = (
 interface SurfaceProps {
   editor: Editor;
   readOnly: boolean;
+  onInsertMath?: () => void;
 }
 
-function Surface({ editor, readOnly }: SurfaceProps) {
+function Surface({ editor, readOnly, onInsertMath }: SurfaceProps) {
+  const { t } = useTranslation();
   const { isDragging } = useUiEditorState(editor);
   useScrollToHash({
     editor: readOnly ? null : editor,
@@ -64,7 +67,28 @@ function Surface({ editor, readOnly }: SurfaceProps) {
       {!readOnly && (
         <>
           <DragContextMenu nested />
-          <SlashDropdownMenu />
+          <SlashDropdownMenu
+            config={
+              onInsertMath
+                ? {
+                    customItems: [
+                      {
+                        title: t("数学公式"),
+                        group: t("Insert"),
+                        keywords: [
+                          "math",
+                          "latex",
+                          "equation",
+                          "formula",
+                          "公式",
+                        ],
+                        onSelect: onInsertMath,
+                      },
+                    ],
+                  }
+                : undefined
+            }
+          />
           <EmojiDropdownMenu />
           <MentionDropdownMenu />
           <NotionToolbarFloating />

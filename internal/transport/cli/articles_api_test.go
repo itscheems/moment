@@ -52,6 +52,42 @@ func TestArticleAPIWholeWorkflowAndDirectReadParity(t *testing.T) {
 	}
 }
 
+func TestArticleMathHasDirectAPIParity(t *testing.T) {
+	fixture := newPostCLIFixture(t)
+	t.Setenv("MOMENT_TOKEN", fixture.token)
+	application := momentTestApplication()
+	body := `{"schema_version":4,"type":"doc","content":[{"type":"paragraph","content":[{"type":"inlineMath","attrs":{"latex":"a^2+b^2"}}]},{"type":"blockMath","attrs":{"latex":"\\frac{1}{2}"}}]}`
+	path := writeArticleBodyFile(t, body)
+	created := execute(application, "", "article", "new", "--title", "Formulas", "--body", path, "--url", fixture.server.URL, "--json")
+	if created.exit != ExitSuccess {
+		t.Fatalf("create: %#v", created)
+	}
+	id := commandData(t, created)["id"].(string)
+	apiRead := execute(application, "", "article", "draft", id, "--url", fixture.server.URL, "--json")
+	directRead := execute(application, "", "article", "draft", id, "--data-dir", fixture.dataDir, "--as", "writer", "--json")
+	if apiRead.exit != ExitSuccess || directRead.exit != ExitSuccess {
+		t.Fatalf("reads: %#v / %#v", apiRead, directRead)
+	}
+	apiBody, directBody := commandData(t, apiRead), commandData(t, directRead)
+	if !reflect.DeepEqual(apiBody, directBody) {
+		t.Fatalf("formula changed across transports: %#v / %#v", apiBody, directBody)
+	}
+	encoded, err := json.Marshal(apiBody["body"])
+	if err != nil {
+		t.Fatal(err)
+	}
+	var expected, actual any
+	if err := json.Unmarshal([]byte(body), &expected); err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(encoded, &actual); err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(expected, actual) {
+		t.Fatalf("formula source changed: %s", encoded)
+	}
+}
+
 func TestArticleAPIRejectsMalformedDraftsAndFalseDiscardAcknowledgements(t *testing.T) {
 	const id = "01ARZ3NDEKTSV4RRFFQ69G5FAV"
 	base := map[string]any{

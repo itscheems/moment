@@ -65,6 +65,8 @@ export function isPostKind(value: unknown): value is PostKind {
  */
 export type ArticleNodeType =
   | "mapCard"
+  | "inlineMath"
+  | "blockMath"
   | "paragraph"
   | "heading"
   | "blockquote"
@@ -108,6 +110,8 @@ export type ArticleMarkType =
  * two spellings to drift apart.
  */
 export interface ArticleNodeAttrs {
+  /** inlineMath and blockMath, unmodified LaTeX source. */
+  latex?: string;
   map_card?: MapCardWire;
   /** heading, 1 to 3. */
   level?: number;
@@ -1215,6 +1219,8 @@ function postBody(
 }
 
 const ARTICLE_NODE_TYPES: readonly ArticleNodeType[] = [
+  "inlineMath",
+  "blockMath",
   "mapCard",
   "paragraph",
   "heading",
@@ -1255,6 +1261,8 @@ const ARTICLE_MARK_TYPES: readonly ArticleMarkType[] = [
  * its own row is refused rather than trimmed.
  */
 const ARTICLE_NODE_ATTRS: Record<ArticleNodeType, readonly string[]> = {
+  inlineMath: ["latex"],
+  blockMath: ["latex"],
   mapCard: ["id", "map_card"],
   paragraph: [
     "id",
@@ -1320,6 +1328,8 @@ const ARTICLE_NODE_ATTRS: Record<ArticleNodeType, readonly string[]> = {
  * without its level and a picture is nothing without the media it names.
  */
 const ARTICLE_REQUIRED_ATTRS: Partial<Record<ArticleNodeType, string>> = {
+  inlineMath: "latex",
+  blockMath: "latex",
   mapCard: "map_card",
   heading: "level",
   image: "media_id",
@@ -1327,6 +1337,8 @@ const ARTICLE_REQUIRED_ATTRS: Partial<Record<ArticleNodeType, string>> = {
 
 /** The nodes that hold nothing: a rule, a break and a picture are leaves. */
 const ARTICLE_LEAF_NODES: readonly ArticleNodeType[] = [
+  "inlineMath",
+  "blockMath",
   "mapCard",
   "horizontalRule",
   "hardBreak",
@@ -1426,6 +1438,11 @@ function parseArticleNodeAttrs(
     );
   }
   const attrs: ArticleNodeAttrs = {};
+  if ("latex" in value) {
+    attrs.latex = stringField(value, "latex");
+    if (Array.from(attrs.latex).length > 4096)
+      throw invalidResponse("formula source exceeds the code-point limit");
+  }
   if ("map_card" in value)
     attrs.map_card = mapCardPayload(parseMapCard(value.map_card));
   if ("level" in value) {
@@ -1573,7 +1590,7 @@ export function parseArticleDocument(value: unknown): ArticleDocument {
     throw invalidResponse("article body must be a document");
   }
   const schemaVersion = positiveIntegerField(value, "schema_version");
-  if (schemaVersion > 3)
+  if (schemaVersion > 4)
     throw invalidResponse("article body schema is not supported");
   const budget = { remaining: MAX_ARTICLE_NODES };
   const content = parseArticleNodes(value.content, 1, budget);
@@ -1585,6 +1602,15 @@ export function parseArticleDocument(value: unknown): ArticleDocument {
     );
   if (schemaVersion < 3 && containsMap(content))
     throw invalidResponse("map nodes require article schema 3");
+  const containsMath = (nodes: ArticleNode[]): boolean =>
+    nodes.some(
+      (node) =>
+        node.type === "inlineMath" ||
+        node.type === "blockMath" ||
+        (node.content ? containsMath(node.content) : false),
+    );
+  if (schemaVersion < 4 && containsMath(content))
+    throw invalidResponse("math nodes require article schema 4");
   return { schema_version: schemaVersion, type: "doc", content };
 }
 

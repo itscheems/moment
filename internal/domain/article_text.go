@@ -63,6 +63,10 @@ func ArticlePreviewText(document ArticleDocument) string {
 func appendArticlePreviewText(output *strings.Builder, nodes []ArticleNode) {
 	for _, node := range nodes {
 		switch node.Type {
+		case ArticleNodeInlineMath:
+			output.WriteString(node.Latex)
+		case ArticleNodeBlockMath:
+			continue
 		case ArticleNodeMapCard:
 			output.WriteString(node.MapCard.Text())
 			output.WriteByte('\n')
@@ -84,6 +88,10 @@ func appendArticlePreviewText(output *strings.Builder, nodes []ArticleNode) {
 func appendArticleProse(output *strings.Builder, nodes []ArticleNode) {
 	for _, node := range nodes {
 		switch node.Type {
+		case ArticleNodeInlineMath:
+			output.WriteString(node.Latex)
+		case ArticleNodeBlockMath:
+			continue
 		case ArticleNodeMapCard:
 			output.WriteString(node.MapCard.Text())
 			output.WriteByte('\n')
@@ -113,6 +121,11 @@ func ArticleSearchText(title string, document ArticleDocument) string {
 func appendArticleVisibleText(output *strings.Builder, nodes []ArticleNode) {
 	for _, node := range nodes {
 		switch node.Type {
+		case ArticleNodeInlineMath, ArticleNodeBlockMath:
+			output.WriteString(node.Latex)
+			if node.Type == ArticleNodeBlockMath {
+				output.WriteByte('\n')
+			}
 		case ArticleNodeMapCard:
 			output.WriteString(node.MapCard.Text())
 			output.WriteByte('\n')

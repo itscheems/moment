@@ -64,7 +64,7 @@ def main():
                 retained.append(case)
             cached["cases"] = retained
             manifest = cached
-            if {"article.cover", "article.no-cover", "article.private", "article.draft", "article.empty-draft", "article.withdrawn", "article.map"} <= {case["key"] for case in cached["cases"]}:
+            if {"article.cover", "article.no-cover", "article.private", "article.draft", "article.empty-draft", "article.withdrawn", "article.map", "article.math"} <= {case["key"] for case in cached["cases"]}:
                 print(json.dumps(cached, ensure_ascii=False, indent=2))
                 return
 
@@ -101,10 +101,43 @@ def main():
         ("article.private", "只留给自己的河边笔记", False, "only_me"),
         ("article.draft", "写到一半的文章：很长的中文标题在手机上也应该完整显示，继续写下去", False, None),
         ("article.map", "旅行的地图，也是一段生活", False, "everyone"),
+        ("article.math", "数学公式排版示例", False, "everyone"),
     ]:
         if any(c["key"] == key for c in manifest["cases"]):
             continue
         document = body
+        if key == "article.math":
+            def formula(latex):
+                return {"type": "blockMath", "attrs": {"latex": latex}}
+
+            def heading(text):
+                return {"type": "heading", "attrs": {"level": 2}, "content": [{"type": "text", "text": text}]}
+
+            document = {"schema_version": 4, "type": "doc", "content": [
+                paragraph("文字和公式可以一起写。这里包含行内表达式、分式、根式、矩阵、分段函数和多行推导，可在编辑器中点击公式修改源码。"),
+                heading("行内公式与中文混排"),
+                {"type": "paragraph", "content": [
+                    {"type": "text", "text": "设向量 "},
+                    {"type": "inlineMath", "attrs": {"latex": r"\mathbf{v}=(3,4)"}},
+                    {"type": "text", "text": "，它的长度为 "},
+                    {"type": "inlineMath", "attrs": {"latex": r"\lVert\mathbf{v}\rVert=\sqrt{3^2+4^2}=5"}},
+                    {"type": "text", "text": "。公式与正文处在同一段落里。"},
+                ]},
+                heading("分式、根式与积分"),
+                formula(r"x=\frac{-b\pm\sqrt{b^2-4ac}}{2a}"),
+                formula(r"\int_0^1 x^2\,\mathrm{d}x=\left[\frac{x^3}{3}\right]_0^1=\frac{1}{3}"),
+                heading("矩阵与分段函数"),
+                formula(r"A=\begin{pmatrix}1&2\\3&4\end{pmatrix},\qquad\det(A)=1\cdot4-2\cdot3=-2"),
+                formula(r"|x|=\begin{cases}x,&x\geq0\\-x,&x<0\end{cases}"),
+                heading("多行推导"),
+                formula(r"\begin{aligned}S_n&=1+2+\cdots+n\\2S_n&=(n+1)+\cdots+(n+1)=n(n+1)\\S_n&=\frac{n(n+1)}{2}\end{aligned}"),
+                heading("窄屏下的长公式"),
+                paragraph("长公式在自身区域内横向滚动，页面与底部导航保持在屏幕范围内。"),
+                formula(r"\left(\sum_{i=1}^{n}a_ib_i\right)^2\leq\left(\sum_{i=1}^{n}a_i^2\right)\left(\sum_{i=1}^{n}b_i^2\right),\qquad a_i,b_i\in\mathbb{R},\quad n\in\mathbb{N}_{>0}"),
+                heading("代码里的符号保持原样"),
+                {"type": "codeBlock", "attrs": {"language": "plaintext"}, "content": [{"type": "text", "text": r"$x^2$ 与 $$x^2$$ 在代码块里只是普通文本。"}]},
+                paragraph("验收时还可以测试：插入公式后取消、修改后撤销、保存草稿再重新打开，以及发布后的阅读效果。"),
+            ]}
         if key == "article.map":
             document = {"schema_version": 3, "type": "doc", "content": [
                 paragraph("在银座走到天黑，第二天再去京都。"),

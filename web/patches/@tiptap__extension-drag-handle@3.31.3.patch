@@ -1,0 +1,17 @@
+diff --git a/dist/index.cjs b/dist/index.cjs
+--- a/dist/index.cjs
++++ b/dist/index.cjs
+@@ -212,0 +213 @@
++	if (posInfo.pos < 0 || posInfo.pos > doc.content.size) return null;
+diff --git a/dist/index.js b/dist/index.js
+--- a/dist/index.js
++++ b/dist/index.js
+@@ -208,0 +209 @@
++	if (posInfo.pos < 0 || posInfo.pos > doc.content.size) return null;
+diff --git a/src/helpers/findBestDragTarget.ts b/src/helpers/findBestDragTarget.ts
+--- a/src/helpers/findBestDragTarget.ts
++++ b/src/helpers/findBestDragTarget.ts
+@@ -62,0 +63,3 @@
++  if (posInfo.pos < 0 || posInfo.pos > doc.content.size) {
++    return null
++  }

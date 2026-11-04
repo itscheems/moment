@@ -63,6 +63,14 @@ func renderArticleNodes(output *strings.Builder, nodes []ArticleNode, options Ar
 
 func renderArticleNode(output *strings.Builder, node ArticleNode, options ArticleRenderOptions) {
 	switch node.Type {
+	case ArticleNodeInlineMath, ArticleNodeBlockMath:
+		tag, kind := "span", "inline-math"
+		if node.Type == ArticleNodeBlockMath {
+			tag, kind = "div", "block-math"
+		}
+		// Keep a readable source in feeds and clients without a math renderer.
+		latex := html.EscapeString(node.Latex)
+		output.WriteString("<" + tag + ` data-type="` + kind + `" data-latex="` + latex + `">` + latex + "</" + tag + ">")
 	case ArticleNodeMapCard:
 		output.WriteString(`<figure class="map-card"><ul>`)
 		for _, place := range node.MapCard.Places {

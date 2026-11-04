@@ -15,7 +15,7 @@ import (
 // what the table and the backup file look like; this says which grammar one
 // particular body was written against. Adding a node type raises it, and a body
 // stored under an older number keeps that number and keeps rendering.
-const ArticleDocSchemaVersion = 3
+const ArticleDocSchemaVersion = 4
 
 // Bounds on one article. They exist so a constructed body cannot make the
 // renderer, the search index or a page unbounded, not because anybody writes
@@ -33,6 +33,8 @@ const (
 	MaxArticleDepth = 10
 	// MaxArticleInlineImages matches the position ceiling on entry_media.
 	MaxArticleInlineImages = 50
+	// A formula's source stays bounded independently of the whole document.
+	MaxArticleMathCodePoints = 4096
 	// MaxArticleTableColumns and MaxArticleTableRows bound one table.
 	MaxArticleTableColumns = 20
 	MaxArticleTableRows    = 200
@@ -46,6 +48,8 @@ const (
 // trusts its input.
 const (
 	ArticleNodeMapCard        = "mapCard"
+	ArticleNodeInlineMath     = "inlineMath"
+	ArticleNodeBlockMath      = "blockMath"
 	ArticleNodeParagraph      = "paragraph"
 	ArticleNodeHeading        = "heading"
 	ArticleNodeBlockquote     = "blockquote"
@@ -96,6 +100,7 @@ type ArticleNode struct {
 	Level        int
 	Start        int
 	Language     string
+	Latex        string
 	MediaID      ID
 	Alt          string
 	ColSpan      int
@@ -135,6 +140,8 @@ type articleNodeSpec struct {
 }
 
 var articleNodeSpecs = map[string]articleNodeSpec{
+	ArticleNodeInlineMath:     {attributes: []string{"latex"}, content: articleContentNone},
+	ArticleNodeBlockMath:      {attributes: []string{"latex"}, content: articleContentNone},
 	ArticleNodeParagraph:      {content: articleContentInline},
 	ArticleNodeHeading:        {attributes: []string{"level"}, content: articleContentInline, needsChild: true},
 	ArticleNodeBlockquote:     {content: articleContentNestedBlocks, needsChild: true},
@@ -157,18 +164,18 @@ var articleNodeSpecs = map[string]articleNodeSpec{
 }
 
 var articleContentSets = map[articleContentModel][]string{
-	articleContentInline: {ArticleNodeText, ArticleNodeHardBreak},
+	articleContentInline: {ArticleNodeText, ArticleNodeHardBreak, ArticleNodeInlineMath},
 	articleContentTopBlocks: {
 		ArticleNodeParagraph, ArticleNodeHeading, ArticleNodeBlockquote,
 		ArticleNodeBulletList, ArticleNodeOrderedList, ArticleNodeCodeBlock,
-		ArticleNodeHorizontalRule, ArticleNodeTable, ArticleNodeImage, ArticleNodeTaskList, ArticleNodeToc, ArticleNodeMapCard,
+		ArticleNodeHorizontalRule, ArticleNodeTable, ArticleNodeImage, ArticleNodeTaskList, ArticleNodeToc, ArticleNodeMapCard, ArticleNodeBlockMath,
 	},
 	articleContentNestedBlocks: {
 		ArticleNodeParagraph, ArticleNodeHeading, ArticleNodeBlockquote,
-		ArticleNodeBulletList, ArticleNodeOrderedList, ArticleNodeCodeBlock, ArticleNodeHorizontalRule, ArticleNodeImage, ArticleNodeTable, ArticleNodeTaskList, ArticleNodeToc, ArticleNodeMapCard,
+		ArticleNodeBulletList, ArticleNodeOrderedList, ArticleNodeCodeBlock, ArticleNodeHorizontalRule, ArticleNodeImage, ArticleNodeTable, ArticleNodeTaskList, ArticleNodeToc, ArticleNodeMapCard, ArticleNodeBlockMath,
 	},
 	articleContentCellBlocks: {
-		ArticleNodeParagraph, ArticleNodeHeading, ArticleNodeBlockquote, ArticleNodeBulletList, ArticleNodeOrderedList, ArticleNodeCodeBlock, ArticleNodeHorizontalRule, ArticleNodeImage, ArticleNodeTable, ArticleNodeTaskList, ArticleNodeToc, ArticleNodeMapCard,
+		ArticleNodeParagraph, ArticleNodeHeading, ArticleNodeBlockquote, ArticleNodeBulletList, ArticleNodeOrderedList, ArticleNodeCodeBlock, ArticleNodeHorizontalRule, ArticleNodeImage, ArticleNodeTable, ArticleNodeTaskList, ArticleNodeToc, ArticleNodeMapCard, ArticleNodeBlockMath,
 	},
 	articleContentTaskItems: {ArticleNodeTaskItem},
 	articleContentListItems: {ArticleNodeListItem},
@@ -342,6 +349,9 @@ func validateArticleNode(raw rawArticleNode, path string, depth int, walk *artic
 	if raw.Type == ArticleNodeMapCard && walk.schema < 3 {
 		return ArticleNode{}, articleError(path, "mapCard requires schema_version 3")
 	}
+	if (raw.Type == ArticleNodeInlineMath || raw.Type == ArticleNodeBlockMath) && walk.schema < 4 {
+		return ArticleNode{}, articleError(path, "math nodes require schema_version 4")
+	}
 	node := ArticleNode{Type: raw.Type}
 	if err := articleAttributesAllowed(raw.Attrs, spec.attributes, path); err != nil {
 		return ArticleNode{}, err
@@ -354,6 +364,14 @@ func validateArticleNode(raw rawArticleNode, path string, depth int, walk *artic
 	}
 
 	switch raw.Type {
+	case ArticleNodeInlineMath, ArticleNodeBlockMath:
+		walk.text += utf8.RuneCountInString(node.Latex)
+		if walk.text > MaxArticleVisibleCodePoints {
+			return ArticleNode{}, articleError(path, "article text exceeds the code-point limit")
+		}
+		if raw.Text != nil {
+			return ArticleNode{}, articleError(path, "only a text node carries text")
+		}
 	case ArticleNodeMapCard:
 		walk.text += utf8.RuneCountInString(node.MapCard.Text())
 		if walk.text > MaxArticleVisibleCodePoints {
@@ -492,6 +510,15 @@ func validateArticleMarks(raw []rawArticleMark, path string) ([]ArticleMark, err
 
 func applyArticleAttributes(node *ArticleNode, attrs map[string]any, path string) error {
 	switch node.Type {
+	case ArticleNodeInlineMath, ArticleNodeBlockMath:
+		latex, err := articleStringAttribute(attrs, "latex", path)
+		if err != nil {
+			return err
+		}
+		if utf8.RuneCountInString(latex) > MaxArticleMathCodePoints {
+			return articleError(path, fmt.Sprintf("a formula may be at most %d code points", MaxArticleMathCodePoints))
+		}
+		node.Latex = latex
 	case ArticleNodeMapCard:
 		encoded, err := json.Marshal(attrs["map_card"])
 		if err != nil {
@@ -707,6 +734,8 @@ func marshalArticleNode(node ArticleNode) marshalledArticleNode {
 	// and read back in is noise that makes two equal documents differ in bytes.
 	attrs := map[string]any{}
 	switch node.Type {
+	case ArticleNodeInlineMath, ArticleNodeBlockMath:
+		attrs["latex"] = node.Latex
 	case ArticleNodeMapCard:
 		attrs["map_card"] = node.MapCard
 	case ArticleNodeHeading:

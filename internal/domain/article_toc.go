@@ -55,6 +55,9 @@ func articlePlainText(output *strings.Builder, nodes []ArticleNode) {
 		if node.Type == ArticleNodeText {
 			output.WriteString(node.Text)
 		}
+		if node.Type == ArticleNodeInlineMath {
+			output.WriteString(node.Latex)
+		}
 		articlePlainText(output, node.Content)
 	}
 }

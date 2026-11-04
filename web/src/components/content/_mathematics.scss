@@ -1,0 +1,32 @@
+.tiptap-mathematics-render {
+  color: inherit;
+
+  &[data-type="inline-math"] {
+    display: inline-block;
+    max-inline-size: 100%;
+    overflow-x: auto;
+    vertical-align: middle;
+  }
+
+  &[data-type="block-math"] {
+    margin-block: 1rem;
+    max-inline-size: 100%;
+    overflow-x: auto;
+    padding-block: 0.5rem;
+  }
+
+  .katex-display {
+    margin: 0;
+  }
+
+  &--editable {
+    cursor: pointer;
+    border-radius: 0.25rem;
+
+    &:hover,
+    &.ProseMirror-selectednode {
+      background: var(--surface-hover);
+      outline: 1px solid var(--border-strong);
+    }
+  }
+}

@@ -23,6 +23,7 @@ import { contentExtensions, contentSchemas } from "./schema";
 import { collectHandles, HANDLE_MENTION, RESERVED_HANDLES } from "./mentions";
 import { MentionLink } from "./MentionLink";
 import { CodeBlockCopy } from "./CodeBlockCopy";
+import { MathContent } from "./MathContent";
 import styles from "./Content.module.css";
 import "./notion.scss";
 import {
@@ -121,6 +122,8 @@ export function RichContent({
         content: renderedNode,
         options: {
           nodeMapping: {
+            inlineMath: ({ node }) => <MathContent node={node} />,
+            blockMath: ({ node }) => <MathContent node={node} />,
             mapCard: ({ node }) => (
               <MapCard card={parseMapCard(node.attrs.map_card)} deferMap />
             ),

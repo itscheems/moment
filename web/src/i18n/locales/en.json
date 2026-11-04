@@ -1780,5 +1780,16 @@
   "草稿未能删除，请重试。": "The draft could not be deleted. Please try again.",
   "链接卡片展示方式": "Link card layout",
   "小图卡片": "Small image card",
-  "大图封面": "Large image cover"
+  "大图封面": "Large image cover",
+  "数学公式": "Mathematical formulas",
+  "插入公式": "Insert formula",
+  "编辑公式": "Edit formula",
+  "LaTeX 源码": "LaTeX source",
+  "输入 LaTeX 源码，预览后插入。点击正文中的公式可以再次编辑。": "Enter LaTeX source and preview it before inserting. Click a formula in the article to edit it again.",
+  "独立公式块": "Display as a block",
+  "公式预览": "Formula preview",
+  "公式格式有误，请检查 LaTeX 源码。": "Invalid formula. Check the LaTeX source.",
+  "公式未能更新，请重新选择插入位置。": "The formula could not be updated. Choose its position again.",
+  "删除公式": "Delete formula",
+  "插入": "Insert"
 }

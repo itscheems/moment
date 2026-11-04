@@ -189,6 +189,8 @@ function renderArticle(post = makeArticle()) {
 
 describe("article detail page", () => {
   it("enables only reading actions and find, with isolated detail and focus instances", async () => {
+    // This test exercises native reading actions after its lazy module is ready.
+    await import("./reader/ArticleReadingContent");
     const show = (focusReading = false) => (
       <FeedbackProvider>
         <NavigationProvider>

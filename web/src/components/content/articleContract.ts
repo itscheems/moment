@@ -18,6 +18,8 @@ import type { ArticleMarkType, ArticleNodeType } from "../../api/public";
 export const ARTICLE_NODE_ATTRS: Readonly<
   Record<ArticleNodeType, readonly string[]>
 > = {
+  inlineMath: ["latex"],
+  blockMath: ["latex"],
   mapCard: ["id", "map_card"],
   paragraph: [
     "id",
@@ -93,7 +95,7 @@ export const ARTICLE_MARK_ATTRS: Readonly<
 };
 
 /** Mirrors ArticleDocSchemaVersion (internal/domain/article_doc.go). */
-export const ARTICLE_SCHEMA_VERSION = 3;
+export const ARTICLE_SCHEMA_VERSION = 4;
 
 /** Mirrors articleCodeLanguages: a fence keeps a label only from this list. */
 export const ARTICLE_CODE_LANGUAGES: readonly string[] = [
