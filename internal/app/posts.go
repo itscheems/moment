@@ -1516,7 +1516,7 @@ func loadQuotedPost(ctx context.Context, store QuoteReadStore, viewer Viewer, id
 }
 
 func renderPost(entry domain.Entry, view articleView, media []MediaUsageProjection, location *domain.Location, cards []LinkCardProjection, commentCount int, hasQuote ...bool) (Post, error) {
-	if err := validatePostMediaProjections(media); err != nil {
+	if err := validatePostMediaProjections(entry.Kind, media); err != nil {
 		return Post{}, storedEntryError(entry.ID)
 	}
 	// A list read carries only the card, so there is no body to check or

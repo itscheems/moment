@@ -2,6 +2,7 @@ package sqlite
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 
@@ -448,4 +449,41 @@ func TestEveryArticleWriteKeepsTheReclamationClockHonest(t *testing.T) {
 		t.Fatal(err)
 	}
 	assertMediaClocksAgree(t, db, "discarding the last reference")
+}
+
+func TestLargeArticleSurvivesDraftPublishAndEdit(t *testing.T) {
+	t.Parallel()
+	ctx := testAccountContext()
+	db, service := articleServiceFixture(t, time.UnixMilli(1000).UTC())
+	media := articleMediaID(t, db, "c")
+	images := make([]string, domain.MaxArticleInlineImages)
+	for i := range images {
+		images[i] = articleImage(media, "diagram")
+	}
+	body := []byte(`{"schema_version":1,"type":"doc","content":[` + strings.Join(images, ",") + `]}`)
+	draft, err := service.SaveArticleDraft(ctx, app.SaveArticleDraftInput{Title: "Illustrated article", BodyJSON: body})
+	if err != nil {
+		t.Fatal(err)
+	}
+	read, err := service.ArticleDraft(ctx, draft.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(read.Draft.InlineMedia()) != domain.MaxArticleInlineImages {
+		t.Fatal("draft lost image placements")
+	}
+	post, err := service.PublishArticleDraft(ctx, app.PublishArticleDraftInput{DraftID: draft.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(post.Media) != domain.MaxArticleInlineImages {
+		t.Fatalf("published placements = %d", len(post.Media))
+	}
+	edited, err := service.EditArticle(ctx, post.Entry.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if edited.Draft.Body.Content[0].MediaID.String() != media || len(edited.Draft.InlineMedia()) != domain.MaxArticleInlineImages {
+		t.Fatal("working copy lost original placements")
+	}
 }

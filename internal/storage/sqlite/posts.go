@@ -288,8 +288,9 @@ func (store postStore) CommentCounts(ctx context.Context, ids []domain.ID) (map[
 
 func (store postStore) EntryMediaUsages(ctx context.Context, entryID domain.ID) ([]app.MediaUsageProjection, error) {
 	rows, err := store.queries.QueryContext(ctx, `
-SELECT usage.media_id, usage.position, usage.alt_text, media.mime_type, media.width, media.height
+SELECT usage.media_id, usage.position, usage.alt_text, media.mime_type, media.width, media.height, entry.kind
 FROM entry_media AS usage
+JOIN entries AS entry ON entry.id = usage.entry_id
 LEFT JOIN media ON media.id = usage.media_id
 WHERE usage.entry_id = ?
 ORDER BY usage.position`, entryID.String())
@@ -298,13 +299,14 @@ ORDER BY usage.position`, entryID.String())
 	}
 	defer func() { _ = rows.Close() }()
 	usages := make([]app.MediaUsageProjection, 0, domain.MaxEntryMediaUsages)
+	var kind domain.EntryKind
 	for rows.Next() {
 		var rawID string
 		var position int
 		var alt sql.NullString
 		var mimeType sql.NullString
 		var width, height sql.NullInt64
-		if err := rows.Scan(&rawID, &position, &alt, &mimeType, &width, &height); err != nil {
+		if err := rows.Scan(&rawID, &position, &alt, &mimeType, &width, &height, &kind); err != nil {
 			return nil, fmt.Errorf("scan entry media usage: %w", err)
 		}
 		id, err := domain.ParseID(rawID)
@@ -324,7 +326,11 @@ ORDER BY usage.position`, entryID.String())
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("iterate entry media usages: %w", err)
 	}
-	if err := domain.ValidateEntryMediaUsages(mediaProjectionInputs(usages)); err != nil {
+	validate := domain.ValidateEntryMediaUsages
+	if kind == domain.KindArticle {
+		validate = domain.ValidateArticleMediaUsages
+	}
+	if err := validate(mediaProjectionInputs(usages)); err != nil {
 		return nil, domain.NewError(domain.CodeDataIntegrityFailed, "stored entry media usages violate the ordered contract", map[string]any{"post_id": entryID.String()})
 	}
 	return usages, nil

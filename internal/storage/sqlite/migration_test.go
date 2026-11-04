@@ -284,3 +284,58 @@ INSERT INTO browser_account_members(set_id,user_id,session_id,last_used_at_ms) V
 		t.Fatalf("reopening invalidated a post-upgrade collection: %v, %v", revoked, err)
 	}
 }
+
+func TestArticleMediaCapacityUpgradePreservesPlacements(t *testing.T) {
+	t.Parallel()
+	pool := openRawMigrationPool(t)
+	migrations, err := embeddedMigrations()
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := testAccountContext()
+	if err := applyMigrations(ctx, pool, migrations[:14], time.Unix(1, 0)); err != nil {
+		t.Fatal(err)
+	}
+	_, err = pool.ExecContext(ctx, `
+INSERT INTO users(id,username,display_name,role,status,created_at_ms,updated_at_ms) VALUES ('11111111111111111111111111111111','writer','Writer','admin','active',1,1);
+INSERT INTO entries(id,kind,visibility,published_at_ms,created_at_ms,updated_at_ms,author_user_id) VALUES ('01ARZ3NDEKTSV4RRFFQ69G5FAV','article','everyone',1,1,1,'11111111111111111111111111111111');
+INSERT INTO media(id,sha256,storage_path,original_name,mime_type,byte_size,width,height,created_at_ms) VALUES ('01ARZ3NDEKTSV4RRFFQ69G5FAY',?,'media/original/aa/' || ? || '.png','diagram.png','image/png',100,10,10,1);
+INSERT INTO article_drafts(id,title,body_json,body_schema_version,created_at_ms,updated_at_ms,author_user_id) VALUES ('01ARZ3NDEKTSV4RRFFQ69G5FG1','Draft','{"schema_version":1,"type":"doc","content":[]}',1,1,1,'11111111111111111111111111111111');
+INSERT INTO entry_media(entry_id,media_id,position,alt_text) VALUES ('01ARZ3NDEKTSV4RRFFQ69G5FAV','01ARZ3NDEKTSV4RRFFQ69G5FAY',49,'published alt');
+INSERT INTO article_draft_media(draft_id,media_id,position,alt_text) VALUES ('01ARZ3NDEKTSV4RRFFQ69G5FG1','01ARZ3NDEKTSV4RRFFQ69G5FAY',49,'draft alt');`, strings.Repeat("a", 64), strings.Repeat("a", 64))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := applyMigrations(ctx, pool, migrations, time.Unix(2, 0)); err != nil {
+		t.Fatal(err)
+	}
+	for _, table := range []string{"entry_media", "article_draft_media"} {
+		var alt string
+		if err := pool.QueryRowContext(ctx, "SELECT alt_text FROM "+table+" WHERE position = 49").Scan(&alt); err != nil {
+			t.Fatal(err)
+		}
+		want := "published alt"
+		if table == "article_draft_media" {
+			want = "draft alt"
+		}
+		if alt != want {
+			t.Fatalf("%s alt = %q", table, alt)
+		}
+		if _, err := pool.ExecContext(ctx, "INSERT INTO "+table+" SELECT "+map[string]string{"entry_media": "entry_id", "article_draft_media": "draft_id"}[table]+",media_id,511,alt_text FROM "+table+" WHERE position=49"); err != nil {
+			t.Fatalf("expanded %s: %v", table, err)
+		}
+		if _, err := pool.ExecContext(ctx, "UPDATE "+table+" SET position=512 WHERE position=511"); err == nil {
+			t.Fatalf("%s accepted an out-of-range position", table)
+		}
+	}
+	if _, err := pool.ExecContext(ctx, "DELETE FROM media WHERE id = ?", mediaOne); err == nil {
+		t.Fatal("referenced originals must remain protected")
+	}
+	if _, err := pool.ExecContext(ctx, "DELETE FROM article_drafts WHERE id = ?", draftOneID); err != nil {
+		t.Fatal(err)
+	}
+	var count int
+	if err := pool.QueryRowContext(ctx, "SELECT count(*) FROM article_draft_media").Scan(&count); err != nil || count != 0 {
+		t.Fatalf("draft cascade count=%d err=%v", count, err)
+	}
+}

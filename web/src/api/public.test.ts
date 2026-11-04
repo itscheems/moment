@@ -1381,6 +1381,26 @@ describe("post kind and the body it is allowed to carry", () => {
     ).toThrow(PublicApiError);
   });
 
+  it("reads long article geometry and rejects excess placements", () => {
+    const media = Array.from({ length: 512 }, (_, index) => ({
+      media_id: `01K2ABCDEF0123456789AB${index.toString(16).toUpperCase().padStart(4, "0")}`,
+      mime_type: "image/png",
+      width: 160,
+      height: 80,
+    }));
+    const full = {
+      ...article,
+      article: { ...article.article, body_media: media },
+    };
+    expect(parsePost(full).article?.bodyMedia).toHaveLength(512);
+    expect(() =>
+      parsePost({
+        ...full,
+        article: { ...full.article, body_media: [...media, media[0]] },
+      }),
+    ).toThrow(PublicApiError);
+  });
+
   it("parses a moment, which carries its Markdown source", () => {
     expect(parsePost(post)).toMatchObject({
       kind: "moment",
