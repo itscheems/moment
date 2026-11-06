@@ -33,23 +33,35 @@ function setup() {
   });
 }
 
-it.each([8, 80])(
-  "starts a text paragraph when clicking %ipx below a final formula",
-  async (distance) => {
+it.each(
+  [
+    {
+      name: "formula",
+      content: { type: "blockMath", attrs: { latex: "a+b" } },
+    },
+    {
+      name: "code block",
+      content: {
+        type: "codeBlock",
+        content: [{ type: "text", text: "const value = 1;" }],
+      },
+    },
+  ].flatMap((block) => [8, 80].map((distance) => ({ ...block, distance }))),
+)(
+  "starts a text paragraph when clicking $distance px below a final $name",
+  async ({ content, distance }) => {
     editor = new Editor({
       extensions: articleEditorExtensions(),
-      content: {
-        type: "doc",
-        content: [{ type: "blockMath", attrs: { latex: "a+b" } }],
-      },
+      content: { type: "doc", content: [content] },
     });
     await new Promise<void>((resolve) => editor.on("create", () => resolve()));
+    render(<EditorContent editor={editor} />);
     const original = editor.getJSON();
-    const formula = editor.view.nodeDOM(0) as HTMLElement;
+    const block = editor.view.nodeDOM(0) as HTMLElement;
     vi.spyOn(editor.view.dom, "getBoundingClientRect").mockReturnValue(
       new DOMRect(0, 0, 600, 500),
     );
-    vi.spyOn(formula, "getBoundingClientRect").mockReturnValue(
+    vi.spyOn(block, "getBoundingClientRect").mockReturnValue(
       new DOMRect(24, 40, 552, 40),
     );
     editor.view.dom.style.paddingInline = "24px";
@@ -105,6 +117,31 @@ it("exposes the upstream drag handle on the image surface without including its 
   expect(
     editor.view.dom.querySelector(".tiptap-image-caption[data-drag-handle]"),
   ).toBeNull();
+});
+
+it("preserves image dimensions on the native lazy image before it loads", async () => {
+  setup();
+  editor.commands.setContent({
+    type: "doc",
+    content: [
+      {
+        type: "image",
+        attrs: {
+          media_id: mediaId,
+          src: `/api/v1/media/${mediaId}/preview`,
+          width: 1200,
+          height: 800,
+        },
+      },
+    ],
+  });
+  render(<EditorContent editor={editor} />);
+  await waitFor(() => {
+    const image = editor.view.dom.querySelector("img");
+    expect(image).toHaveAttribute("width", "1200");
+    expect(image).toHaveAttribute("height", "800");
+    expect(image).toHaveAttribute("loading", "lazy");
+  });
 });
 
 it("retains managed media when the actual editor serializes a copied block range", () => {

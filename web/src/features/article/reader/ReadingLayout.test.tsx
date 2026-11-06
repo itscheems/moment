@@ -251,3 +251,53 @@ it("does not mount settings or apply preferences without the explicit reading op
     "style",
   );
 });
+
+it.each(["/api/v1/media/01K2ABCDEF0123456789ABCDE7", "/archive"])(
+  "keeps the reading renderer's %s navigation with its owning transport",
+  async (href) => {
+    const original = window.location.href;
+    window.history.replaceState({}, "", "/reader-check");
+    try {
+      reading();
+      const root = document.querySelector(
+        "[data-content-renderer]",
+      ) as HTMLElement & { editor: Editor };
+      await waitFor(() => expect(root.editor).toBeDefined());
+      await act(async () => {
+        root.editor.commands.setContent({
+          type: "doc",
+          content: [
+            {
+              type: "paragraph",
+              content: [
+                {
+                  type: "text",
+                  text: "File destination",
+                  marks: [{ type: "link", attrs: { href } }],
+                },
+              ],
+            },
+          ],
+        });
+      });
+      const anchor = screen.getByRole("link", { name: "File destination" });
+      const event = new MouseEvent("link-target", {
+        bubbles: true,
+        cancelable: true,
+      });
+      anchor.dispatchEvent(event);
+      let handled: boolean | void = false;
+      await act(async () => {
+        handled = root.editor.view.someProp("handleClick", (handler) =>
+          handler(root.editor.view, 1, event),
+        );
+      });
+      expect(Boolean(handled)).toBe(!href.startsWith("/api/"));
+      expect(window.location.pathname).toBe(
+        href.startsWith("/api/") ? "/reader-check" : href,
+      );
+    } finally {
+      window.history.replaceState({}, "", original);
+    }
+  },
+);

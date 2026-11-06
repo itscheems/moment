@@ -3,7 +3,7 @@
 import { t } from "../../../../../../../../i18n";
 import { useTranslation } from "react-i18next";
 
-import { forwardRef, useCallback, useEffect, useState } from "react";
+import { forwardRef, useCallback, useEffect, useRef, useState } from "react";
 import type { Editor } from "@tiptap/react";
 
 // --- Hooks ---
@@ -230,6 +230,7 @@ export const LinkPopover = forwardRef<HTMLButtonElement, LinkPopoverProps>(
   ) => {
     const { editor } = useTiptapEditor(providedEditor);
     const [isOpen, setIsOpen] = useState(false);
+    const appliedLink = useRef(false);
 
     const {
       isVisible,
@@ -260,6 +261,7 @@ export const LinkPopover = forwardRef<HTMLButtonElement, LinkPopoverProps>(
     );
 
     const handleSetLink = useCallback(() => {
+      appliedLink.current = true;
       setLink();
       setIsOpen(false);
     }, [setLink]);
@@ -274,10 +276,30 @@ export const LinkPopover = forwardRef<HTMLButtonElement, LinkPopoverProps>(
     );
 
     useEffect(() => {
-      if (shouldAutoOpen) {
+      if (shouldAutoOpen && !appliedLink.current) {
         setIsOpen(true);
       }
-    }, [shouldAutoOpen]);
+      if (editor?.isFocused && !isActive) appliedLink.current = false;
+    }, [shouldAutoOpen, editor, isActive]);
+
+    useEffect(() => {
+      if (!editor || !autoOpenOnLinkActive) return;
+      const openClickedLink = (event: MouseEvent) => {
+        if (event.metaKey || event.ctrlKey || event.altKey || event.shiftKey)
+          return;
+        if (
+          event.target instanceof Element &&
+          event.target.closest("a[href]") &&
+          editor.isActive("link")
+        ) {
+          appliedLink.current = false;
+          setIsOpen(true);
+        }
+      };
+      editor.view.dom.addEventListener("click", openClickedLink);
+      return () =>
+        editor.view.dom.removeEventListener("click", openClickedLink);
+    }, [editor, autoOpenOnLinkActive]);
 
     if (!isVisible) {
       return null;
@@ -300,7 +322,20 @@ export const LinkPopover = forwardRef<HTMLButtonElement, LinkPopoverProps>(
           </LinkButton>
         </PopoverTrigger>
 
-        <PopoverContent collisionPadding={4}>
+        <PopoverContent
+          collisionPadding={4}
+          onInteractOutside={(event) => {
+            const target = event.target;
+            if (
+              autoOpenOnLinkActive &&
+              target instanceof Element &&
+              target.closest("a[href]") &&
+              editor?.view.dom.contains(target)
+            ) {
+              event.preventDefault();
+            }
+          }}
+        >
           <LinkMain
             url={url}
             setUrl={setUrl}

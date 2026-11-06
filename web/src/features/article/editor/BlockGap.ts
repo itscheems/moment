@@ -3,7 +3,7 @@ import { isNodeRangeSelection } from "@tiptap/extension-node-range";
 import { closeHistory } from "@tiptap/pm/history";
 import { Plugin, TextSelection } from "@tiptap/pm/state";
 
-const gapBlocks = new Set(["image", "mapCard", "blockMath"]);
+const gapBlocks = new Set(["image", "mapCard", "blockMath", "codeBlock"]);
 
 /** Make the whitespace beside block content a writing target, without adding
  * empty paragraphs to the stored document until the author actually clicks. */

@@ -195,7 +195,7 @@ func TestArticleStorageHoldsThePictureLimitsOfEachKind(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := writeArticle(t, db, full, false); err != nil {
-		t.Fatalf("fifty pictures must be accepted: %v", err)
+		t.Fatalf("the article picture limit must be accepted: %v", err)
 	}
 
 	// A moment is still nine, now that the column no longer says so.

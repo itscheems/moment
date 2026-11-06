@@ -197,6 +197,7 @@ export function ArticleReadingContent({
           if (
             !(anchor instanceof HTMLAnchorElement) ||
             anchor.hasAttribute("download") ||
+            anchor.pathname.startsWith("/api/") ||
             (anchor.target && anchor.target !== "_self") ||
             anchor.origin !== window.location.origin ||
             (anchor.hash &&

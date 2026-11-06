@@ -20,7 +20,12 @@ function ManagedImageView(props: NodeViewProps) {
         )
       : props.node,
     // Keep Moment's delivery attributes when the static image becomes a view.
-    imageAttributes: { loading: "lazy", decoding: "async" },
+    imageAttributes: {
+      loading: "lazy",
+      decoding: "async",
+      width: props.node.attrs.width ?? undefined,
+      height: props.node.attrs.height ?? undefined,
+    },
   });
 }
 

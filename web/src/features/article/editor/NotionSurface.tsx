@@ -64,7 +64,7 @@ function Surface({ editor, readOnly, onInsertMath }: SurfaceProps) {
         className="notion-like-editor-content"
         style={{ cursor: isDragging ? "grabbing" : "auto" }}
       />
-      <TocSidebar topOffset={92} maxShowCount={100} />
+      <TocSidebar topOffset={108} maxShowCount={100} />
       {!readOnly && (
         <>
           <DragContextMenu nested />

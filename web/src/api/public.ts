@@ -1021,7 +1021,7 @@ function parseCommentReplyTarget(
  * article the tenth time it showed a picture.
  */
 const MAX_MOMENT_MEDIA = 9;
-const MAX_ARTICLE_MEDIA = 50;
+const MAX_ARTICLE_MEDIA = 512;
 
 function mediaCeiling(kind: PostKind): number {
   return kind === "article" ? MAX_ARTICLE_MEDIA : MAX_MOMENT_MEDIA;
@@ -1676,11 +1676,11 @@ function parseArticle(
   if (Object.hasOwn(value, "body_media")) {
     if (
       !Array.isArray(value.body_media) ||
-      value.body_media.length > 50 ||
+      value.body_media.length > MAX_ARTICLE_MEDIA ||
       value.body === null
     ) {
       throw invalidResponse(
-        "article body media requires a document and at most 50 pictures",
+        `article body media requires a document and at most ${MAX_ARTICLE_MEDIA} pictures`,
       );
     }
     const seen = new Set<string>();

@@ -1,6 +1,7 @@
 package domain
 
 import (
+	"fmt"
 	"strings"
 	"unicode/utf8"
 )
@@ -17,7 +18,7 @@ const (
 	// MaxEntryMediaBytes is the aggregate logical usage budget for one post.
 	MaxEntryMediaBytes int64 = 50 << 20
 	// MaxArticleMediaBytes is the same budget for an article, which places up
-	// to fifty pictures where a moment places nine. Holding an article to the
+	// to hundreds of pictures where a moment places nine. Holding an article to the
 	// moment's total would make the picture limit unreachable in practice.
 	MaxArticleMediaBytes int64 = 250 << 20
 	// MaxCommentMediaBytes is the aggregate logical usage budget for one comment.
@@ -42,7 +43,7 @@ func ValidateEntryMediaUsages(usages []EntryMediaUsage) error {
 // pictures an article body places. The projection is derived from the body, so
 // a failure here means the body and its projection disagree.
 func ValidateArticleMediaUsages(usages []EntryMediaUsage) error {
-	return validateMediaUsages(usages, MaxArticleInlineImages, "an article may place at most 50 pictures")
+	return validateMediaUsages(usages, MaxArticleInlineImages, fmt.Sprintf("an article may place at most %d pictures", MaxArticleInlineImages))
 }
 
 // ValidateCommentMediaUsages applies the same ordering and alt contract with

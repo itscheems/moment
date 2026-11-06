@@ -207,3 +207,42 @@ describe("shared Tiptap document rendering", () => {
     expect(window.location.pathname).toBe("/linlin");
   });
 });
+
+it.each(["/api/v1/media/01K2ABCDEF0123456789ABCDE7", "/archive"])(
+  "routes %s through its owning transport",
+  (href) => {
+    const original = window.location.href;
+    window.history.replaceState({}, "", "/reader-check");
+    try {
+      render(
+        <NavigationProvider>
+          <RichContent
+            document={{
+              schema_version: 4,
+              type: "doc",
+              content: [
+                {
+                  type: "paragraph",
+                  content: [
+                    {
+                      type: "text",
+                      text: "Destination",
+                      marks: [{ type: "link", attrs: { href } }],
+                    },
+                  ],
+                },
+              ],
+            }}
+          />
+        </NavigationProvider>,
+      );
+      const anchor = screen.getByRole("link", { name: "Destination" });
+      fireEvent.click(anchor);
+      expect(window.location.pathname).toBe(
+        href.startsWith("/api/") ? "/reader-check" : href,
+      );
+    } finally {
+      window.history.replaceState({}, "", original);
+    }
+  },
+);

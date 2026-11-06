@@ -42,8 +42,12 @@ func mediaUsageInputs(usages []MediaUsageProjection) []domain.EntryMediaUsage {
 	return inputs
 }
 
-func validatePostMediaProjections(usages []MediaUsageProjection) error {
-	if err := domain.ValidateEntryMediaUsages(mediaUsageInputs(usages)); err != nil {
+func validatePostMediaProjections(kind domain.EntryKind, usages []MediaUsageProjection) error {
+	validate := domain.ValidateEntryMediaUsages
+	if kind == domain.KindArticle {
+		validate = domain.ValidateArticleMediaUsages
+	}
+	if err := validate(mediaUsageInputs(usages)); err != nil {
 		return err
 	}
 	return validateMediaProjectionDimensions(usages)

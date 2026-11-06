@@ -32,7 +32,7 @@ const (
 	// MaxArticleDepth lets the renderer recurse without guarding the stack.
 	MaxArticleDepth = 10
 	// MaxArticleInlineImages matches the position ceiling on entry_media.
-	MaxArticleInlineImages = 50
+	MaxArticleInlineImages = 512
 	// A formula's source stays bounded independently of the whole document.
 	MaxArticleMathCodePoints = 4096
 	// MaxArticleTableColumns and MaxArticleTableRows bound one table.

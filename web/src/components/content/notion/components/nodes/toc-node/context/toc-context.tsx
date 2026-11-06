@@ -125,13 +125,32 @@ const scrollToReadingBlock = (
     (fullyVisible &&
       element.getBoundingClientRect().bottom > window.innerHeight - 16)
   ) {
-    const top =
-      element.getBoundingClientRect().top + window.scrollY - topOffset;
+    const motion = window.matchMedia("(prefers-reduced-motion: reduce)").matches
+      ? "auto"
+      : behavior;
+    for (
+      let parent = element.parentElement;
+      parent;
+      parent = parent.parentElement
+    ) {
+      if (
+        /(auto|scroll)/.test(getComputedStyle(parent).overflowY) &&
+        parent.scrollHeight > parent.clientHeight
+      ) {
+        parent.scrollTo({
+          top:
+            parent.scrollTop +
+            element.getBoundingClientRect().top -
+            parent.getBoundingClientRect().top -
+            topOffset,
+          behavior: motion,
+        });
+        return;
+      }
+    }
     window.scrollTo({
-      top,
-      behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches
-        ? "auto"
-        : behavior,
+      top: element.getBoundingClientRect().top + window.scrollY - topOffset,
+      behavior: motion,
     });
   }
 };
@@ -144,13 +163,20 @@ const doNavigateToHeading = (
   topOffset: number,
   behavior: ScrollBehavior = "smooth",
 ) => {
-  if (!item.dom || typeof window === "undefined") return;
-
-  scrollToReadingBlock(item.dom, topOffset, behavior);
-
+  if (typeof window === "undefined") return;
   if (item.editor && typeof item.pos === "number") {
     selectNodeAndHideFloating(item.editor, item.pos);
   }
+  requestAnimationFrame(() => {
+    if (item.editor?.isDestroyed) return;
+    const target =
+      item.editor && typeof item.pos === "number"
+        ? item.editor.view.nodeDOM(item.pos)
+        : item.dom;
+    if (target instanceof HTMLElement && target.isConnected) {
+      scrollToReadingBlock(target, topOffset, behavior);
+    }
+  });
 
   if (item.id) {
     const url = new URL(window.location.href);
