@@ -13,7 +13,11 @@ const verifiedAccountIds = new Set(
         .split(",")
         .map((id) => id.trim())
         .filter(Boolean)
-    : ["11d003f31a23262ea0f6cbe9857981a1", "a9bd61c2b4812eca2f7f93cc803ad502"],
+    : [
+        "11d003f31a23262ea0f6cbe9857981a1",
+        "a9bd61c2b4812eca2f7f93cc803ad502",
+        "3f948fb4934b6116569b0779a45e03b1",
+      ],
 );
 
 export function accountVerification(

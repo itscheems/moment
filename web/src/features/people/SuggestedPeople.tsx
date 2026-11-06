@@ -19,7 +19,7 @@ const DEFAULT_USERNAMES = [
   ...new Set(
     (typeof configuredUsernames === "string"
       ? configuredUsernames
-      : "itscheems,momentdev"
+      : "itscheems,momentdev,animebot"
     )
       .split(",")
       .map((name) => name.trim().toLowerCase())
