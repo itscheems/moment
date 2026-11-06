@@ -463,6 +463,21 @@ describe("owner composing flow", () => {
   });
 
   it("searches and inserts the owner identity from an active @mention", async () => {
+    // jsdom has no layout. Give the positioning library a visible reference;
+    // caret alignment, clipping, and collision behavior are browser checks.
+    vi.spyOn(document.documentElement, "clientWidth", "get").mockReturnValue(
+      1024,
+    );
+    vi.spyOn(document.documentElement, "clientHeight", "get").mockReturnValue(
+      768,
+    );
+    vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(
+      function (this: HTMLElement) {
+        return this instanceof HTMLTextAreaElement
+          ? new DOMRect(40, 100, 600, 80)
+          : new DOMRect(0, 0, 1024, 768);
+      },
+    );
     preauthenticate();
     window.history.replaceState({}, "", "/compose");
     const fetcher = installApi((url) => {
@@ -492,7 +507,7 @@ describe("owner composing flow", () => {
       name: "提及用户建议",
     });
     expect(suggestions).toHaveAttribute("data-placement", "caret");
-    expect(suggestions.parentElement).toContainElement(editor);
+    expect(suggestions.closest("form")).toBeNull();
     expect(
       fetcher.mock.calls.some(([url]) => String(url).includes("q=ow")),
     ).toBe(true);
