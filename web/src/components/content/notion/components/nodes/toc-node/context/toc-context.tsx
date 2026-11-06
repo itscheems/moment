@@ -167,7 +167,7 @@ const doNavigateToHeading = (
   if (item.editor && typeof item.pos === "number") {
     selectNodeAndHideFloating(item.editor, item.pos);
   }
-  requestAnimationFrame(() => {
+  const frame = requestAnimationFrame(() => {
     if (item.editor?.isDestroyed) return;
     const target =
       item.editor && typeof item.pos === "number"
@@ -184,11 +184,19 @@ const doNavigateToHeading = (
     // Keep the host router's entry so leaving the reader restores its origin.
     window.history.replaceState(window.history.state, "", url.toString());
   }
+  return frame;
 };
 
 export const TocProvider = ({ children }: { children: ReactNode }) => {
   const [tocContent, setTocContent] = useState<TableOfContentData | null>(null);
   const highlightedBlocks = useRef<HTMLElement[]>([]);
+  const navigationFrame = useRef<number | null>(null);
+  const cancelNavigation = useCallback(() => {
+    if (navigationFrame.current !== null) {
+      cancelAnimationFrame(navigationFrame.current);
+      navigationFrame.current = null;
+    }
+  }, []);
   const clearHeadingHighlight = useCallback(() => {
     highlightedBlocks.current.forEach((element) =>
       element.classList.remove("ProseMirror-selectednode"),
@@ -196,7 +204,13 @@ export const TocProvider = ({ children }: { children: ReactNode }) => {
     highlightedBlocks.current = [];
   }, []);
   const { start, clear } = useTimeout(clearHeadingHighlight, 2_000);
-  useEffect(() => clearHeadingHighlight, [clearHeadingHighlight]);
+  useEffect(
+    () => () => {
+      cancelNavigation();
+      clearHeadingHighlight();
+    },
+    [cancelNavigation, clearHeadingHighlight],
+  );
   const clearReadingEmphasis = useCallback(() => {
     clear();
     clearHeadingHighlight();
@@ -221,10 +235,11 @@ export const TocProvider = ({ children }: { children: ReactNode }) => {
   const navigateToReadingBlocks = useCallback(
     (blocks: HTMLElement[], topOffset = 92) => {
       if (!blocks.length) return;
+      cancelNavigation();
       scrollToReadingBlock(blocks[0], topOffset, "smooth", true);
       emphasizeReadingBlocks(blocks);
     },
-    [emphasizeReadingBlocks],
+    [cancelNavigation, emphasizeReadingBlocks],
   );
 
   const navigateToHeading = useCallback<TocState["navigateToHeading"]>(
@@ -233,7 +248,9 @@ export const TocProvider = ({ children }: { children: ReactNode }) => {
       clearHeadingHighlight();
       const topOffset = options?.topOffset ?? 0;
       const behavior = options?.behavior ?? "smooth";
-      doNavigateToHeading(item, topOffset, behavior);
+      cancelNavigation();
+      navigationFrame.current =
+        doNavigateToHeading(item, topOffset, behavior) ?? null;
 
       // Static readers have no editor selection. Briefly reuse the template's
       // selected-node treatment without changing the document or text selection.
@@ -241,7 +258,7 @@ export const TocProvider = ({ children }: { children: ReactNode }) => {
         emphasizeReadingBlocks([item.dom]);
       }
     },
-    [clear, clearHeadingHighlight, emphasizeReadingBlocks],
+    [cancelNavigation, clear, clearHeadingHighlight, emphasizeReadingBlocks],
   );
 
   return (
