@@ -366,8 +366,7 @@
   margin-block-start: 2px;
 }
 
-.inlineComposer
-  :is(.composerHighlight, .composerMentionMeasure, .composerEditor textarea) {
+.inlineComposer :is(.composerHighlight, .composerEditor textarea) {
   padding-block-start: 12px;
   line-height: 24px;
 }
@@ -376,8 +375,7 @@
   min-block-size: 52px;
 }
 
-.homepageComposer
-  :is(.composerHighlight, .composerMentionMeasure, .composerEditor textarea) {
+.homepageComposer :is(.composerHighlight, .composerEditor textarea) {
   line-height: 28px;
 }
 
@@ -422,11 +420,17 @@
   margin-block: -6px 12px;
 }
 
+.mentionPositioner {
+  z-index: max(92, calc(var(--layer-popover) + 2));
+}
+
+.mentionPositioner[data-anchor-hidden] {
+  visibility: hidden;
+  pointer-events: none;
+}
+
 .mentionSuggestions {
-  position: absolute;
-  z-index: var(--layer-popover);
-  inset-inline: 0;
-  inset-block-start: calc(100% - 0.5rem);
+  position: relative;
   overflow: hidden;
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-panel);
@@ -437,7 +441,8 @@
 .mentionSuggestionsCaret {
   inset-inline: auto;
   inset-block-start: auto;
-  max-block-size: min(18rem, 42vh);
+  max-inline-size: calc(100vw - 16px);
+  max-block-size: min(18rem, 42vh, var(--available-height));
   overflow-y: auto;
   transform-origin: top left;
   animation: mentionSuggestionsIn var(--motion-fast) var(--ease-out);
@@ -525,22 +530,16 @@
   white-space: pre-wrap;
 }
 
-.composerMentionMeasure {
+.mentionCaretMeasure {
   position: absolute;
-  inset: 0;
-  z-index: 0;
-  overflow: visible;
-  padding: var(--space-2) 0 var(--space-3);
-  color: transparent;
-  font-size: 1.25rem;
-  line-height: 1.4;
-  overflow-wrap: break-word;
-  pointer-events: none;
-  visibility: hidden;
+  inset: 0 auto auto 0;
+  box-sizing: border-box;
   white-space: pre-wrap;
+  visibility: hidden;
+  pointer-events: none;
 }
 
-.composerMentionMeasure span {
+.mentionCaretMeasure span {
   display: inline-block;
   inline-size: 1px;
   block-size: 1em;
@@ -582,8 +581,7 @@
   outline: none;
 }
 
-.pageComposer
-  :is(.composerHighlight, .composerMentionMeasure, .composerEditor textarea) {
+.pageComposer :is(.composerHighlight, .composerEditor textarea) {
   padding-block: 14px 10px;
   line-height: 24px;
 }
@@ -1406,10 +1404,6 @@
   }
 
   .composerHighlight {
-    font-size: 1.125rem;
-  }
-
-  .composerMentionMeasure {
     font-size: 1.125rem;
   }
 

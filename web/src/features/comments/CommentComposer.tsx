@@ -688,6 +688,21 @@ export function CommentForm({
               aria-describedby={`${formId}-guidance ${formId}-error`}
               disabled={pending}
               id={`${formId}-content`}
+              aria-autocomplete="list"
+              aria-controls={
+                mention && mentionItems.length
+                  ? `${formId}-mentions`
+                  : undefined
+              }
+              aria-activedescendant={
+                mention && mentionItems[mentionActive]
+                  ? `${formId}-mentions-${mentionItems[mentionActive].userId}`
+                  : undefined
+              }
+              onBlur={() => {
+                setMention(null);
+                setMentionItems([]);
+              }}
               onChange={(event) => {
                 setContent(event.target.value);
                 setMention(
@@ -698,8 +713,24 @@ export function CommentForm({
                 );
                 setError(null);
               }}
+              onSelect={(event) => {
+                const field = event.currentTarget;
+                setMention(
+                  field.selectionStart === field.selectionEnd
+                    ? activeMention(field.value, field.selectionStart)
+                    : null,
+                );
+              }}
               onKeyDown={(event) => {
-                if (mentionItems.length > 0 && mention) {
+                if (event.nativeEvent.isComposing) return;
+                if (
+                  mentionItems.length > 0 &&
+                  mention &&
+                  !event.shiftKey &&
+                  !event.altKey &&
+                  !event.metaKey &&
+                  !event.ctrlKey
+                ) {
                   if (event.key === "ArrowDown" || event.key === "ArrowUp") {
                     event.preventDefault();
                     setMentionActive(
@@ -757,9 +788,18 @@ export function CommentForm({
             ) : null}
           </div>
           <MentionSuggestions
+            id={`${formId}-mentions`}
             active={mentionActive}
             items={mentionItems}
             onPick={pickMention}
+            content={content}
+            mention={mention}
+            textareaRef={textareaRef}
+            enabled={active && !pending && commentsEnabled}
+            onDismiss={() => {
+              setMention(null);
+              setMentionItems([]);
+            }}
           />
           <div className={styles.formMeta} id={`${formId}-guidance`}>
             <span className={styles.srOnly}>

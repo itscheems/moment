@@ -67,11 +67,7 @@ import { ComposerLinkCard } from "./ComposerLinkCard";
 import { useLinkPreview, type LinkDraftSnapshot } from "./useLinkPreview";
 import { LocationPicker, SelectedLocationChip } from "./LocationPicker";
 import { MentionSuggestions } from "./MentionSuggestions";
-import {
-  activeMention,
-  mentionPanelPosition,
-  mentionSegments,
-} from "./mentions";
+import { activeMention, mentionSegments } from "./mentions";
 import {
   COMPOSE_DRAFT_CLEAR_ALL_SCHEMA,
   COMPOSE_DRAFT_CLEARED_EVENT,
@@ -374,13 +370,6 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
     const navigationBlockerId = useRef(Symbol("composer-navigation-blocker"));
     const textareaRef = useRef<HTMLTextAreaElement>(null);
     const highlightRef = useRef<HTMLDivElement>(null);
-    const mentionAnchorRef = useRef<HTMLSpanElement>(null);
-    const editorRef = useRef<HTMLDivElement>(null);
-    const [mentionPosition, setMentionPosition] = useState({
-      left: 0,
-      top: 48,
-      width: 320,
-    });
 
     useDocumentScrollLock(leavePromptOpen);
     const idempotencyKey = useRef(createIdempotencyKey());
@@ -569,50 +558,6 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
         controller.abort();
       };
     }, [mention?.query, mention?.start, publicApi]);
-
-    const updateMentionPosition = useCallback(() => {
-      const anchor = mentionAnchorRef.current;
-      const editor = editorRef.current;
-      const textarea = textareaRef.current;
-      if (!anchor || !editor || !textarea) return;
-
-      const anchorRect = anchor.getBoundingClientRect();
-      const editorRect = editor.getBoundingClientRect();
-      if (editorRect.width <= 0) return;
-      const lineHeight = Number.parseFloat(
-        window.getComputedStyle(textarea).lineHeight,
-      );
-      const effectiveLineHeight = Number.isFinite(lineHeight) ? lineHeight : 28;
-      const next = mentionPanelPosition({
-        anchorLeft: anchorRect.left,
-        anchorTop: anchorRect.top,
-        editorLeft: editorRect.left,
-        editorTop: editorRect.top,
-        editorWidth: editorRect.width,
-        itemCount: mentionItems.length,
-        lineHeight: effectiveLineHeight,
-        scrollLeft: textarea.scrollLeft,
-        scrollTop: textarea.scrollTop,
-        viewportHeight: window.innerHeight,
-      });
-      setMentionPosition((current) =>
-        current.left === next.left &&
-        current.top === next.top &&
-        current.width === next.width
-          ? current
-          : next,
-      );
-    }, [mentionItems.length]);
-
-    useLayoutEffect(() => {
-      if (!mention || mentionItems.length === 0) return;
-      updateMentionPosition();
-      const editor = editorRef.current;
-      if (!editor || typeof ResizeObserver === "undefined") return;
-      const observer = new ResizeObserver(updateMentionPosition);
-      observer.observe(editor);
-      return () => observer.disconnect();
-    }, [content, mention, mentionItems.length, updateMentionPosition]);
 
     const pickMention = (item: MentionSuggestion) => {
       if (!mention) return;
@@ -1753,7 +1698,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
             <label htmlFor={`${variant}-composer-content`}>
               {post ? t("Moment 正文") : t("此刻想到什么？")}
             </label>
-            <div className={styles.composerEditor} ref={editorRef}>
+            <div className={styles.composerEditor}>
               <div
                 aria-hidden="true"
                 className={styles.composerHighlight}
@@ -1779,6 +1724,21 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
                 aria-describedby={`${variant}-composer-guidance ${variant}-composer-error`}
                 disabled={pending}
                 id={`${variant}-composer-content`}
+                aria-autocomplete="list"
+                aria-controls={
+                  mention && mentionItems.length
+                    ? `${variant}-composer-mentions`
+                    : undefined
+                }
+                aria-activedescendant={
+                  mention && mentionItems[mentionActive]
+                    ? `${variant}-composer-mentions-${mentionItems[mentionActive].userId}`
+                    : undefined
+                }
+                onBlur={() => {
+                  setMention(null);
+                  setMentionItems([]);
+                }}
                 onChange={(event) => {
                   allowLeaveRef.current = false;
                   if (variant !== "edit") {
@@ -1805,8 +1765,24 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
                   idempotencyKey.current = createIdempotencyKey();
                 }}
                 onCompositionEnd={() => undefined}
+                onSelect={(event) => {
+                  const field = event.currentTarget;
+                  setMention(
+                    field.selectionStart === field.selectionEnd
+                      ? activeMention(field.value, field.selectionStart)
+                      : null,
+                  );
+                }}
                 onKeyDown={(event) => {
-                  if (mentionItems.length > 0 && mention) {
+                  if (event.nativeEvent.isComposing) return;
+                  if (
+                    mentionItems.length > 0 &&
+                    mention &&
+                    !event.shiftKey &&
+                    !event.altKey &&
+                    !event.metaKey &&
+                    !event.ctrlKey
+                  ) {
                     if (event.key === "ArrowDown" || event.key === "ArrowUp") {
                       event.preventDefault();
                       setMentionActive(
@@ -1852,27 +1828,25 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
                     event.currentTarget.scrollTop;
                   highlightRef.current.scrollLeft =
                     event.currentTarget.scrollLeft;
-                  updateMentionPosition();
                 }}
                 placeholder={post ? t("编辑 Moment") : t("有什么新鲜事？")}
                 ref={textareaRef}
                 rows={inlineLayout || hasAttachments ? 1 : 4}
                 value={content}
               />
-              {mention ? (
-                <div
-                  aria-hidden="true"
-                  className={styles.composerMentionMeasure}
-                >
-                  {content.slice(0, mention.end)}
-                  <span ref={mentionAnchorRef}>{"\u200b"}</span>
-                </div>
-              ) : null}
               <MentionSuggestions
+                id={`${variant}-composer-mentions`}
                 active={mentionActive}
                 items={mentionItems}
                 onPick={pickMention}
-                position={mentionPosition}
+                content={content}
+                mention={mention}
+                textareaRef={textareaRef}
+                enabled={active && !pending}
+                onDismiss={() => {
+                  setMention(null);
+                  setMentionItems([]);
+                }}
               />
             </div>
             <p
